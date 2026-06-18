@@ -4,7 +4,5 @@
         "ms-python.debugpy",
         "detachhead.basedpyright",
         "charliermarsh.ruff",
-        "dbaeumer.vscode-eslint",
-        "esbenp.prettier-vscode"
     ]
 }
