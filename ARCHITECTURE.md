@@ -445,7 +445,6 @@ Avoid ambiguous names.
 Names to avoid:
   utils.py
   helpers.py
-  common.py
   manager.py
   service.py
 ```
@@ -498,7 +497,6 @@ Examples:
 ```text
 features/add/usecases/create_add_plan.py
 features/apply/usecases/apply_plan.py
-features/undo/usecases/create_undo_plan.py
 features/check/usecases/check_library.py
 ```
 
@@ -516,9 +514,7 @@ adapters/web/routes/settings.py
 adapters/db/sqlite/unit_of_work.py
 adapters/fs/file_scanner.py
 adapters/fs/file_snapshot_reader.py
-adapters/fs/file_mover.py
 adapters/metadata/mutagen_reader.py
-adapters/config/toml_config_store.py
 ```
 
 Do not use the name DAO in the DB adapter.
