@@ -2,7 +2,9 @@
 
 This document is authoritative for test requirements and test ordering.
 
-Architecture rules are in [../ARCHITECTURE.md](../ARCHITECTURE.md), domain rules are in [domain.md](domain.md), execution semantics are in [execution.md](execution.md), and storage rules are in [storage.md](storage.md).
+Architecture rules are in [../ARCHITECTURE.md](../ARCHITECTURE.md), domain rules are in [domain.md](domain.md), execution semantics are in [execution.md](execution.md), storage rules are in [storage.md](storage.md), and developer validation commands are in [development.md](development.md).
+
+Tests use `pytest` and `pytest-mock` only.
 
 ## Architecture Tests
 
@@ -54,6 +56,10 @@ Use in-memory repositories for usecase tests.
 Use fixed Clock and IdGenerator ports in tests so time and IDs are deterministic.
 
 Filesystem fixtures should be minimal and task-focused. Read-only filesystem fixtures are appropriate for FileScanner, metadata, hashing, and FileSnapshotReader tests. File-moving fixtures should wait until the apply vertical slice because apply is the first phase that mutates Library music files.
+
+## Test Commands
+
+Use [development.md](development.md#test-commands) for quick global checks, focused failure inspection, and deep debug commands. This document defines what to test; `docs/development.md` defines how to run validation commands.
 
 ## Tests to Write First
 
