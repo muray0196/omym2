@@ -1,0 +1,12 @@
+# Project
+.config/
+.data/
+.logs/
+!tests/.config/
+!src/omym/config/
+# Python
+__pycache__/
+*.egg-info/
+.ruff_cache/
+.coverage
+uv.lock

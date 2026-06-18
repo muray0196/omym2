@@ -1,0 +1,21 @@
+{
+    "vscode-neovim.wslDistribution": "Ubuntu-26.04",
+    "terminal.integrated.defaultProfile.linux": "zsh",
+    "files.exclude": {
+        ".tmp": true,
+        ".coverage": true,
+        ".pytest_cache": true,
+        ".venv": true,
+        "**.egg-info": true,
+        "**/__pycache__": true,
+        "uv.lock": true
+    },
+    "ruff.format.preview": false,
+    "ruff.configurationPreference": "filesystemFirst",
+    "basedpyright.analysis.diagnosticMode": "workspace",
+    "basedpyright.analysis.inlayHints.genericTypes": true,
+    "[python]": {
+        "diffEditor.ignoreTrimWhitespace": false,
+        "editor.defaultFormatter": "charliermarsh.ruff"
+    },
+}
