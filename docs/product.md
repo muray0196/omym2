@@ -175,4 +175,4 @@ E2E: Playwright
 Metadata extractor: mutagen
 ```
 
-The Web UI runs on localhost as a local settings console. There is no `omym2 web` command in the initial command surface; settings UI is represented by `omym2 settings`.
+The Web UI runs on localhost as a local settings console. Settings UI is represented by `omym2 settings`.

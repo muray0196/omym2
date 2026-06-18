@@ -141,7 +141,7 @@ Config validation is implemented through the config adapter and settings usecase
 
 `settings` opens the local settings screen in a browser.
 
-Settings UI is represented by `omym2 settings`; `omym2 web` is not a command.
+Settings UI is represented by `omym2 settings`.
 
 ## Aliases
 
