@@ -2,7 +2,7 @@
 
 This document is authoritative for OMYM2 architecture, dependency direction, layer responsibility, ports, UnitOfWork policy, transaction boundaries, durable operation log policy, and source file naming.
 
-The archived source design is [docs/archive/omym2_design_document_v1.01.md](docs/archive/omym2_design_document_v1.01.md). Domain semantics are in [docs/domain.md](docs/domain.md), execution semantics are in [docs/execution.md](docs/execution.md), and persistence details are in [docs/storage.md](docs/storage.md).
+Domain semantics are in [docs/domain.md](docs/domain.md), execution semantics are in [docs/execution.md](docs/execution.md), and persistence details are in [docs/storage.md](docs/storage.md).
 
 ## Feature-Oriented Hexagonal Architecture
 

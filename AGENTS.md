@@ -1,10 +1,6 @@
 # OMYM2 Agent Instructions
 
-This repository keeps the original preliminary design document here:
-
-`docs/archive/omym2_design_document_v1.01.md`
-
-The archived design document is the original reference. Current task-specific rules are maintained in the split documentation files under `docs/`.
+Current task-specific rules are maintained in the split documentation files under `docs/`.
 
 Before non-trivial implementation work, read:
 
@@ -22,4 +18,4 @@ Non-negotiable rules:
 * Stored Library-managed paths are Library-root-relative.
 * Run the relevant checks before marking work complete.
 
-If documents conflict, report it. Prefer current task-specific docs over the archived design document.
+If documents conflict, report it. Prefer the task-specific document listed in `docs/index.md`.

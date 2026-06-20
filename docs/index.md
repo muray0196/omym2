@@ -1,6 +1,6 @@
 # OMYM2 Documentation Index
 
-This directory splits the preliminary design into focused documents that future agents can read selectively. The full original design remains archived at [archive/omym2_design_document_v1.01.md](archive/omym2_design_document_v1.01.md).
+This directory contains the focused project documents that future agents should read selectively.
 
 Design rules should not be duplicated across documents unless the duplication is explicitly marked as a summary. When a rule has an authoritative home, update that home and link to it from summaries.
 
