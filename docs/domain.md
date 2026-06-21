@@ -250,7 +250,7 @@ Skip reason examples:
 
 An execution attempt for applying a Plan.
 
-A Run is created before executing Library music file mutations. It may succeed, fail, or partially fail.
+A Run is created before processing PlanActions and before any Library music file mutation. It may succeed, fail, or partially fail.
 
 Representative fields:
 
@@ -267,7 +267,6 @@ Run status examples:
 * succeeded
 * partial_failed
 * failed
-* cancelled
 
 A Run is not merely a historical label. It is the parent unit for FileEvents and the main unit used by history and undo.
 
