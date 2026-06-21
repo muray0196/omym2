@@ -11,13 +11,13 @@ ports and test fakes
   ↓
 config / DB / read-only filesystem adapters
   ↓
-setup vertical slice
+organize registration vertical slice
   ↓
 add plan vertical slice
   ↓
 apply vertical slice
   ↓
-refresh / organize / check / undo
+refresh / check / undo
   ↓
 web UI
 ```
@@ -57,7 +57,7 @@ Phase 1 exists to make later implementation hard to place in the wrong layer.
 * CollisionPolicy
 * DuplicatePolicy
 
-PathPolicy belongs here because setup, add, organize, and refresh all need canonical Library-root-relative paths.
+PathPolicy belongs here because organize, add, and refresh all need canonical Library-root-relative paths.
 
 ## Phase 3: Ports / usecase contracts / in-memory fakes
 
@@ -75,8 +75,8 @@ PathPolicy belongs here because setup, add, organize, and refresh all need canon
 * Clock port
 * IdGenerator port using UUIDv7-backed IDs
 * in-memory repositories for usecase tests
-* setup / add / apply usecase skeletons
-* refresh / organize / check / history / undo / inspect usecase skeletons
+* organize / add / apply usecase skeletons
+* refresh / check / history / undo / inspect usecase skeletons
 
 Usecase skeletons may exist early, but they should remain thin until their required adapters exist.
 
@@ -101,12 +101,13 @@ This phase should not perform Library scanning or DB registration yet.
 * DB creation under `omym2/.data/`
 * UnitOfWork implementation
 * tracks repository
+* library registration repository
 * plans repository
 * plan_actions repository
 * runs repository
 * file_events repository
 
-Plan and Track persistence must exist before completing setup scan, add plan creation, or apply.
+Plan, Track, and Library registration persistence must exist before completing organize registration, add plan creation, or apply.
 
 ## Phase 6: Filesystem / metadata read adapters
 
@@ -120,22 +121,25 @@ Plan and Track persistence must exist before completing setup scan, add plan cre
 
 This phase is read-only except for internal temporary test fixtures. File moving is deferred until apply.
 
-## Phase 7: Setup vertical slice
+## Phase 7: Organize registration vertical slice
 
-* setup usecase implementation
-* create config / DB
-* initial Library scan
+* organize usecase implementation
+* read-only Library scan
 * capture file snapshots
 * generate canonical paths
-* register Tracks
-* store Track paths as Library-root-relative paths
-* setup CLI
+* block missing metadata, canonical path conflicts, invalid paths, and missing sources
+* create organize Plan when files need to move or blocking actions must be reviewed
+* register the Library without a mutation Plan when no moves are needed and no blocking issues exist
+* persist Library registration root, PathPolicy identity, timestamp, and status
+* record managed Track state with Library-root-relative paths
+* organize CLI
 
-`setup` is completed only after Config, SQLite, FileScanner, FileSnapshotReader, MetadataReader, hash calculation, PathPolicy, and IdGenerator are connected.
+This phase does not mutate Library music files. DB-only Library registration does not require a Plan.
 
 ## Phase 8: Add plan vertical slice
 
 * create add plan usecase
+* reject add plan creation when the current Library is unregistered or stale
 * scan Incoming / specified source
 * capture file snapshots
 * generate target canonical paths
@@ -160,6 +164,7 @@ This phase creates reviewed work, but does not move Library music files.
 * record FileEvent as pending before each Library music file mutation
 * execute file move
 * update FileEvent / PlanAction / Track / Run / Plan statuses
+* register the Library after a successful organize Plan when no blocking Library-state issues remain
 * reject already-used Plan
 * reject, expire, or fail Plan when Library root changed according to the failure point
 * apply CLI
@@ -167,17 +172,13 @@ This phase creates reviewed work, but does not move Library music files.
 
 Apply is the first phase that mutates Library music files.
 
-## Phase 10: Refresh / organize vertical slices
+## Phase 10: Refresh vertical slice
 
 * refresh usecase
 * refresh CLI
-* organize usecase
-* organize CLI
-* relocation plan creation for existing Library files
 * `refresh --apply` orchestration
-* `organize --apply` orchestration
 
-Both refresh and organize reuse Plan creation and apply rather than moving files directly.
+Refresh reuses Plan creation and apply rather than moving files directly.
 
 ## Phase 11: Check / history / undo
 

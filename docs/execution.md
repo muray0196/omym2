@@ -8,9 +8,9 @@ Domain concepts are defined in [domain.md](domain.md), command names are listed 
 
 Library music file mutations are not executed directly.
 
-Read-only scans, metadata reads, hash calculations, and inspections do not require a Plan.
+Read-only scans, metadata reads, hash calculations, inspections, and DB-only Library registration do not require a Plan.
 
-They must follow this flow:
+Library music file mutations must follow this flow:
 
 ```text
 scan
@@ -38,35 +38,66 @@ User-facing commands should be purpose-based. Internal Plan concepts should not 
 ```text
 user command     internal behavior
 ------------     -----------------
-setup            initialize workspace and scan Library
-add              create add plan
-organize         create Library organize plan
+settings         read / write settings
+organize         scan Library, create organize plan, or register clean Library
+add              create add plan for a registered Library
 refresh          create metadata refresh / relocate plan
 apply            apply selected plan
-check            compare DB and filesystem state
+check            compare DB, filesystem, and Library registration state
 ```
 
-## Setup Behavior
+## Bootstrap Behavior
 
-`setup` creates config / DB and, unless disabled, scans the existing Library to register the current track state.
+OMYM2 has no mandatory first-use initialization command.
 
-```text
-setup
-  ↓
-create config / DB
-  ↓
-scan existing Library
-  ↓
-record tracks
-```
+Config files, DB files, and internal directories are created lazily when a command needs them.
 
-`setup` does not move or mutate Library music files and does not require a Plan.
+Missing config or DB is not an error by itself. Missing required paths are errors only for commands that need those paths.
 
-`setup` may register Tracks without creating a Plan because it does not perform Library music file mutations.
+Path rules:
+
+* Commands must not guess the Library path.
+* Commands that need the Library path fail if it is not configured.
+* `add` without a configured Incoming path fails unless a source directory is explicitly supplied.
+
+## Library Registration Behavior
+
+A registered Library means OMYM2 has accepted the configured Library under the current resolved Library root and current PathPolicy.
+
+Registration is tied to:
+
+* `library_root`
+* `path_policy_hash` or an equivalent identity for the current PathPolicy
+
+Registration is not defined by whether the `tracks` table has rows.
+
+Minimum representative registration fields:
+
+* `library_root`
+* `path_policy_hash`
+* `registered_at`
+* `status`
+
+Initial status examples:
+
+* `registered`
+* `unregistered`
+* `stale`
+* `blocked`
+
+Changing PathPolicy invalidates prior Library registration. After a PathPolicy change, `add` refuses to create a plan until the Library is registered again under the new PathPolicy. The expected remedy is `omym2 organize`.
+
+`organize` is the only supported path for an unregistered or unorganized Library to become usable by `add`.
 
 ## Add Plan Behavior
 
 `add` is the daily entry point. It scans Incoming or a specified source directory, creates an add plan, and leaves the user to review and apply it.
+
+`add` requires a registered Library. If the current Library is not registered under the current resolved Library root and current PathPolicy, `add` refuses to create an add plan. The user-facing remedy is `omym2 organize`.
+
+`add` must not perform existing-Library organization and must not mix Incoming import actions with existing Library organization actions.
+
+`add` should not perform a full Library-wide organizedness check every time. Its gate is Library registration, not repeated canonical path validation across the entire Library.
 
 ```text
 Incoming folder
@@ -89,8 +120,8 @@ The add plan creation behavior includes:
 * scan Incoming or specified source
 * capture file snapshots
 * generate target canonical paths
-* skip duplicate hashes with `duplicate_hash`
-* block missing required metadata
+* check duplicate hashes against known DB state and skip duplicates with `duplicate_hash`
+* block missing required metadata for incoming files
 * block target conflicts
 * persist Plan and PlanActions
 
@@ -237,11 +268,23 @@ Only when `--apply` is specified is the created plan applied within the same com
 
 ## Organize Behavior
 
-`organize` creates a move plan for existing Library files whose current path differs from the canonical path.
+`organize` scans the configured Library read-only and computes canonical paths under the current PathPolicy.
 
-`organize` can operate on the entire existing Library, so it is always plan-first in the initial state.
+If files need to move or blocking actions must be reviewed, `organize` creates an organize Plan. `organize` does not move files directly except through `--apply` orchestration.
 
-`organize` does not move files directly except through `--apply` orchestration.
+If no moves are needed and no blocking issues exist, `organize` can register the Library without creating a mutation Plan because DB-only registration is not a Library music file mutation.
+
+If the organize Plan is applied successfully and no blocking Library-state issues remain, the Library becomes registered. Registering the Library after apply is a DB-only state change and does not create a FileEvent.
+
+If blocked actions remain, the Library must not become registered.
+
+Blocking issues include:
+
+* missing required metadata
+* canonical path conflicts
+* invalid paths
+* missing source files
+* other problems preventing safe acceptance
 
 ## Undo Behavior
 
@@ -278,7 +321,11 @@ Undo uses Run and FileEvent history. Stable `track_id` keeps the relationship be
 
 ## Check Behavior
 
-`check` is read-only in the initial version. It reports inconsistencies between the DB and the filesystem.
+`check` is read-only in the initial version. It reports inconsistencies between the DB and the filesystem and reports Library registration state.
+
+`check` may report whether the Library is `registered`, `unregistered`, `stale`, or `blocked`.
+
+`check` is diagnostic. It does not replace `organize`, and `add` should not absorb full `check` responsibilities.
 
 Reported issues include:
 
@@ -288,6 +335,7 @@ Reported issues include:
 * path differences
 * duplicate candidates
 * pending file_events
+* registration state issues
 
 CheckIssue is not persisted as primary state in the initial version. It is calculated by `check` from the DB and filesystem observations.
 
@@ -365,3 +413,5 @@ If the process crashes, pending or partially recorded FileEvents are used to ins
 | another file exists at undo destination | mark undo plan as conflict and do not overwrite automatically |
 | DB and filesystem are out of sync | detect with check |
 | pending file_event exists | report through check and require manual review |
+| add requested for unregistered or stale Library | reject add plan creation; no Plan, Run, or FileEvent |
+| PathPolicy changed after Library registration | mark or report registration as stale; require organize before add |

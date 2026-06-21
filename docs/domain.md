@@ -139,7 +139,9 @@ Representative fields:
 
 The `track_id` is the stable internal identity of the Track. The initial implementation uses UUIDv7 for `track_id`.
 
-`track_id` is generated when a Track is first registered in OMYM2. It must not be derived from file path, canonical path, content hash, or metadata hash. Those values may change during normal operations such as add, organize, refresh, undo, and external tag correction.
+`track_id` is generated when a Track is first recorded as managed state in OMYM2. It must not be derived from file path, canonical path, content hash, or metadata hash. Those values may change during normal operations such as add, organize, refresh, undo, and external tag correction.
+
+Track rows do not define whether the Library is registered. Library registration behavior is defined in [execution.md](execution.md#library-registration-behavior), and storage is defined in [storage.md](storage.md#library_registration).
 
 Initial Track status examples:
 
@@ -317,6 +319,9 @@ Representative issue types:
 * duplicate_candidate
 * plan_source_changed
 * pending_file_event_exists
+* library_unregistered
+* library_registration_stale
+* library_registration_blocked
 
 CheckIssue is not persisted as primary state in the initial version. It is calculated by `check` from the DB and filesystem observations.
 
@@ -345,7 +350,7 @@ The file hash is not treated as the Track identity.
 The initial implementation uses UUIDv7 for stable internal IDs.
 
 ```text
-track_id        UUIDv7 generated when a Track is first registered
+track_id        UUIDv7 generated when a Track is first recorded as managed state
 plan_id         UUIDv7 generated when a Plan is created
 run_id          UUIDv7 generated when an apply attempt starts
 action_id       UUIDv7 generated when a PlanAction is created

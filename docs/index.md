@@ -9,9 +9,9 @@ Design rules should not be duplicated across documents unless the duplication is
 * Start with [../ARCHITECTURE.md](../ARCHITECTURE.md) for architecture, layer boundaries, dependency direction, ports, UnitOfWork policy, transactions, durable operation logs, and source file naming.
 * Read [product.md](product.md) for product intent, primary usage, non-goals, UI role, and product-facing technical policy.
 * Read [domain.md](domain.md) for AppConfig, Track, Plan, PlanAction, Run, FileEvent, CheckIssue, PathPolicy, domain invariants, and ID policy.
-* Read [execution.md](execution.md) for Plan-centered execution, setup/add/apply/refresh/organize/undo/check behavior, Run and FileEvent semantics, blocked vs failed behavior, and durable operation log flow.
+* Read [execution.md](execution.md) for Plan-centered execution, lazy bootstrap, Library registration, add/apply/refresh/organize/undo/check behavior, Run and FileEvent semantics, blocked vs failed behavior, and durable operation log flow.
 * Read [commands.md](commands.md) for CLI command surface and command-level behavior. Detailed execution rules live in [execution.md](execution.md).
-* Read [storage.md](storage.md) for TOML config, SQLite responsibilities, table responsibilities, DB consistency, config reproducibility, and stored path representation.
+* Read [storage.md](storage.md) for TOML config, SQLite responsibilities, Library registration storage, table responsibilities, DB consistency, config reproducibility, and stored path representation.
 * Read [development.md](development.md) for development workflow, quality gates, validation commands, suppressions, and Python runtime configuration policy.
 * Read [testing.md](testing.md) for architecture tests, unit tests, integration tests, fixture policy, and tests to write first.
 * Read [implementation_plan.md](implementation_plan.md) for dependency-first and vertical-slice-first implementation phases.
@@ -22,9 +22,9 @@ Design rules should not be duplicated across documents unless the duplication is
 
 * Architecture and naming rules: [../ARCHITECTURE.md](../ARCHITECTURE.md)
 * Domain concepts and invariants: [domain.md](domain.md)
-* Plan, apply, undo, Run, and FileEvent execution semantics: [execution.md](execution.md)
+* Plan, apply, undo, Run, FileEvent, bootstrap, and Library registration execution semantics: [execution.md](execution.md)
 * Command surface: [commands.md](commands.md)
-* Config, DB, and path storage: [storage.md](storage.md)
+* Config, DB, Library registration, and path storage: [storage.md](storage.md)
 * Development workflow and quality gates: [development.md](development.md)
 * Test requirements: [testing.md](testing.md)
 * Implementation order: [implementation_plan.md](implementation_plan.md)

@@ -32,7 +32,9 @@ This is a product-level summary. Architecture rules are authoritative in [../ARC
 * External I/O is confined to adapters.
 * Execution history is recorded in the DB.
 * Settings are managed as human-readable TOML files.
+* Config, DB, and internal directories are created lazily when a command needs them.
 * Library-managed paths stored in the DB are normalized paths relative to the Library root.
+* Daily `add` requires a registered Library.
 * Tag editing is not supported.
 * Relocation after tag correction is handled by refresh.
 
@@ -54,25 +56,32 @@ apply
 Library
 ```
 
-The daily entry point is `omym2 add`.
+The daily entry point is `omym2 add`, but only after the current Library is registered.
 
 OMYM2 is not a tool that reorganizes the entire existing library every time. Daily use treats it as a tool for safely importing newly added tracks.
 
-On first use, the existing Library must be registered into OMYM2's managed state. During setup, config and DB are created, and the existing Library is scanned.
+OMYM2 is also not a daily operation tool for arbitrary unorganized music libraries. If the configured Library is unregistered or unorganized, the supported path is `omym2 organize`.
 
 ```text
-setup
+Configure paths with settings UI or TOML
   ↓
-create config / DB
+Run organize
   ↓
-scan existing Library
+If no moves are needed and no blocking issues exist:
+    register Library
+If moves are needed:
+    create organize Plan → review → apply → register Library if clean
+If blocked issues remain:
+    do not register Library
   ↓
-record tracks
+Run add against the registered Library
+  ↓
+review add Plan → apply
 ```
 
-`setup` does not move or mutate Library music files. It may register existing files in the DB without creating a Plan because it does not perform Library music file mutations.
+A registered Library means OMYM2 has accepted the configured Library under the current resolved Library root and current PathPolicy. Registration is distinct from Track rows in the DB.
 
-Relocation of the existing Library is separate from the daily `add` flow. When needed, `omym2 organize` creates an organization plan.
+Relocation of the existing Library is separate from the daily `add` flow. When needed, `omym2 organize` creates an organization plan. `add` does not organize existing Library files and does not mix Incoming import actions with existing Library organization actions.
 
 ## Non-Goals
 
@@ -94,24 +103,16 @@ Tag correction is delegated to external tools. OMYM2 is responsible for re-evalu
 
 ## Usage Image
 
-First use:
-
 ```bash
-omym2 setup
-```
+omym2 settings
 
-Daily add flow:
-
-```bash
-omym2 add
-```
-
-Plan review and apply:
-
-```bash
+omym2 organize
 omym2 plans
 omym2 apply <plan-id>
-omym2 apply latest
+
+omym2 add
+omym2 plans
+omym2 apply <plan-id>
 ```
 
 Maintenance:

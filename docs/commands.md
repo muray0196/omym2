@@ -9,20 +9,20 @@ The CLI is the primary execution interface. Complex settings editing is left to 
 The initial CLI is expected to include:
 
 ```bash
-# Initial setup
-omym2 setup
-omym2 setup --library ~/Music/Library --incoming ~/Music/Incoming
-omym2 setup --no-scan
+# Settings
+omym2 settings
+omym2 config show
+omym2 config validate
 
-# Add new tracks
+# Register or organize existing Library
+omym2 organize
+omym2 organize --apply
+
+# Add new tracks to a registered Library
 omym2 add
 omym2 add <source-dir>
 omym2 add --apply
 omym2 add --apply --yes
-
-# Organize existing Library
-omym2 organize
-omym2 organize --apply
 
 # Plan
 omym2 plans
@@ -44,26 +44,23 @@ omym2 undo <run-id> --apply
 # Status check
 omym2 check
 omym2 inspect <file>
-
-# Settings
-omym2 config show
-omym2 config validate
-omym2 settings
 ```
 
 Primary commands are purpose-based.
 
-Internally, `add`, `organize`, and `refresh` create Plans, and `apply` applies a Plan.
+Internally, `add` and `refresh` create Plans, `organize` creates a Plan when Library music files need to move or blocking actions must be reviewed, and `apply` applies a Plan.
 
-## setup
-
-`setup` creates config / DB, sets Library / Incoming paths, and registers existing Library tracks unless scanning is disabled.
-
-The no-plan setup rule and registration behavior are defined in [execution.md](execution.md#setup-behavior).
+Config, DB, and internal directories are created lazily when commands need them. Missing config or DB is not an error by itself. Missing required paths are errors only for commands that need them.
 
 ## add
 
 `add` creates an add plan from Incoming or a specified source directory.
+
+`add` requires the current Library to be registered under the current resolved Library root and current PathPolicy. If the Library is unregistered or stale, `add` refuses to create a plan. The user-facing remedy is `omym2 organize`.
+
+`add` does not organize existing Library files and does not mix Incoming import actions with existing Library organization actions.
+
+`add` without a configured Incoming path fails unless a source directory is explicitly supplied.
 
 `add --apply` creates and applies the plan in the same command. `add --apply --yes` skips apply confirmation through `ApplyOptions.yes`.
 
@@ -93,7 +90,9 @@ Detailed refresh behavior is defined in [execution.md](execution.md#refresh-beha
 
 ## organize
 
-`organize` creates a move plan for existing Library files whose current path differs from the canonical path.
+`organize` scans the configured Library read-only, compares files with canonical paths under the current PathPolicy, and creates a move plan when files need to move.
+
+If no moves are needed and no blocking issues exist, `organize` can register the Library without creating a mutation Plan. If an organize Plan is applied successfully and no blocking Library-state issues remain, the Library becomes registered. If blocked actions remain, it does not become registered.
 
 `organize --apply` applies the created plan within the same command.
 
@@ -115,7 +114,7 @@ Detailed undo behavior is defined in [execution.md](execution.md#undo-behavior).
 
 ## check
 
-`check` reports inconsistencies between the DB and the filesystem.
+`check` reports inconsistencies between the DB and the filesystem and reports Library registration state.
 
 Detailed check behavior is defined in [execution.md](execution.md#check-behavior).
 
@@ -142,15 +141,3 @@ Config validation is implemented through the config adapter and settings usecase
 `settings` opens the local settings screen in a browser.
 
 Settings UI is represented by `omym2 settings`.
-
-## Aliases
-
-The following may be allowed as compatibility or auxiliary aliases:
-
-```bash
-omym2 import   # alias of add
-omym2 runs     # alias of history
-omym2 doctor   # alias of check
-```
-
-`add`, `history`, and `check` remain the primary command names.

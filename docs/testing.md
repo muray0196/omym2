@@ -42,9 +42,11 @@ Initial integration focus:
 * TOML config load / save / validation
 * SQLite migrations and repositories
 * DB path under app root `.data/`
+* lazy config / DB / internal directory creation
 * FileScanner behavior
 * FileSnapshotReader behavior
-* setup workspace creation and initial scan
+* organize read-only Library scan and registration
+* add registration gate
 * add plan persistence
 * apply durable operation log behavior
 * refresh, organize, check, history, and undo vertical slices
@@ -77,9 +79,12 @@ test_path_policy_generates_relative_path_without_hash_suffix
 test_file_scanner_returns_file_scan_entries_not_snapshots
 test_file_snapshot_reader_captures_metadata_and_hash
 test_sqlite_migrations_create_required_tables
-test_setup_creates_workspace_config_and_db
-test_setup_scans_existing_library_when_enabled
-test_setup_registers_tracks_with_relative_paths
+test_internal_storage_is_created_lazily_when_needed
+test_missing_config_or_db_is_not_error_by_itself
+test_organize_registers_clean_library_without_mutation_plan
+test_organize_creates_plan_for_misplaced_library_file
+test_add_refuses_unregistered_library
+test_path_policy_change_invalidates_library_registration
 test_add_plan_contains_move_action
 test_add_plan_detects_target_conflict
 test_add_plan_skips_duplicate_hash
@@ -92,7 +97,7 @@ test_plan_cannot_be_applied_twice
 test_apply_uses_recorded_plan_action_target_path_not_latest_config
 test_apply_expires_plan_when_library_root_changed
 test_refresh_keeps_same_track_id_after_metadata_change
-test_organize_creates_plan_for_misplaced_library_file
 test_check_detects_missing_file_from_db
+test_check_reports_library_registration_state
 test_undo_creates_undo_plan_from_run
 ```

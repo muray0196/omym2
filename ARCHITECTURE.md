@@ -10,7 +10,7 @@ OMYM2 adopts Feature-oriented Hexagonal Architecture.
 
 Core concepts such as Track, Plan, Run, FileEvent, and PathPolicy are not split by feature. They are placed in `domain/` as the shared domain kernel for all of OMYM2.
 
-Features are divided by user goal, such as `setup`, `add`, `organize`, `refresh`, `apply`, `undo`, `check`, `plans`, `history`, `inspect`, and `settings`.
+Features are divided by user goal, such as `settings`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`, `plans`, `history`, and `inspect`.
 
 CLI and Web call feature usecases as inbound adapters. DB, filesystem, metadata reader, and config loader implement ports as outbound adapters.
 
@@ -44,12 +44,6 @@ src/
 
     features/
       common_ports.py
-
-      setup/
-        usecases/
-          setup_workspace.py
-        ports.py
-        dto.py
 
       add/
         usecases/
@@ -121,7 +115,6 @@ src/
         main.py
         app.py
         commands/
-          setup.py
           add.py
           organize.py
           refresh.py
@@ -275,9 +268,9 @@ This process does not call `path.exists()` and does not join with the Library ro
 
 `features/` contains usecases divided by user goal.
 
-* `setup`: create config / DB, initial Library scan
+* `settings`: read and write config, validate it, and preview path policy
+* `organize`: scan the configured Library, create a relocation plan when needed, and register the Library when clean
 * `add`: create an add plan from Incoming / specified source
-* `organize`: create a relocation plan for the existing Library
 * `refresh`: reload metadata and create a relocation plan
 * `apply`: apply a Plan and update run / file_events / tracks
 * `undo`: create an undo plan from a run and apply it if needed
@@ -285,7 +278,6 @@ This process does not call `path.exists()` and does not join with the Library ro
 * `plans`: get plan lists and details
 * `history`: get runs / file_events
 * `inspect`: check metadata / hash / canonical path for a single file
-* `settings`: read and write config, validate it, and preview path policy
 
 Usecases access the external world through ports. They do not depend on concrete implementations such as SQLite, shutil, mutagen, FastAPI, or Typer.
 
