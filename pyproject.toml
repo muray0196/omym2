@@ -8,11 +8,17 @@ dependencies = [
     "mutagen>=1.47.0",
 ]
 
+[project.scripts]
+omym2 = "omym2.adapters.cli.main:main"
+
 [build-system]
 requires = ["setuptools>=61.0"]
 
 [tool.setuptools.package-dir]
 "" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [dependency-groups]
 dev = [
@@ -42,6 +48,10 @@ lint.unfixable = ["F401", "F841"]
 "tests/**" = [
   "S101",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
 
 [tool.basedpyright]
 pythonVersion = "3.14"
