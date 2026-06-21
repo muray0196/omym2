@@ -188,11 +188,9 @@ Minimum representative fields:
 * library_root_at_plan
 * summary_json
 
-A Plan must be applied based on its recorded PlanActions. It must not recalculate target paths from the latest AppConfig.
-
 Each Plan belongs to exactly one Library through `library_id`.
 
-The apply usecase must reject or expire a Plan if the current `libraries.root_path` for `library_id` differs from `library_root_at_plan`.
+Storage must retain `config_hash` and `library_root_at_plan` so the apply usecase can enforce the execution contract defined in [execution.md](execution.md#apply-behavior).
 
 ## plan_actions
 
@@ -241,7 +239,7 @@ Each Run belongs to exactly one Library through `library_id`.
 
 A durable operation log for Library music file mutations.
 
-A file_event is recorded before executing a Library music file mutation as `pending`. After the mutation, it is updated to `succeeded` or `failed`.
+The `file_events` table stores durable operation-log entries created by apply. Event creation and status transitions are defined in [execution.md](execution.md#fileevent-behavior).
 
 Minimum representative fields:
 
@@ -270,15 +268,11 @@ file_events are used for:
 * crash inspection
 * undo plan creation
 
-FileEvents represent Library music file mutations only, not DB-only updates.
-
-Each FileEvent belongs to exactly one Library through `library_id`.
+FileEvent scope is defined in [domain.md](domain.md#fileevent). Each FileEvent belongs to exactly one Library through `library_id`.
 
 ## Apply and DB Consistency
 
 This is the storage-facing summary of apply consistency. The authoritative execution order is in [execution.md](execution.md#apply-behavior).
-
-Library music file operations and DB transactions cannot be made fully atomic. Therefore, apply does not rely on one large transaction that covers the whole run.
 
 The DB must preserve enough state to inspect interrupted or partially failed apply attempts:
 
@@ -287,7 +281,7 @@ The DB must preserve enough state to inspect interrupted or partially failed app
 * each Library music file mutation has a pending file_event before the mutation starts
 * file_events, plan_actions, tracks, runs, and plans are updated as the apply attempt progresses
 
-If the process crashes, pending or partially recorded file_events are used to inspect what may have happened. The initial recovery policy is conservative: report the state through `check` and require manual review rather than automatically repairing the filesystem.
+If the process crashes, pending or partially recorded file_events remain available for inspection. Recovery behavior is defined in [execution.md](execution.md#durable-operation-log-behavior).
 
 ## Config and Reproducibility
 

@@ -208,9 +208,7 @@ Initial Plan status examples:
 * cancelled
 * expired
 
-A Plan must contain enough information to apply the reviewed operations safely. Applying a Plan must use recorded PlanActions. It must not recalculate target paths from the latest AppConfig because the user may have reviewed a different plan.
-
-`library_root_at_plan` is the Library root used when the Plan was created. If the current root path for the Plan's `library_id` differs at apply time, the Plan must not be applied in the initial version and should be marked `expired` or `failed` according to the failure point.
+Execution summary: a Plan stores reviewed action data, including `library_root_at_plan`, for later apply. The authoritative apply contract is in [execution.md](execution.md#apply-behavior), including stale-root handling in [Apply-Time Precondition Failure Behavior](execution.md#apply-time-precondition-failure-behavior).
 
 A Plan is single-use in the initial version.
 
@@ -251,7 +249,7 @@ Initial action status examples:
 * applied
 * failed
 
-A Plan may be applied even if it contains blocked PlanActions. `apply` executes eligible planned actions and ignores blocked actions.
+Execution summary: `apply` handles blocked and eligible PlanActions according to [execution.md](execution.md#apply-behavior).
 
 Issues detected during plan creation are represented as `blocked`. Precondition failures detected during apply are represented as `failed`.
 
@@ -275,7 +273,7 @@ Skip reason examples:
 
 An execution attempt for applying a Plan.
 
-A Run is created before processing PlanActions and before any Library music file mutation. It may succeed, fail, or partially fail.
+Execution summary: Run creation and status transitions follow [execution.md](execution.md#run-behavior).
 
 Representative fields:
 
@@ -300,7 +298,7 @@ A Run is not merely a historical label. It is the parent unit for FileEvents and
 
 A durable operation log entry for one Library music file mutation.
 
-A FileEvent is created as `pending` before the Library music file mutation. After the mutation, it is updated to `succeeded` or `failed`.
+Execution summary: FileEvent creation and result updates follow [execution.md](execution.md#fileevent-behavior).
 
 Representative fields:
 

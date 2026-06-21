@@ -63,7 +63,7 @@ Path rules:
 
 ## Library Registration Behavior
 
-A Library has stable identity independent of its current root path.
+Library identity is defined in [domain.md](domain.md#library).
 
 Registration is per Library and is tied to:
 
@@ -358,7 +358,7 @@ Reported issues include:
 * pending file_events
 * Library state issues
 
-CheckIssue is not persisted as primary state in the initial version. It is calculated by `check` from the DB and filesystem observations.
+The CheckIssue model is defined in [domain.md](domain.md#checkissue).
 
 ## Single-Use Plan Policy
 
@@ -384,7 +384,7 @@ Skip reason examples:
 
 * duplicate_hash
 
-`conflict` and `error` are not action types. They are represented as status and reason.
+Action types are defined in [domain.md](domain.md#planaction). `conflict` and `error` are represented as status and reason, not action types.
 
 ## Apply-Time Precondition Failure Behavior
 
@@ -425,8 +425,7 @@ If the process crashes, pending or partially recorded FileEvents are used to ins
 | source file missing at apply | fail the PlanAction and mark Run as failed or partial_failed |
 | source hash changed during plan creation | block the PlanAction |
 | source hash changed after plan creation at apply | fail the PlanAction and mark Run as failed or partial_failed |
-| current Library root differs from `library_root_at_plan` before Run creation | mark Plan as expired; do not create Run or FileEvent |
-| current Library root differs from `library_root_at_plan` after Run creation | stop apply; mark Run and Plan as failed or partial_failed; do not create FileEvent for the mismatch |
+| current Library root differs from `library_root_at_plan` | handle according to [Apply-Time Precondition Failure Behavior](#apply-time-precondition-failure-behavior) |
 | failure during move | mark file_event as failed and Run as partial_failed if prior Library music file mutations succeeded |
 | tag mistake after apply | relocate with refresh |
 | another file exists at undo destination | mark undo plan as conflict and do not overwrite automatically |

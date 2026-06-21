@@ -62,7 +62,7 @@ In the MVP, `add` targets the sole registered Library. If no registered Library 
 
 `add` does not organize existing Library files and does not mix Incoming import actions with existing Library organization actions. It does not register, reconcile, or relink a Library.
 
-`add` without a configured Incoming path fails unless a source directory is explicitly supplied.
+Incoming-source selection follows [Bootstrap Behavior](execution.md#bootstrap-behavior): without a configured Incoming path, `add` requires an explicit source directory.
 
 `add --apply` creates and applies the plan in the same command. `add --apply --yes` skips apply confirmation through `ApplyOptions.yes`.
 

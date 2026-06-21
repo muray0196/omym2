@@ -4,7 +4,7 @@ This document explains what OMYM2 is and is not. Detailed architecture rules liv
 
 ## Overview
 
-OMYM2 is a local tool for safely importing music files into an organized library.
+OMYM2 safely imports local music files into an organized library.
 
 The primary usage model is execution through the CLI. The GUI is a local settings and status console.
 
@@ -33,7 +33,7 @@ This is a product-level summary. Architecture rules are authoritative in [../ARC
 * Execution history is recorded in the DB.
 * Settings are managed as human-readable TOML files.
 * Config, DB, and internal directories are created lazily when a command needs them.
-* A Library has stable identity independent of its current root path.
+* Library identity does not depend on the current root path.
 * Library-managed paths stored in the DB are normalized paths relative to the Library root.
 * Daily `add` requires a registered Library.
 * Tag editing is not supported.
