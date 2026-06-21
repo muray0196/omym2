@@ -29,6 +29,7 @@ SANITIZED_ARTIST = "Artist_Name"
 SANITIZED_PATH = "Artist_Name/2024_Example Album/1-03_Example Song.flac"
 TITLE = "Example Song"
 TRACK_NUMBER = 3
+TRUNCATED_FILENAME_LENGTH = 12
 UNSANITIZED_ARTIST = "Artist:Name"
 UNSANITIZED_PATH = "Artist:Name/2024_Example Album/1-03_Example Song.flac"
 YEAR = 2024
@@ -83,6 +84,26 @@ def test_path_policy_can_leave_metadata_components_unsanitized() -> None:
     canonical_path = PathPolicy(PathPolicyConfig(sanitize=False)).canonical_path(metadata, FILE_EXTENSION)
 
     assert canonical_path == UNSANITIZED_PATH
+
+
+def test_path_policy_preserves_extension_when_limiting_long_filename() -> None:
+    """PathPolicy shortens long final components without dropping the source extension."""
+    metadata = TrackMetadata(
+        title="A" * 200,
+        artist=ALBUM_ARTIST,
+        album=ALBUM,
+        year=YEAR,
+        track_number=TRACK_NUMBER,
+        disc_number=DISC_NUMBER,
+    )
+
+    canonical_path = PathPolicy(PathPolicyConfig(max_filename_length=TRUNCATED_FILENAME_LENGTH)).canonical_path(
+        metadata, FILE_EXTENSION
+    )
+
+    final_component = canonical_path.rsplit("/", maxsplit=1)[-1]
+    assert final_component == "1-03_AA.flac"
+    assert len(final_component) == TRUNCATED_FILENAME_LENGTH
 
 
 def test_path_policy_blocks_missing_title() -> None:

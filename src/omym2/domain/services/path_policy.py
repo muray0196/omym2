@@ -43,8 +43,10 @@ class PathPolicy:
             title=self._title(metadata),
             ext=extension,
         )
-        canonical_path = normalize_library_relative_path(_normalize_generated_path(raw_path, self.config))
         expected_suffix = f"{PATH_EXTENSION_PREFIX}{extension}"
+        canonical_path = normalize_library_relative_path(
+            _normalize_generated_path(raw_path, self.config, expected_suffix)
+        )
         # Defense in depth for direct PathPolicyConfig construction paths: a
         # canonical music-file path must preserve the observed source extension.
         if not canonical_path.endswith(expected_suffix):
@@ -90,12 +92,18 @@ def _normalize_extension(file_extension: str) -> str:
     return _sanitize_component(extension, len(extension))
 
 
-def _normalize_generated_path(raw_path: str, config: PathPolicyConfig) -> str:
+def _normalize_generated_path(raw_path: str, config: PathPolicyConfig, expected_suffix: str) -> str:
     parts = raw_path.split(LOGICAL_PATH_SEPARATOR)
     if config.sanitize:
-        normalized_parts = [_sanitize_component(part, config.max_filename_length) for part in parts]
+        normalized_parts = [_sanitize_component(part, config.max_filename_length) for part in parts[:-1]]
+        normalized_parts.append(
+            _sanitize_component_preserving_suffix(parts[-1], config.max_filename_length, expected_suffix)
+        )
     else:
-        normalized_parts = [_limit_component(part, config.max_filename_length) for part in parts]
+        normalized_parts = [_limit_component(part, config.max_filename_length) for part in parts[:-1]]
+        normalized_parts.append(
+            _limit_component_preserving_suffix(parts[-1], config.max_filename_length, expected_suffix)
+        )
     return LOGICAL_PATH_SEPARATOR.join(normalized_parts)
 
 
@@ -109,5 +117,24 @@ def _sanitize_component(value: str, max_length: int) -> str:
     return cleaned
 
 
+def _sanitize_component_preserving_suffix(value: str, max_length: int, expected_suffix: str) -> str:
+    cleaned = value.strip()
+    for unsafe_character in PATH_POLICY_UNSAFE_CHARACTERS:
+        cleaned = cleaned.replace(unsafe_character, PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT)
+    limited = _limit_component_preserving_suffix(cleaned, max_length, expected_suffix)
+    if limited in {"", ".", ".."}:
+        return PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT
+    return limited
+
+
 def _limit_component(value: str, max_length: int) -> str:
     return value[:max_length]
+
+
+def _limit_component_preserving_suffix(value: str, max_length: int, expected_suffix: str) -> str:
+    if not value.endswith(expected_suffix) or len(value) <= max_length:
+        return _limit_component(value, max_length)
+    basename_length = max_length - len(expected_suffix)
+    if basename_length <= 0:
+        return expected_suffix
+    return f"{value[:basename_length]}{expected_suffix}"
