@@ -28,10 +28,13 @@ from omym2.config import (
     DEFAULT_UI_THEME,
     DEFAULT_UNKNOWN_ALBUM,
     DEFAULT_UNKNOWN_ARTIST,
+    PATH_EXTENSION_PREFIX,
+    PATH_POLICY_EXTENSION_PLACEHOLDER,
 )
 
 INVALID_CONFIG_VERSION_MESSAGE = "Unsupported config version."
 INVALID_MAX_FILENAME_LENGTH_MESSAGE = "PathPolicy max_filename_length must be positive."
+INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE = "PathPolicy template must end with .{ext}."
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +75,11 @@ class PathPolicyConfig:
         """Validate path policy tunables that affect generated paths."""
         if self.max_filename_length <= 0:
             raise ValueError(INVALID_MAX_FILENAME_LENGTH_MESSAGE)
+        # Keep the source file extension as the final suffix; otherwise a custom
+        # template could silently drop it or replace it with a literal suffix.
+        required_suffix = f"{PATH_EXTENSION_PREFIX}{PATH_POLICY_EXTENSION_PLACEHOLDER}"
+        if not self.template.strip().endswith(required_suffix):
+            raise ValueError(INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE)
 
 
 @dataclass(frozen=True, slots=True)

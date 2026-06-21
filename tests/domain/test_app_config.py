@@ -16,12 +16,15 @@ from omym2.config import (
 from omym2.domain.models.app_config import (
     INVALID_CONFIG_VERSION_MESSAGE,
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
+    INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE,
     AppConfig,
     PathPolicyConfig,
 )
 
 INVALID_CONFIG_VERSION = CONFIG_VERSION + 1
 INVALID_MAX_FILENAME_LENGTH = 0
+PATH_POLICY_TEMPLATE_WITHOUT_EXTENSION = "{album_artist}/{title}"
+PATH_POLICY_TEMPLATE_WITH_LITERAL_EXTENSION = "{album_artist}/{title}.mp3"
 
 
 def test_config_loads_default() -> None:
@@ -44,3 +47,15 @@ def test_config_validation_fails_invalid_path_policy() -> None:
     """PathPolicyConfig rejects max filename lengths that cannot produce paths."""
     with pytest.raises(ValueError, match=INVALID_MAX_FILENAME_LENGTH_MESSAGE):
         PathPolicyConfig(max_filename_length=INVALID_MAX_FILENAME_LENGTH)
+
+
+def test_path_policy_config_rejects_template_without_source_extension() -> None:
+    """PathPolicyConfig blocks templates that would drop the source extension."""
+    with pytest.raises(ValueError, match=INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE):
+        PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITHOUT_EXTENSION)
+
+
+def test_path_policy_config_rejects_template_with_literal_extension() -> None:
+    """PathPolicyConfig blocks templates that would replace the source extension."""
+    with pytest.raises(ValueError, match=INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE):
+        PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITH_LITERAL_EXTENSION)
