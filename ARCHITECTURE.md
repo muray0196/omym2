@@ -269,7 +269,7 @@ This process does not call `path.exists()` and does not join with the Library ro
 `features/` contains usecases divided by user goal.
 
 * `settings`: read and write config, validate it, and preview path policy
-* `organize`: scan the configured Library, create a relocation plan when needed, and register the Library when clean
+* `organize`: scan the selected Library, create a relocation plan when needed, and register the Library when clean
 * `add`: create an add plan from Incoming / specified source
 * `refresh`: reload metadata and create a relocation plan
 * `apply`: apply a Plan and update run / file_events / tracks

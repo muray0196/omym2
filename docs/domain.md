@@ -116,6 +116,28 @@ Preview:
   Aimer/2024_Example Album/1-03_Example Song.flac
 ```
 
+## Library
+
+A music Library managed by OMYM2.
+
+A Library has stable identity independent of its current root path. The current root path is the filesystem location used to resolve Library-root-relative paths at runtime, but it is not the Library identity.
+
+Representative fields:
+
+* library_id
+* root_path
+* path_policy_hash
+* registered_at
+* status
+* created_at
+* updated_at
+
+The `library_id` is the stable internal identity of the Library. The initial implementation uses UUIDv7 for `library_id`.
+
+`root_path` is mutable because a Library may move to another directory. Moving a Library must preserve `library_id` and must not duplicate Tracks, Plans, PlanActions, FileEvents, or Library-managed history records.
+
+Library registration behavior is defined in [execution.md](execution.md#library-registration-behavior), and storage is defined in [storage.md](storage.md#libraries).
+
 ## Track
 
 The current managed state of one music file known to OMYM2.
@@ -125,6 +147,7 @@ Track is a DB-persisted domain entity. It represents OMYM2's last known state, n
 Representative fields:
 
 * track_id
+* library_id
 * current_path
 * canonical_path
 * content_hash
@@ -141,7 +164,7 @@ The `track_id` is the stable internal identity of the Track. The initial impleme
 
 `track_id` is generated when a Track is first recorded as managed state in OMYM2. It must not be derived from file path, canonical path, content hash, or metadata hash. Those values may change during normal operations such as add, organize, refresh, undo, and external tag correction.
 
-Track rows do not define whether the Library is registered. Library registration behavior is defined in [execution.md](execution.md#library-registration-behavior), and storage is defined in [storage.md](storage.md#library_registration).
+Every Track belongs to exactly one Library through `library_id`. Track rows do not define whether the Library is registered.
 
 Initial Track status examples:
 
@@ -159,6 +182,7 @@ A Plan describes what OMYM2 intends to do, but no Library music file mutation ha
 Representative fields:
 
 * plan_id
+* library_id
 * plan_type
 * status
 * created_at
@@ -186,7 +210,7 @@ Initial Plan status examples:
 
 A Plan must contain enough information to apply the reviewed operations safely. Applying a Plan must use recorded PlanActions. It must not recalculate target paths from the latest AppConfig because the user may have reviewed a different plan.
 
-`library_root_at_plan` is the resolved Library root used when the Plan was created. If the current resolved Library root differs at apply time, the Plan must not be applied in the initial version and should be marked `expired` or `failed` according to the failure point.
+`library_root_at_plan` is the Library root used when the Plan was created. If the current root path for the Plan's `library_id` differs at apply time, the Plan must not be applied in the initial version and should be marked `expired` or `failed` according to the failure point.
 
 A Plan is single-use in the initial version.
 
@@ -200,6 +224,7 @@ Representative fields:
 
 * action_id
 * plan_id
+* library_id
 * track_id (nullable)
 * action_type
 * source_path
@@ -210,7 +235,7 @@ Representative fields:
 * reason
 * sort_order
 
-Path representation summary: for Library music file destinations, `target_path` is stored as a normalized path relative to the Library root. `source_path` is stored as a Library-root-relative path when it points to an already managed Library file, and as an absolute path when it points outside the Library, such as an Incoming file. The authoritative storage policy is in [storage.md](storage.md#path-representation-policy).
+Path representation summary: for Library music file destinations, `target_path` is stored as a normalized path relative to the owning Library root. `source_path` is stored as a Library-root-relative path when it points to an already managed Library file, and as an absolute path when it points outside the Library, such as an Incoming file. The authoritative storage policy is in [storage.md](storage.md#path-representation-policy).
 
 File operations must resolve path references through PathResolver.
 
@@ -256,6 +281,7 @@ Representative fields:
 
 * run_id
 * plan_id
+* library_id
 * status
 * started_at
 * completed_at
@@ -279,6 +305,7 @@ A FileEvent is created as `pending` before the Library music file mutation. Afte
 Representative fields:
 
 * event_id
+* library_id
 * run_id
 * plan_action_id
 * event_type
@@ -319,17 +346,21 @@ Representative issue types:
 * plan_source_changed
 * pending_file_event_exists
 * library_unregistered
-* library_registration_stale
-* library_registration_blocked
+* library_stale
+* library_blocked
 
 CheckIssue is not persisted as primary state in the initial version. It is calculated by `check` from the DB and filesystem observations.
+
+Reported CheckIssues that refer to Library-managed files identify the owning Library through `library_id`.
 
 ## Domain Invariants
 
 The following invariants belong to the domain / usecase layer, not to adapters:
 
 * A Track has a stable `track_id` independent from path, canonical path, content hash, and metadata hash.
-* The initial implementation generates `track_id` as UUIDv7.
+* A Library has stable identity independent of its current root path.
+* Library-managed records belong to exactly one Library through `library_id`.
+* The initial implementation generates `library_id` and `track_id` as UUIDv7.
 * A Plan is reviewed and applied through recorded PlanActions.
 * A Plan is single-use in the initial version.
 * Applying a Plan must not recalculate target paths from the latest AppConfig.
@@ -350,6 +381,7 @@ The initial implementation uses UUIDv7 for stable internal IDs.
 
 ```text
 track_id        UUIDv7 generated when a Track is first recorded as managed state
+library_id      UUIDv7 generated when a Library is first recorded
 plan_id         UUIDv7 generated when a Plan is created
 run_id          UUIDv7 generated when an apply attempt starts
 action_id       UUIDv7 generated when a PlanAction is created
@@ -369,6 +401,7 @@ The concepts are separated.
 
 ```text
 track_id        stable internal ID in OMYM2
+library_id      stable internal ID for the owning Library
 content_hash    hash of the current file contents
 metadata_hash   hash of the current metadata
 current_path    last known Library-root-relative location

@@ -15,6 +15,7 @@ Non-negotiable rules:
 * Apply must use recorded PlanActions, not recalculated target paths.
 * FileEvents must be recorded before Library music file mutations.
 * Domain and features must not depend on concrete adapters.
+* Library identity is stable by `library_id`, not by root path.
 * Stored Library-managed paths are Library-root-relative.
 * Run the relevant checks before marking work complete.
 

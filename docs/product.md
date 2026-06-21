@@ -33,6 +33,7 @@ This is a product-level summary. Architecture rules are authoritative in [../ARC
 * Execution history is recorded in the DB.
 * Settings are managed as human-readable TOML files.
 * Config, DB, and internal directories are created lazily when a command needs them.
+* A Library has stable identity independent of its current root path.
 * Library-managed paths stored in the DB are normalized paths relative to the Library root.
 * Daily `add` requires a registered Library.
 * Tag editing is not supported.
@@ -56,16 +57,21 @@ apply
 Library
 ```
 
-The daily entry point is `omym2 add`, but only after the current Library is registered.
+The daily entry point is `omym2 add`, but only after exactly one Library is registered and selectable.
 
 OMYM2 is not a tool that reorganizes the entire existing library every time. Daily use treats it as a tool for safely importing newly added tracks.
 
-OMYM2 is also not a daily operation tool for arbitrary unorganized music libraries. If the configured Library is unregistered or unorganized, the supported path is `omym2 organize`.
+OMYM2 is also not a daily operation tool for arbitrary unorganized music libraries. If the Library is unregistered or unorganized, the supported path is `omym2 organize --library PATH`.
 
 ```text
-Configure paths with settings UI or TOML
+Run organize --library PATH
   ↓
-Run organize
+If PATH matches an existing Library root:
+    rescan / organize that Library
+If no Library exists:
+    create the first Library record
+If another Library exists and PATH is unregistered:
+    stop instead of guessing
   ↓
 If no moves are needed and no blocking issues exist:
     register Library
@@ -74,14 +80,14 @@ If moves are needed:
 If blocked issues remain:
     do not register Library
   ↓
-Run add against the registered Library
+Run add against the sole registered Library
   ↓
 review add Plan → apply
 ```
 
-A registered Library means OMYM2 has accepted the configured Library under the current resolved Library root and current PathPolicy. Registration is distinct from Track rows in the DB.
+A registered Library means OMYM2 has accepted a stable `library_id` under the current PathPolicy. Registration is distinct from Track rows in the DB.
 
-Relocation of the existing Library is separate from the daily `add` flow. When needed, `omym2 organize` creates an organization plan. `add` does not organize existing Library files and does not mix Incoming import actions with existing Library organization actions.
+Relocation of the existing Library is separate from the daily `add` flow. Relink is an internal concept that preserves `library_id` and updates only the current root path without duplicating Library-managed records. `add` does not organize existing Library files and does not mix Incoming import actions with existing Library organization actions.
 
 ## Non-Goals
 
@@ -97,6 +103,9 @@ The initial version does not cover:
 * Audio-part hashing
 * GUI-based plan application
 * Automatic filesystem repair
+* Full multi-library management
+* Automatic Library relink detection
+* Required marker files
 * Retrying partially failed Plans
 
 Tag correction is delegated to external tools. OMYM2 is responsible for re-evaluation and relocation after correction.
@@ -106,7 +115,7 @@ Tag correction is delegated to external tools. OMYM2 is responsible for re-evalu
 ```bash
 omym2 settings
 
-omym2 organize
+omym2 organize --library /path/to/music-library
 omym2 plans
 omym2 apply <plan-id>
 
@@ -133,7 +142,7 @@ The GUI is a settings console, not an execution screen.
 
 The main roles of the GUI are:
 
-* Setting the Library path
+* Setting optional Library path shortcuts
 * Setting the Incoming path
 * Editing the path policy
 * Setting required metadata fields

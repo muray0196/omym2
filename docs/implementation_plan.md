@@ -40,10 +40,11 @@ Phase 1 exists to make later implementation hard to place in the wrong layer.
 ## Phase 2: Domain model / pure policies
 
 * AppConfig
-* TrackId / PlanId / RunId / ActionId / EventId
+* LibraryId / TrackId / PlanId / RunId / ActionId / EventId
 * TrackMetadata
 * FileScanEntry
 * FileSnapshot
+* Library
 * Track
 * Plan
 * PlanAction
@@ -62,6 +63,7 @@ PathPolicy belongs here because organize, add, and refresh all need canonical Li
 ## Phase 3: Ports / usecase contracts / in-memory fakes
 
 * UnitOfWork port
+* LibraryRepository port
 * TrackRepository port
 * PlanRepository port
 * PlanActionRepository port
@@ -100,14 +102,14 @@ This phase should not perform Library scanning or DB registration yet.
 * migration runner
 * DB creation under `omym2/.data/`
 * UnitOfWork implementation
+* libraries repository
 * tracks repository
-* library registration repository
 * plans repository
 * plan_actions repository
 * runs repository
 * file_events repository
 
-Plan, Track, and Library registration persistence must exist before completing organize registration, add plan creation, or apply.
+Library, Track, and Plan persistence must exist before completing organize registration, add plan creation, or apply.
 
 ## Phase 6: Filesystem / metadata read adapters
 
@@ -124,22 +126,24 @@ This phase is read-only except for internal temporary test fixtures. File moving
 ## Phase 7: Organize registration vertical slice
 
 * organize usecase implementation
+* `organize --library PATH` identity selection
 * read-only Library scan
 * capture file snapshots
 * generate canonical paths
 * block missing metadata, canonical path conflicts, invalid paths, and missing sources
 * create organize Plan when files need to move or blocking actions must be reviewed
 * register the Library without a mutation Plan when no moves are needed and no blocking issues exist
-* persist Library registration root, PathPolicy identity, timestamp, and status
+* persist stable `library_id`, current root path, PathPolicy identity, timestamp, and status
+* stop when an unregistered path may be a moved Library or a second Library
 * record managed Track state with Library-root-relative paths
 * organize CLI
 
-This phase does not mutate Library music files. DB-only Library registration does not require a Plan.
+This phase does not mutate Library music files. DB-only Library state updates do not require a Plan.
 
 ## Phase 8: Add plan vertical slice
 
 * create add plan usecase
-* reject add plan creation when the current Library is unregistered or stale
+* reject add plan creation when no sole registered Library can be selected
 * scan Incoming / specified source
 * capture file snapshots
 * generate target canonical paths
@@ -166,7 +170,7 @@ This phase creates reviewed work, but does not move Library music files.
 * update FileEvent / PlanAction / Track / Run / Plan statuses
 * register the Library after a successful organize Plan when no blocking Library-state issues remain
 * reject already-used Plan
-* reject, expire, or fail Plan when Library root changed according to the failure point
+* reject, expire, or fail Plan when the owning Library root changed according to the failure point
 * apply CLI
 * `add --apply` orchestration
 

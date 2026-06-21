@@ -25,6 +25,7 @@ Initial unit focus:
 
 * AppConfig and validation behavior
 * typed IDs through IdGenerator
+* Library identity stability
 * Track identity stability
 * Library-root-relative path normalization
 * PathPolicy canonical path generation
@@ -45,7 +46,7 @@ Initial integration focus:
 * lazy config / DB / internal directory creation
 * FileScanner behavior
 * FileSnapshotReader behavior
-* organize read-only Library scan and registration
+* organize read-only Library scan, identity selection, and registration
 * add registration gate
 * add plan persistence
 * apply durable operation log behavior
@@ -72,8 +73,11 @@ test_domain_does_not_import_adapters_or_platform
 test_config_loads_default
 test_config_validation_fails_invalid_path_policy
 test_db_path_is_under_app_root_data
+test_library_id_is_generated_by_id_generator
+test_library_identity_is_not_derived_from_root_path
 test_track_id_is_generated_by_id_generator
 test_track_id_is_not_derived_from_path_hash_or_metadata
+test_library_managed_records_store_library_id
 test_track_paths_are_stored_relative_to_library_root
 test_path_policy_generates_relative_path_without_hash_suffix
 test_file_scanner_returns_file_scan_entries_not_snapshots
@@ -81,10 +85,15 @@ test_file_snapshot_reader_captures_metadata_and_hash
 test_sqlite_migrations_create_required_tables
 test_internal_storage_is_created_lazily_when_needed
 test_missing_config_or_db_is_not_error_by_itself
+test_organize_library_path_creates_first_library
+test_organize_library_path_matches_existing_root
+test_organize_library_path_refuses_unregistered_path_when_library_exists
 test_organize_registers_clean_library_without_mutation_plan
 test_organize_creates_plan_for_misplaced_library_file
-test_add_refuses_unregistered_library
-test_path_policy_change_invalidates_library_registration
+test_plain_organize_refuses_ambiguous_library_selection
+test_add_refuses_when_no_registered_library
+test_add_refuses_ambiguous_library_selection
+test_path_policy_change_invalidates_library_state_for_library
 test_add_plan_contains_move_action
 test_add_plan_detects_target_conflict
 test_add_plan_skips_duplicate_hash
@@ -100,6 +109,6 @@ test_apply_uses_recorded_plan_action_target_path_not_latest_config
 test_apply_expires_plan_when_library_root_changed
 test_refresh_keeps_same_track_id_after_metadata_change
 test_check_detects_missing_file_from_db
-test_check_reports_library_registration_state
+test_check_reports_library_state
 test_undo_creates_undo_plan_from_run
 ```

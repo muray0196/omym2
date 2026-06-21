@@ -15,6 +15,8 @@ omym2 config show
 omym2 config validate
 
 # Register or organize existing Library
+omym2 organize --library <path>
+omym2 organize --library <path> --apply
 omym2 organize
 omym2 organize --apply
 
@@ -56,9 +58,9 @@ Config, DB, and internal directories are created lazily when commands need them.
 
 `add` creates an add plan from Incoming or a specified source directory.
 
-`add` requires the current Library to be registered under the current resolved Library root and current PathPolicy. If the Library is unregistered or stale, `add` refuses to create a plan. The user-facing remedy is `omym2 organize`.
+In the MVP, `add` targets the sole registered Library. If no registered Library exists or Library selection is ambiguous, `add` refuses to create a plan. The user-facing remedy is `omym2 organize --library <path>`.
 
-`add` does not organize existing Library files and does not mix Incoming import actions with existing Library organization actions.
+`add` does not organize existing Library files and does not mix Incoming import actions with existing Library organization actions. It does not register, reconcile, or relink a Library.
 
 `add` without a configured Incoming path fails unless a source directory is explicitly supplied.
 
@@ -90,11 +92,13 @@ Detailed refresh behavior is defined in [execution.md](execution.md#refresh-beha
 
 ## organize
 
-`organize` scans the configured Library read-only, compares files with canonical paths under the current PathPolicy, and creates a move plan when files need to move.
+`organize --library <path>` is the primary user-facing operation for registering and reconciling a Library. It scans the specified Library read-only, compares files with canonical paths under the current PathPolicy, and creates a move plan when files need to move.
+
+Plain `organize` is valid only when exactly one known Library can be selected unambiguously. Otherwise it fails with a clear message and asks for `organize --library <path>`.
 
 If no moves are needed and no blocking issues exist, `organize` can register the Library without creating a mutation Plan. If an organize Plan is applied successfully and no blocking Library-state issues remain, the Library becomes registered. If blocked actions remain, it does not become registered.
 
-`organize --apply` applies the created plan within the same command.
+`organize --apply` applies the created plan within the same command. `organize --library <path> --apply` does the same after selecting or registering the Library identity for `<path>`.
 
 Detailed organize behavior is defined in [execution.md](execution.md#organize-behavior).
 
@@ -114,7 +118,7 @@ Detailed undo behavior is defined in [execution.md](execution.md#undo-behavior).
 
 ## check
 
-`check` reports inconsistencies between the DB and the filesystem and reports Library registration state.
+`check` reports inconsistencies between the DB and the filesystem and reports Library state.
 
 Detailed check behavior is defined in [execution.md](execution.md#check-behavior).
 

@@ -8,7 +8,7 @@ Domain concepts are defined in [domain.md](domain.md), command names are listed 
 
 Library music file mutations are not executed directly.
 
-Read-only scans, metadata reads, hash calculations, inspections, and DB-only Library registration do not require a Plan.
+Read-only scans, metadata reads, hash calculations, inspections, and DB-only Library state updates do not require a Plan.
 
 Library music file mutations must follow this flow:
 
@@ -36,14 +36,15 @@ This allows the CLI, GUI, and tests to share the same processing model.
 User-facing commands should be purpose-based. Internal Plan concepts should not dominate primary command names.
 
 ```text
-user command     internal behavior
-------------     -----------------
-settings         read / write settings
-organize         scan Library, create organize plan, or register clean Library
-add              create add plan for a registered Library
-refresh          create metadata refresh / relocate plan
-apply            apply selected plan
-check            compare DB, filesystem, and Library registration state
+user command             internal behavior
+------------             -----------------
+settings                 read / write settings
+organize --library PATH  register, reconcile, or organize a Library
+organize                 organize the only unambiguous known Library
+add                      create add plan for the only registered Library
+refresh                  create metadata refresh / relocate plan
+apply                    apply selected plan
+check                    compare DB, filesystem, and Library state
 ```
 
 ## Bootstrap Behavior
@@ -56,24 +57,25 @@ Missing config or DB is not an error by itself. Missing required paths are error
 
 Path rules:
 
-* Commands must not guess the Library path.
-* Commands that need the Library path fail if it is not configured.
+* Commands must not guess the Library path or Library identity.
+* Commands that need a Library fail if no Library can be selected unambiguously.
 * `add` without a configured Incoming path fails unless a source directory is explicitly supplied.
 
 ## Library Registration Behavior
 
-A registered Library means OMYM2 has accepted the configured Library under the current resolved Library root and current PathPolicy.
+A Library has stable identity independent of its current root path.
 
-Registration is tied to:
+Registration is per Library and is tied to:
 
-* `library_root`
+* `library_id`
 * `path_policy_hash` or an equivalent identity for the current PathPolicy
 
 Registration is not defined by whether the `tracks` table has rows.
 
 Minimum representative registration fields:
 
-* `library_root`
+* `library_id`
+* `root_path`
 * `path_policy_hash`
 * `registered_at`
 * `status`
@@ -85,17 +87,21 @@ Initial status examples:
 * `stale`
 * `blocked`
 
-Changing PathPolicy invalidates prior Library registration. After a PathPolicy change, `add` refuses to create a plan until the Library is registered again under the new PathPolicy. The expected remedy is `omym2 organize`.
+Changing PathPolicy invalidates prior registration for that Library. After a PathPolicy change, `add` refuses to create a plan until the Library is registered again under the new PathPolicy. The expected remedy is `omym2 organize --library PATH`.
 
 `organize` is the only supported path for an unregistered or unorganized Library to become usable by `add`.
+
+`organize --library PATH` is the primary user-facing operation for registering and reconciling a Library.
+
+Relink is an internal concept. It preserves `library_id`, updates only `libraries.root_path`, and does not duplicate Tracks, Plans, PlanActions, FileEvents, or Library-managed history records. It does not rewrite Library-relative paths.
 
 ## Add Plan Behavior
 
 `add` is the daily entry point. It scans Incoming or a specified source directory, creates an add plan, and leaves the user to review and apply it.
 
-`add` requires a registered Library. If the current Library is not registered under the current resolved Library root and current PathPolicy, `add` refuses to create an add plan. The user-facing remedy is `omym2 organize`.
+In the MVP, `add` targets the sole registered Library. If no registered Library exists or Library selection is ambiguous, `add` refuses to create an add plan. The user-facing remedy is `omym2 organize --library PATH`.
 
-`add` must not perform existing-Library organization and must not mix Incoming import actions with existing Library organization actions.
+`add` must not perform existing-Library organization and must not mix Incoming import actions with existing Library organization actions. It must not register, reconcile, or relink a Library.
 
 `add` should not perform a full Library-wide organizedness check every time. Its gate is Library registration, not repeated canonical path validation across the entire Library.
 
@@ -131,7 +137,7 @@ The add plan creation behavior includes:
 
 A Plan must contain enough information to apply the reviewed operations safely. Applying a Plan must use recorded PlanActions. It must not recalculate target paths from the latest AppConfig because the user may have reviewed a different plan.
 
-`library_root_at_plan` is the resolved Library root used when the Plan was created. If the current resolved Library root differs at apply time, the Plan must not be applied in the initial version and should be marked `expired` or `failed` according to the failure point.
+`library_root_at_plan` is the owning Library root used when the Plan was created. If the current `libraries.root_path` for the Plan's `library_id` differs at apply time, the Plan must not be applied in the initial version and should be marked `expired` or `failed` according to the failure point.
 
 Expected apply flow:
 
@@ -164,7 +170,7 @@ State transitions are part of the apply contract. Implementations should reject 
 | From | Condition | To | Notes |
 | --- | --- | --- | --- |
 | `ready` | Apply request passes initial validation and a Run is created | `applying` | This makes the Plan single-use before any Library music file mutation starts. |
-| `ready` | Current resolved Library root differs from `library_root_at_plan` before a Run is created | `expired` | No Run or FileEvent is required because no apply attempt begins. |
+| `ready` | Current Library root differs from `library_root_at_plan` before a Run is created | `expired` | No Run or FileEvent is required because no apply attempt begins. |
 | `applying` | All eligible move actions succeed, or the Plan has no eligible move actions | `applied` | This includes skip-only and blocked-only Plans. Blocked actions remain blocked, and skip actions are marked applied. |
 | `applying` | At least one eligible move action succeeds and at least one eligible move action fails | `partial_failed` | The Run should also become `partial_failed`. |
 | `applying` | No eligible move action succeeds and at least one eligible move action fails | `failed` | This includes precondition failures that prevent all eligible mutations. |
@@ -271,13 +277,25 @@ Only when `--apply` is specified is the created plan applied within the same com
 
 ## Organize Behavior
 
-`organize` scans the configured Library read-only and computes canonical paths under the current PathPolicy.
+`organize --library PATH` scans the specified Library read-only and computes canonical paths under the current PathPolicy.
+
+In the MVP, `organize --library PATH` supports these identity cases:
+
+| Case | Policy |
+| --- | --- |
+| `PATH` matches an existing `libraries.root_path` | Rescan and organize the existing Library. |
+| No Library exists yet | Create the first Library row and organize it. |
+| `PATH` is unregistered while another Library already exists | Stop with a clear message. The path may be a moved Library or a second Library, and both are out of MVP scope. |
+
+The MVP must not silently duplicate a Library when an unregistered path may represent an existing Library.
+
+Plain `omym2 organize` is allowed only when exactly one known Library can be selected unambiguously. Otherwise it fails with a clear message and asks for `omym2 organize --library PATH`.
 
 If files need to move or blocking actions must be reviewed, `organize` creates an organize Plan. `organize` does not move files directly except through `--apply` orchestration.
 
-If no moves are needed and no blocking issues exist, `organize` can register the Library without creating a mutation Plan because DB-only registration is not a Library music file mutation.
+If no moves are needed and no blocking issues exist, `organize` can register the Library without creating a mutation Plan because DB-only Library state updates are not Library music file mutations.
 
-If the organize Plan is applied successfully and no blocking Library-state issues remain, the Library becomes registered. Registering the Library after apply is a DB-only state change and does not create a FileEvent.
+If the organize Plan is applied successfully and no blocking Library-state issues remain, the Library becomes registered. Updating Library state after apply is a DB-only state change and does not create a FileEvent.
 
 If blocked actions remain, the Library must not become registered.
 
@@ -324,7 +342,7 @@ Undo uses Run and FileEvent history. Stable `track_id` keeps the relationship be
 
 ## Check Behavior
 
-`check` is read-only in the initial version. It reports inconsistencies between the DB and the filesystem and reports Library registration state.
+`check` is read-only in the initial version. It reports inconsistencies between the DB and the filesystem and reports Library state.
 
 `check` may report whether the Library is `registered`, `unregistered`, `stale`, or `blocked`.
 
@@ -338,7 +356,7 @@ Reported issues include:
 * path differences
 * duplicate candidates
 * pending file_events
-* registration state issues
+* Library state issues
 
 CheckIssue is not persisted as primary state in the initial version. It is calculated by `check` from the DB and filesystem observations.
 
@@ -414,5 +432,5 @@ If the process crashes, pending or partially recorded FileEvents are used to ins
 | another file exists at undo destination | mark undo plan as conflict and do not overwrite automatically |
 | DB and filesystem are out of sync | detect with check |
 | pending file_event exists | report through check and require manual review |
-| add requested for unregistered or stale Library | reject add plan creation; no Plan, Run, or FileEvent |
-| PathPolicy changed after Library registration | mark or report registration as stale; require organize before add |
+| add requested when no sole registered Library can be selected | reject add plan creation; no Plan, Run, or FileEvent |
+| PathPolicy changed after a Library was registered | mark or report that Library as stale; require organize before add |
