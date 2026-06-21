@@ -329,6 +329,11 @@ If a per-action precondition fails before a Library music file mutation, the Pla
 
 Per-action apply-time precondition failures include:
 
+
+| current Library root differs from `library_root_at_plan` before Run creation | mark Plan as expired; do not create Run or FileEvent |
+| current Library root differs from `library_root_at_plan` after Run creation | stop apply; mark Run and Plan as failed or partial_failed; do not create FileEvent for the mismatch |
+Per-action apply-time precondition failures include:
+
 * source file missing at apply
 * source hash changed after plan creation at apply
 
