@@ -43,7 +43,13 @@ class PathPolicy:
             title=self._title(metadata),
             ext=extension,
         )
-        return normalize_library_relative_path(_normalize_generated_path(raw_path, self.config))
+        canonical_path = normalize_library_relative_path(_normalize_generated_path(raw_path, self.config))
+        expected_suffix = f"{PATH_EXTENSION_PREFIX}{extension}"
+        # Defense in depth for direct PathPolicyConfig construction paths: a
+        # canonical music-file path must preserve the observed source extension.
+        if not canonical_path.endswith(expected_suffix):
+            raise ValueError(EMPTY_FILE_EXTENSION_MESSAGE)
+        return canonical_path
 
     def _album_artist(self, metadata: TrackMetadata) -> str:
         return self._component(metadata.album_artist or metadata.artist or self.config.unknown_artist)

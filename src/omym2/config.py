@@ -40,6 +40,7 @@ METADATA_FINGERPRINT_ENCODING: Final = "utf-8"  # metadata fingerprint payload e
 METADATA_FINGERPRINT_JSON_ITEM_SEPARATOR: Final = ","  # canonical JSON item separator
 METADATA_FINGERPRINT_JSON_KEY_SEPARATOR: Final = ":"  # canonical JSON key separator
 PATH_EXTENSION_PREFIX: Final = "."  # separator before generated file extensions
+PATH_POLICY_EXTENSION_PLACEHOLDER: Final = "{ext}"  # required template token for the source file extension
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
 PATH_POLICY_TRACK_NUMBER_WIDTH: Final = 2  # zero-padding width for generated track numbers
 PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in metadata path components
