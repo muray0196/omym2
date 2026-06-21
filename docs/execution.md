@@ -160,9 +160,9 @@ Any terminal Plan status (`applied`, `partial_failed`, `failed`, `cancelled`, or
 | none | Apply attempt starts | `running` | The Run is created before Library music file mutation. |
 | `running` | All eligible move actions succeed | `succeeded` | Blocked and skip actions do not make the Run fail. |
 | `running` | At least one eligible move action succeeds and at least one eligible move action fails | `partial_failed` | This preserves evidence for history, check, and undo. |
-| `running` | No eligible move action succeeds and at least one eligible move action fails | `failed` | This includes apply attempts stopped by precondition failures. |
+| `running` | No eligible move action succeeds and at least one eligible move action fails | `failed` | This includes apply attempts stopped by precondition failures after the Run exists. |
 
-A Run is not created when apply is rejected before starting, such as when the Plan is not `ready` or the Library root mismatch is detected before the apply attempt begins.
+A Run is not created when apply is rejected before starting, such as when the Plan is not `ready` or the Library root mismatch is detected before the apply attempt begins. If the Library root mismatch is detected only after a Run has already been created, the apply attempt stops without creating a FileEvent for that mismatch; the Run and Plan are marked `failed` or `partial_failed` depending on whether any earlier eligible move action succeeded.
 
 ### FileEvent status
 
@@ -319,15 +319,18 @@ Skip reason examples:
 
 ## Apply-Time Precondition Failure Behavior
 
-Apply verifies preconditions before each eligible planned action.
+Apply verifies apply-level preconditions before starting a Run and verifies per-action preconditions before each eligible planned action.
 
-If a precondition fails before a Library music file mutation, the PlanAction is marked `failed` without executing a Library music file mutation.
+If the current Library root differs from `library_root_at_plan` before a Run is created, apply rejects the request, marks the Plan `expired`, and creates no Run or FileEvent. This is not a per-action failure.
 
-Apply-time precondition failures include:
+If an apply-level precondition failure is detected after a Run has been created, apply stops without executing the next Library music file mutation and without creating a FileEvent for that precondition failure. The Run and Plan are marked `failed` or `partial_failed` depending on whether prior eligible move actions succeeded.
+
+If a per-action precondition fails before a Library music file mutation, the PlanAction is marked `failed` without executing a Library music file mutation.
+
+Per-action apply-time precondition failures include:
 
 * source file missing at apply
 * source hash changed after plan creation at apply
-* current Library root differs from `library_root_at_plan`
 
 The Run is marked `failed` or `partial_failed` depending on whether prior Library music file mutations succeeded.
 
@@ -350,6 +353,8 @@ If the process crashes, pending or partially recorded FileEvents are used to ins
 | source file missing at apply | fail the PlanAction and mark Run as failed or partial_failed |
 | source hash changed during plan creation | block the PlanAction |
 | source hash changed after plan creation at apply | fail the PlanAction and mark Run as failed or partial_failed |
+| current Library root differs from `library_root_at_plan` before Run creation | mark Plan as expired; do not create Run or FileEvent |
+| current Library root differs from `library_root_at_plan` after Run creation | stop apply; mark Run and Plan as failed or partial_failed; do not create FileEvent for the mismatch |
 | failure during move | mark file_event as failed and Run as partial_failed if prior Library music file mutations succeeded |
 | tag mistake after apply | relocate with refresh |
 | another file exists at undo destination | mark undo plan as conflict and do not overwrite automatically |
