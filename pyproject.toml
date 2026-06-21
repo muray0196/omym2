@@ -45,7 +45,7 @@ lint.unfixable = ["F401", "F841"]
 
 [tool.basedpyright]
 pythonVersion = "3.14"
-include = []
+include = ["src"]
 exclude = ["**/__pycache__"]
 stubPath = ""
 typeCheckingMode = "recommended"
