@@ -2,7 +2,7 @@
     "vscode-neovim.wslDistribution": "Ubuntu-26.04",
     "terminal.integrated.defaultProfile.linux": "zsh",
     "files.exclude": {
-        ".tmp": true,
+        ".ruff_cache": true,
         ".coverage": true,
         ".pytest_cache": true,
         ".venv": true,
