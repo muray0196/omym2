@@ -180,8 +180,9 @@ DB: SQLite
 Config: TOML
 Web: FastAPI + Jinja2 + htmx
 CLI: Typer or argparse
-Test: pytest
-E2E: Playwright
+Test: pytest + pytest-mock
+Coverage: pytest-cov for optional local reporting
+E2E: deferred in the initial test policy
 Metadata extractor: mutagen
 ```
 

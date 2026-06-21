@@ -4,7 +4,11 @@ This document is authoritative for test requirements and test ordering.
 
 Architecture rules are in [../ARCHITECTURE.md](../ARCHITECTURE.md), domain rules are in [domain.md](domain.md), execution semantics are in [execution.md](execution.md), storage rules are in [storage.md](storage.md), and developer validation commands are in [development.md](development.md).
 
-Tests use `pytest` and `pytest-mock` only.
+Required test authoring uses `pytest` and `pytest-mock` only.
+
+`pytest-cov` may exist in the development environment for optional local coverage inspection, but coverage reporting is not a separate required test category unless this document defines a threshold.
+
+Browser E2E testing is deferred. Do not add Playwright requirements to the initial test plan unless this document is updated.
 
 ## Architecture Tests
 
