@@ -6,9 +6,8 @@
         ".coverage": true,
         ".pytest_cache": true,
         ".venv": true,
-        "**.egg-info": true,
+        "**/*.egg-info": true,
         "**/__pycache__": true,
-        "uv.lock": true
     },
     "ruff.format.preview": false,
     "ruff.configurationPreference": "filesystemFirst",
