@@ -4,5 +4,6 @@
         "ms-python.debugpy",
         "detachhead.basedpyright",
         "charliermarsh.ruff",
+        "openai.chatgpt",
     ]
 }
