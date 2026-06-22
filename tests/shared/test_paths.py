@@ -30,13 +30,13 @@ def test_library_relative_path_normalizes_to_logical_separator() -> None:
 def test_library_relative_path_rejects_absolute_path() -> None:
     """Stored Library paths must not be absolute filesystem paths."""
     with pytest.raises(ValueError, match=ROOTED_LIBRARY_PATH_MESSAGE):
-        normalize_library_relative_path(ABSOLUTE_PATH)
+        _ = normalize_library_relative_path(ABSOLUTE_PATH)
 
 
 def test_library_relative_path_rejects_parent_reference() -> None:
     """Stored Library paths must not escape the Library root."""
     with pytest.raises(ValueError, match=ESCAPING_LIBRARY_PATH_MESSAGE):
-        normalize_library_relative_path(ESCAPING_PATH)
+        _ = normalize_library_relative_path(ESCAPING_PATH)
 
 
 def test_is_library_relative_path_reports_validity() -> None:

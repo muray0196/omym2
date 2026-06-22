@@ -5,6 +5,8 @@ Why: Protects documented config and internal data locations.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.config import (
     APP_DIRECTORY_NAME,
@@ -14,8 +16,11 @@ from omym2.config import (
     SQLITE_DATABASE_FILE_NAME,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-def test_config_path_resolves_under_app_root_config(tmp_path) -> None:
+
+def test_config_path_resolves_under_app_root_config(tmp_path: Path) -> None:
     """The TOML config path is under ~/omym2/config/config.toml."""
     paths = default_application_paths(tmp_path)
 
@@ -24,7 +29,7 @@ def test_config_path_resolves_under_app_root_config(tmp_path) -> None:
     assert paths.config_file == tmp_path / APP_DIRECTORY_NAME / CONFIG_DIRECTORY_NAME / CONFIG_FILE_NAME
 
 
-def test_db_path_is_under_app_root_data(tmp_path) -> None:
+def test_db_path_is_under_app_root_data(tmp_path: Path) -> None:
     """The future SQLite path is reserved under ~/omym2/.data/."""
     paths = default_application_paths(tmp_path)
 

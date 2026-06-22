@@ -6,10 +6,14 @@ Why: Verifies the Phase 4 command surface through the public CLI entry point.
 from __future__ import annotations
 
 from io import StringIO
+from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.main import main
 from omym2.config import CONFIG_FILE_ENCODING, CONFIG_VERSION
 from omym2.domain.models.app_config import INVALID_MAX_FILENAME_LENGTH_MESSAGE
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 CONFIG_FILE_NAME = "config.toml"
 INVALID_MAX_FILENAME_LENGTH = 0
@@ -17,7 +21,7 @@ SUCCESS_EXIT_CODE = 0
 ERROR_EXIT_CODE = 1
 
 
-def test_config_show_prints_default_toml_without_creating_missing_file(tmp_path) -> None:
+def test_config_show_prints_default_toml_without_creating_missing_file(tmp_path: Path) -> None:
     """config show displays defaults when config has not been created."""
     config_path = tmp_path / CONFIG_FILE_NAME
     stdout = StringIO()
@@ -32,7 +36,7 @@ def test_config_show_prints_default_toml_without_creating_missing_file(tmp_path)
     assert not config_path.exists()
 
 
-def test_config_validate_accepts_missing_default_config(tmp_path) -> None:
+def test_config_validate_accepts_missing_default_config(tmp_path: Path) -> None:
     """config validate treats missing config as valid defaults."""
     stdout = StringIO()
     stderr = StringIO()
@@ -44,10 +48,10 @@ def test_config_validate_accepts_missing_default_config(tmp_path) -> None:
     assert stderr.getvalue() == ""
 
 
-def test_config_validate_reports_invalid_toml_config(tmp_path) -> None:
+def test_config_validate_reports_invalid_toml_config(tmp_path: Path) -> None:
     """config validate returns errors for invalid persisted settings."""
     config_path = tmp_path / CONFIG_FILE_NAME
-    config_path.write_text(
+    _ = config_path.write_text(
         "\n".join(
             (
                 f"version = {CONFIG_VERSION}",

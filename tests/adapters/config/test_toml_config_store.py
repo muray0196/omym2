@@ -5,6 +5,8 @@ Why: Verifies Phase 4 settings storage without touching the user home.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from omym2.adapters.config.toml_config_store import TomlConfigStore, dump_config_toml, load_config_text
@@ -17,6 +19,9 @@ from omym2.domain.models.app_config import (
 )
 from omym2.features.common_ports import ConfigStoreValidationError
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 CONFIG_FILE_NAME = "config.toml"
 INCOMING_PATH = "/music/incoming"
 INVALID_MAX_FILENAME_LENGTH = 0
@@ -24,7 +29,7 @@ LIBRARY_PATH = "/music/library"
 UI_THEME_DARK = "dark"
 
 
-def test_toml_config_store_loads_default_when_config_missing(tmp_path) -> None:
+def test_toml_config_store_loads_default_when_config_missing(tmp_path: Path) -> None:
     """Missing config resolves to AppConfig defaults without creating a file."""
     config_path = tmp_path / CONFIG_FILE_NAME
 
@@ -34,7 +39,7 @@ def test_toml_config_store_loads_default_when_config_missing(tmp_path) -> None:
     assert not config_path.exists()
 
 
-def test_toml_config_store_saves_and_loads_config(tmp_path) -> None:
+def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
     """Saved TOML round-trips through the config adapter."""
     config_path = tmp_path / "nested" / CONFIG_FILE_NAME
     store = TomlConfigStore(config_path)
@@ -56,10 +61,10 @@ def test_toml_config_text_round_trips_default_config() -> None:
     assert load_config_text(dump_config_toml(config)) == config
 
 
-def test_toml_config_store_validation_fails_invalid_path_policy(tmp_path) -> None:
+def test_toml_config_store_validation_fails_invalid_path_policy(tmp_path: Path) -> None:
     """Adapter validation reports domain path policy errors through ConfigStore."""
     config_path = tmp_path / CONFIG_FILE_NAME
-    config_path.write_text(
+    _ = config_path.write_text(
         "\n".join(
             (
                 "version = 1",
@@ -72,13 +77,13 @@ def test_toml_config_store_validation_fails_invalid_path_policy(tmp_path) -> Non
     )
 
     with pytest.raises(ConfigStoreValidationError, match=INVALID_MAX_FILENAME_LENGTH_MESSAGE):
-        TomlConfigStore(config_path).load()
+        _ = TomlConfigStore(config_path).load()
 
 
-def test_toml_config_store_validation_fails_invalid_toml(tmp_path) -> None:
+def test_toml_config_store_validation_fails_invalid_toml(tmp_path: Path) -> None:
     """Malformed TOML is reported as a config validation error."""
     config_path = tmp_path / CONFIG_FILE_NAME
-    config_path.write_text("version = ", encoding=CONFIG_FILE_ENCODING)
+    _ = config_path.write_text("version = ", encoding=CONFIG_FILE_ENCODING)
 
     with pytest.raises(ConfigStoreValidationError, match="Invalid TOML"):
-        TomlConfigStore(config_path).load()
+        _ = TomlConfigStore(config_path).load()

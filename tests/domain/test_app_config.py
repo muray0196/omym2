@@ -45,13 +45,13 @@ def test_config_loads_default() -> None:
 def test_config_validation_fails_invalid_version() -> None:
     """Unknown config versions are rejected by the domain config model."""
     with pytest.raises(ValueError, match=INVALID_CONFIG_VERSION_MESSAGE):
-        AppConfig(version=INVALID_CONFIG_VERSION)
+        _ = AppConfig(version=INVALID_CONFIG_VERSION)
 
 
 def test_config_validation_fails_invalid_path_policy() -> None:
     """PathPolicyConfig rejects max filename lengths that cannot produce paths."""
     with pytest.raises(ValueError, match=INVALID_MAX_FILENAME_LENGTH_MESSAGE):
-        PathPolicyConfig(max_filename_length=INVALID_MAX_FILENAME_LENGTH)
+        _ = PathPolicyConfig(max_filename_length=INVALID_MAX_FILENAME_LENGTH)
 
 
 def test_path_policy_config_accepts_extensionless_stem_template() -> None:
@@ -64,22 +64,22 @@ def test_path_policy_config_accepts_extensionless_stem_template() -> None:
 def test_path_policy_config_rejects_extension_placeholder() -> None:
     """PathPolicyConfig rejects the removed extension placeholder."""
     with pytest.raises(ValueError, match=INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE):
-        PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITH_EXTENSION_PLACEHOLDER)
+        _ = PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITH_EXTENSION_PLACEHOLDER)
 
 
 def test_path_policy_config_rejects_unknown_placeholder() -> None:
     """PathPolicyConfig rejects placeholders outside the documented stem fields."""
     with pytest.raises(ValueError, match=INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE):
-        PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITH_UNKNOWN_PLACEHOLDER)
+        _ = PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITH_UNKNOWN_PLACEHOLDER)
 
 
 def test_path_policy_config_rejects_combined_disc_track_placeholder() -> None:
     """PathPolicyConfig keeps disc and track as separate documented fields."""
     with pytest.raises(ValueError, match=INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE):
-        PathPolicyConfig(template=PATH_POLICY_STEM_TEMPLATE)
+        _ = PathPolicyConfig(template=PATH_POLICY_STEM_TEMPLATE)
 
 
 def test_path_policy_config_rejects_template_with_literal_extension() -> None:
     """PathPolicyConfig blocks templates that would replace the source extension."""
     with pytest.raises(ValueError, match=INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE):
-        PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITH_LITERAL_EXTENSION)
+        _ = PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITH_LITERAL_EXTENSION)

@@ -115,7 +115,7 @@ def test_path_policy_blocks_missing_title() -> None:
     metadata = TrackMetadata(artist=ALBUM_ARTIST, album=ALBUM)
 
     with pytest.raises(ValueError, match=MISSING_TITLE_MESSAGE):
-        PathPolicy(PathPolicyConfig()).canonical_path(metadata, FILE_EXTENSION)
+        _ = PathPolicy(PathPolicyConfig()).canonical_path(metadata, FILE_EXTENSION)
 
 
 def test_metadata_fingerprint_changes_when_metadata_changes() -> None:

@@ -29,7 +29,7 @@ from omym2.features.apply.usecases.apply_plan import ApplyPlanUseCase
 from omym2.features.check.dto import CheckLibraryRequest
 from omym2.features.check.ports import CheckLibraryPorts
 from omym2.features.check.usecases.check_library import CheckLibraryUseCase
-from omym2.features.common_ports import Uuid7IdGenerator
+from omym2.features.common_ports import FileSystemPath, Uuid7IdGenerator
 from omym2.features.history.dto import GetRunDetailRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
@@ -51,6 +51,8 @@ from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import EMPTY_SEQUENCE_MESSAGE, FixedClock, SequenceIdGenerator
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
 
@@ -122,7 +124,7 @@ def test_fixed_clock_and_sequence_id_generator_are_deterministic() -> None:
     assert id_generator.new_event_id() == EVENT_ID
 
     with pytest.raises(AssertionError, match=EMPTY_SEQUENCE_MESSAGE):
-        id_generator.new_library_id()
+        _ = id_generator.new_library_id()
 
 
 def test_in_memory_repositories_store_models_by_usecase_query_shape() -> None:
@@ -181,36 +183,39 @@ def test_phase3_usecase_skeletons_define_contracts_without_behavior() -> None:
     clock = FixedClock(BASE_TIME)
     id_generator = SequenceIdGenerator()
 
-    cases = (
-        (
-            CreateOrganizePlanUseCase(CreateOrganizePlanPorts(uow, scanner, snapshot_reader, clock, id_generator)),
-            CreateOrganizePlanRequest(library_root=LIBRARY_ROOT),
+    exercises: tuple[Callable[[], object], ...] = (
+        lambda: CreateOrganizePlanUseCase(
+            CreateOrganizePlanPorts(uow, scanner, snapshot_reader, clock, id_generator)
+        ).execute(CreateOrganizePlanRequest(library_root=LIBRARY_ROOT)),
+        lambda: CreateAddPlanUseCase(CreateAddPlanPorts(uow, scanner, snapshot_reader, clock, id_generator)).execute(
+            CreateAddPlanRequest(SOURCE_PATH)
         ),
-        (
-            CreateAddPlanUseCase(CreateAddPlanPorts(uow, scanner, snapshot_reader, clock, id_generator)),
-            CreateAddPlanRequest(SOURCE_PATH),
+        lambda: ApplyPlanUseCase(ApplyPlanPorts(uow, mover, snapshot_reader, clock, id_generator)).execute(
+            ApplyPlanRequest(PLAN_ID)
         ),
-        (ApplyPlanUseCase(ApplyPlanPorts(uow, mover, snapshot_reader, clock, id_generator)), ApplyPlanRequest(PLAN_ID)),
-        (
-            CreateRefreshPlanUseCase(CreateRefreshPlanPorts(uow, snapshot_reader, clock, id_generator)),
-            CreateRefreshPlanRequest(library_id=LIBRARY_ID),
+        lambda: CreateRefreshPlanUseCase(CreateRefreshPlanPorts(uow, snapshot_reader, clock, id_generator)).execute(
+            CreateRefreshPlanRequest(library_id=LIBRARY_ID)
         ),
-        (CheckLibraryUseCase(CheckLibraryPorts(uow, scanner, snapshot_reader)), CheckLibraryRequest(LIBRARY_ID)),
-        (ListRunsUseCase(HistoryPorts(uow)), ListRunsRequest(LIBRARY_ID)),
-        (GetRunDetailUseCase(HistoryPorts(uow)), GetRunDetailRequest(RUN_ID)),
-        (CreateUndoPlanUseCase(CreateUndoPlanPorts(uow, clock, id_generator)), CreateUndoPlanRequest(RUN_ID)),
-        (InspectFileUseCase(InspectFilePorts(snapshot_reader)), InspectFileRequest(SOURCE_PATH)),
+        lambda: CheckLibraryUseCase(CheckLibraryPorts(uow, scanner, snapshot_reader)).execute(
+            CheckLibraryRequest(LIBRARY_ID)
+        ),
+        lambda: ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest(LIBRARY_ID)),
+        lambda: GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunDetailRequest(RUN_ID)),
+        lambda: CreateUndoPlanUseCase(CreateUndoPlanPorts(uow, clock, id_generator)).execute(
+            CreateUndoPlanRequest(RUN_ID)
+        ),
+        lambda: InspectFileUseCase(InspectFilePorts(snapshot_reader)).execute(InspectFileRequest(SOURCE_PATH)),
     )
 
-    for usecase, request in cases:
+    for exercise in exercises:
         with pytest.raises(NotImplementedError):
-            usecase.execute(request)
+            _ = exercise()
 
 
 class NoopFileScanner:
     """FileScanner fake that proves skeletons do not scan yet."""
 
-    def scan(self, root: str) -> tuple[FileScanEntry, ...]:
+    def scan(self, root: FileSystemPath) -> tuple[FileScanEntry, ...]:
         """Fail if a skeleton unexpectedly reaches filesystem discovery."""
         del root
         raise AssertionError(UNEXPECTED_IO_MESSAGE)
@@ -219,7 +224,7 @@ class NoopFileScanner:
 class NoopFileSnapshotReader:
     """FileSnapshotReader fake that proves skeletons do not capture yet."""
 
-    def capture(self, path: str) -> FileSnapshot:
+    def capture(self, path: FileSystemPath) -> FileSnapshot:
         """Fail if a skeleton unexpectedly reaches file observation."""
         del path
         raise AssertionError(UNEXPECTED_IO_MESSAGE)
@@ -228,7 +233,7 @@ class NoopFileSnapshotReader:
 class NoopFileMover:
     """FileMover fake that proves skeletons do not mutate files yet."""
 
-    def move(self, source: str, target: str) -> None:
+    def move(self, source: FileSystemPath, target: FileSystemPath) -> None:
         """Fail if a skeleton unexpectedly reaches file mutation."""
         del source, target
         raise AssertionError(UNEXPECTED_IO_MESSAGE)

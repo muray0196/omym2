@@ -73,7 +73,7 @@ def test_track_paths_are_stored_relative_to_library_root() -> None:
 def test_track_rejects_absolute_library_managed_path() -> None:
     """Track paths must not be absolute filesystem paths."""
     with pytest.raises(ValueError, match=ROOTED_LIBRARY_PATH_MESSAGE):
-        _track(current_path=f"/{NORMALIZED_PATH}", canonical_path=NORMALIZED_PATH)
+        _ = _track(current_path=f"/{NORMALIZED_PATH}", canonical_path=NORMALIZED_PATH)
 
 
 def test_track_id_is_not_derived_from_path_hash_or_metadata() -> None:

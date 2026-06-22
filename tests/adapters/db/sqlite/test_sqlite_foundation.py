@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 import pytest
@@ -23,6 +24,9 @@ from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
@@ -60,7 +64,7 @@ REQUIRED_TABLES = {
 }
 
 
-def test_sqlite_migrations_create_required_tables(tmp_path) -> None:
+def test_sqlite_migrations_create_required_tables(tmp_path: Path) -> None:
     """Migration runner creates the Phase 5 SQLite table set."""
     database_file = default_application_paths(tmp_path).database_file
 
@@ -69,7 +73,9 @@ def test_sqlite_migrations_create_required_tables(tmp_path) -> None:
     assert _table_names(database_file) >= REQUIRED_TABLES
 
 
-def test_sqlite_migration_script_rolls_back_with_marker_on_failure(tmp_path, monkeypatch) -> None:
+def test_sqlite_migration_script_rolls_back_with_marker_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Failing migration scripts leave no partial schema objects behind."""
     database_file = default_application_paths(tmp_path).database_file
     migration = SQLiteMigration(
@@ -90,7 +96,7 @@ def test_sqlite_migration_script_rolls_back_with_marker_on_failure(tmp_path, mon
     assert _applied_migrations(database_file) == set()
 
 
-def test_internal_storage_is_created_lazily_when_needed(tmp_path) -> None:
+def test_internal_storage_is_created_lazily_when_needed(tmp_path: Path) -> None:
     """Entering SQLiteUnitOfWork creates the internal .data database path."""
     paths = default_application_paths(tmp_path)
 
@@ -103,7 +109,7 @@ def test_internal_storage_is_created_lazily_when_needed(tmp_path) -> None:
     assert paths.database_file.is_file()
 
 
-def test_sqlite_repositories_round_trip_domain_models(tmp_path) -> None:
+def test_sqlite_repositories_round_trip_domain_models(tmp_path: Path) -> None:
     """SQLite repositories persist and restore every Phase 5 domain model."""
     database_file = default_application_paths(tmp_path).database_file
     library = _library()
@@ -144,7 +150,7 @@ def test_sqlite_repositories_round_trip_domain_models(tmp_path) -> None:
         assert uow.file_events.list_by_run(RUN_ID) == (event_early, event_late)
 
 
-def test_sqlite_unit_of_work_rolls_back_when_not_committed(tmp_path) -> None:
+def test_sqlite_unit_of_work_rolls_back_when_not_committed(tmp_path: Path) -> None:
     """Closing without commit leaves no repository writes behind."""
     database_file = default_application_paths(tmp_path).database_file
 
@@ -155,7 +161,7 @@ def test_sqlite_unit_of_work_rolls_back_when_not_committed(tmp_path) -> None:
         assert uow.libraries.get(LIBRARY_ID) is None
 
 
-def test_sqlite_unit_of_work_rolls_back_on_exception(tmp_path) -> None:
+def test_sqlite_unit_of_work_rolls_back_on_exception(tmp_path: Path) -> None:
     """Exceptions inside the UnitOfWork rollback uncommitted writes."""
     database_file = default_application_paths(tmp_path).database_file
 
@@ -166,7 +172,7 @@ def test_sqlite_unit_of_work_rolls_back_on_exception(tmp_path) -> None:
         assert uow.libraries.get(LIBRARY_ID) is None
 
 
-def _table_names(database_file) -> set[str]:
+def _table_names(database_file: Path) -> set[str]:
     with sqlite3.connect(database_file) as connection:
         rows = connection.execute(
             """
@@ -175,16 +181,16 @@ def _table_names(database_file) -> set[str]:
             WHERE type = 'table'
             """
         ).fetchall()
-    return {str(row[0]) for row in rows}
+    return {str(row[0]) for row in cast("list[tuple[object, ...]]", rows)}
 
 
-def _applied_migrations(database_file) -> set[str]:
+def _applied_migrations(database_file: Path) -> set[str]:
     with sqlite3.connect(database_file) as connection:
         rows = connection.execute("SELECT migration_name FROM schema_migrations").fetchall()
-    return {str(row[0]) for row in rows}
+    return {str(row[0]) for row in cast("list[tuple[object, ...]]", rows)}
 
 
-def _save_library_then_fail(database_file) -> None:
+def _save_library_then_fail(database_file: Path) -> None:
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library())
         raise RuntimeError(ROLLBACK_ERROR)
