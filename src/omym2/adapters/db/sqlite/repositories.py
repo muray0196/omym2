@@ -31,12 +31,16 @@ INVALID_ROW_INTEGER_MESSAGE = "Expected SQLite integer value."
 INVALID_SUMMARY_VALUE_MESSAGE = "Persisted summary JSON must contain string values."
 
 
-class SQLiteLibraryRepository:
-    """SQLite implementation of LibraryRepository."""
+class _SQLiteRepository:
+    """Base repository for shared SQLite connection handling."""
 
     def __init__(self, connection: sqlite3.Connection) -> None:
         """Keep the connection owned by the surrounding UnitOfWork."""
         self._connection: sqlite3.Connection = connection
+
+
+class SQLiteLibraryRepository(_SQLiteRepository):
+    """SQLite implementation of LibraryRepository."""
 
     def get(self, library_id: LibraryId) -> Library | None:
         """Return one Library by stable ID."""
@@ -110,12 +114,8 @@ class SQLiteLibraryRepository:
         )
 
 
-class SQLiteTrackRepository:
+class SQLiteTrackRepository(_SQLiteRepository):
     """SQLite implementation of TrackRepository."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Keep the connection owned by the surrounding UnitOfWork."""
-        self._connection: sqlite3.Connection = connection
 
     def get(self, track_id: TrackId) -> Track | None:
         """Return one Track by stable ID."""
@@ -237,12 +237,8 @@ class SQLiteTrackRepository:
         )
 
 
-class SQLitePlanRepository:
+class SQLitePlanRepository(_SQLiteRepository):
     """SQLite implementation of PlanRepository."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Keep the connection owned by the surrounding UnitOfWork."""
-        self._connection: sqlite3.Connection = connection
 
     def get(self, plan_id: PlanId) -> Plan | None:
         """Return one Plan by ID."""
@@ -308,12 +304,8 @@ class SQLitePlanRepository:
         )
 
 
-class SQLitePlanActionRepository:
+class SQLitePlanActionRepository(_SQLiteRepository):
     """SQLite implementation of PlanActionRepository."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Keep the connection owned by the surrounding UnitOfWork."""
-        self._connection: sqlite3.Connection = connection
 
     def get(self, action_id: ActionId) -> PlanAction | None:
         """Return one PlanAction by ID."""
@@ -415,12 +407,8 @@ class SQLitePlanActionRepository:
         )
 
 
-class SQLiteRunRepository:
+class SQLiteRunRepository(_SQLiteRepository):
     """SQLite implementation of RunRepository."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Keep the connection owned by the surrounding UnitOfWork."""
-        self._connection: sqlite3.Connection = connection
 
     def get(self, run_id: RunId) -> Run | None:
         """Return one Run by ID."""
@@ -497,12 +485,8 @@ class SQLiteRunRepository:
         )
 
 
-class SQLiteFileEventRepository:
+class SQLiteFileEventRepository(_SQLiteRepository):
     """SQLite implementation of FileEventRepository."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Keep the connection owned by the surrounding UnitOfWork."""
-        self._connection: sqlite3.Connection = connection
 
     def get(self, event_id: EventId) -> FileEvent | None:
         """Return one FileEvent by ID."""
