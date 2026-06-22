@@ -20,6 +20,9 @@ requires = ["setuptools>=61.0"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"omym2.adapters.db.sqlite.migrations" = ["*.sql"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",

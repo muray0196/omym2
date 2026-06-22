@@ -1,0 +1,6 @@
+"""
+Summary: Marks SQLite adapter tests.
+Why: Keeps Phase 5 persistence coverage near the SQLite implementation.
+"""
+
+from __future__ import annotations

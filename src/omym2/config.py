@@ -54,6 +54,8 @@ METADATA_FINGERPRINT_ALGORITHM: Final = "sha256"  # metadata fingerprint hash al
 METADATA_FINGERPRINT_ENCODING: Final = "utf-8"  # metadata fingerprint payload encoding
 METADATA_FINGERPRINT_JSON_ITEM_SEPARATOR: Final = ","  # canonical JSON item separator
 METADATA_FINGERPRINT_JSON_KEY_SEPARATOR: Final = ":"  # canonical JSON key separator
+PERSISTED_JSON_ITEM_SEPARATOR: Final = ","  # compact JSON item separator for SQLite payloads
+PERSISTED_JSON_KEY_SEPARATOR: Final = ":"  # compact JSON key separator for SQLite payloads
 PATH_EXTENSION_PREFIX: Final = "."  # separator before generated file extensions
 PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "album_artist",
@@ -67,3 +69,6 @@ PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
 PATH_POLICY_TRACK_NUMBER_WIDTH: Final = 2  # zero-padding width for generated track numbers
 PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in metadata path components
+SQLITE_CONNECTION_TIMEOUT_SECONDS: Final = 30.0  # SQLite connection busy timeout, seconds
+SQLITE_MIGRATION_FILE_ENCODING: Final = "utf-8"  # SQLite migration resource encoding
+SQLITE_MIGRATION_FILE_EXTENSION: Final = ".sql"  # migration resource file extension
