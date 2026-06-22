@@ -34,9 +34,6 @@ from omym2.features.history.dto import GetRunDetailRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
-from omym2.features.inspect.dto import InspectFileRequest
-from omym2.features.inspect.ports import InspectFilePorts
-from omym2.features.inspect.usecases.inspect_file import InspectFileUseCase
 from omym2.features.organize.dto import CreateOrganizePlanRequest
 from omym2.features.organize.ports import CreateOrganizePlanPorts
 from omym2.features.organize.usecases.create_organize_plan import CreateOrganizePlanUseCase
@@ -204,7 +201,6 @@ def test_phase3_usecase_skeletons_define_contracts_without_behavior() -> None:
         lambda: CreateUndoPlanUseCase(CreateUndoPlanPorts(uow, clock, id_generator)).execute(
             CreateUndoPlanRequest(RUN_ID)
         ),
-        lambda: InspectFileUseCase(InspectFilePorts(snapshot_reader)).execute(InspectFileRequest(SOURCE_PATH)),
     )
 
     for exercise in exercises:
