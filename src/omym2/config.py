@@ -46,6 +46,7 @@ DEFAULT_COLLISION_ON_MISSING_METADATA: Final = "block"  # missing metadata polic
 DEFAULT_UI_THEME: Final = "system"  # default UI color mode
 DEFAULT_UI_SHOW_ADVANCED_SETTINGS: Final = False  # default advanced settings visibility
 CONTENT_FINGERPRINT_ALGORITHM: Final = "sha256"  # content fingerprint hash algorithm
+CONTENT_HASH_READ_CHUNK_SIZE_BYTES: Final = 1_048_576  # file hash read chunk size, bytes, positive
 CONFIG_FINGERPRINT_ALGORITHM: Final = "sha256"  # config fingerprint hash algorithm
 CONFIG_FINGERPRINT_ENCODING: Final = "utf-8"  # config fingerprint payload encoding
 CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR: Final = ","  # canonical JSON item separator
@@ -72,3 +73,17 @@ PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in me
 SQLITE_CONNECTION_TIMEOUT_SECONDS: Final = 30.0  # SQLite connection busy timeout, seconds
 SQLITE_MIGRATION_FILE_ENCODING: Final = "utf-8"  # SQLite migration resource encoding
 SQLITE_MIGRATION_FILE_EXTENSION: Final = ".sql"  # migration resource file extension
+SUPPORTED_MUSIC_FILE_EXTENSIONS: Final = frozenset(
+    {
+        ".aac",
+        ".aiff",
+        ".ape",
+        ".flac",
+        ".m4a",
+        ".mp3",
+        ".ogg",
+        ".opus",
+        ".wav",
+        ".wv",
+    }
+)  # suffixes treated as music files during read-only scans

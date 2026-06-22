@@ -9,6 +9,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.config import run_config_command
+from omym2.adapters.cli.commands.inspect import run_inspect_command
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from typing import TextIO
 
 CONFIG_COMMAND = "config"
+INSPECT_COMMAND = "inspect"
 SUCCESS_EXIT_CODE = 0
 UNKNOWN_COMMAND_EXIT_CODE = 2
 
@@ -37,6 +39,8 @@ def main(
     command, *command_args = args
     if command == CONFIG_COMMAND:
         return run_config_command(command_args, output, error_output, config_path)
+    if command == INSPECT_COMMAND:
+        return run_inspect_command(command_args, output, error_output, config_path)
 
     _ = error_output.write(f"Unknown command: {command}\n")
     return UNKNOWN_COMMAND_EXIT_CODE
