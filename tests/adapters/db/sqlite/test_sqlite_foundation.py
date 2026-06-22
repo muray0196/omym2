@@ -12,7 +12,8 @@ from uuid import UUID
 import pytest
 
 from omym2.adapters.config.application_paths import default_application_paths
-from omym2.adapters.db.sqlite.migration_runner import migrate_database
+from omym2.adapters.db.sqlite import migration_runner
+from omym2.adapters.db.sqlite.migration_runner import SQLiteMigration, migrate_database
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
@@ -66,6 +67,27 @@ def test_sqlite_migrations_create_required_tables(tmp_path) -> None:
     migrate_database(database_file)
 
     assert _table_names(database_file) >= REQUIRED_TABLES
+
+
+def test_sqlite_migration_script_rolls_back_with_marker_on_failure(tmp_path, monkeypatch) -> None:
+    """Failing migration scripts leave no partial schema objects behind."""
+    database_file = default_application_paths(tmp_path).database_file
+    migration = SQLiteMigration(
+        name="999999999999_failing.sql",
+        sql="""
+        CREATE TABLE partially_applied (
+            id TEXT PRIMARY KEY
+        );
+        INSERT INTO missing_table (id) VALUES ('boom');
+        """,
+    )
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: (migration,))
+
+    with pytest.raises(sqlite3.DatabaseError):
+        migrate_database(database_file)
+
+    assert "partially_applied" not in _table_names(database_file)
+    assert _applied_migrations(database_file) == set()
 
 
 def test_internal_storage_is_created_lazily_when_needed(tmp_path) -> None:
@@ -153,6 +175,12 @@ def _table_names(database_file) -> set[str]:
             WHERE type = 'table'
             """
         ).fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def _applied_migrations(database_file) -> set[str]:
+    with sqlite3.connect(database_file) as connection:
+        rows = connection.execute("SELECT migration_name FROM schema_migrations").fetchall()
     return {str(row[0]) for row in rows}
 
 

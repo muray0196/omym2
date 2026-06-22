@@ -17,6 +17,7 @@ from omym2.shared.time import utc_now
 
 MIGRATIONS_PACKAGE: Final = "omym2.adapters.db.sqlite.migrations"
 INVALID_MIGRATION_NAME_MESSAGE: Final = "Expected SQLite migration name text."
+INCOMPLETE_MIGRATION_STATEMENT_MESSAGE: Final = "SQLite migration contains an incomplete SQL statement."
 
 if TYPE_CHECKING:
     from importlib.resources.abc import Traversable
@@ -92,7 +93,7 @@ def _apply_migration(connection: sqlite3.Connection, migration: SQLiteMigration)
     # partially applied migration is not recorded as complete.
     _ = connection.execute("BEGIN")
     try:
-        _ = connection.executescript(migration.sql)
+        _execute_migration_script(connection, migration.sql)
         _ = connection.execute(
             INSERT_MIGRATION_SQL,
             (migration.name, utc_now().isoformat()),
@@ -101,6 +102,19 @@ def _apply_migration(connection: sqlite3.Connection, migration: SQLiteMigration)
         connection.rollback()
         raise
     connection.commit()
+
+
+def _execute_migration_script(connection: sqlite3.Connection, sql: str) -> None:
+    statement_lines: list[str] = []
+    for line in sql.splitlines(keepends=True):
+        statement_lines.append(line)
+        statement = "".join(statement_lines)
+        if sqlite3.complete_statement(statement):
+            _ = connection.execute(statement)
+            statement_lines.clear()
+
+    if "".join(statement_lines).strip():
+        raise sqlite3.DatabaseError(INCOMPLETE_MIGRATION_STATEMENT_MESSAGE)
 
 
 def _migration_name_from_row(row: sqlite3.Row) -> str:
