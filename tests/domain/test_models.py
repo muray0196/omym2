@@ -117,6 +117,14 @@ def test_plan_action_uses_blocked_for_plan_time_issue_and_failed_for_apply_time_
     assert failed_action.reason == PlanActionReason.SOURCE_CHANGED
 
 
+def test_plan_action_stores_final_target_path_with_extension() -> None:
+    """PlanAction records the reviewed final target path, including extension."""
+    action = _plan_action(ActionStatus.PLANNED, None)
+
+    assert action.target_path == TARGET_PATH
+    assert action.target_path.endswith(".flac")
+
+
 def test_run_completion_records_failed_state() -> None:
     """Run completion preserves the run ID and records failure details."""
     run = Run(

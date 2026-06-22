@@ -85,17 +85,35 @@ Output:
 
 `canonical_path` is a normalized relative path from the Library root. It is not an absolute path.
 
-PathPolicy may normalize metadata values for path generation. This normalization is local to PathPolicy in the initial version and is not modeled as a separate domain object.
+PathPolicy may normalize metadata values for path generation. This normalization is local to PathPolicy in the initial version and is not modeled as a separate domain object. Source file extensions are normalized to lowercase when appended to generated paths.
 
 PathPolicy is deterministic and does not perform I/O. It does not join paths with the Library root and does not check whether the target path exists. Target existence is handled by usecases through filesystem ports and CollisionPolicy.
+
+Path policy templates render a library-root-relative destination path stem.
+Templates must not include file extensions.
+
+OMYM2 derives the destination extension from the source music file suffix
+and appends it after rendering the template. The final PlanAction target path
+is recorded with the extension included. Apply uses the recorded target path
+without recalculating it.
+
+Allowed placeholders:
+
+* `{album_artist}`
+* `{album}`
+* `{disc}`
+* `{track}`
+* `{title}`
+* `{artist}`
+* `{year}`
 
 Initial template:
 
 ```text
-{album_artist}/{year}_{album}/{disc}-{track}_{title}.{ext}
+{album_artist}/{year}_{album}/{disc}-{track}_{title}
 ```
 
-The initial template does not include hash-based suffixes. If the generated target path already exists, the PlanAction becomes blocked as a conflict. PathPolicy does not solve collisions by itself.
+The initial template does not include hash-based suffixes. If the final generated target path already exists, the PlanAction becomes blocked as a conflict. PathPolicy does not solve collisions by itself.
 
 The GUI provides a PathPolicy preview.
 
@@ -107,10 +125,13 @@ Metadata:
   disc: 1
   track: 3
   title: Example Song
-  ext: flac
+  source suffix: .FLAC
 
 Template:
-  {album_artist}/{year}_{album}/{disc}-{track}_{title}.{ext}
+  {album_artist}/{year}_{album}/{disc}-{track}_{title}
+
+Rendered stem:
+  Aimer/2024_Example Album/1-03_Example Song
 
 Preview:
   Aimer/2024_Example Album/1-03_Example Song.flac

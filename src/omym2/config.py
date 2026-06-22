@@ -30,7 +30,7 @@ DEFAULT_ORGANIZE_AUTO_APPLY: Final = False  # organize command auto-apply defaul
 DEFAULT_ORGANIZE_ONLY_MISPLACED: Final = True  # organize scans only misplaced files by default
 DEFAULT_REFRESH_AUTO_APPLY: Final = False  # refresh command auto-apply default
 DEFAULT_PATH_POLICY_TEMPLATE: Final = (
-    "{album_artist}/{year}_{album}/{disc}-{track}_{title}.{ext}"  # canonical path template
+    "{album_artist}/{year}_{album}/{disc}-{track}_{title}"  # canonical path stem template
 )
 DEFAULT_UNKNOWN_ARTIST: Final = "Unknown Artist"  # fallback artist text for path generation
 DEFAULT_UNKNOWN_ALBUM: Final = "Unknown Album"  # fallback album text for path generation
@@ -55,7 +55,15 @@ METADATA_FINGERPRINT_ENCODING: Final = "utf-8"  # metadata fingerprint payload e
 METADATA_FINGERPRINT_JSON_ITEM_SEPARATOR: Final = ","  # canonical JSON item separator
 METADATA_FINGERPRINT_JSON_KEY_SEPARATOR: Final = ":"  # canonical JSON key separator
 PATH_EXTENSION_PREFIX: Final = "."  # separator before generated file extensions
-PATH_POLICY_EXTENSION_PLACEHOLDER: Final = "{ext}"  # required template token for the source file extension
+PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
+    "album_artist",
+    "album",
+    "disc",
+    "track",
+    "title",
+    "artist",
+    "year",
+)  # placeholders allowed in path policy stem templates
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
 PATH_POLICY_TRACK_NUMBER_WIDTH: Final = 2  # zero-padding width for generated track numbers
 PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in metadata path components

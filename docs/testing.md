@@ -32,7 +32,7 @@ Initial unit focus:
 * Library identity stability
 * Track identity stability
 * Library-root-relative path normalization
-* PathPolicy canonical path generation
+* PathPolicy stem rendering and source suffix append behavior
 * metadata and content fingerprint policies
 * CollisionPolicy and DuplicatePolicy
 * PlanAction status / reason behavior
@@ -84,6 +84,9 @@ test_track_id_is_not_derived_from_path_hash_or_metadata
 test_library_managed_records_store_library_id
 test_track_paths_are_stored_relative_to_library_root
 test_path_policy_generates_relative_path_without_hash_suffix
+test_path_policy_appends_source_extension_to_rendered_stem
+test_path_policy_config_rejects_extension_placeholder
+test_path_policy_config_rejects_template_with_literal_extension
 test_file_scanner_returns_file_scan_entries_not_snapshots
 test_file_snapshot_reader_captures_metadata_and_hash
 test_sqlite_migrations_create_required_tables

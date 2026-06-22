@@ -22,6 +22,7 @@ CONTENT = b"content"
 DIFFERENT_CONTENT = b"different content"
 DISC_NUMBER = 1
 EXPECTED_CANONICAL_PATH = "Aimer/2024_Example Album/1-03_Example Song.flac"
+EXPECTED_STEM_TEMPLATE_PATH = "Aimer/Example Album/1-03 - Example Song.flac"
 FILE_EXTENSION = ".FLAC"
 GENRE = "J-Pop"
 OCCUPIED_PATH = "Aimer/2024_Example Album/1-03_Example Song.flac"
@@ -33,24 +34,27 @@ TRUNCATED_FILENAME_LENGTH = 12
 UNSANITIZED_ARTIST = "Artist:Name"
 UNSANITIZED_PATH = "Artist:Name/2024_Example Album/1-03_Example Song.flac"
 YEAR = 2024
+STEM_TEMPLATE = "{album_artist}/{album}/{disc}-{track} - {title}"
 
 
 def test_path_policy_generates_relative_path_without_hash_suffix() -> None:
     """PathPolicy uses metadata and extension to create a canonical relative path."""
-    metadata = TrackMetadata(
-        title=TITLE,
-        artist=ALBUM_ARTIST,
-        album=ALBUM,
-        album_artist=ALBUM_ARTIST,
-        genre=GENRE,
-        year=YEAR,
-        track_number=TRACK_NUMBER,
-        disc_number=DISC_NUMBER,
-    )
+    metadata = _track_metadata()
 
     canonical_path = PathPolicy(PathPolicyConfig()).canonical_path(metadata, FILE_EXTENSION)
 
     assert canonical_path == EXPECTED_CANONICAL_PATH
+
+
+def test_path_policy_appends_source_extension_to_rendered_stem() -> None:
+    """PathPolicy renders a stem template and appends the lowercase source suffix."""
+    canonical_path = PathPolicy(PathPolicyConfig(template=STEM_TEMPLATE)).canonical_path(
+        _track_metadata(), FILE_EXTENSION
+    )
+
+    assert canonical_path == EXPECTED_STEM_TEMPLATE_PATH
+    assert canonical_path.endswith(".flac")
+    assert ".flac.flac" not in canonical_path
 
 
 def test_path_policy_sanitizes_metadata_path_components() -> None:
@@ -130,8 +134,10 @@ def test_content_fingerprint_changes_when_content_changes() -> None:
 
 
 def test_collision_policy_blocks_existing_target() -> None:
-    """CollisionPolicy blocks a canonical path already occupied in the Library."""
-    decision = CollisionPolicy().decide(OCCUPIED_PATH, [OCCUPIED_PATH])
+    """CollisionPolicy blocks the extension-included canonical target."""
+    target_path = PathPolicy(PathPolicyConfig()).canonical_path(_track_metadata(), FILE_EXTENSION)
+
+    decision = CollisionPolicy().decide(target_path, [OCCUPIED_PATH])
 
     assert decision.kind == CollisionDecisionKind.BLOCKED
     assert decision.reason == PlanActionReason.TARGET_EXISTS
@@ -145,3 +151,16 @@ def test_duplicate_policy_skips_duplicate_hash() -> None:
 
     assert decision.kind == DuplicateDecisionKind.SKIP
     assert decision.reason == PlanActionReason.DUPLICATE_HASH
+
+
+def _track_metadata() -> TrackMetadata:
+    return TrackMetadata(
+        title=TITLE,
+        artist=ALBUM_ARTIST,
+        album=ALBUM,
+        album_artist=ALBUM_ARTIST,
+        genre=GENRE,
+        year=YEAR,
+        track_number=TRACK_NUMBER,
+        disc_number=DISC_NUMBER,
+    )
