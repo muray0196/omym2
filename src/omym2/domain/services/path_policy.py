@@ -33,28 +33,27 @@ class PathPolicy:
 
     def canonical_path(self, metadata: TrackMetadata, file_extension: str) -> str:
         """Generate a normalized Library-root-relative canonical path."""
-        extension = _normalize_extension(file_extension)
-        raw_path = self.config.template.format(
+        extension_suffix = _normalize_extension_suffix(file_extension)
+        raw_stem = self._render_raw_stem(metadata)
+        path_stem = _normalize_generated_stem(raw_stem, self.config, len(extension_suffix))
+        return normalize_library_relative_path(_append_extension(path_stem, extension_suffix))
+
+    def _render_raw_stem(self, metadata: TrackMetadata) -> str:
+        return self.config.template.format(
             album_artist=self._album_artist(metadata),
             year=self._optional_number(metadata.year),
             album=self._album(metadata),
             disc=self._disc_number(metadata),
             track=self._track_number(metadata),
             title=self._title(metadata),
-            ext=extension,
+            artist=self._artist(metadata),
         )
-        expected_suffix = f"{PATH_EXTENSION_PREFIX}{extension}"
-        canonical_path = normalize_library_relative_path(
-            _normalize_generated_path(raw_path, self.config, expected_suffix)
-        )
-        # Defense in depth for direct PathPolicyConfig construction paths: a
-        # canonical music-file path must preserve the observed source extension.
-        if not canonical_path.endswith(expected_suffix):
-            raise ValueError(EMPTY_FILE_EXTENSION_MESSAGE)
-        return canonical_path
 
     def _album_artist(self, metadata: TrackMetadata) -> str:
         return self._component(metadata.album_artist or metadata.artist or self.config.unknown_artist)
+
+    def _artist(self, metadata: TrackMetadata) -> str:
+        return self._component(metadata.artist or metadata.album_artist or self.config.unknown_artist)
 
     def _album(self, metadata: TrackMetadata) -> str:
         return self._component(metadata.album or self.config.unknown_album)
@@ -83,27 +82,24 @@ class PathPolicy:
         return _sanitize_component(value, self.config.max_filename_length)
 
 
-def _normalize_extension(file_extension: str) -> str:
+def _normalize_extension_suffix(file_extension: str) -> str:
     extension = file_extension.strip().lower()
     if extension.startswith(PATH_EXTENSION_PREFIX):
         extension = extension.removeprefix(PATH_EXTENSION_PREFIX)
     if extension == "":
         raise ValueError(EMPTY_FILE_EXTENSION_MESSAGE)
-    return _sanitize_component(extension, len(extension))
+    return f"{PATH_EXTENSION_PREFIX}{_sanitize_component(extension, len(extension))}"
 
 
-def _normalize_generated_path(raw_path: str, config: PathPolicyConfig, expected_suffix: str) -> str:
-    parts = raw_path.split(LOGICAL_PATH_SEPARATOR)
+def _normalize_generated_stem(raw_stem: str, config: PathPolicyConfig, reserved_suffix_length: int) -> str:
+    parts = raw_stem.split(LOGICAL_PATH_SEPARATOR)
+    final_component_length = config.max_filename_length - reserved_suffix_length
     if config.sanitize:
         normalized_parts = [_sanitize_component(part, config.max_filename_length) for part in parts[:-1]]
-        normalized_parts.append(
-            _sanitize_component_preserving_suffix(parts[-1], config.max_filename_length, expected_suffix)
-        )
+        normalized_parts.append(_sanitize_component(parts[-1], final_component_length))
     else:
         normalized_parts = [_limit_component(part, config.max_filename_length) for part in parts[:-1]]
-        normalized_parts.append(
-            _limit_component_preserving_suffix(parts[-1], config.max_filename_length, expected_suffix)
-        )
+        normalized_parts.append(_limit_component(parts[-1], final_component_length))
     return LOGICAL_PATH_SEPARATOR.join(normalized_parts)
 
 
@@ -111,30 +107,17 @@ def _sanitize_component(value: str, max_length: int) -> str:
     cleaned = value.strip()
     for unsafe_character in PATH_POLICY_UNSAFE_CHARACTERS:
         cleaned = cleaned.replace(unsafe_character, PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT)
-    cleaned = cleaned[:max_length]
+    cleaned = _limit_component(cleaned, max_length)
     if cleaned in {"", ".", ".."}:
         return PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT
     return cleaned
 
 
-def _sanitize_component_preserving_suffix(value: str, max_length: int, expected_suffix: str) -> str:
-    cleaned = value.strip()
-    for unsafe_character in PATH_POLICY_UNSAFE_CHARACTERS:
-        cleaned = cleaned.replace(unsafe_character, PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT)
-    limited = _limit_component_preserving_suffix(cleaned, max_length, expected_suffix)
-    if limited in {"", ".", ".."}:
-        return PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT
-    return limited
-
-
 def _limit_component(value: str, max_length: int) -> str:
+    if max_length <= 0:
+        return ""
     return value[:max_length]
 
 
-def _limit_component_preserving_suffix(value: str, max_length: int, expected_suffix: str) -> str:
-    if not value.endswith(expected_suffix) or len(value) <= max_length:
-        return _limit_component(value, max_length)
-    basename_length = max_length - len(expected_suffix)
-    if basename_length <= 0:
-        return expected_suffix
-    return f"{value[:basename_length]}{expected_suffix}"
+def _append_extension(path_stem: str, extension_suffix: str) -> str:
+    return f"{path_stem}{extension_suffix}"
