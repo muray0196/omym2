@@ -6,7 +6,7 @@ Why: Converts external tag formats into OMYM2 TrackMetadata.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -85,15 +85,33 @@ class MutagenMetadataReader:
 
 
 def _tags_from_audio(audio: object) -> Mapping[str, object]:
-    if isinstance(audio, Mapping):
-        return cast("Mapping[str, object]", audio)
+    audio_tags = _materialized_tag_mapping(audio)
+    if audio_tags is not None:
+        return audio_tags
 
     tags = getattr(audio, "tags", None)
     if tags is None:
         return {}
+
+    materialized_tags = _materialized_tag_mapping(tags)
+    if materialized_tags is not None:
+        return materialized_tags
+
+    raise MetadataReadError(UNSUPPORTED_TAG_CONTAINER_MESSAGE)
+
+
+def _materialized_tag_mapping(tags: object) -> Mapping[str, object] | None:
     if isinstance(tags, Mapping):
         return cast("Mapping[str, object]", tags)
-    raise MetadataReadError(UNSUPPORTED_TAG_CONTAINER_MESSAGE)
+
+    items = getattr(tags, "items", None)
+    if not callable(items):
+        return None
+
+    try:
+        return dict(cast("Iterable[tuple[str, object]]", items()))
+    except (TypeError, ValueError):
+        return None
 
 
 def _number_pair_from_tags(

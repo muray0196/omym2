@@ -5,6 +5,7 @@ Why: Verifies external tag data is converted to TrackMetadata.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 import pytest
@@ -29,6 +30,23 @@ TITLE = "Example Song"
 TRACK_NUMBER = 3
 TRACK_TOTAL = 12
 YEAR = 2024
+
+
+class DictLikeTags:
+    """Minimal Mutagen-style tag container that is not a Mapping."""
+
+    def __init__(self, values: dict[str, object]) -> None:
+        self._values = values
+
+    def items(self) -> Iterable[tuple[str, object]]:
+        return self._values.items()
+
+
+class AudioWithTags:
+    """Minimal Mutagen-style audio object exposing tags separately."""
+
+    def __init__(self, tags: object) -> None:
+        self.tags = tags
 
 
 def test_mutagen_metadata_reader_maps_easy_tags() -> None:
@@ -60,6 +78,31 @@ def test_mutagen_metadata_reader_maps_easy_tags() -> None:
     assert metadata.track_total == TRACK_TOTAL
     assert metadata.disc_number == DISC_NUMBER
     assert metadata.disc_total == DISC_TOTAL
+
+
+def test_mutagen_metadata_reader_accepts_dict_like_audio_tags() -> None:
+    """Mutagen tag containers with items() do not need to be Mapping instances."""
+
+    def opener(filething: FileSystemPath, *, easy: bool = False) -> object | None:
+        assert filething == FILE_PATH
+        assert easy
+        return AudioWithTags(
+            DictLikeTags(
+                {
+                    "album": [ALBUM],
+                    "artist": [ARTIST],
+                    "title": [TITLE],
+                    "tracknumber": [str(TRACK_NUMBER)],
+                }
+            )
+        )
+
+    metadata = MutagenMetadataReader(opener=opener).read(FILE_PATH)
+
+    assert metadata.title == TITLE
+    assert metadata.artist == ARTIST
+    assert metadata.album == ALBUM
+    assert metadata.track_number == TRACK_NUMBER
 
 
 def test_mutagen_metadata_reader_rejects_unknown_file_type() -> None:
