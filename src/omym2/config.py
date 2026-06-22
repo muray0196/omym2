@@ -17,6 +17,8 @@ SQLITE_DATABASE_FILE_NAME: Final = "omym2.sqlite3"  # SQLite database file name
 LOGICAL_PATH_SEPARATOR: Final = "/"
 PARENT_DIRECTORY_REFERENCE: Final = ".."
 UUID_VERSION: Final = 7
+PLAN_ACTION_SORT_ORDER_START: Final = 1  # first review-order value stored for PlanActions
+PLAN_ACTION_SORT_ORDER_STEP: Final = 1  # increment between adjacent PlanAction sort orders
 
 ALLOWED_COMMAND_MODES: Final = frozenset({"plan_first"})  # supported command default_mode values
 ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES: Final = frozenset({"skip"})  # duplicate content decisions

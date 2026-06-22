@@ -236,6 +236,18 @@ class FileMover(Protocol):
         ...
 
 
+class PathResolver(Protocol):
+    """Filesystem boundary contract for Library-relative path conversion."""
+
+    def resolve_library_path(self, library_root: FileSystemPath, library_relative_path: str) -> FileSystemPath:
+        """Return an absolute path for one Library-relative path."""
+        ...
+
+    def relative_to_library(self, library_root: FileSystemPath, path: FileSystemPath) -> str:
+        """Return the stored Library-relative form for a filesystem path."""
+        ...
+
+
 class ConfigStore(Protocol):
     """Application config persistence contract."""
 

@@ -1,0 +1,372 @@
+"""
+Summary: Tests Phase 7 organize registration behavior.
+Why: Protects Library registration and review-plan creation before apply exists.
+"""
+
+from __future__ import annotations
+
+from collections import deque
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+import pytest
+
+from omym2.adapters.config.default_config import default_app_config
+from omym2.domain.models.file_scan_entry import FileScanEntry
+from omym2.domain.models.file_snapshot import FileSnapshot
+from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.models.plan import PlanStatus, PlanType
+from omym2.domain.models.plan_action import ActionStatus, PlanActionReason
+from omym2.domain.models.track_metadata import TrackMetadata
+from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
+from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
+from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
+from omym2.features.organize.dto import CreateOrganizePlanRequest
+from omym2.features.organize.ports import CreateOrganizePlanPorts
+from omym2.features.organize.usecases.create_organize_plan import (
+    AMBIGUOUS_LIBRARY_SELECTION_MESSAGE,
+    NO_LIBRARY_SELECTION_MESSAGE,
+    UNREGISTERED_PATH_MESSAGE,
+    CreateOrganizePlanUseCase,
+    OrganizeLibrarySelectionError,
+)
+from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
+from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
+from tests.fakes.runtime import FixedClock, SequenceIdGenerator
+
+if TYPE_CHECKING:
+    from omym2.domain.models.app_config import AppConfig
+    from omym2.features.common_ports import FileSystemPath
+
+ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
+BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+CONTENT = b"audio"
+CONTENT_HASH = calculate_content_fingerprint(CONTENT)
+EXPECTED_CANONICAL_PATH = "Artist/2026_Album/1-02_Title.flac"
+FILE_EXTENSION = ".flac"
+FILE_SIZE = 5
+LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
+LIBRARY_ROOT = "/music/library"
+METADATA = TrackMetadata(
+    title="Title",
+    artist="Artist",
+    album="Album",
+    year=2026,
+    track_number=2,
+    disc_number=1,
+)
+MISSING_ARTIST_METADATA = TrackMetadata(
+    title="Title",
+    album="Album",
+    year=2026,
+    track_number=2,
+    disc_number=1,
+)
+MISPLACED_PATH = "Unsorted/Title.flac"
+PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
+SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
+SECOND_LIBRARY_ROOT = "/music/other"
+TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
+UNREGISTERED_LIBRARY_ROOT = "/music/new"
+PATH_OUTSIDE_LIBRARY_MESSAGE = "outside library"
+
+CANONICAL_ABSOLUTE_PATH = f"{LIBRARY_ROOT}/{EXPECTED_CANONICAL_PATH}"
+MISPLACED_ABSOLUTE_PATH = f"{LIBRARY_ROOT}/{MISPLACED_PATH}"
+
+
+def test_organize_registers_clean_library_without_mutation_plan() -> None:
+    """A clean first Library is registered and tracked without creating a Plan."""
+    uow = InMemoryUnitOfWork()
+    ports, scanner, snapshot_reader = _ports(
+        uow,
+        (_entry(CANONICAL_ABSOLUTE_PATH),),
+        {CANONICAL_ABSOLUTE_PATH: _snapshot(CANONICAL_ABSOLUTE_PATH, METADATA)},
+        SequenceIdGenerator(library_ids=deque((LIBRARY_ID,)), track_ids=deque((TRACK_ID,))),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+
+    assert scanner.scanned_roots == [LIBRARY_ROOT]
+    assert snapshot_reader.captured_paths == [CANONICAL_ABSOLUTE_PATH]
+    assert result.plan is None
+    assert result.actions == ()
+    assert result.track_count == 1
+    assert result.library.status == LibraryStatus.REGISTERED
+    assert result.library.registered_at == BASE_TIME
+    assert result.library.path_policy_hash == calculate_path_policy_fingerprint(default_app_config().path_policy)
+    assert uow.libraries.get(LIBRARY_ID) == result.library
+    track = uow.tracks.get(TRACK_ID)
+    assert track is not None
+    assert track.current_path == EXPECTED_CANONICAL_PATH
+    assert track.canonical_path == EXPECTED_CANONICAL_PATH
+    assert track.content_hash == CONTENT_HASH
+    assert uow.plans.list_by_library(LIBRARY_ID) == ()
+    assert uow.commit_count == 1
+
+
+def test_organize_creates_plan_for_misplaced_library_file() -> None:
+    """A misplaced Library file creates a reviewed organize move action."""
+    uow = InMemoryUnitOfWork()
+    ports, _, _ = _ports(
+        uow,
+        (_entry(MISPLACED_ABSOLUTE_PATH),),
+        {MISPLACED_ABSOLUTE_PATH: _snapshot(MISPLACED_ABSOLUTE_PATH, METADATA)},
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            track_ids=deque((TRACK_ID,)),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID,)),
+        ),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+
+    plan = result.plan
+    assert plan is not None
+    assert plan.plan_type == PlanType.ORGANIZE
+    assert plan.status == PlanStatus.READY
+    assert plan.config_hash == calculate_config_fingerprint(default_app_config())
+    assert result.library.status == LibraryStatus.UNREGISTERED
+    assert result.library.registered_at is None
+    action = result.actions[0]
+    assert action.status == ActionStatus.PLANNED
+    assert action.reason is None
+    assert action.source_path == MISPLACED_PATH
+    assert action.target_path == EXPECTED_CANONICAL_PATH
+    assert action.track_id == TRACK_ID
+    assert action.content_hash_at_plan == CONTENT_HASH
+    assert uow.plan_actions.get(ACTION_ID) == action
+    track = uow.tracks.get(TRACK_ID)
+    assert track is not None
+    assert track.current_path == MISPLACED_PATH
+    assert track.canonical_path == EXPECTED_CANONICAL_PATH
+
+
+def test_organize_blocks_missing_required_metadata() -> None:
+    """Missing required metadata creates a blocked review action."""
+    uow = InMemoryUnitOfWork()
+    ports, _, _ = _ports(
+        uow,
+        (_entry(MISPLACED_ABSOLUTE_PATH),),
+        {MISPLACED_ABSOLUTE_PATH: _snapshot(MISPLACED_ABSOLUTE_PATH, MISSING_ARTIST_METADATA)},
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID,)),
+        ),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+
+    assert result.library.status == LibraryStatus.BLOCKED
+    assert result.track_count == 0
+    action = result.actions[0]
+    assert action.status == ActionStatus.BLOCKED
+    assert action.reason == PlanActionReason.MISSING_REQUIRED_METADATA
+    assert action.source_path == MISPLACED_PATH
+    assert action.target_path is None
+    assert action.track_id is None
+    assert uow.tracks.list_by_library(LIBRARY_ID) == ()
+
+
+def test_organize_blocks_missing_source_after_scan() -> None:
+    """A file missing during snapshot capture becomes a source_missing block."""
+    uow = InMemoryUnitOfWork()
+    ports, _, snapshot_reader = _ports(
+        uow,
+        (_entry(MISPLACED_ABSOLUTE_PATH),),
+        {},
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID,)),
+        ),
+        missing_paths={MISPLACED_ABSOLUTE_PATH},
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+
+    assert snapshot_reader.captured_paths == [MISPLACED_ABSOLUTE_PATH]
+    assert result.library.status == LibraryStatus.BLOCKED
+    action = result.actions[0]
+    assert action.status == ActionStatus.BLOCKED
+    assert action.reason == PlanActionReason.SOURCE_MISSING
+    assert action.source_path == MISPLACED_PATH
+    assert action.target_path is None
+    assert action.content_hash_at_plan is None
+
+
+def test_organize_blocks_target_conflict_without_overwriting() -> None:
+    """A misplaced file targeting an occupied canonical path is blocked."""
+    uow = InMemoryUnitOfWork()
+    ports, _, _ = _ports(
+        uow,
+        (_entry(CANONICAL_ABSOLUTE_PATH), _entry(MISPLACED_ABSOLUTE_PATH)),
+        {
+            CANONICAL_ABSOLUTE_PATH: _snapshot(CANONICAL_ABSOLUTE_PATH, METADATA),
+            MISPLACED_ABSOLUTE_PATH: _snapshot(MISPLACED_ABSOLUTE_PATH, METADATA),
+        },
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            track_ids=deque((TRACK_ID,)),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID,)),
+        ),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+
+    assert result.library.status == LibraryStatus.BLOCKED
+    assert result.track_count == 1
+    action = result.actions[0]
+    assert action.status == ActionStatus.BLOCKED
+    assert action.reason == PlanActionReason.TARGET_EXISTS
+    assert action.source_path == MISPLACED_PATH
+    assert action.target_path == EXPECTED_CANONICAL_PATH
+    assert action.track_id is None
+
+
+def test_plain_organize_refuses_when_no_library_can_be_selected() -> None:
+    """Plain organize does not guess a Library path."""
+    ports, _, _ = _ports(InMemoryUnitOfWork(), (), {}, SequenceIdGenerator())
+
+    with pytest.raises(OrganizeLibrarySelectionError, match=NO_LIBRARY_SELECTION_MESSAGE):
+        _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest())
+
+
+def test_plain_organize_refuses_ambiguous_library_selection() -> None:
+    """Plain organize requires exactly one known Library."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.libraries.save(_library(SECOND_LIBRARY_ID, SECOND_LIBRARY_ROOT))
+    ports, _, _ = _ports(uow, (), {}, SequenceIdGenerator())
+
+    with pytest.raises(OrganizeLibrarySelectionError, match=AMBIGUOUS_LIBRARY_SELECTION_MESSAGE):
+        _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest())
+
+
+def test_organize_refuses_unregistered_path_when_library_exists() -> None:
+    """An unregistered root is not silently treated as a second Library."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(uow, (), {}, SequenceIdGenerator())
+
+    with pytest.raises(OrganizeLibrarySelectionError, match=UNREGISTERED_PATH_MESSAGE):
+        _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(UNREGISTERED_LIBRARY_ROOT))
+
+
+class StaticConfigStore:
+    """ConfigStore fake returning one AppConfig."""
+
+    def __init__(self, config: AppConfig | None = None) -> None:
+        """Store the config returned by load."""
+        self._config: AppConfig = default_app_config() if config is None else config
+
+    def load(self) -> AppConfig:
+        """Return the configured AppConfig."""
+        return self._config
+
+    def save(self, config: AppConfig) -> None:
+        """Accept saves to satisfy the ConfigStore protocol."""
+        del config
+
+
+class StaticFileScanner:
+    """FileScanner fake returning predetermined scan entries."""
+
+    def __init__(self, entries: tuple[FileScanEntry, ...]) -> None:
+        """Store scan entries and expose scan calls for assertions."""
+        self._entries: tuple[FileScanEntry, ...] = entries
+        self.scanned_roots: list[FileSystemPath] = []
+
+    def scan(self, root: FileSystemPath) -> tuple[FileScanEntry, ...]:
+        """Return configured scan entries."""
+        self.scanned_roots.append(root)
+        return self._entries
+
+
+class MappingSnapshotReader:
+    """FileSnapshotReader fake keyed by path."""
+
+    def __init__(self, snapshots: dict[str, FileSnapshot], missing_paths: set[str] | None = None) -> None:
+        """Store snapshots and optional paths that disappear after scan."""
+        self._snapshots: dict[str, FileSnapshot] = snapshots
+        self._missing_paths: set[str] = set() if missing_paths is None else set(missing_paths)
+        self.captured_paths: list[FileSystemPath] = []
+
+    def capture(self, path: FileSystemPath) -> FileSnapshot:
+        """Return a snapshot or raise FileNotFoundError for vanished files."""
+        self.captured_paths.append(path)
+        path_key = str(path)
+        if path_key in self._missing_paths:
+            raise FileNotFoundError(path_key)
+        return self._snapshots[path_key]
+
+
+class SimplePathResolver:
+    """PathResolver fake for absolute paths under one root."""
+
+    def resolve_library_path(self, library_root: FileSystemPath, library_relative_path: str) -> str:
+        """Join root and relative path without touching the real filesystem."""
+        return f"{str(library_root).rstrip('/')}/{library_relative_path}"
+
+    def relative_to_library(self, library_root: FileSystemPath, path: FileSystemPath) -> str:
+        """Return a Library-relative path for test absolute paths."""
+        root = str(library_root).rstrip("/")
+        path_text = str(path)
+        expected_prefix = f"{root}/"
+        if not path_text.startswith(expected_prefix):
+            raise ValueError(PATH_OUTSIDE_LIBRARY_MESSAGE)
+        return path_text.removeprefix(expected_prefix)
+
+
+def _ports(
+    uow: InMemoryUnitOfWork,
+    entries: tuple[FileScanEntry, ...],
+    snapshots: dict[str, FileSnapshot],
+    id_generator: SequenceIdGenerator,
+    *,
+    missing_paths: set[str] | None = None,
+) -> tuple[CreateOrganizePlanPorts, StaticFileScanner, MappingSnapshotReader]:
+    scanner = StaticFileScanner(entries)
+    snapshot_reader = MappingSnapshotReader(snapshots, missing_paths)
+    ports = CreateOrganizePlanPorts(
+        uow=uow,
+        file_scanner=scanner,
+        file_snapshot_reader=snapshot_reader,
+        config_store=StaticConfigStore(),
+        path_resolver=SimplePathResolver(),
+        clock=FixedClock(BASE_TIME),
+        id_generator=id_generator,
+    )
+    return ports, scanner, snapshot_reader
+
+
+def _entry(path: str) -> FileScanEntry:
+    return FileScanEntry(path=path, size=FILE_SIZE, mtime=BASE_TIME, file_extension=FILE_EXTENSION)
+
+
+def _snapshot(path: str, metadata: TrackMetadata) -> FileSnapshot:
+    return FileSnapshot(
+        path=path,
+        size=FILE_SIZE,
+        mtime=BASE_TIME,
+        file_extension=FILE_EXTENSION,
+        content_hash=CONTENT_HASH,
+        metadata_hash=calculate_metadata_fingerprint(metadata),
+        metadata=metadata,
+        captured_at=BASE_TIME,
+    )
+
+
+def _library(library_id: LibraryId, root_path: str) -> Library:
+    return Library(
+        library_id=library_id,
+        root_path=root_path,
+        path_policy_hash="old-path-policy-hash",
+        registered_at=BASE_TIME,
+        status=LibraryStatus.REGISTERED,
+        created_at=BASE_TIME,
+        updated_at=BASE_TIME,
+    )

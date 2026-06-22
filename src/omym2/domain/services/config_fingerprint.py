@@ -18,7 +18,7 @@ from omym2.config import (
 )
 
 if TYPE_CHECKING:
-    from omym2.domain.models.app_config import AppConfig
+    from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
 
 JSON_SEPARATORS = (CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR, CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR)
 
@@ -28,6 +28,21 @@ def calculate_config_fingerprint(config: AppConfig, algorithm: str = CONFIG_FING
     # Canonical JSON keeps the hash independent from TOML formatting, comments,
     # and table ordering while still reflecting every AppConfig field.
     payload = json.dumps(asdict(config), sort_keys=True, separators=JSON_SEPARATORS)
+    return _fingerprint_payload(payload, algorithm)
+
+
+def calculate_path_policy_fingerprint(
+    path_policy_config: PathPolicyConfig,
+    algorithm: str = CONFIG_FINGERPRINT_ALGORITHM,
+) -> str:
+    """Return a stable fingerprint for Library registration path policy."""
+    # Library registration depends on canonical path rules, not unrelated
+    # settings such as UI display choices or command defaults.
+    payload = json.dumps(asdict(path_policy_config), sort_keys=True, separators=JSON_SEPARATORS)
+    return _fingerprint_payload(payload, algorithm)
+
+
+def _fingerprint_payload(payload: str, algorithm: str) -> str:
     digest = new(algorithm)
     digest.update(payload.encode(CONFIG_FINGERPRINT_ENCODING))
     return digest.hexdigest()
