@@ -89,7 +89,7 @@ def _tags_from_audio(audio: object) -> Mapping[str, object]:
     if audio_tags is not None:
         return audio_tags
 
-    tags = getattr(audio, "tags", None)
+    tags = cast("object | None", getattr(audio, "tags", None))
     if tags is None:
         return {}
 
@@ -110,7 +110,7 @@ def _materialized_tag_mapping(tags: object) -> Mapping[str, object] | None:
 
     try:
         return dict(cast("Iterable[tuple[str, object]]", items()))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 

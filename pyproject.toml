@@ -13,6 +13,7 @@ omym2 = "omym2.adapters.cli.main:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-dir]
 "" = "src"

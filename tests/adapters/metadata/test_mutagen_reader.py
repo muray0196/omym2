@@ -5,7 +5,6 @@ Why: Verifies external tag data is converted to TrackMetadata.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 import pytest
@@ -17,6 +16,8 @@ from omym2.adapters.metadata.mutagen_reader import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from omym2.features.common_ports import FileSystemPath
 
 ALBUM = "Example Album"
@@ -36,7 +37,7 @@ class DictLikeTags:
     """Minimal Mutagen-style tag container that is not a Mapping."""
 
     def __init__(self, values: dict[str, object]) -> None:
-        self._values = values
+        self._values: dict[str, object] = values
 
     def items(self) -> Iterable[tuple[str, object]]:
         return self._values.items()
@@ -46,7 +47,7 @@ class AudioWithTags:
     """Minimal Mutagen-style audio object exposing tags separately."""
 
     def __init__(self, tags: object) -> None:
-        self.tags = tags
+        self.tags: object = tags
 
 
 def test_mutagen_metadata_reader_maps_easy_tags() -> None:
