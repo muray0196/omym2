@@ -32,6 +32,15 @@ if TYPE_CHECKING:
 type FileSystemPath = str | PathLike[str]
 
 
+class ConfigStoreValidationError(ValueError):
+    """Raised when persisted settings cannot be converted into AppConfig."""
+
+    def __init__(self, errors: Sequence[str]) -> None:
+        """Store stable validation messages for feature and CLI callers."""
+        self.errors: tuple[str, ...] = tuple(errors)
+        super().__init__("; ".join(self.errors))
+
+
 class LibraryRepository(Protocol):
     """Persistence contract for Library identity and registration state."""
 

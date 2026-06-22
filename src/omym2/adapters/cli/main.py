@@ -5,12 +5,38 @@ Why: Establishes the command adapter boundary before feature commands exist.
 
 from __future__ import annotations
 
+import sys
+from typing import TYPE_CHECKING
 
-def main() -> int:
-    """Run the OMYM2 CLI skeleton.
+from omym2.adapters.cli.commands.config import run_config_command
 
-    Returns:
-        Process exit code for the console script.
-    """
-    # Command dispatch is intentionally empty until feature usecases exist.
-    return 0
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+    from typing import TextIO
+
+CONFIG_COMMAND = "config"
+SUCCESS_EXIT_CODE = 0
+UNKNOWN_COMMAND_EXIT_CODE = 2
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+    config_path: Path | None = None,
+) -> int:
+    """Run the OMYM2 CLI and return a process exit code."""
+    output = sys.stdout if stdout is None else stdout
+    error_output = sys.stderr if stderr is None else stderr
+    args = tuple(sys.argv[1:] if argv is None else argv)
+
+    if len(args) == 0:
+        return SUCCESS_EXIT_CODE
+
+    command, *command_args = args
+    if command == CONFIG_COMMAND:
+        return run_config_command(command_args, output, error_output, config_path)
+
+    _ = error_output.write(f"Unknown command: {command}\n")
+    return UNKNOWN_COMMAND_EXIT_CODE
