@@ -7,11 +7,22 @@ from __future__ import annotations
 
 from typing import Final
 
+APP_DIRECTORY_NAME: Final = "omym2"  # application root directory under the user home
+CONFIG_DIRECTORY_NAME: Final = "config"  # user config directory under the application root
+CONFIG_FILE_ENCODING: Final = "utf-8"  # TOML config file encoding
+CONFIG_FILE_NAME: Final = "config.toml"  # TOML settings file name
 CURRENT_DIRECTORY_REFERENCE: Final = "."
+DATA_DIRECTORY_NAME: Final = ".data"  # internal data directory under the application root
+SQLITE_DATABASE_FILE_NAME: Final = "omym2.sqlite3"  # SQLite database file name
 LOGICAL_PATH_SEPARATOR: Final = "/"
 PARENT_DIRECTORY_REFERENCE: Final = ".."
 UUID_VERSION: Final = 7
 
+ALLOWED_COMMAND_MODES: Final = frozenset({"plan_first"})  # supported command default_mode values
+ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES: Final = frozenset({"skip"})  # duplicate content decisions
+ALLOWED_COLLISION_MISSING_METADATA_POLICIES: Final = frozenset({"block"})  # missing metadata decisions
+ALLOWED_COLLISION_TARGET_EXISTS_POLICIES: Final = frozenset({"conflict"})  # target collision decisions
+ALLOWED_UI_THEMES: Final = frozenset({"system", "light", "dark"})  # supported local UI themes
 CONFIG_VERSION: Final = 1  # supported user config schema version
 DEFAULT_COMMAND_MODE: Final = "plan_first"  # initial plan creation mode for mutating commands
 DEFAULT_ADD_AUTO_APPLY: Final = False  # add command auto-apply default
@@ -35,6 +46,10 @@ DEFAULT_COLLISION_ON_MISSING_METADATA: Final = "block"  # missing metadata polic
 DEFAULT_UI_THEME: Final = "system"  # default UI color mode
 DEFAULT_UI_SHOW_ADVANCED_SETTINGS: Final = False  # default advanced settings visibility
 CONTENT_FINGERPRINT_ALGORITHM: Final = "sha256"  # content fingerprint hash algorithm
+CONFIG_FINGERPRINT_ALGORITHM: Final = "sha256"  # config fingerprint hash algorithm
+CONFIG_FINGERPRINT_ENCODING: Final = "utf-8"  # config fingerprint payload encoding
+CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR: Final = ","  # canonical JSON item separator
+CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR: Final = ":"  # canonical JSON key separator
 METADATA_FINGERPRINT_ALGORITHM: Final = "sha256"  # metadata fingerprint hash algorithm
 METADATA_FINGERPRINT_ENCODING: Final = "utf-8"  # metadata fingerprint payload encoding
 METADATA_FINGERPRINT_JSON_ITEM_SEPARATOR: Final = ","  # canonical JSON item separator

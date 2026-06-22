@@ -1,0 +1,177 @@
+"""
+Summary: Implements TOML-backed AppConfig persistence.
+Why: Stores editable user settings outside SQLite in the documented location.
+"""
+
+from __future__ import annotations
+
+import json
+import tomllib
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from omym2.adapters.config.config_validator import (
+    ADD_SECTION,
+    AUTO_APPLY_KEY,
+    COLLISION_SECTION,
+    DEFAULT_MODE_KEY,
+    INCOMING_KEY,
+    LIBRARY_KEY,
+    MAX_FILENAME_LENGTH_KEY,
+    METADATA_SECTION,
+    ON_DUPLICATE_HASH_KEY,
+    ON_MISSING_METADATA_KEY,
+    ON_TARGET_EXISTS_KEY,
+    ONLY_MISPLACED_KEY,
+    ORGANIZE_SECTION,
+    PATH_POLICY_SECTION,
+    PATHS_SECTION,
+    PREFER_ALBUM_ARTIST_KEY,
+    REFRESH_SECTION,
+    REQUIRE_ALBUM_KEY,
+    REQUIRE_ARTIST_KEY,
+    REQUIRE_TITLE_KEY,
+    SANITIZE_KEY,
+    SHOW_ADVANCED_SETTINGS_KEY,
+    TEMPLATE_KEY,
+    THEME_KEY,
+    UI_SECTION,
+    UNKNOWN_ALBUM_KEY,
+    UNKNOWN_ARTIST_KEY,
+    VERSION_KEY,
+    validate_config_data,
+)
+from omym2.adapters.config.default_config import default_app_config
+from omym2.config import CONFIG_FILE_ENCODING
+from omym2.features.common_ports import ConfigStoreValidationError
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from omym2.domain.models.app_config import AppConfig
+
+INVALID_TOML_MESSAGE_PREFIX = "Invalid TOML"
+UNSUPPORTED_TOML_VALUE_MESSAGE = "Unsupported TOML value type."
+
+
+@dataclass(frozen=True, slots=True)
+class TomlConfigStore:
+    """ConfigStore implementation backed by one TOML file."""
+
+    config_path: Path
+
+    def load(self) -> AppConfig:
+        """Load settings, returning defaults when the file is not created yet."""
+        if not self.config_path.exists():
+            return default_app_config()
+        return load_config_text(self.config_path.read_text(encoding=CONFIG_FILE_ENCODING))
+
+    def save(self, config: AppConfig) -> None:
+        """Persist settings, creating the config directory lazily."""
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        _ = self.config_path.write_text(dump_config_toml(config), encoding=CONFIG_FILE_ENCODING)
+
+
+def load_config_text(config_text: str) -> AppConfig:
+    """Parse and validate TOML config text."""
+    try:
+        raw_config = tomllib.loads(config_text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigStoreValidationError((f"{INVALID_TOML_MESSAGE_PREFIX}: {exc}",)) from exc
+    return validate_config_data(raw_config)
+
+
+def dump_config_toml(config: AppConfig) -> str:
+    """Return deterministic TOML text for an AppConfig value."""
+    lines = [f"{VERSION_KEY} = {config.version}", ""]
+    _append_section(
+        lines,
+        PATHS_SECTION,
+        (
+            (LIBRARY_KEY, config.paths.library),
+            (INCOMING_KEY, config.paths.incoming),
+        ),
+    )
+    _append_section(
+        lines,
+        ADD_SECTION,
+        (
+            (DEFAULT_MODE_KEY, config.add.default_mode),
+            (AUTO_APPLY_KEY, config.add.auto_apply),
+        ),
+    )
+    _append_section(
+        lines,
+        ORGANIZE_SECTION,
+        (
+            (DEFAULT_MODE_KEY, config.organize.default_mode),
+            (AUTO_APPLY_KEY, config.organize.auto_apply),
+            (ONLY_MISPLACED_KEY, config.organize.only_misplaced),
+        ),
+    )
+    _append_section(
+        lines,
+        REFRESH_SECTION,
+        (
+            (DEFAULT_MODE_KEY, config.refresh.default_mode),
+            (AUTO_APPLY_KEY, config.refresh.auto_apply),
+        ),
+    )
+    _append_section(
+        lines,
+        PATH_POLICY_SECTION,
+        (
+            (TEMPLATE_KEY, config.path_policy.template),
+            (UNKNOWN_ARTIST_KEY, config.path_policy.unknown_artist),
+            (UNKNOWN_ALBUM_KEY, config.path_policy.unknown_album),
+            (SANITIZE_KEY, config.path_policy.sanitize),
+            (MAX_FILENAME_LENGTH_KEY, config.path_policy.max_filename_length),
+        ),
+    )
+    _append_section(
+        lines,
+        METADATA_SECTION,
+        (
+            (PREFER_ALBUM_ARTIST_KEY, config.metadata.prefer_album_artist),
+            (REQUIRE_TITLE_KEY, config.metadata.require_title),
+            (REQUIRE_ARTIST_KEY, config.metadata.require_artist),
+            (REQUIRE_ALBUM_KEY, config.metadata.require_album),
+        ),
+    )
+    _append_section(
+        lines,
+        COLLISION_SECTION,
+        (
+            (ON_TARGET_EXISTS_KEY, config.collision.on_target_exists),
+            (ON_DUPLICATE_HASH_KEY, config.collision.on_duplicate_hash),
+            (ON_MISSING_METADATA_KEY, config.collision.on_missing_metadata),
+        ),
+    )
+    _append_section(
+        lines,
+        UI_SECTION,
+        (
+            (THEME_KEY, config.ui.theme),
+            (SHOW_ADVANCED_SETTINGS_KEY, config.ui.show_advanced_settings),
+        ),
+    )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _append_section(lines: list[str], section: str, values: tuple[tuple[str, object | None], ...]) -> None:
+    lines.append(f"[{section}]")
+    for key, value in values:
+        if value is None:
+            continue
+        lines.append(f"{key} = {_format_toml_value(value)}")
+    lines.append("")
+
+
+def _format_toml_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        return json.dumps(value)
+    raise TypeError(UNSUPPORTED_TOML_VALUE_MESSAGE)
