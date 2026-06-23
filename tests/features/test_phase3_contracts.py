@@ -34,9 +34,6 @@ from omym2.features.history.dto import GetRunDetailRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
-from omym2.features.organize.dto import CreateOrganizePlanRequest
-from omym2.features.organize.ports import CreateOrganizePlanPorts
-from omym2.features.organize.usecases.create_organize_plan import CreateOrganizePlanUseCase
 from omym2.features.refresh.dto import CreateRefreshPlanRequest
 from omym2.features.refresh.ports import CreateRefreshPlanPorts
 from omym2.features.refresh.usecases.create_refresh_plan import CreateRefreshPlanUseCase
@@ -181,9 +178,6 @@ def test_phase3_usecase_skeletons_define_contracts_without_behavior() -> None:
     id_generator = SequenceIdGenerator()
 
     exercises: tuple[Callable[[], object], ...] = (
-        lambda: CreateOrganizePlanUseCase(
-            CreateOrganizePlanPorts(uow, scanner, snapshot_reader, clock, id_generator)
-        ).execute(CreateOrganizePlanRequest(library_root=LIBRARY_ROOT)),
         lambda: CreateAddPlanUseCase(CreateAddPlanPorts(uow, scanner, snapshot_reader, clock, id_generator)).execute(
             CreateAddPlanRequest(SOURCE_PATH)
         ),
