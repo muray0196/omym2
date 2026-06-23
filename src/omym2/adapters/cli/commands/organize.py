@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
@@ -50,13 +51,13 @@ def run_organize_command(
     """Run organize and return a process exit code."""
     exit_code = SUCCESS_EXIT_CODE
     if APPLY_FLAG in args:
-        _ = stderr.write(f"{ORGANIZE_APPLY_DEFERRED_MESSAGE}\n")
+        write_line(stderr, ORGANIZE_APPLY_DEFERRED_MESSAGE)
         exit_code = ERROR_EXIT_CODE
     else:
         try:
             library_root = _parse_library_root(args)
         except ValueError:
-            _write_usage(stderr)
+            write_usage(stderr, ORGANIZE_USAGE_MESSAGE)
             exit_code = USAGE_EXIT_CODE
         else:
             exit_code = _run_organize(library_root, stdout, stderr, config_path, database_path)
@@ -85,16 +86,16 @@ def _run_organize(
     try:
         result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(library_root=library_root))
     except ConfigStoreValidationError as exc:
-        _write_validation_errors(stderr, exc.errors)
+        write_validation_errors(stderr, exc.errors)
         return ERROR_EXIT_CODE
     except OrganizeLibrarySelectionError as exc:
-        _ = stderr.write(f"{exc}\n")
+        write_line(stderr, str(exc))
         return ERROR_EXIT_CODE
     except MetadataReadError as exc:
-        _ = stderr.write(f"Metadata read error: {exc}\n")
+        write_line(stderr, f"Metadata read error: {exc}")
         return ERROR_EXIT_CODE
     except OSError as exc:
-        _ = stderr.write(f"Organize I/O error: {exc}\n")
+        write_line(stderr, f"Organize I/O error: {exc}")
         return ERROR_EXIT_CODE
 
     _write_result(stdout, result)
@@ -123,11 +124,3 @@ def _write_result(stdout: TextIO, result: OrganizeLibraryResult) -> None:
     _ = stdout.write(f"Organize plan created: {result.plan.plan_id}\n")
     _ = stdout.write(f"actions: {len(result.actions)}\n")
     _ = stdout.write(f"blocked_actions: {blocked_count}\n")
-
-
-def _write_usage(stderr: TextIO) -> None:
-    _ = stderr.write(f"{ORGANIZE_USAGE_MESSAGE}\n")
-
-
-def _write_validation_errors(stderr: TextIO, errors: tuple[str, ...]) -> None:
-    stderr.writelines(f"{error}\n" for error in errors)
