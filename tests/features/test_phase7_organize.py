@@ -197,6 +197,35 @@ def test_organize_blocks_missing_source_after_scan() -> None:
     assert action.content_hash_at_plan is None
 
 
+def test_organize_blocks_invalid_path_with_library_relative_source() -> None:
+    """Invalid scanned Library entries still store source paths relative to the Library root."""
+    invalid_absolute_path = f"{LIBRARY_ROOT}/Linked/Outside.flac"
+    uow = InMemoryUnitOfWork()
+    ports, _, snapshot_reader = _ports(
+        uow,
+        (_entry(invalid_absolute_path),),
+        {},
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID,)),
+        ),
+    )
+    assert isinstance(ports.path_resolver, SimplePathResolver)
+    ports.path_resolver.invalid_paths.add(invalid_absolute_path)
+
+    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+
+    assert snapshot_reader.captured_paths == []
+    assert result.library.status == LibraryStatus.BLOCKED
+    action = result.actions[0]
+    assert action.status == ActionStatus.BLOCKED
+    assert action.reason == PlanActionReason.INVALID_PATH
+    assert action.source_path == "Linked/Outside.flac"
+    assert action.target_path is None
+    assert action.content_hash_at_plan is None
+
+
 def test_organize_blocks_target_conflict_without_overwriting() -> None:
     """A misplaced file targeting an occupied canonical path is blocked."""
     uow = InMemoryUnitOfWork()
@@ -307,6 +336,10 @@ class MappingSnapshotReader:
 class SimplePathResolver:
     """PathResolver fake for absolute paths under one root."""
 
+    def __init__(self) -> None:
+        """Store paths that should be treated as outside the Library after resolution."""
+        self.invalid_paths: set[str] = set()
+
     def resolve_library_path(self, library_root: FileSystemPath, library_relative_path: str) -> str:
         """Join root and relative path without touching the real filesystem."""
         return f"{str(library_root).rstrip('/')}/{library_relative_path}"
@@ -315,6 +348,8 @@ class SimplePathResolver:
         """Return a Library-relative path for test absolute paths."""
         root = str(library_root).rstrip("/")
         path_text = str(path)
+        if path_text in self.invalid_paths:
+            raise ValueError(PATH_OUTSIDE_LIBRARY_MESSAGE)
         expected_prefix = f"{root}/"
         if not path_text.startswith(expected_prefix):
             raise ValueError(PATH_OUTSIDE_LIBRARY_MESSAGE)

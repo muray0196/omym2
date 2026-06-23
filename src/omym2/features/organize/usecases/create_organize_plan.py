@@ -6,6 +6,7 @@ Why: Registers clean Libraries and records review Plans without moving files.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from omym2.config import PLAN_ACTION_SORT_ORDER_START, PLAN_ACTION_SORT_ORDER_STEP
@@ -16,6 +17,7 @@ from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 from omym2.features.organize.dto import OrganizeLibraryResult
+from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -100,7 +102,7 @@ class CreateOrganizePlanUseCase:
             source_path = self.ports.path_resolver.relative_to_library(library_root, entry.path)
         except ValueError:
             return _OrganizeCandidate(
-                source_path=entry.path,
+                source_path=_scanner_relative_path(library_root, entry.path),
                 snapshot=None,
                 target_path=None,
                 block_reason=PlanActionReason.INVALID_PATH,
@@ -354,6 +356,15 @@ def _has_missing_required_metadata(snapshot: FileSnapshot, config: AppConfig) ->
 
 def _missing_text(value: str | None) -> bool:
     return value is None or value.strip() == ""
+
+
+def _scanner_relative_path(library_root: str, path: str) -> str:
+    """Return the lexical Library-relative scanner path for invalid sources."""
+    try:
+        relative_path = Path(path).expanduser().relative_to(Path(library_root).expanduser())
+    except ValueError:
+        return normalize_library_relative_path(Path(path).name)
+    return normalize_library_relative_path(relative_path.as_posix())
 
 
 def _path_generation_failure_reason(exc: ValueError) -> PlanActionReason:
