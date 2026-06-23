@@ -1,4 +1,4 @@
-# ruff: noqa: EM101, EM102, PLR0913, S310, S603, TRY003 -- Local developer script calls configured HTTP and git/gh.
+# ruff: noqa: EM101, EM102, INP001, PLR0913, S310, S603, TRY003 -- Local developer script calls configured HTTP and git/gh.
 """Run an OMYM2-focused review with a local OpenAI-compatible LLM."""
 
 from __future__ import annotations
