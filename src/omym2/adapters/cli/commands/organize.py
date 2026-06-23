@@ -49,19 +49,17 @@ def run_organize_command(
     database_path: Path | None = None,
 ) -> int:
     """Run organize and return a process exit code."""
-    exit_code = SUCCESS_EXIT_CODE
     if APPLY_FLAG in args:
         write_line(stderr, ORGANIZE_APPLY_DEFERRED_MESSAGE)
-        exit_code = ERROR_EXIT_CODE
-    else:
-        try:
-            library_root = _parse_library_root(args)
-        except ValueError:
-            write_usage(stderr, ORGANIZE_USAGE_MESSAGE)
-            exit_code = USAGE_EXIT_CODE
-        else:
-            exit_code = _run_organize(library_root, stdout, stderr, config_path, database_path)
-    return exit_code
+        return ERROR_EXIT_CODE
+
+    try:
+        library_root = _parse_library_root(args)
+    except ValueError:
+        write_usage(stderr, ORGANIZE_USAGE_MESSAGE)
+        return USAGE_EXIT_CODE
+
+    return _run_organize(library_root, stdout, stderr, config_path, database_path)
 
 
 def _run_organize(
@@ -103,7 +101,7 @@ def _run_organize(
 
 
 def _parse_library_root(args: Sequence[str]) -> str | None:
-    if len(args) == 0:
+    if not args:
         return None
     if len(args) == LIBRARY_OPTION_ARG_COUNT and args[0] == LIBRARY_OPTION:
         return _normalize_library_root(args[1])
