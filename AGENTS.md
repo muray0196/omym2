@@ -31,3 +31,11 @@ You have these skills in this project
 * Library identity is stable by `library_id`, not by root path.
 * Stored Library-managed paths are Library-root-relative.
 * Run the relevant checks before marking work complete.
+
+## Decision records
+
+Use `docs/decisions/` only when changing or challenging a durable product or
+architecture rule.
+
+Decision records are rationale, not active specifications. Current rules live in
+`ARCHITECTURE.md` and the relevant documents under `docs/`.
