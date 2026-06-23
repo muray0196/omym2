@@ -1,4 +1,4 @@
-# ruff: noqa: EM102, PLR0913, S310, S603, S607, TRY003 -- Local developer script calls configured HTTP and git/gh.
+# ruff: noqa: EM101, EM102, PLR0913, S310, S603, TRY003 -- Local developer script calls configured HTTP and git/gh.
 """Run an OMYM2-focused review with a local OpenAI-compatible LLM."""
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-DEFAULT_BASE_URL = "http://localhost:1234/v1"
+DEFAULT_BASE_URL = "http://172.22.1.207:1234/v1"
 DEFAULT_API_KEY = "lm-studio"
 DEFAULT_TIMEOUT_SECONDS = 120
 DEFAULT_MAX_CHARS = 120_000
@@ -388,7 +388,7 @@ def _write_review(
         ---
         source: {review_input.source_label}
         model: {model}
-        base_url: {base_url.rstrip('/')}
+        base_url: {base_url.rstrip("/")}
         generated_at: {generated_at}
         ---
 
