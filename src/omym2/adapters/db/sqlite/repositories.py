@@ -30,6 +30,26 @@ INVALID_ROW_TEXT_MESSAGE = "Expected SQLite text value."
 INVALID_ROW_INTEGER_MESSAGE = "Expected SQLite integer value."
 INVALID_SUMMARY_VALUE_MESSAGE = "Persisted summary JSON must contain string values."
 
+TRACK_SELECT_FROM = """
+            SELECT
+                track_id,
+                library_id,
+                current_path,
+                canonical_path,
+                content_hash,
+                metadata_hash,
+                metadata_json,
+                status,
+                first_seen_at,
+                last_seen_at,
+                updated_at
+            FROM tracks
+"""
+RUN_SELECT_FROM = """
+            SELECT run_id, plan_id, library_id, status, started_at, completed_at, error_summary
+            FROM runs
+"""
+
 
 class _SQLiteRepository:
     """Base repository for shared SQLite connection handling."""
@@ -121,20 +141,8 @@ class SQLiteTrackRepository(_SQLiteRepository):
         """Return one Track by stable ID."""
         row = _fetch_one(
             self._connection,
-            """
-            SELECT
-                track_id,
-                library_id,
-                current_path,
-                canonical_path,
-                content_hash,
-                metadata_hash,
-                metadata_json,
-                status,
-                first_seen_at,
-                last_seen_at,
-                updated_at
-            FROM tracks
+            TRACK_SELECT_FROM
+            + """
             WHERE track_id = ?
             """,
             (str(track_id),),
@@ -145,20 +153,8 @@ class SQLiteTrackRepository(_SQLiteRepository):
         """Return Tracks owned by one Library."""
         rows = _fetch_all(
             self._connection,
-            """
-            SELECT
-                track_id,
-                library_id,
-                current_path,
-                canonical_path,
-                content_hash,
-                metadata_hash,
-                metadata_json,
-                status,
-                first_seen_at,
-                last_seen_at,
-                updated_at
-            FROM tracks
+            TRACK_SELECT_FROM
+            + """
             WHERE library_id = ?
             ORDER BY current_path, track_id
             """,
@@ -170,20 +166,8 @@ class SQLiteTrackRepository(_SQLiteRepository):
         """Return Tracks with a matching content hash in one Library."""
         rows = _fetch_all(
             self._connection,
-            """
-            SELECT
-                track_id,
-                library_id,
-                current_path,
-                canonical_path,
-                content_hash,
-                metadata_hash,
-                metadata_json,
-                status,
-                first_seen_at,
-                last_seen_at,
-                updated_at
-            FROM tracks
+            TRACK_SELECT_FROM
+            + """
             WHERE library_id = ? AND content_hash = ?
             ORDER BY current_path, track_id
             """,
@@ -414,9 +398,8 @@ class SQLiteRunRepository(_SQLiteRepository):
         """Return one Run by ID."""
         row = _fetch_one(
             self._connection,
-            """
-            SELECT run_id, plan_id, library_id, status, started_at, completed_at, error_summary
-            FROM runs
+            RUN_SELECT_FROM
+            + """
             WHERE run_id = ?
             """,
             (str(run_id),),
@@ -427,9 +410,8 @@ class SQLiteRunRepository(_SQLiteRepository):
         """Return Runs owned by one Library."""
         rows = _fetch_all(
             self._connection,
-            """
-            SELECT run_id, plan_id, library_id, status, started_at, completed_at, error_summary
-            FROM runs
+            RUN_SELECT_FROM
+            + """
             WHERE library_id = ?
             ORDER BY started_at, run_id
             """,
@@ -441,9 +423,8 @@ class SQLiteRunRepository(_SQLiteRepository):
         """Return Runs created for one Plan."""
         rows = _fetch_all(
             self._connection,
-            """
-            SELECT run_id, plan_id, library_id, status, started_at, completed_at, error_summary
-            FROM runs
+            RUN_SELECT_FROM
+            + """
             WHERE plan_id = ?
             ORDER BY started_at, run_id
             """,

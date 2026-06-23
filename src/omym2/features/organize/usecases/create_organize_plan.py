@@ -101,38 +101,34 @@ class CreateOrganizePlanUseCase:
         try:
             source_path = self.ports.path_resolver.relative_to_library(library_root, entry.path)
         except ValueError:
-            return _OrganizeCandidate(
+            return _blocked_candidate(
                 source_path=_scanner_relative_path(library_root, entry.path),
                 snapshot=None,
-                target_path=None,
                 block_reason=PlanActionReason.INVALID_PATH,
             )
 
         try:
             snapshot = self.ports.file_snapshot_reader.capture(entry.path)
         except FileNotFoundError:
-            return _OrganizeCandidate(
+            return _blocked_candidate(
                 source_path=source_path,
                 snapshot=None,
-                target_path=None,
                 block_reason=PlanActionReason.SOURCE_MISSING,
             )
 
         if _has_missing_required_metadata(snapshot, config):
-            return _OrganizeCandidate(
+            return _blocked_candidate(
                 source_path=source_path,
                 snapshot=snapshot,
-                target_path=None,
                 block_reason=PlanActionReason.MISSING_REQUIRED_METADATA,
             )
 
         try:
             target_path = PathPolicy(config.path_policy).canonical_path(snapshot.metadata, snapshot.file_extension)
         except ValueError as exc:
-            return _OrganizeCandidate(
+            return _blocked_candidate(
                 source_path=source_path,
                 snapshot=snapshot,
-                target_path=None,
                 block_reason=_path_generation_failure_reason(exc),
             )
 
@@ -301,6 +297,20 @@ class _ActionRecord:
     candidate: _OrganizeCandidate
     track_id: TrackId | None
     reason: PlanActionReason | None
+
+
+def _blocked_candidate(
+    *,
+    source_path: str,
+    snapshot: FileSnapshot | None,
+    block_reason: PlanActionReason,
+) -> _OrganizeCandidate:
+    return _OrganizeCandidate(
+        source_path=source_path,
+        snapshot=snapshot,
+        target_path=None,
+        block_reason=block_reason,
+    )
 
 
 def _with_path_policy_hash(library: Library, path_policy_hash: str, timestamp: datetime) -> Library:
