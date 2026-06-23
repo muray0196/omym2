@@ -295,7 +295,7 @@ def _request_review(
         raise ReviewError("chat completion response did not contain choices[0].message.content") from exc
     if not isinstance(content, str):
         raise ReviewError("chat completion content was not text")
-    return content.strip()
+    return _strip_outer_markdown_fence(content.strip())
 
 
 def _http_json(method: str, url: str, api_key: str, body: dict[str, Any] | None, timeout: int) -> dict[str, Any]:
@@ -341,35 +341,46 @@ def _build_user_prompt(review_input: ReviewInput, context: list[tuple[str, str]]
         input_content = input_content[:max_chars]
         truncated_notice = f"\n\nInput was truncated to {max_chars} characters. Call out that limitation."
 
-    return textwrap.dedent(
-        f"""
-        Review source: {review_input.source_label}
-
-        Project context:
-
-        {context_blocks}
-
-        Review input:
-
-        ```diff
-        {input_content}
-        ```
-
-        Produce Markdown with exactly these sections:
-
-        # Local LLM Review
-        ## Verdict
-        ## Blocking
-        ## Major
-        ## Minor
-        ## Missing Tests
-        ## OMYM2 Invariant Risks
-        ## Suggested Agent Prompt
-
-        Keep findings grounded in the provided context and input. Do not invent files or behavior not shown.
-        {truncated_notice}
-        """
+    return "\n".join(
+        [
+            f"Review source: {review_input.source_label}",
+            "",
+            "Project context:",
+            "",
+            context_blocks,
+            "",
+            "Review input:",
+            "",
+            "```diff",
+            input_content,
+            "```",
+            "",
+            "Produce Markdown with exactly these sections:",
+            "",
+            "# Local LLM Review",
+            "## Verdict",
+            "## Blocking",
+            "## Major",
+            "## Minor",
+            "## Missing Tests",
+            "## OMYM2 Invariant Risks",
+            "## Suggested Agent Prompt",
+            "",
+            "Keep findings grounded in the provided context and input. Do not invent files or behavior not shown.",
+            truncated_notice.strip(),
+        ]
     ).strip()
+
+
+def _strip_outer_markdown_fence(content: str) -> str:
+    lines = content.splitlines()
+    if len(lines) < 2:
+        return content
+    first = lines[0].strip().lower()
+    last = lines[-1].strip()
+    if first in {"```", "```md", "```markdown"} and last == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return content
 
 
 def _write_review(
@@ -383,21 +394,22 @@ def _write_review(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     generated_at = datetime.now(UTC).isoformat()
     context_list = "\n".join(f"- {path}" for path, _ in context) or "- none"
-    output = textwrap.dedent(
-        f"""
-        ---
-        source: {review_input.source_label}
-        model: {model}
-        base_url: {base_url.rstrip("/")}
-        generated_at: {generated_at}
-        ---
-
-        Context files:
-        {context_list}
-
-        {review}
-        """
-    ).lstrip()
+    output = "\n".join(
+        [
+            "---",
+            f"source: {json.dumps(review_input.source_label)}",
+            f"model: {json.dumps(model)}",
+            f"base_url: {json.dumps(base_url.rstrip('/'))}",
+            f"generated_at: {json.dumps(generated_at)}",
+            "---",
+            "",
+            "Context files:",
+            context_list,
+            "",
+            review.strip(),
+            "",
+        ]
+    )
     output_path.write_text(output, encoding="utf-8")
 
 
