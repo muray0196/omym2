@@ -59,7 +59,7 @@ testpaths = ["tests"]
 
 [tool.basedpyright]
 pythonVersion = "3.14"
-include = ["src", "tests"]
+include = ["src", "tests", "scripts"]
 exclude = ["**/__pycache__"]
 stubPath = ""
 typeCheckingMode = "recommended"
