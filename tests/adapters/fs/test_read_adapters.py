@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from omym2.adapters.fs.file_mover import FilesystemFileMover
 from omym2.adapters.fs.file_presence import FilesystemFilePresence
 from omym2.adapters.fs.file_scanner import FilesystemFileScanner
 from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
@@ -37,6 +38,7 @@ RELATIVE_PATH_WITH_CURRENT_DIR = "./Artist/Album/Track.flac"
 TRACK_ALBUM = "Album"
 TRACK_ARTIST = "Artist"
 TRACK_TITLE = "Track"
+TARGET_FILE_NAME = "Moved.flac"
 
 
 def test_file_scanner_returns_file_scan_entries_not_snapshots(tmp_path: Path) -> None:
@@ -108,6 +110,32 @@ def test_file_presence_reports_existing_paths_without_reading(tmp_path: Path) ->
 
     assert presence.exists(audio_path)
     assert not presence.exists(missing_path)
+
+
+def test_file_mover_moves_file_and_creates_parent_directory(tmp_path: Path) -> None:
+    """FileMover performs the Phase 9 filesystem mutation."""
+    source_path = tmp_path / AUDIO_FILE_NAME
+    target_path = tmp_path / "Artist" / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+
+    FilesystemFileMover().move(source_path, target_path)
+
+    assert not source_path.exists()
+    assert target_path.read_bytes() == AUDIO_CONTENT
+
+
+def test_file_mover_refuses_to_overwrite_existing_target(tmp_path: Path) -> None:
+    """FileMover leaves both files untouched when the target already exists."""
+    source_path = tmp_path / AUDIO_FILE_NAME
+    target_path = tmp_path / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    _ = target_path.write_bytes(b"existing")
+
+    with pytest.raises(FileExistsError):
+        FilesystemFileMover().move(source_path, target_path)
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert target_path.read_bytes() == b"existing"
 
 
 def test_file_content_hasher_rejects_invalid_chunk_size() -> None:

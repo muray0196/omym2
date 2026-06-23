@@ -20,9 +20,6 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
-from omym2.features.apply.dto import ApplyPlanRequest
-from omym2.features.apply.ports import ApplyPlanPorts
-from omym2.features.apply.usecases.apply_plan import ApplyPlanUseCase
 from omym2.features.check.dto import CheckLibraryRequest
 from omym2.features.check.ports import CheckLibraryPorts
 from omym2.features.check.usecases.check_library import CheckLibraryUseCase
@@ -170,14 +167,10 @@ def test_phase3_usecase_skeletons_define_contracts_without_behavior() -> None:
     uow = InMemoryUnitOfWork()
     scanner = NoopFileScanner()
     snapshot_reader = NoopFileSnapshotReader()
-    mover = NoopFileMover()
     clock = FixedClock(BASE_TIME)
     id_generator = SequenceIdGenerator()
 
     exercises: tuple[Callable[[], object], ...] = (
-        lambda: ApplyPlanUseCase(ApplyPlanPorts(uow, mover, snapshot_reader, clock, id_generator)).execute(
-            ApplyPlanRequest(PLAN_ID)
-        ),
         lambda: CreateRefreshPlanUseCase(CreateRefreshPlanPorts(uow, snapshot_reader, clock, id_generator)).execute(
             CreateRefreshPlanRequest(library_id=LIBRARY_ID)
         ),
@@ -211,15 +204,6 @@ class NoopFileSnapshotReader:
     def capture(self, path: FileSystemPath) -> FileSnapshot:
         """Fail if a skeleton unexpectedly reaches file observation."""
         del path
-        raise AssertionError(UNEXPECTED_IO_MESSAGE)
-
-
-class NoopFileMover:
-    """FileMover fake that proves skeletons do not mutate files yet."""
-
-    def move(self, source: FileSystemPath, target: FileSystemPath) -> None:
-        """Fail if a skeleton unexpectedly reaches file mutation."""
-        del source, target
         raise AssertionError(UNEXPECTED_IO_MESSAGE)
 
 
