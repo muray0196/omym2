@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from omym2.adapters.fs.file_presence import FilesystemFilePresence
 from omym2.adapters.fs.file_scanner import FilesystemFileScanner
 from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
 from omym2.adapters.fs.hash_calculator import INVALID_CHUNK_SIZE_MESSAGE, FileContentHasher
@@ -96,6 +97,17 @@ def test_path_resolver_rejects_paths_outside_library(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=PATH_OUTSIDE_LIBRARY_MESSAGE):
         _ = resolver.relative_to_library(tmp_path / "library", tmp_path / "outside" / AUDIO_FILE_NAME)
+
+
+def test_file_presence_reports_existing_paths_without_reading(tmp_path: Path) -> None:
+    """FilePresence reports path occupancy for plan-time target conflict checks."""
+    audio_path = tmp_path / AUDIO_FILE_NAME
+    missing_path = tmp_path / "missing.flac"
+    _ = audio_path.write_bytes(AUDIO_CONTENT)
+    presence = FilesystemFilePresence()
+
+    assert presence.exists(audio_path)
+    assert not presence.exists(missing_path)
 
 
 def test_file_content_hasher_rejects_invalid_chunk_size() -> None:

@@ -20,9 +20,6 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
-from omym2.features.add.dto import CreateAddPlanRequest
-from omym2.features.add.ports import CreateAddPlanPorts
-from omym2.features.add.usecases.create_add_plan import CreateAddPlanUseCase
 from omym2.features.apply.dto import ApplyPlanRequest
 from omym2.features.apply.ports import ApplyPlanPorts
 from omym2.features.apply.usecases.apply_plan import ApplyPlanUseCase
@@ -178,9 +175,6 @@ def test_phase3_usecase_skeletons_define_contracts_without_behavior() -> None:
     id_generator = SequenceIdGenerator()
 
     exercises: tuple[Callable[[], object], ...] = (
-        lambda: CreateAddPlanUseCase(CreateAddPlanPorts(uow, scanner, snapshot_reader, clock, id_generator)).execute(
-            CreateAddPlanRequest(SOURCE_PATH)
-        ),
         lambda: ApplyPlanUseCase(ApplyPlanPorts(uow, mover, snapshot_reader, clock, id_generator)).execute(
             ApplyPlanRequest(PLAN_ID)
         ),

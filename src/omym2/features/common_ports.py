@@ -220,6 +220,14 @@ class FileSnapshotReader(Protocol):
         ...
 
 
+class FilePresence(Protocol):
+    """Filesystem presence contract for conflict checks that do not inspect files."""
+
+    def exists(self, path: FileSystemPath) -> bool:
+        """Return whether a filesystem entry exists at the supplied path."""
+        ...
+
+
 class MetadataReader(Protocol):
     """Metadata adapter contract for reading music tags."""
 
