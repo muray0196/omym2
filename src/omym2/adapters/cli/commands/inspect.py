@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
@@ -38,7 +39,7 @@ def run_inspect_command(
 ) -> int:
     """Run inspect for one file and return a process exit code."""
     if len(args) != 1:
-        _write_usage(stderr)
+        write_usage(stderr, INSPECT_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
 
     store = TomlConfigStore(config_path or default_application_paths().config_file)
@@ -48,13 +49,13 @@ def run_inspect_command(
     try:
         result = InspectFileUseCase(ports).execute(InspectFileRequest(path=args[0]))
     except ConfigStoreValidationError as exc:
-        _write_validation_errors(stderr, exc.errors)
+        write_validation_errors(stderr, exc.errors)
         return ERROR_EXIT_CODE
     except MetadataReadError as exc:
-        _ = stderr.write(f"Metadata read error: {exc}\n")
+        write_line(stderr, f"Metadata read error: {exc}")
         return ERROR_EXIT_CODE
     except OSError as exc:
-        _ = stderr.write(f"Inspect I/O error: {exc}\n")
+        write_line(stderr, f"Inspect I/O error: {exc}")
         return ERROR_EXIT_CODE
 
     _write_result(stdout, result)
@@ -100,11 +101,3 @@ def _format_value(value: object | None) -> str:
     if value is None:
         return MISSING_VALUE_TEXT
     return str(value)
-
-
-def _write_usage(stderr: TextIO) -> None:
-    _ = stderr.write(f"{INSPECT_USAGE_MESSAGE}\n")
-
-
-def _write_validation_errors(stderr: TextIO, errors: tuple[str, ...]) -> None:
-    stderr.writelines(f"{error}\n" for error in errors)

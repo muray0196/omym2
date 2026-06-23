@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.toml_config_store import TomlConfigStore, dump_config_toml
 from omym2.features.common_ports import ConfigStoreValidationError
@@ -36,7 +37,7 @@ def run_config_command(
 ) -> int:
     """Run a config subcommand and return a process exit code."""
     if len(args) != 1:
-        _write_usage(stderr)
+        write_usage(stderr, CONFIG_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
 
     store = TomlConfigStore(config_path or default_application_paths().config_file)
@@ -48,7 +49,7 @@ def run_config_command(
     if subcommand == VALIDATE_SUBCOMMAND:
         return _validate_config(ports, stdout, stderr)
 
-    _write_usage(stderr)
+    write_usage(stderr, CONFIG_USAGE_MESSAGE)
     return USAGE_EXIT_CODE
 
 
@@ -56,10 +57,10 @@ def _show_config(ports: SettingsPorts, stdout: TextIO, stderr: TextIO) -> int:
     try:
         config = LoadSettingsUseCase(ports).execute()
     except ConfigStoreValidationError as exc:
-        _write_validation_errors(stderr, exc.errors)
+        write_validation_errors(stderr, exc.errors)
         return ERROR_EXIT_CODE
     except OSError as exc:
-        _write_io_error(stderr, exc)
+        write_line(stderr, f"Config I/O error: {exc}")
         return ERROR_EXIT_CODE
 
     _ = stdout.write(dump_config_toml(config))
@@ -70,24 +71,12 @@ def _validate_config(ports: SettingsPorts, stdout: TextIO, stderr: TextIO) -> in
     try:
         result = ValidateSettingsUseCase(ports).execute()
     except OSError as exc:
-        _write_io_error(stderr, exc)
+        write_line(stderr, f"Config I/O error: {exc}")
         return ERROR_EXIT_CODE
 
     if not result.valid:
-        _write_validation_errors(stderr, result.errors)
+        write_validation_errors(stderr, result.errors)
         return ERROR_EXIT_CODE
 
-    _ = stdout.write(f"{CONFIG_VALIDATE_SUCCESS_MESSAGE}\n")
+    write_line(stdout, CONFIG_VALIDATE_SUCCESS_MESSAGE)
     return SUCCESS_EXIT_CODE
-
-
-def _write_usage(stderr: TextIO) -> None:
-    _ = stderr.write(f"{CONFIG_USAGE_MESSAGE}\n")
-
-
-def _write_validation_errors(stderr: TextIO, errors: tuple[str, ...]) -> None:
-    stderr.writelines(f"{error}\n" for error in errors)
-
-
-def _write_io_error(stderr: TextIO, exc: OSError) -> None:
-    _ = stderr.write(f"Config I/O error: {exc}\n")
