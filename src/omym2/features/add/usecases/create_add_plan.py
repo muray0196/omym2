@@ -124,6 +124,9 @@ class CreateAddPlanUseCase:
         except FileNotFoundError:
             return _blocked_candidate(source_path, PlanActionReason.SOURCE_MISSING)
 
+        if _source_changed(entry, snapshot):
+            return _blocked_candidate(source_path, PlanActionReason.SOURCE_CHANGED, snapshot=snapshot)
+
         if _has_missing_required_metadata(snapshot, config):
             return _blocked_candidate(source_path, PlanActionReason.MISSING_REQUIRED_METADATA, snapshot=snapshot)
 
@@ -297,6 +300,10 @@ def _plan(
         },
         actions=tuple(actions),
     )
+
+
+def _source_changed(entry: FileScanEntry, snapshot: FileSnapshot) -> bool:
+    return entry.size != snapshot.size or entry.mtime != snapshot.mtime
 
 
 def _has_missing_required_metadata(snapshot: FileSnapshot, config: AppConfig) -> bool:

@@ -266,6 +266,38 @@ def test_add_plan_blocks_existing_untracked_target_file() -> None:
     assert action.target_path == EXPECTED_CANONICAL_PATH
 
 
+def test_add_plan_blocks_source_changed_after_scan() -> None:
+    """Incoming files changed between scan and snapshot are not planned for move."""
+    changed_snapshot = FileSnapshot(
+        path=INCOMING_FILE,
+        size=FILE_SIZE + 1,
+        mtime=BASE_TIME,
+        file_extension=FILE_EXTENSION,
+        content_hash=CONTENT_HASH,
+        metadata_hash=calculate_metadata_fingerprint(METADATA),
+        metadata=METADATA,
+        captured_at=BASE_TIME,
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: changed_snapshot},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    action = plan.actions[0]
+    assert action.action_type == ActionType.MOVE
+    assert action.status == ActionStatus.BLOCKED
+    assert action.reason == PlanActionReason.SOURCE_CHANGED
+    assert action.target_path is None
+    assert action.content_hash_at_plan == CONTENT_HASH
+    assert plan.summary["blocked_actions"] == "1"
+
+
 def test_plans_list_and_detail_usecases_return_recorded_actions() -> None:
     """Plan query usecases expose persisted Plan headers and actions."""
     uow = InMemoryUnitOfWork()
