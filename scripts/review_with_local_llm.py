@@ -1,5 +1,8 @@
 # ruff: noqa: EM101, EM102, INP001, PLR0913, S310, S603, TRY003 -- Local developer script calls configured HTTP and git/gh.
-"""Run an OMYM2-focused review with a local OpenAI-compatible LLM."""
+"""
+Summary: Run an OMYM2-focused review with a local OpenAI-compatible LLM.
+Why: Support local review of diffs, PRs, and quality logs.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ DEFAULT_LOCAL_LLM_HOST = "localhost"
 DEFAULT_LOCAL_LLM_PORT = 1234
 DEFAULT_LOCAL_LLM_API_VERSION = "v1"
 DEFAULT_API_KEY = "lm-studio"
-DEFAULT_TIMEOUT_SECONDS = 120
+DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_MAX_CHARS = 120_000
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_CONTEXT_FILES: tuple[str, ...] = (
@@ -462,6 +465,8 @@ def _http_json(method: str, url: str, api_key: str, body: JsonObject | None, tim
     except HTTPError as exc:
         body_text = exc.read().decode("utf-8", errors="replace")[:1000]
         raise ReviewError(f"HTTP {exc.code} from local LLM endpoint: {body_text}") from exc
+    except TimeoutError as exc:
+        raise ReviewError(f"timed out after {timeout} seconds waiting for local LLM endpoint at {url}") from exc
     except URLError as exc:
         raise ReviewError(f"could not reach local LLM endpoint at {url}: {exc.reason}") from exc
     try:
