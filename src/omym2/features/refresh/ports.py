@@ -9,7 +9,15 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omym2.features.common_ports import Clock, FileSnapshotReader, IdGenerator, UnitOfWork
+    from omym2.features.common_ports import (
+        Clock,
+        ConfigStore,
+        FilePresence,
+        FileSnapshotReader,
+        IdGenerator,
+        PathResolver,
+        UnitOfWork,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,5 +26,8 @@ class CreateRefreshPlanPorts:
 
     uow: UnitOfWork
     file_snapshot_reader: FileSnapshotReader
+    file_presence: FilePresence
+    config_store: ConfigStore
+    path_resolver: PathResolver
     clock: Clock
     id_generator: IdGenerator

@@ -14,6 +14,7 @@ from omym2.adapters.cli.commands.config import run_config_command
 from omym2.adapters.cli.commands.inspect import run_inspect_command
 from omym2.adapters.cli.commands.organize import run_organize_command
 from omym2.adapters.cli.commands.plans import run_plans_command
+from omym2.adapters.cli.commands.refresh import run_refresh_command
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -26,6 +27,7 @@ CONFIG_COMMAND = "config"
 INSPECT_COMMAND = "inspect"
 ORGANIZE_COMMAND = "organize"
 PLANS_COMMAND = "plans"
+REFRESH_COMMAND = "refresh"
 SUCCESS_EXIT_CODE = 0
 UNKNOWN_COMMAND_EXIT_CODE = 2
 
@@ -58,6 +60,8 @@ def main(
         exit_code = run_organize_command(command_args, output, error_output, config_path, database_path)
     elif command == PLANS_COMMAND:
         exit_code = run_plans_command(command_args, output, error_output, database_path)
+    elif command == REFRESH_COMMAND:
+        exit_code = run_refresh_command(command_args, output, error_output, config_path, database_path)
     else:
         _ = error_output.write(f"Unknown command: {command}\n")
         exit_code = UNKNOWN_COMMAND_EXIT_CODE
