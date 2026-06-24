@@ -25,6 +25,11 @@ from urllib.request import Request, urlopen
 if TYPE_CHECKING:
     from http.client import HTTPResponse
 
+from local_repo_agent import (  # pyright: ignore[reportImplicitRelativeImport]  # adjacent developer script import
+    DEFAULT_TOOL_ITERATIONS,
+    run_local_repo_agent,
+)
+
 DEFAULT_LOCAL_LLM_HOST = "localhost"
 DEFAULT_LOCAL_LLM_PORT = 1234
 DEFAULT_LOCAL_LLM_API_VERSION = "v1"
@@ -32,6 +37,7 @@ DEFAULT_API_KEY = "lm-studio"
 DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_MAX_CHARS = 120_000
 DEFAULT_TEMPERATURE = 0.1
+DEFAULT_REVIEW_MODEL = "omym2-review"
 DEFAULT_CONTEXT_FILES: tuple[str, ...] = (
     "AGENTS.md",
     "ARCHITECTURE.md",
@@ -75,6 +81,8 @@ class ParsedArgs(argparse.Namespace):
         self.timeout: int = DEFAULT_TIMEOUT_SECONDS
         self.max_chars: int = DEFAULT_MAX_CHARS
         self.temperature: float = DEFAULT_TEMPERATURE
+        self.agent: bool = True
+        self.max_tool_iterations: int = DEFAULT_TOOL_ITERATIONS
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,18 +105,33 @@ def main(argv: list[str] | None = None) -> int:
         review_input = _resolve_review_input(args)
         context = _load_context(args.context)
         system_prompt = _load_system_prompt(args.prompt)
-        model = args.model or os.environ.get("OMYM2_LOCAL_LLM_MODEL")
+        model = args.model or os.environ.get("OMYM2_REVIEW_MODEL") or os.environ.get("OMYM2_LOCAL_LLM_MODEL")
         if model is None:
-            model = _discover_first_model(args.base_url, args.api_key, args.timeout)
-        review = _request_review(
-            base_url=args.base_url,
-            api_key=args.api_key,
-            model=model,
-            system_prompt=system_prompt,
-            user_prompt=_build_user_prompt(review_input, context, args.max_chars),
-            timeout=args.timeout,
-            temperature=args.temperature,
-        )
+            model = (
+                DEFAULT_REVIEW_MODEL if args.agent else _discover_first_model(args.base_url, args.api_key, args.timeout)
+            )
+        user_prompt = _build_user_prompt(review_input, context, args.max_chars)
+        if args.agent:
+            agent_result = run_local_repo_agent(
+                user_request=_build_agent_user_prompt(system_prompt, user_prompt),
+                base_url=args.base_url,
+                api_key=args.api_key,
+                model=model,
+                timeout=args.timeout,
+                temperature=args.temperature,
+                max_tool_iterations=args.max_tool_iterations,
+            )
+            review = _format_agent_review(agent_result.content, agent_result.tool_iterations)
+        else:
+            review = _request_review(
+                base_url=args.base_url,
+                api_key=args.api_key,
+                model=model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                timeout=args.timeout,
+                temperature=args.temperature,
+            )
         _write_review(review_input.output_path, review_input, context, model, args.base_url, review)
     except ReviewError as exc:
         _ = sys.stderr.write(f"local LLM review failed: {exc}\n")
@@ -145,7 +168,8 @@ def _parse_args(argv: list[str] | None) -> ParsedArgs:
     _ = parser.add_argument("--output", type=Path, default=None, help="Review output path.")
     _ = parser.add_argument(
         "--base-url",
-        default=os.environ.get("OMYM2_LOCAL_LLM_BASE_URL", _default_base_url()),
+        default=os.environ.get("OMYM2_LMSTUDIO_BASE_URL")
+        or os.environ.get("OMYM2_LOCAL_LLM_BASE_URL", _default_base_url()),
         help="OpenAI-compatible base URL. Defaults to the WSL host when detected, otherwise localhost.",
     )
     _ = parser.add_argument(
@@ -157,6 +181,18 @@ def _parse_args(argv: list[str] | None) -> ParsedArgs:
     _ = parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help="HTTP timeout in seconds.")
     _ = parser.add_argument("--max-chars", type=int, default=DEFAULT_MAX_CHARS, help="Maximum review input characters.")
     _ = parser.add_argument("--temperature", type=float, default=DEFAULT_TEMPERATURE, help="LLM sampling temperature.")
+    _ = parser.add_argument(
+        "--no-agent",
+        action="store_false",
+        dest="agent",
+        help="Use the legacy single-call prompt flow without read-only repository tools.",
+    )
+    _ = parser.add_argument(
+        "--max-tool-iterations",
+        type=int,
+        default=DEFAULT_TOOL_ITERATIONS,
+        help="Maximum read-only tool-call rounds when agent mode is enabled.",
+    )
     return parser.parse_args(argv, namespace=ParsedArgs())
 
 
@@ -522,6 +558,32 @@ def _build_user_prompt(review_input: ReviewInput, context: list[tuple[str, str]]
             truncated_notice.strip(),
         ]
     ).strip()
+
+
+def _build_agent_user_prompt(system_prompt: str, user_prompt: str) -> str:
+    return f"""Use the following review instructions while operating as a read-only repository agent.
+
+Review instructions:
+
+```text
+{system_prompt}
+```
+
+Review request:
+
+{user_prompt}
+
+You may call read-only tools to inspect additional repository context before writing the review."""
+
+
+def _format_agent_review(review: str, tool_iterations: int) -> str:
+    return "\n".join(
+        [
+            review.strip(),
+            "",
+            f"Read-only tool iterations: {tool_iterations}",
+        ]
+    )
 
 
 def _strip_outer_markdown_fence(content: str) -> str:
