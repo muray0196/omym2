@@ -9,6 +9,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.add import run_add_command
+from omym2.adapters.cli.commands.apply import run_apply_command
 from omym2.adapters.cli.commands.config import run_config_command
 from omym2.adapters.cli.commands.inspect import run_inspect_command
 from omym2.adapters.cli.commands.organize import run_organize_command
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     from typing import TextIO
 
 ADD_COMMAND = "add"
+APPLY_COMMAND = "apply"
 CONFIG_COMMAND = "config"
 INSPECT_COMMAND = "inspect"
 ORGANIZE_COMMAND = "organize"
@@ -46,6 +48,8 @@ def main(
     command, *command_args = args
     if command == ADD_COMMAND:
         exit_code = run_add_command(command_args, output, error_output, config_path, database_path)
+    elif command == APPLY_COMMAND:
+        exit_code = run_apply_command(command_args, output, error_output, database_path)
     elif command == CONFIG_COMMAND:
         exit_code = run_config_command(command_args, output, error_output, config_path)
     elif command == INSPECT_COMMAND:

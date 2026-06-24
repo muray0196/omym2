@@ -75,7 +75,7 @@ class PlanAction:
         """Return this action as blocked by a plan-time issue."""
         return self._with_status(ActionStatus.BLOCKED, reason)
 
-    def mark_failed(self, reason: PlanActionReason) -> PlanAction:
+    def mark_failed(self, reason: PlanActionReason | None = None) -> PlanAction:
         """Return this action as failed by an apply-time issue."""
         return self._with_status(ActionStatus.FAILED, reason)
 
