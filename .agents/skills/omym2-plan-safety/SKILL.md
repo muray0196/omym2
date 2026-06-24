@@ -12,11 +12,9 @@ description: Review any change that can affect Plan, PlanAction, Run, FileEvent,
 - whether PlanAction / Run / FileEvent status logic is touched
 
 ## Read first
-- AGENTS.md
 - docs/execution.md
 - docs/domain.md
 - docs/storage.md
-- ARCHITECTURE.md
 - docs/testing.md
 
 ## Steps
@@ -40,7 +38,8 @@ description: Review any change that can affect Plan, PlanAction, Run, FileEvent,
    - blocked at plan time
    - failed before mutation
    - failed after mutation attempt
-7. Require tests for every changed contract edge.
+7. For refresh changes, verify that observed filesystem state updates Track/FileEvent/Plan state only through the documented contracts.
+8. Require tests for every changed contract edge.
 
 ## Checks
 - blocked actions stay blocked
@@ -48,9 +47,12 @@ description: Review any change that can affect Plan, PlanAction, Run, FileEvent,
 - precondition failure before mutation creates no FileEvent
 - root mismatch before run prevents apply start
 - terminal plans are single-use
+- refresh does not directly mutate Library music files outside a Plan
 
 ## Outputs
 - safety verdict: safe / risky / blocked
+- blocking issues
 - contract points touched
 - minimum mandatory tests
 - docs that must be updated
+- docs checked

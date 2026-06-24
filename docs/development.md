@@ -4,13 +4,36 @@ This document is authoritative for developer quality commands, validation gates,
 
 Product command behavior is defined in [commands.md](commands.md). Test design is defined in [testing.md](testing.md). Application config and stored path policy are defined in [storage.md](storage.md).
 
+## Edit-Loop Commands
+
+During implementation, check only Python files changed in the current task.
+Avoid project-wide diagnostics during the edit loop unless the change crosses
+many modules or the failure cannot be understood from changed-file checks.
+
+Use this command group after editing Python files:
+
+```bash
+files=$(git diff --name-only --diff-filter=ACMR -- '*.py' '*.pyi')
+
+[ -n "$files" ] && uv run ruff check $files --fix --output-format=concise
+[ -n "$files" ] && uv run ruff format $files -q
+[ -n "$files" ] && uv run basedpyright $files --level error
+```
+
+Ruff auto-fix runs before formatting. Basedpyright reports errors only. Do not
+use verbose, statistics, JSON output, or full-project diagnostics during the edit
+loop.
+
+If the same error persists after two focused fix attempts, stop editing and
+report the likely cause instead of continuing to guess.
+
 ## Final Quality Gates
 
 Run these commands in order before marking implementation work complete:
 
 ```bash
-uv run ruff check --fix -q
-uv run ruff format . -q
+uv run ruff check . --output-format=concise
+uv run ruff format . --check -q
 uv run basedpyright
 uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
 ```
@@ -18,6 +41,7 @@ uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
 All gates must pass:
 
 * Linting fails if any lint error remains.
+* Formatting fails if Ruff would change any file.
 * Type checking fails if `basedpyright` reports any error or warning.
 * Tests fail if any test fails.
 

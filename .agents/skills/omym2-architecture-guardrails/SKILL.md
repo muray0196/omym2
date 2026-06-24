@@ -11,8 +11,7 @@ description: Review any structural change in OMYM2 for dependency direction, por
 - any new imports between layers
 
 ## Read first
-- AGENTS.md
-- ARCHITECTURE.md
+- docs/development.md
 - docs/testing.md
 - tests/architecture/test_dependency_boundaries.py
 - tests/architecture/test_source_files.py
@@ -38,6 +37,9 @@ description: Review any structural change in OMYM2 for dependency direction, por
 
 ## Outputs
 - boundary verdict: safe / unsafe
+- blocking issues
 - exact violating imports or files
 - required refactor path
+- required tests
 - tests that prove compliance
+- docs checked

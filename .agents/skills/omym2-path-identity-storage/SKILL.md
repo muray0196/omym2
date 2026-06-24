@@ -11,7 +11,6 @@ description: Review changes touching stored paths, PathPolicy, Library identity,
 - whether library registration or relink behavior changes
 
 ## Read first
-- AGENTS.md
 - docs/domain.md
 - docs/storage.md
 - docs/execution.md
@@ -28,7 +27,7 @@ description: Review changes touching stored paths, PathPolicy, Library identity,
 2. Classify each field as:
    - Library-root-relative
    - absolute external path
-   - mutable root path
+   - mutable Library root path used for runtime resolution, not Library identity
 3. Check identity rules:
    - library_id is stable
    - track_id is path-independent
@@ -47,6 +46,8 @@ description: Review changes touching stored paths, PathPolicy, Library identity,
 
 ## Outputs
 - path representation verdict
+- blocking issues
 - identity risks
 - required schema/repository/usecase tests
 - required docs updates
+- docs checked
