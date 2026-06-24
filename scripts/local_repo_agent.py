@@ -1,4 +1,4 @@
-# ruff: noqa: EM101, EM102, PLR0911, PLR0913, S310, S603, TRY003, TRY300 -- Local developer script calls configured HTTP and git.
+# ruff: noqa: EM101, EM102, INP001, PLR0911, PLR0913, S310, S603, TRY003, TRY300 -- Local developer script calls configured HTTP and git.
 """
 Summary: Provide a read-only tool agent for local repository review.
 Why: Let local LLM review inspect bounded OMYM2 context safely.
