@@ -10,22 +10,18 @@ During implementation, check only Python files changed in the current task.
 Avoid project-wide diagnostics during the edit loop unless the change crosses
 many modules or the failure cannot be understood from changed-file checks.
 
-Use this command group after editing Python files:
+Use this command group after editing Python files. Replace <py-files>
+with the Python files changed in the current task::
 
 ```bash
-files=$(git diff --name-only --diff-filter=ACMR -- '*.py' '*.pyi')
-
-[ -n "$files" ] && uv run ruff check $files --fix --output-format=concise
-[ -n "$files" ] && uv run ruff format $files -q
-[ -n "$files" ] && uv run basedpyright $files --level error
+uv run ruff check <py-files> --fix --output-format=concise
+uv run ruff format <py-files> -q
+uv run basedpyright <py-files> --level error
 ```
 
 Ruff auto-fix runs before formatting. Basedpyright reports errors only. Do not
 use verbose, statistics, JSON output, or full-project diagnostics during the edit
 loop.
-
-If the same error persists after two focused fix attempts, stop editing and
-report the likely cause instead of continuing to guess.
 
 ## Final Quality Gates
 
@@ -56,13 +52,13 @@ Use these pytest commands by intent:
 uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
 
 # Inspect a focused failure.
-uv run pytest Target -q --tb=short --show-capture=all
+uv run pytest <test-target> -q --tb=short --show-capture=all
 
 # Deep debug a focused failure.
-uv run pytest Target -q --tb=long -s --show-capture=all
+uv run pytest <test-target> -q --tb=long -s --show-capture=all
 ```
 
-Replace `Target` with a test file, test class, test function, or pytest node id.
+Replace `<test-target>` with a test file, test class, test function, or pytest node id.
 
 ## Suppressions
 

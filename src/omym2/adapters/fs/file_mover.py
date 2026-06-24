@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from shutil import move
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -25,4 +26,6 @@ class FilesystemFileMover:
             raise FileExistsError(str(target_path))
 
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        _ = source_path.rename(target_path)
+        # shutil.move falls back to copy-and-remove when source and target are
+        # on different filesystems, which is common for Incoming vs Library.
+        _ = move(source_path, target_path)

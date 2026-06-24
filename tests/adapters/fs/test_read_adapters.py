@@ -5,6 +5,8 @@ Why: Verifies Phase 6 scanning, hashing, snapshots, and path resolution.
 
 from __future__ import annotations
 
+import errno
+import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -117,6 +119,26 @@ def test_file_mover_moves_file_and_creates_parent_directory(tmp_path: Path) -> N
     source_path = tmp_path / AUDIO_FILE_NAME
     target_path = tmp_path / "Artist" / TARGET_FILE_NAME
     _ = source_path.write_bytes(AUDIO_CONTENT)
+
+    FilesystemFileMover().move(source_path, target_path)
+
+    assert not source_path.exists()
+    assert target_path.read_bytes() == AUDIO_CONTENT
+
+
+def test_file_mover_moves_file_across_filesystems(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """FileMover handles cross-device moves used by separate Incoming and Library drives."""
+    source_path = tmp_path / "incoming" / AUDIO_FILE_NAME
+    target_path = tmp_path / "library" / TARGET_FILE_NAME
+    source_path.parent.mkdir()
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+
+    def raise_cross_device_error(source: os.PathLike[str] | str, target: os.PathLike[str] | str) -> None:
+        del target
+        raise OSError(errno.EXDEV, "Invalid cross-device link", source)
+
+    # Simulate os.rename failing the way it does across mounted filesystems.
+    monkeypatch.setattr(os, "rename", raise_cross_device_error)
 
     FilesystemFileMover().move(source_path, target_path)
 
