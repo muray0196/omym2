@@ -12,6 +12,7 @@ from uuid import UUID
 
 import pytest
 
+from omym2.adapters.config.default_config import default_app_config
 from omym2.config import UUID_VERSION
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
@@ -26,18 +27,17 @@ from omym2.features.check.usecases.check_library import CheckLibraryUseCase
 from omym2.features.common_ports import FileSystemPath, Uuid7IdGenerator
 from omym2.features.history.dto import GetRunDetailRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
-from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
+from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase, RunNotFoundError
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.undo.dto import CreateUndoPlanRequest
 from omym2.features.undo.ports import CreateUndoPlanPorts
-from omym2.features.undo.usecases.create_undo_plan import CreateUndoPlanUseCase
+from omym2.features.undo.usecases.create_undo_plan import CreateUndoPlanUseCase, UndoPlanError
 from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId, is_uuid7
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import EMPTY_SEQUENCE_MESSAGE, FixedClock, SequenceIdGenerator
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
+    from omym2.domain.models.app_config import AppConfig
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
 
@@ -159,28 +159,32 @@ def test_in_memory_unit_of_work_records_commit_and_rollback_intent() -> None:
     assert uow.rollback_count == EXPECTED_ONE_CALL
 
 
-def test_phase3_usecase_skeletons_define_contracts_without_behavior() -> None:
-    """Usecase skeletons are instantiable but defer vertical-slice behavior."""
+def test_phase11_usecases_handle_empty_repository_contracts() -> None:
+    """Phase 11 usecases are instantiable through their port contracts."""
     uow = InMemoryUnitOfWork()
     scanner = NoopFileScanner()
     snapshot_reader = NoopFileSnapshotReader()
+    config_store = StaticConfigStore()
+    path_resolver = NoopPathResolver()
+    file_presence = NoopFilePresence()
     clock = FixedClock(BASE_TIME)
     id_generator = SequenceIdGenerator()
 
-    exercises: tuple[Callable[[], object], ...] = (
-        lambda: CheckLibraryUseCase(CheckLibraryPorts(uow, scanner, snapshot_reader)).execute(
-            CheckLibraryRequest(LIBRARY_ID)
-        ),
-        lambda: ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest(LIBRARY_ID)),
-        lambda: GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunDetailRequest(RUN_ID)),
-        lambda: CreateUndoPlanUseCase(CreateUndoPlanPorts(uow, clock, id_generator)).execute(
-            CreateUndoPlanRequest(RUN_ID)
-        ),
+    assert (
+        CheckLibraryUseCase(CheckLibraryPorts(uow, scanner, snapshot_reader, config_store, path_resolver)).execute(
+            CheckLibraryRequest()
+        )
+        == ()
     )
+    assert ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest()) == ()
 
-    for exercise in exercises:
-        with pytest.raises(NotImplementedError):
-            _ = exercise()
+    with pytest.raises(RunNotFoundError):
+        _ = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunDetailRequest(RUN_ID))
+
+    with pytest.raises(UndoPlanError):
+        _ = CreateUndoPlanUseCase(
+            CreateUndoPlanPorts(uow, snapshot_reader, file_presence, path_resolver, clock, id_generator)
+        ).execute(CreateUndoPlanRequest(RUN_ID))
 
 
 class NoopFileScanner:
@@ -199,6 +203,41 @@ class NoopFileSnapshotReader:
         """Fail if a skeleton unexpectedly reaches file observation."""
         del path
         raise AssertionError(UNEXPECTED_IO_MESSAGE)
+
+
+class NoopFilePresence:
+    """FilePresence fake that proves empty repository undo does not inspect paths."""
+
+    def exists(self, path: FileSystemPath) -> bool:
+        """Fail if empty repository undo unexpectedly checks a path."""
+        del path
+        raise AssertionError(UNEXPECTED_IO_MESSAGE)
+
+
+class NoopPathResolver:
+    """PathResolver fake that proves empty repository checks do not resolve paths."""
+
+    def resolve_library_path(self, library_root: FileSystemPath, library_relative_path: str) -> str:
+        """Fail if empty repository logic unexpectedly resolves a path."""
+        del library_root, library_relative_path
+        raise AssertionError(UNEXPECTED_IO_MESSAGE)
+
+    def relative_to_library(self, library_root: FileSystemPath, path: FileSystemPath) -> str:
+        """Fail if empty repository logic unexpectedly relativizes a path."""
+        del library_root, path
+        raise AssertionError(UNEXPECTED_IO_MESSAGE)
+
+
+class StaticConfigStore:
+    """ConfigStore fake that returns defaults."""
+
+    def load(self) -> AppConfig:
+        """Return the default AppConfig."""
+        return default_app_config()
+
+    def save(self, config: AppConfig) -> None:
+        """Accept config saves for protocol completeness."""
+        del config
 
 
 def _library() -> Library:

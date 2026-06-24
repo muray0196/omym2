@@ -1,29 +1,188 @@
 """
-Summary: Defines the undo plan creation usecase contract.
-Why: Allows undo to reuse Plan apply semantics in a later phase.
+Summary: Implements undo Plan creation from Run history.
+Why: Restores prior file moves through reviewed Plans instead of direct mutation.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import PurePath
 from typing import TYPE_CHECKING
 
+from omym2.config import PLAN_ACTION_SORT_ORDER_START, PLAN_ACTION_SORT_ORDER_STEP
+from omym2.domain.models.file_event import FileEventStatus
+from omym2.domain.models.plan import Plan, PlanStatus, PlanType
+from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.track import TrackStatus
+
 if TYPE_CHECKING:
-    from omym2.domain.models.plan import Plan
+    from omym2.domain.models.file_event import FileEvent
+    from omym2.domain.models.file_snapshot import FileSnapshot
+    from omym2.domain.models.library import Library
+    from omym2.features.common_ports import FileSystemPath, PathResolver, UnitOfWork
     from omym2.features.undo.dto import CreateUndoPlanRequest
     from omym2.features.undo.ports import CreateUndoPlanPorts
+    from omym2.shared.ids import PlanId, TrackId
 
-USECASE_DEFERRED_MESSAGE = "Create undo plan behavior is deferred until the undo vertical slice phase."
+RUN_LIBRARY_NOT_FOUND_MESSAGE = "Run Library was not found."
+RUN_NOT_FOUND_MESSAGE = "Run was not found."
+RUN_PLAN_NOT_FOUND_MESSAGE = "Run Plan was not found."
+SUMMARY_ACTION_COUNT_KEY = "action_count"
+SUMMARY_BLOCKED_ACTIONS_KEY = "blocked_actions"
+SUMMARY_MOVE_ACTIONS_KEY = "move_actions"
 
 
 @dataclass(frozen=True, slots=True)
 class CreateUndoPlanUseCase:
-    """Contract for creating undo Plans from Runs."""
+    """Create reviewed undo Plans from succeeded FileEvents."""
 
     ports: CreateUndoPlanPorts
 
     def execute(self, request: CreateUndoPlanRequest) -> Plan:
         """Create an undo Plan from succeeded FileEvents in one Run."""
-        # Phase 3 fixes the call shape only; Phase 11 owns undo behavior.
-        del request
-        raise NotImplementedError(USECASE_DEFERRED_MESSAGE)
+        timestamp = self.ports.clock.now()
+
+        with self.ports.uow as uow:
+            run = uow.runs.get(request.run_id)
+            if run is None:
+                raise UndoPlanError(RUN_NOT_FOUND_MESSAGE)
+
+            library = uow.libraries.get(run.library_id)
+            if library is None:
+                raise UndoPlanError(RUN_LIBRARY_NOT_FOUND_MESSAGE)
+
+            source_plan = uow.plans.get(run.plan_id)
+            if source_plan is None:
+                raise UndoPlanError(RUN_PLAN_NOT_FOUND_MESSAGE)
+
+            undo_plan_id = self.ports.id_generator.new_plan_id()
+            events = tuple(
+                reversed(
+                    tuple(
+                        event
+                        for event in uow.file_events.list_by_run(run.run_id)
+                        if event.status == FileEventStatus.SUCCEEDED
+                    )
+                )
+            )
+            actions = self._actions(uow, library, undo_plan_id, events)
+            plan = Plan(
+                plan_id=undo_plan_id,
+                library_id=run.library_id,
+                plan_type=PlanType.UNDO,
+                status=PlanStatus.READY,
+                created_at=timestamp,
+                config_hash=source_plan.config_hash,
+                library_root_at_plan=library.root_path,
+                summary=_summary(actions),
+                actions=actions,
+            )
+
+            uow.plans.save(plan)
+            for action in actions:
+                uow.plan_actions.save(action)
+
+            uow.commit()
+            return plan
+
+    def _actions(
+        self,
+        uow: UnitOfWork,
+        library: Library,
+        undo_plan_id: PlanId,
+        events: tuple[FileEvent, ...],
+    ) -> tuple[PlanAction, ...]:
+        actions: list[PlanAction] = []
+        sort_order = PLAN_ACTION_SORT_ORDER_START
+
+        for event in events:
+            candidate = self._candidate(uow, library, event)
+            actions.append(
+                PlanAction(
+                    action_id=self.ports.id_generator.new_action_id(),
+                    plan_id=undo_plan_id,
+                    library_id=library.library_id,
+                    track_id=candidate.track_id,
+                    action_type=ActionType.MOVE,
+                    source_path=event.target_path,
+                    target_path=event.source_path,
+                    content_hash_at_plan=None if candidate.snapshot is None else candidate.snapshot.content_hash,
+                    metadata_hash_at_plan=None if candidate.snapshot is None else candidate.snapshot.metadata_hash,
+                    status=ActionStatus.PLANNED if candidate.reason is None else ActionStatus.BLOCKED,
+                    reason=candidate.reason,
+                    sort_order=sort_order,
+                )
+            )
+            sort_order += PLAN_ACTION_SORT_ORDER_STEP
+
+        return tuple(actions)
+
+    def _candidate(self, uow: UnitOfWork, library: Library, event: FileEvent) -> _UndoCandidate:
+        track_id = _track_id_for_event(uow, event)
+        source_filesystem_path = _resolve_path(self.ports.path_resolver, library, event.target_path)
+
+        try:
+            snapshot = self.ports.file_snapshot_reader.capture(source_filesystem_path)
+        except FileNotFoundError:
+            return _UndoCandidate(track_id=track_id, snapshot=None, reason=PlanActionReason.SOURCE_MISSING)
+
+        if track_id is None:
+            return _UndoCandidate(track_id=None, snapshot=snapshot, reason=PlanActionReason.SOURCE_CHANGED)
+
+        track = uow.tracks.get(track_id)
+        if track is None or track.status != TrackStatus.ACTIVE:
+            return _UndoCandidate(track_id=track_id, snapshot=snapshot, reason=PlanActionReason.SOURCE_CHANGED)
+        if snapshot.content_hash != track.content_hash or snapshot.metadata_hash != track.metadata_hash:
+            return _UndoCandidate(track_id=track_id, snapshot=snapshot, reason=PlanActionReason.SOURCE_CHANGED)
+
+        target_filesystem_path = _resolve_path(self.ports.path_resolver, library, event.source_path)
+        if self.ports.file_presence.exists(target_filesystem_path):
+            return _UndoCandidate(track_id=track_id, snapshot=snapshot, reason=PlanActionReason.TARGET_EXISTS)
+
+        return _UndoCandidate(track_id=track_id, snapshot=snapshot, reason=None)
+
+
+class UndoPlanError(ValueError):
+    """Raised when undo cannot be planned from durable history."""
+
+
+@dataclass(frozen=True, slots=True)
+class _UndoCandidate:
+    """Plan-time judgment for one reverse FileEvent action."""
+
+    track_id: TrackId | None
+    snapshot: FileSnapshot | None
+    reason: PlanActionReason | None
+
+
+def _track_id_for_event(uow: UnitOfWork, event: FileEvent) -> TrackId | None:
+    source_action = uow.plan_actions.get(event.plan_action_id)
+    if source_action is not None and source_action.track_id is not None:
+        return source_action.track_id
+
+    if PurePath(event.target_path).is_absolute():
+        return None
+
+    matches = tuple(
+        track
+        for track in uow.tracks.list_by_library(event.library_id)
+        if track.status == TrackStatus.ACTIVE and track.current_path == event.target_path
+    )
+    if len(matches) != 1:
+        return None
+    return matches[0].track_id
+
+
+def _resolve_path(path_resolver: PathResolver, library: Library, path: str) -> FileSystemPath:
+    if PurePath(path).is_absolute():
+        return path
+    return path_resolver.resolve_library_path(library.root_path, path)
+
+
+def _summary(actions: tuple[PlanAction, ...]) -> dict[str, str]:
+    blocked_count = sum(action.status == ActionStatus.BLOCKED for action in actions)
+    return {
+        SUMMARY_ACTION_COUNT_KEY: str(len(actions)),
+        SUMMARY_MOVE_ACTIONS_KEY: str(len(actions) - blocked_count),
+        SUMMARY_BLOCKED_ACTIONS_KEY: str(blocked_count),
+    }

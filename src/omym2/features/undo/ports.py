@@ -9,7 +9,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omym2.features.common_ports import Clock, IdGenerator, UnitOfWork
+    from omym2.features.common_ports import (
+        Clock,
+        FilePresence,
+        FileSnapshotReader,
+        IdGenerator,
+        PathResolver,
+        UnitOfWork,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,5 +24,8 @@ class CreateUndoPlanPorts:
     """Ports required when undo planning is implemented."""
 
     uow: UnitOfWork
+    file_snapshot_reader: FileSnapshotReader
+    file_presence: FilePresence
+    path_resolver: PathResolver
     clock: Clock
     id_generator: IdGenerator

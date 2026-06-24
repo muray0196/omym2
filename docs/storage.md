@@ -306,7 +306,7 @@ Stored paths are separated from filesystem execution paths.
 | `config.paths.library` | Optional user-facing default or shortcut; not Library identity |
 | `tracks.current_path` | Normalized path relative to the Library root |
 | `tracks.canonical_path` | Normalized path relative to the Library root |
-| `plan_actions.target_path` | Library-root-relative path when the target is a Library music file location |
+| `plan_actions.target_path` | Library-root-relative path when the target is a Library music file location; absolute path only for undo restoring an imported file outside the Library |
 | `plan_actions.source_path` | Library-root-relative path for managed Library sources; absolute path for external sources such as Incoming |
 | `file_events.source_path` / `file_events.target_path` | Same path-reference convention as the corresponding PlanAction |
 

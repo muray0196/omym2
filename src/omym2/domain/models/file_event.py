@@ -55,7 +55,8 @@ class FileEvent:
         """Normalize path references and timestamps for durable history."""
         if not PurePath(self.source_path).is_absolute():
             object.__setattr__(self, "source_path", normalize_library_relative_path(self.source_path))
-        object.__setattr__(self, "target_path", normalize_library_relative_path(self.target_path))
+        if not PurePath(self.target_path).is_absolute():
+            object.__setattr__(self, "target_path", normalize_library_relative_path(self.target_path))
         object.__setattr__(self, "started_at", as_utc(self.started_at))
         if self.completed_at is not None:
             object.__setattr__(self, "completed_at", as_utc(self.completed_at))

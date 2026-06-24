@@ -254,7 +254,7 @@ Representative fields:
 * reason
 * sort_order
 
-Path representation summary: for Library music file destinations, `target_path` is stored as a normalized path relative to the owning Library root. `source_path` is stored as a Library-root-relative path when it points to an already managed Library file, and as an absolute path when it points outside the Library, such as an Incoming file. The authoritative storage policy is in [storage.md](storage.md#path-representation-policy).
+Path representation summary: for Library music file destinations, `target_path` is stored as a normalized path relative to the owning Library root. `target_path` may be absolute only for an undo Plan that restores an imported file back outside the Library. `source_path` is stored as a Library-root-relative path when it points to an already managed Library file, and as an absolute path when it points outside the Library, such as an Incoming file. The authoritative storage policy is in [storage.md](storage.md#path-representation-policy).
 
 File operations must resolve path references through PathResolver.
 
