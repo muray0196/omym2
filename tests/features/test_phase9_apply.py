@@ -147,6 +147,29 @@ def test_apply_precondition_failure_creates_no_file_event() -> None:
     assert mover.moves == []
 
 
+def test_apply_metadata_precondition_failure_creates_no_file_event() -> None:
+    """Changed source metadata fails before moving to a reviewed target."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan())
+    uow.plan_actions.save(_move_action())
+    ports, mover = _ports(
+        uow,
+        {SOURCE_PATH: _snapshot(SOURCE_PATH, metadata_hash="changed-metadata-hash")},
+        SequenceIdGenerator(run_ids=deque((RUN_ID,))),
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request())
+
+    assert run is not None
+    assert run.status == RunStatus.FAILED
+    action = _stored_action(uow)
+    assert action.status == ActionStatus.FAILED
+    assert action.reason == PlanActionReason.SOURCE_CHANGED
+    assert uow.file_events.records == {}
+    assert mover.moves == []
+
+
 def test_apply_marks_run_partial_failed_when_later_move_fails() -> None:
     """A failed second mutation leaves succeeded earlier evidence intact."""
     uow = InMemoryUnitOfWork()
@@ -464,14 +487,14 @@ def _track() -> Track:
     )
 
 
-def _snapshot(path: str, *, content_hash: str = CONTENT_HASH) -> FileSnapshot:
+def _snapshot(path: str, *, content_hash: str = CONTENT_HASH, metadata_hash: str = METADATA_HASH) -> FileSnapshot:
     return FileSnapshot(
         path=path,
         size=FILE_SIZE,
         mtime=BASE_TIME,
         file_extension=FILE_EXTENSION,
         content_hash=content_hash,
-        metadata_hash=METADATA_HASH,
+        metadata_hash=metadata_hash,
         metadata=_metadata(),
         captured_at=BASE_TIME,
     )

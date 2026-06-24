@@ -196,6 +196,8 @@ class ApplyPlanUseCase:
 
         if action.content_hash_at_plan is not None and snapshot.content_hash != action.content_hash_at_plan:
             return _SourcePreconditionResult.failed(PlanActionReason.SOURCE_CHANGED)
+        if action.metadata_hash_at_plan is not None and snapshot.metadata_hash != action.metadata_hash_at_plan:
+            return _SourcePreconditionResult.failed(PlanActionReason.SOURCE_CHANGED)
 
         return _SourcePreconditionResult.passed_with(snapshot)
 
