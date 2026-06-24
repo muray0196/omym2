@@ -47,6 +47,7 @@ DEFAULT_CONTEXT_FILES: tuple[str, ...] = (
 DEFAULT_PROMPT_PATH = Path("docs/agent/local_llm_review_prompt.md")
 DEFAULT_REVIEW_DIR = Path(".reviews")
 EXCLUDED_DIFF_PATH_PREFIXES = (".reviews/", ".git/", "__pycache__/")
+EMPTY_REVIEW_MESSAGE = "local LLM returned an empty review"
 TEXT_FILE_SIZE_LIMIT_BYTES = 500_000
 MARKDOWN_FENCE_BOUNDARY_LINE_COUNT = 2
 RESOLV_CONF_NAMESERVER_FIELD_COUNT = 2
@@ -481,7 +482,7 @@ def _request_review(
     content = message.get("content")
     if not isinstance(content, str):
         raise ReviewError("chat completion content was not text")
-    return _strip_outer_markdown_fence(content.strip())
+    return _require_non_empty_review(_strip_outer_markdown_fence(content.strip()))
 
 
 def _http_json(method: str, url: str, api_key: str, body: JsonObject | None, timeout: int) -> JsonObject:
@@ -577,13 +578,21 @@ You may call read-only tools to inspect additional repository context before wri
 
 
 def _format_agent_review(review: str, tool_iterations: int) -> str:
+    review_body = _require_non_empty_review(review)
     return "\n".join(
         [
-            review.strip(),
+            review_body,
             "",
             f"Read-only tool iterations: {tool_iterations}",
         ]
     )
+
+
+def _require_non_empty_review(review: str) -> str:
+    review_body = review.strip()
+    if not review_body:
+        raise ReviewError(EMPTY_REVIEW_MESSAGE)
+    return review_body
 
 
 def _strip_outer_markdown_fence(content: str) -> str:
