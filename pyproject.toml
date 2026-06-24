@@ -13,12 +13,16 @@ omym2 = "omym2.adapters.cli.main:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-dir]
 "" = "src"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"omym2.adapters.db.sqlite.migrations" = ["*.sql"]
 
 [dependency-groups]
 dev = [
@@ -55,7 +59,7 @@ testpaths = ["tests"]
 
 [tool.basedpyright]
 pythonVersion = "3.14"
-include = ["src"]
+include = ["src", "tests", "scripts"]
 exclude = ["**/__pycache__"]
 stubPath = ""
 typeCheckingMode = "recommended"

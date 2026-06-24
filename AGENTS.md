@@ -2,6 +2,8 @@
 
 Current task-specific rules are maintained in the split documentation files under `docs/`.
 
+## Required Reading
+
 Before non-trivial implementation work, read:
 
 * `ARCHITECTURE.md`
@@ -9,7 +11,18 @@ Before non-trivial implementation work, read:
 * `docs/development.md` for quality gates when code or tests change
 * The task-relevant document listed in `docs/index.md`
 
-Non-negotiable rules:
+Prefer the task-specific document listed in `docs/index.md`.
+
+## Skills
+
+You have these skills in this project
+
+* `omym2-quality-triage`: use for CI/local check failures, quality gate execution, and environment-vs-code failure classification.
+* `omym2-architecture-guardrails`: use for new modules, changed imports, layer responsibility checks, source file naming, and dependency boundary review.
+* `omym2-plan-safety`: use for Plan, PlanAction, Run, FileEvent, apply, undo, refresh, organize, or any Library music file mutation behavior.
+* `omym2-path-identity-storage`: use for stored paths, PathPolicy, Library identity, `library_id`, registration, relink, DB schema, and storage representation changes.
+
+## Non-negotiable Rules
 
 * Library music file mutations must go through a Plan.
 * Apply must use recorded PlanActions, not recalculated target paths.
@@ -19,4 +32,10 @@ Non-negotiable rules:
 * Stored Library-managed paths are Library-root-relative.
 * Run the relevant checks before marking work complete.
 
-If documents conflict, report it. Prefer the task-specific document listed in `docs/index.md`.
+## Decision records
+
+Use `docs/decisions/` only when changing or challenging a durable product or
+architecture rule.
+
+Decision records are rationale, not active specifications. Current rules live in
+`ARCHITECTURE.md` and the relevant documents under `docs/`.

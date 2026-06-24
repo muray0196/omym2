@@ -31,7 +31,7 @@ default_mode = "plan_first"
 auto_apply = false
 
 [path_policy]
-template = "{album_artist}/{year}_{album}/{disc}-{track}_{title}.{ext}"
+template = "{album_artist}/{year}_{album}/{disc}-{track}_{title}"
 unknown_artist = "Unknown Artist"
 unknown_album = "Unknown Album"
 sanitize = true

@@ -1,0 +1,123 @@
+"""
+Summary: Defines canonical Library-relative path generation.
+Why: Centralizes pure path policy shared by add, organize, and refresh.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from omym2.config import (
+    LOGICAL_PATH_SEPARATOR,
+    PATH_EXTENSION_PREFIX,
+    PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT,
+    PATH_POLICY_TRACK_NUMBER_WIDTH,
+    PATH_POLICY_UNSAFE_CHARACTERS,
+)
+from omym2.shared.paths import normalize_library_relative_path
+
+if TYPE_CHECKING:
+    from omym2.domain.models.app_config import PathPolicyConfig
+    from omym2.domain.models.track_metadata import TrackMetadata
+
+EMPTY_FILE_EXTENSION_MESSAGE = "File extension must not be empty."
+MISSING_TITLE_MESSAGE = "Track title is required for canonical path generation."
+
+
+@dataclass(frozen=True, slots=True)
+class PathPolicy:
+    """Pure service that generates canonical Library-root-relative paths."""
+
+    config: PathPolicyConfig
+
+    def canonical_path(self, metadata: TrackMetadata, file_extension: str) -> str:
+        """Generate a normalized Library-root-relative canonical path."""
+        extension_suffix = _normalize_extension_suffix(file_extension)
+        raw_stem = self._render_raw_stem(metadata)
+        path_stem = _normalize_generated_stem(raw_stem, self.config, len(extension_suffix))
+        return normalize_library_relative_path(_append_extension(path_stem, extension_suffix))
+
+    def _render_raw_stem(self, metadata: TrackMetadata) -> str:
+        return self.config.template.format(
+            album_artist=self._album_artist(metadata),
+            year=self._optional_number(metadata.year),
+            album=self._album(metadata),
+            disc=self._disc_number(metadata),
+            track=self._track_number(metadata),
+            title=self._title(metadata),
+            artist=self._artist(metadata),
+        )
+
+    def _album_artist(self, metadata: TrackMetadata) -> str:
+        return self._component(metadata.album_artist or metadata.artist or self.config.unknown_artist)
+
+    def _artist(self, metadata: TrackMetadata) -> str:
+        return self._component(metadata.artist or metadata.album_artist or self.config.unknown_artist)
+
+    def _album(self, metadata: TrackMetadata) -> str:
+        return self._component(metadata.album or self.config.unknown_album)
+
+    def _title(self, metadata: TrackMetadata) -> str:
+        if metadata.title is None or metadata.title.strip() == "":
+            raise ValueError(MISSING_TITLE_MESSAGE)
+        return self._component(metadata.title)
+
+    def _disc_number(self, metadata: TrackMetadata) -> str:
+        return self._optional_number(metadata.disc_number)
+
+    def _track_number(self, metadata: TrackMetadata) -> str:
+        if metadata.track_number is None:
+            return PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT
+        return str(metadata.track_number).zfill(PATH_POLICY_TRACK_NUMBER_WIDTH)
+
+    def _optional_number(self, value: int | None) -> str:
+        if value is None:
+            return PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT
+        return str(value)
+
+    def _component(self, value: str) -> str:
+        if not self.config.sanitize:
+            return value
+        return _sanitize_component(value, self.config.max_filename_length)
+
+
+def _normalize_extension_suffix(file_extension: str) -> str:
+    extension = file_extension.strip().lower()
+    if extension.startswith(PATH_EXTENSION_PREFIX):
+        extension = extension.removeprefix(PATH_EXTENSION_PREFIX)
+    if extension == "":
+        raise ValueError(EMPTY_FILE_EXTENSION_MESSAGE)
+    return f"{PATH_EXTENSION_PREFIX}{_sanitize_component(extension, len(extension))}"
+
+
+def _normalize_generated_stem(raw_stem: str, config: PathPolicyConfig, reserved_suffix_length: int) -> str:
+    parts = raw_stem.split(LOGICAL_PATH_SEPARATOR)
+    final_component_length = config.max_filename_length - reserved_suffix_length
+    if config.sanitize:
+        normalized_parts = [_sanitize_component(part, config.max_filename_length) for part in parts[:-1]]
+        normalized_parts.append(_sanitize_component(parts[-1], final_component_length))
+    else:
+        normalized_parts = [_limit_component(part, config.max_filename_length) for part in parts[:-1]]
+        normalized_parts.append(_limit_component(parts[-1], final_component_length))
+    return LOGICAL_PATH_SEPARATOR.join(normalized_parts)
+
+
+def _sanitize_component(value: str, max_length: int) -> str:
+    cleaned = value.strip()
+    for unsafe_character in PATH_POLICY_UNSAFE_CHARACTERS:
+        cleaned = cleaned.replace(unsafe_character, PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT)
+    cleaned = _limit_component(cleaned, max_length)
+    if cleaned in {"", ".", ".."}:
+        return PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT
+    return cleaned
+
+
+def _limit_component(value: str, max_length: int) -> str:
+    if max_length <= 0:
+        return ""
+    return value[:max_length]
+
+
+def _append_extension(path_stem: str, extension_suffix: str) -> str:
+    return f"{path_stem}{extension_suffix}"

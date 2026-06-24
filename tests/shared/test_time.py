@@ -66,4 +66,4 @@ def test_as_utc_rejects_naive_datetime() -> None:
     naive_timestamp = aware_timestamp.replace(tzinfo=None)
 
     with pytest.raises(ValueError, match=NAIVE_DATETIME_MESSAGE):
-        as_utc(naive_timestamp)
+        _ = as_utc(naive_timestamp)

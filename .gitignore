@@ -2,6 +2,7 @@
 .config/
 .data/
 .logs/
+.reviews/
 !tests/.config/
 !src/omym/config/
 # Python
