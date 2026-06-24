@@ -21,6 +21,7 @@ class ActionType(StrEnum):
 
     MOVE = "move"
     SKIP = "skip"
+    REFRESH_METADATA = "refresh_metadata"
 
 
 class ActionStatus(StrEnum):

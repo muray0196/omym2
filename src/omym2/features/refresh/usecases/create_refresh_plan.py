@@ -43,6 +43,7 @@ TARGET_OUTSIDE_LIBRARY_MESSAGE = "Refresh target must be inside the selected Lib
 TARGET_SELECTOR_COUNT_MESSAGE = "Refresh requires exactly one target: track_id, target_path, or include_all."
 SUMMARY_ACTION_COUNT_KEY = "action_count"
 SUMMARY_BLOCKED_ACTIONS_KEY = "blocked_actions"
+SUMMARY_METADATA_ACTIONS_KEY = "metadata_actions"
 SUMMARY_MOVE_ACTIONS_KEY = "move_actions"
 
 
@@ -124,7 +125,11 @@ class CreateRefreshPlanUseCase:
             snapshot=snapshot,
             target_path=target_path,
             reason=None,
-            needs_action=target_path != track.current_path,
+            needs_action=(
+                target_path != track.current_path
+                or snapshot.content_hash != track.content_hash
+                or snapshot.metadata_hash != track.metadata_hash
+            ),
         )
 
     def _with_target_conflicts(
@@ -155,7 +160,9 @@ class CreateRefreshPlanUseCase:
         target_path = candidate.target_path
         if not candidate.needs_action or candidate.reason is not None or target_path is None:
             return False
-        if target_path in occupied_paths and target_path != candidate.track.current_path:
+        if target_path == candidate.track.current_path:
+            return False
+        if target_path in occupied_paths:
             return True
         if len(target_sources[target_path]) > 1:
             return True
@@ -177,13 +184,14 @@ class CreateRefreshPlanUseCase:
                 continue
 
             snapshot = candidate.snapshot
+            action_type = _action_type(candidate)
             actions.append(
                 PlanAction(
                     action_id=self.ports.id_generator.new_action_id(),
                     plan_id=plan_id,
                     library_id=library.library_id,
                     track_id=candidate.track.track_id,
-                    action_type=ActionType.MOVE,
+                    action_type=action_type,
                     source_path=candidate.track.current_path,
                     target_path=candidate.target_path,
                     content_hash_at_plan=None if snapshot is None else snapshot.content_hash,
@@ -288,6 +296,12 @@ def _blocked_candidate(
     )
 
 
+def _action_type(candidate: _RefreshCandidate) -> ActionType:
+    if candidate.reason is None and candidate.target_path == candidate.track.current_path:
+        return ActionType.REFRESH_METADATA
+    return ActionType.MOVE
+
+
 def _move_target_sources(candidates: Sequence[_RefreshCandidate]) -> dict[str, tuple[str, ...]]:
     grouped: dict[str, list[str]] = {}
     for candidate in candidates:
@@ -304,7 +318,13 @@ def _plan(
     config_hash: str,
     timestamp: datetime,
 ) -> Plan:
-    move_count = sum(action.status == ActionStatus.PLANNED for action in actions)
+    move_count = sum(
+        action.action_type == ActionType.MOVE and action.status == ActionStatus.PLANNED for action in actions
+    )
+    metadata_count = sum(
+        action.action_type == ActionType.REFRESH_METADATA and action.status == ActionStatus.PLANNED
+        for action in actions
+    )
     blocked_count = sum(action.status == ActionStatus.BLOCKED for action in actions)
     return Plan(
         plan_id=plan_id,
@@ -317,6 +337,7 @@ def _plan(
         summary={
             SUMMARY_ACTION_COUNT_KEY: str(len(actions)),
             SUMMARY_MOVE_ACTIONS_KEY: str(move_count),
+            SUMMARY_METADATA_ACTIONS_KEY: str(metadata_count),
             SUMMARY_BLOCKED_ACTIONS_KEY: str(blocked_count),
         },
         actions=tuple(actions),

@@ -182,6 +182,58 @@ def test_refresh_command_apply_moves_file_and_preserves_track_id(
         assert tracks[0].current_path == NEW_PATH
 
 
+def test_refresh_command_apply_persists_metadata_only_refresh_without_file_event(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """refresh --apply updates Track snapshots when canonical path is unchanged."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    managed_file = _write_audio_file(library_root, NEW_PATH)
+    _register_library_and_tracks(
+        app_paths.database_file,
+        str(library_root),
+        _track(current_path=NEW_PATH, metadata=OLD_METADATA),
+    )
+    stdout = StringIO()
+    stderr = StringIO()
+
+    def read(self: MutagenMetadataReader, path: FileSystemPath) -> TrackMetadata:
+        del self
+        assert path == managed_file
+        return NEW_METADATA
+
+    monkeypatch.setattr(MutagenMetadataReader, "read", read)
+    monkeypatch.setattr(sys, "stdin", StringIO("y\n"))
+
+    exit_code = main(
+        ["refresh", str(managed_file), "--apply"],
+        stdout=stdout,
+        stderr=stderr,
+        config_path=app_paths.config_file,
+        database_path=app_paths.database_file,
+    )
+
+    assert exit_code == SUCCESS_EXIT_CODE
+    assert managed_file.is_file()
+
+    with SQLiteUnitOfWork(app_paths.database_file) as uow:
+        plans = uow.plans.list_by_library(LIBRARY_ID)
+        assert len(plans) == 1
+        assert plans[0].status == PlanStatus.APPLIED
+        actions = uow.plan_actions.list_by_plan(plans[0].plan_id)
+        assert len(actions) == 1
+        assert actions[0].status == ActionStatus.APPLIED
+        runs = uow.runs.list_by_plan(plans[0].plan_id)
+        assert len(runs) == 1
+        assert runs[0].status == RunStatus.SUCCEEDED
+        assert uow.file_events.list_by_run(runs[0].run_id) == ()
+        refreshed_track = uow.tracks.get(TRACK_ID)
+        assert refreshed_track is not None
+        assert refreshed_track.current_path == NEW_PATH
+        assert refreshed_track.metadata_hash == calculate_metadata_fingerprint(NEW_METADATA)
+
+
 def test_refresh_all_command_selects_all_managed_active_tracks(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

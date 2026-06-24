@@ -68,15 +68,9 @@ class ApplyPlanUseCase:
                 self._mark_action_applied(action)
                 continue
 
-            if action.action_type != ActionType.MOVE:
+            result = self._process_filesystem_observing_action(started_apply, action, sequence_no)
+            if result is None:
                 continue
-
-            if not self._library_root_still_matches(started_apply.library):
-                move_failure_count += 1
-                failure_summaries.append(LIBRARY_ROOT_CHANGED_SUMMARY)
-                break
-
-            result = self._process_move_action(started_apply.run, started_apply.library, action, sequence_no)
             if result.event_created:
                 sequence_no += FILE_EVENT_SEQUENCE_STEP
 
@@ -85,6 +79,8 @@ class ApplyPlanUseCase:
             else:
                 move_failure_count += 1
                 failure_summaries.append(result.failure_summary)
+                if result.should_stop:
+                    break
 
         return self._finish_apply(
             started_apply.plan,
@@ -93,6 +89,23 @@ class ApplyPlanUseCase:
             move_failure_count,
             tuple(failure_summaries),
         )
+
+    def _process_filesystem_observing_action(
+        self,
+        started_apply: _StartedApply,
+        action: PlanAction,
+        sequence_no: int,
+    ) -> _ActionApplyResult | None:
+        if action.action_type not in {ActionType.MOVE, ActionType.REFRESH_METADATA}:
+            return None
+
+        if not self._library_root_still_matches(started_apply.library):
+            return _ActionApplyResult.root_changed()
+
+        if action.action_type == ActionType.REFRESH_METADATA:
+            return self._process_metadata_refresh_action(started_apply.library, action)
+
+        return self._process_move_action(started_apply.run, started_apply.library, action, sequence_no)
 
     def _start_apply(self, plan_id: PlanId) -> _StartedApply | None:
         with self.ports.uow as uow:
@@ -182,6 +195,38 @@ class ApplyPlanUseCase:
         self._record_successful_move(event, action, snapshot, target_path)
         return _ActionApplyResult(succeeded=True, event_created=True, failure_summary="")
 
+    def _process_metadata_refresh_action(
+        self,
+        library: Library,
+        action: PlanAction,
+    ) -> _ActionApplyResult:
+        source_path = action.source_path
+        target_path = action.target_path
+        if source_path is None or target_path is None:
+            self._mark_action_failed(action)
+            return _ActionApplyResult(
+                succeeded=False,
+                event_created=False,
+                failure_summary=INCOMPLETE_MOVE_ACTION_SUMMARY,
+            )
+
+        source_filesystem_path = self._resolve_source_path(library, source_path)
+        precondition = self._verify_source_preconditions(action, source_filesystem_path)
+        if not precondition.passed:
+            self._mark_action_failed(action, precondition.reason)
+            return _ActionApplyResult(
+                succeeded=False,
+                event_created=False,
+                failure_summary=precondition.failure_summary,
+            )
+
+        snapshot = precondition.snapshot
+        if snapshot is None:
+            raise AssertionError(SOURCE_PRECONDITION_SNAPSHOT_MISSING_MESSAGE)
+
+        self._record_successful_metadata_refresh(action, snapshot, target_path)
+        return _ActionApplyResult(succeeded=True, event_created=False, failure_summary="")
+
     def _verify_source_preconditions(
         self,
         action: PlanAction,
@@ -242,6 +287,18 @@ class ApplyPlanUseCase:
         timestamp = self.ports.clock.now()
         with self.ports.uow as uow:
             uow.file_events.save(event.mark_succeeded(timestamp))
+            uow.plan_actions.save(action.mark_applied())
+            uow.tracks.save(self._track_after_success(uow, action, snapshot, target_path, timestamp))
+            uow.commit()
+
+    def _record_successful_metadata_refresh(
+        self,
+        action: PlanAction,
+        snapshot: FileSnapshot,
+        target_path: str,
+    ) -> None:
+        timestamp = self.ports.clock.now()
+        with self.ports.uow as uow:
             uow.plan_actions.save(action.mark_applied())
             uow.tracks.save(self._track_after_success(uow, action, snapshot, target_path, timestamp))
             uow.commit()
@@ -376,6 +433,16 @@ class _ActionApplyResult:
     succeeded: bool
     event_created: bool
     failure_summary: str
+    should_stop: bool = False
+
+    @classmethod
+    def root_changed(cls) -> _ActionApplyResult:
+        return cls(
+            succeeded=False,
+            event_created=False,
+            failure_summary=LIBRARY_ROOT_CHANGED_SUMMARY,
+            should_stop=True,
+        )
 
 
 @dataclass(frozen=True, slots=True)

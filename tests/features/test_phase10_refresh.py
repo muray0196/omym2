@@ -18,7 +18,7 @@ from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, PlanActionReason
+from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanActionReason
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
@@ -143,6 +143,38 @@ def test_refresh_persists_zero_action_plan_when_canonical_path_is_unchanged() ->
     assert plan.summary["action_count"] == "0"
     assert uow.plan_actions.records == {}
     assert uow.plans.get(PLAN_ID) == plan
+
+
+def test_refresh_plans_metadata_action_when_hashes_change_without_relocation() -> None:
+    """A metadata-only tag edit is persisted through apply as a reviewed action."""
+    metadata_same_path = TrackMetadata(
+        title="New Title",
+        artist="Artist",
+        album="Album",
+        year=2026,
+        track_number=2,
+        disc_number=1,
+    )
+    unchanged_path = NEW_PATH
+    uow = _uow_with_library_and_tracks(_track(current_path=unchanged_path, metadata=OLD_METADATA))
+    source_path = _absolute(unchanged_path)
+    ports, _ = _ports(
+        uow,
+        {source_path: _snapshot(source_path, metadata_same_path)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(track_id=TRACK_ID))
+
+    assert plan.summary["action_count"] == "1"
+    assert plan.summary["move_actions"] == "0"
+    assert plan.summary["metadata_actions"] == "1"
+    action = plan.actions[0]
+    assert action.action_type == ActionType.REFRESH_METADATA
+    assert action.source_path == unchanged_path
+    assert action.target_path == unchanged_path
+    assert action.status == ActionStatus.PLANNED
+    assert action.metadata_hash_at_plan == calculate_metadata_fingerprint(metadata_same_path)
 
 
 def test_refresh_selects_exact_file_target() -> None:
