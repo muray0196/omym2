@@ -18,6 +18,7 @@ from omym2.adapters.cli.commands.inspect import run_inspect_command
 from omym2.adapters.cli.commands.organize import run_organize_command
 from omym2.adapters.cli.commands.plans import run_plans_command
 from omym2.adapters.cli.commands.refresh import run_refresh_command
+from omym2.adapters.cli.commands.settings import run_settings_command
 from omym2.adapters.cli.commands.undo import run_undo_command
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ INSPECT_COMMAND = "inspect"
 ORGANIZE_COMMAND = "organize"
 PLANS_COMMAND = "plans"
 REFRESH_COMMAND = "refresh"
+SETTINGS_COMMAND = "settings"
 UNDO_COMMAND = "undo"
 SUCCESS_EXIT_CODE = 0
 UNKNOWN_COMMAND_EXIT_CODE = 2
@@ -66,6 +68,7 @@ def main(
         ORGANIZE_COMMAND: lambda: run_organize_command(command_args, output, error_output, config_path, database_path),
         PLANS_COMMAND: lambda: run_plans_command(command_args, output, error_output, database_path),
         REFRESH_COMMAND: lambda: run_refresh_command(command_args, output, error_output, config_path, database_path),
+        SETTINGS_COMMAND: lambda: run_settings_command(command_args, output, error_output, config_path),
         UNDO_COMMAND: lambda: run_undo_command(command_args, output, error_output, database_path),
     }
     runner = command_runners.get(command)
