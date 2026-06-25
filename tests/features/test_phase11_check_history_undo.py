@@ -166,6 +166,55 @@ def test_undo_creates_plan_from_succeeded_events_in_reverse_order() -> None:
     assert uow.plans.get(UNDO_PLAN_ID) == plan
 
 
+def test_apply_persists_generated_track_id_on_add_action_for_later_undo() -> None:
+    """Apply stores the new Track identity on the action referenced by FileEvent."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan(status=PlanStatus.READY))
+    uow.plan_actions.save(_source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=None))
+    ports = ApplyPlanPorts(
+        uow=uow,
+        file_mover=RecordingFileMover(),
+        file_snapshot_reader=MappingSnapshotReader({EXTERNAL_SOURCE_PATH: _snapshot(EXTERNAL_SOURCE_PATH)}),
+        path_resolver=SimplePathResolver(),
+        clock=FixedClock(BASE_TIME),
+        id_generator=SequenceIdGenerator(
+            run_ids=deque((RUN_ID,)),
+            event_ids=deque((EVENT_ID,)),
+            track_ids=deque((TRACK_ID,)),
+        ),
+    )
+
+    _ = ApplyPlanUseCase(ports).execute(ApplyPlanRequest(PLAN_ID, options=ApplyOptions(yes=True)))
+
+    action = uow.plan_actions.get(ACTION_ID)
+    assert action is not None
+    assert action.track_id == TRACK_ID
+
+
+def test_undo_uses_current_track_path_for_import_after_track_moved() -> None:
+    """Undo resolves durable Track identity instead of replaying stale FileEvent target paths."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track(current_path=RESTORE_PATH))
+    uow.tracks.save(_track(track_id=SECOND_TRACK_ID, current_path=TARGET_PATH))
+    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plan_actions.save(_source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=TRACK_ID))
+    uow.runs.save(_run(status=RunStatus.SUCCEEDED))
+    uow.file_events.save(_event(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH))
+    ports = _undo_ports(
+        uow,
+        id_generator=SequenceIdGenerator(plan_ids=deque((UNDO_PLAN_ID,)), action_ids=deque((UNDO_ACTION_ID,))),
+    )
+
+    plan = CreateUndoPlanUseCase(ports).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert plan.actions[0].source_path == RESTORE_PATH
+    assert plan.actions[0].target_path == EXTERNAL_SOURCE_PATH
+    assert plan.actions[0].track_id == TRACK_ID
+    assert plan.actions[0].status == ActionStatus.PLANNED
+
+
 def test_undo_blocks_occupied_restore_destination() -> None:
     """undo records target conflicts instead of overwriting destinations."""
     uow = _uow_with_applied_run(second_event=False)

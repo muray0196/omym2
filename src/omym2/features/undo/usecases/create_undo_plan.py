@@ -104,7 +104,7 @@ class CreateUndoPlanUseCase:
                     library_id=library.library_id,
                     track_id=candidate.track_id,
                     action_type=ActionType.MOVE,
-                    source_path=event.target_path,
+                    source_path=candidate.source_path,
                     target_path=event.source_path,
                     content_hash_at_plan=None if candidate.snapshot is None else candidate.snapshot.content_hash,
                     metadata_hash_at_plan=None if candidate.snapshot is None else candidate.snapshot.metadata_hash,
@@ -119,27 +119,38 @@ class CreateUndoPlanUseCase:
 
     def _candidate(self, uow: UnitOfWork, library: Library, event: FileEvent) -> _UndoCandidate:
         track_id = _track_id_for_event(uow, event)
-        source_filesystem_path = _resolve_path(self.ports.path_resolver, library, event.target_path)
+        track = None if track_id is None else uow.tracks.get(track_id)
+        source_path = event.target_path if track is None else track.current_path
+        snapshot = None
+        reason = None
 
-        try:
-            snapshot = self.ports.file_snapshot_reader.capture(source_filesystem_path)
-        except FileNotFoundError:
-            return _UndoCandidate(track_id=track_id, snapshot=None, reason=PlanActionReason.SOURCE_MISSING)
+        if track_id is not None and (track is None or track.status != TrackStatus.ACTIVE):
+            reason = PlanActionReason.SOURCE_CHANGED
+        else:
+            source_filesystem_path = _resolve_path(self.ports.path_resolver, library, source_path)
+            try:
+                snapshot = self.ports.file_snapshot_reader.capture(source_filesystem_path)
+            except FileNotFoundError:
+                reason = PlanActionReason.SOURCE_MISSING
 
-        if track_id is None:
-            return _UndoCandidate(track_id=None, snapshot=snapshot, reason=PlanActionReason.SOURCE_CHANGED)
-
-        track = uow.tracks.get(track_id)
-        if track is None or track.status != TrackStatus.ACTIVE:
-            return _UndoCandidate(track_id=track_id, snapshot=snapshot, reason=PlanActionReason.SOURCE_CHANGED)
-        if snapshot.content_hash != track.content_hash or snapshot.metadata_hash != track.metadata_hash:
-            return _UndoCandidate(track_id=track_id, snapshot=snapshot, reason=PlanActionReason.SOURCE_CHANGED)
+        if reason is None and track_id is None:
+            reason = PlanActionReason.SOURCE_CHANGED
+        if (
+            reason is None
+            and track is not None
+            and (
+                snapshot is None
+                or snapshot.content_hash != track.content_hash
+                or snapshot.metadata_hash != track.metadata_hash
+            )
+        ):
+            reason = PlanActionReason.SOURCE_CHANGED
 
         target_filesystem_path = _resolve_path(self.ports.path_resolver, library, event.source_path)
-        if self.ports.file_presence.exists(target_filesystem_path):
-            return _UndoCandidate(track_id=track_id, snapshot=snapshot, reason=PlanActionReason.TARGET_EXISTS)
+        if reason is None and self.ports.file_presence.exists(target_filesystem_path):
+            reason = PlanActionReason.TARGET_EXISTS
 
-        return _UndoCandidate(track_id=track_id, snapshot=snapshot, reason=None)
+        return _UndoCandidate(track_id=track_id, source_path=source_path, snapshot=snapshot, reason=reason)
 
 
 class UndoPlanError(ValueError):
@@ -151,6 +162,7 @@ class _UndoCandidate:
     """Plan-time judgment for one reverse FileEvent action."""
 
     track_id: TrackId | None
+    source_path: str
     snapshot: FileSnapshot | None
     reason: PlanActionReason | None
 

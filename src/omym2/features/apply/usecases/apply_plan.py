@@ -5,7 +5,7 @@ Why: Mutates Library files only after recorded PlanActions and FileEvents exist.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePath
 from typing import TYPE_CHECKING
 
@@ -294,9 +294,11 @@ class ApplyPlanUseCase:
     ) -> None:
         timestamp = self.ports.clock.now()
         with self.ports.uow as uow:
+            track = self._track_after_success(uow, action, snapshot, target_path, timestamp)
+            action_with_track = replace(action, track_id=track.track_id)
             uow.file_events.save(event.mark_succeeded(timestamp))
-            uow.plan_actions.save(action.mark_applied())
-            uow.tracks.save(self._track_after_success(uow, action, snapshot, target_path, timestamp))
+            uow.tracks.save(track)
+            uow.plan_actions.save(action_with_track.mark_applied())
             uow.commit()
 
     def _record_successful_metadata_refresh(
