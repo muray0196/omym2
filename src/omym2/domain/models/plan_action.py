@@ -65,7 +65,7 @@ class PlanAction:
         """Normalize Library-managed path references stored in the action."""
         if self.source_path is not None and not PurePath(self.source_path).is_absolute():
             object.__setattr__(self, "source_path", normalize_library_relative_path(self.source_path))
-        if self.target_path is not None:
+        if self.target_path is not None and not PurePath(self.target_path).is_absolute():
             object.__setattr__(self, "target_path", normalize_library_relative_path(self.target_path))
 
     def mark_applied(self) -> PlanAction:

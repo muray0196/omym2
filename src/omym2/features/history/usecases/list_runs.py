@@ -1,6 +1,6 @@
 """
-Summary: Defines the Run listing usecase contract.
-Why: Allows CLI and Web history views to share the same query boundary.
+Summary: Implements Run listing for history views.
+Why: Lets CLI and Web inspect apply attempts through one query boundary.
 """
 
 from __future__ import annotations
@@ -13,17 +13,21 @@ if TYPE_CHECKING:
     from omym2.features.history.dto import ListRunsRequest
     from omym2.features.history.ports import HistoryPorts
 
-USECASE_DEFERRED_MESSAGE = "List runs behavior is deferred until the history vertical slice phase."
-
 
 @dataclass(frozen=True, slots=True)
 class ListRunsUseCase:
-    """Contract for listing apply Runs."""
+    """List apply Runs in newest-first order."""
 
     ports: HistoryPorts
 
     def execute(self, request: ListRunsRequest) -> tuple[Run, ...]:
         """List Runs for the selected Library scope."""
-        # Phase 3 fixes the call shape only; Phase 11 owns history behavior.
-        del request
-        raise NotImplementedError(USECASE_DEFERRED_MESSAGE)
+        with self.ports.uow as uow:
+            if request.library_id is not None:
+                runs = tuple(uow.runs.list_by_library(request.library_id))
+            else:
+                runs = tuple(
+                    run for library in uow.libraries.list_all() for run in uow.runs.list_by_library(library.library_id)
+                )
+
+        return tuple(sorted(runs, key=lambda run: (run.started_at, str(run.run_id)), reverse=True))

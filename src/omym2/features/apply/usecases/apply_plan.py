@@ -5,7 +5,7 @@ Why: Mutates Library files only after recorded PlanActions and FileEvents exist.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePath
 from typing import TYPE_CHECKING
 
@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 APPLY_FAILED_SUMMARY = "Apply failed."
 APPLY_NOT_CONFIRMED_MESSAGE = "Apply was not confirmed."
 INCOMPLETE_MOVE_ACTION_SUMMARY = "Planned move action is missing source or target path."
+EXTERNAL_RESTORE_WITHOUT_TRACK_SUMMARY = "External restore action is missing a managed Track ID."
 LIBRARY_NOT_FOUND_MESSAGE = "Plan Library was not found."
 LIBRARY_ROOT_CHANGED_SUMMARY = "Library root changed during apply."
 MOVE_FAILED_ERROR_CODE = "move_failed"
@@ -156,9 +157,16 @@ class ApplyPlanUseCase:
                 event_created=False,
                 failure_summary=INCOMPLETE_MOVE_ACTION_SUMMARY,
             )
+        if PurePath(target_path).is_absolute() and action.track_id is None:
+            self._mark_action_failed(action, PlanActionReason.INVALID_PATH)
+            return _ActionApplyResult(
+                succeeded=False,
+                event_created=False,
+                failure_summary=EXTERNAL_RESTORE_WITHOUT_TRACK_SUMMARY,
+            )
 
         source_filesystem_path = self._resolve_source_path(library, source_path)
-        target_filesystem_path = self.ports.path_resolver.resolve_library_path(library.root_path, target_path)
+        target_filesystem_path = self._resolve_target_path(library, target_path)
 
         precondition = self._verify_source_preconditions(action, source_filesystem_path)
         if not precondition.passed:
@@ -286,9 +294,11 @@ class ApplyPlanUseCase:
     ) -> None:
         timestamp = self.ports.clock.now()
         with self.ports.uow as uow:
+            track = self._track_after_success(uow, action, snapshot, target_path, timestamp)
+            action_with_track = replace(action, track_id=track.track_id)
             uow.file_events.save(event.mark_succeeded(timestamp))
-            uow.plan_actions.save(action.mark_applied())
-            uow.tracks.save(self._track_after_success(uow, action, snapshot, target_path, timestamp))
+            uow.tracks.save(track)
+            uow.plan_actions.save(action_with_track.mark_applied())
             uow.commit()
 
     def _record_successful_metadata_refresh(
@@ -327,6 +337,23 @@ class ApplyPlanUseCase:
     ) -> Track:
         existing_track = None if action.track_id is None else uow.tracks.get(action.track_id)
         track_id = self.ports.id_generator.new_track_id() if action.track_id is None else action.track_id
+        if PurePath(target_path).is_absolute():
+            if existing_track is None or action.source_path is None:
+                raise AssertionError(EXTERNAL_RESTORE_WITHOUT_TRACK_SUMMARY)
+            return Track(
+                track_id=track_id,
+                library_id=action.library_id,
+                current_path=action.source_path,
+                canonical_path=existing_track.canonical_path,
+                content_hash=snapshot.content_hash,
+                metadata_hash=snapshot.metadata_hash,
+                metadata=snapshot.metadata,
+                status=TrackStatus.REMOVED,
+                first_seen_at=existing_track.first_seen_at,
+                last_seen_at=timestamp,
+                updated_at=timestamp,
+            )
+
         return Track(
             track_id=track_id,
             library_id=action.library_id,
@@ -414,6 +441,11 @@ class ApplyPlanUseCase:
         if PurePath(source_path).is_absolute():
             return source_path
         return self.ports.path_resolver.resolve_library_path(library.root_path, source_path)
+
+    def _resolve_target_path(self, library: Library, target_path: str) -> FileSystemPath:
+        if PurePath(target_path).is_absolute():
+            return target_path
+        return self.ports.path_resolver.resolve_library_path(library.root_path, target_path)
 
 
 @dataclass(frozen=True, slots=True)

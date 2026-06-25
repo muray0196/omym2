@@ -338,6 +338,8 @@ omym2 undo <run-id> --apply
 
 If the restore destination is already occupied during undo, it is not overwritten automatically. It stops as a conflict and requires manual review.
 
+When undo restores a file that originally came from outside the Library, such as an add/import source, the undo Plan records the external restore destination as an absolute target path. Applying that undo moves the file out of the Library and marks the managed Track as `removed`; Track paths remain Library-root-relative and do not store the external destination.
+
 Undo uses Run and FileEvent history. Stable `track_id` keeps the relationship between Track state and FileEvents even when paths, metadata, or hashes have changed.
 
 ## Check Behavior
