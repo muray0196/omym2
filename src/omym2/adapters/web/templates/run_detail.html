@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OMYM2 Run Detail</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/settings.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Local Console</p>
+        <h1>OMYM2 Run Detail</h1>
+      </div>
+      <nav class="topnav" aria-label="Console navigation">
+        <a class="{% if active_nav == 'settings' %}topnav__link--active{% endif %}" href="/settings">Settings</a>
+        <a class="{% if active_nav == 'history' %}topnav__link--active{% endif %}" href="/history">History</a>
+        <a class="{% if active_nav == 'check' %}topnav__link--active{% endif %}" href="/check">Check</a>
+        <a class="{% if active_nav == 'tracks' %}topnav__link--active{% endif %}" href="/tracks">Tracks</a>
+      </nav>
+    </header>
+
+    <main class="page">
+      {% if errors %}
+        <div class="notice notice--bad">
+          {% for error in errors %}
+            <p>{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if detail %}
+        <section class="panel">
+          <h2>Run</h2>
+          <dl class="detail-grid">
+            <div>
+              <dt>Run ID</dt>
+              <dd>{{ detail.run.run_id }}</dd>
+            </div>
+            <div>
+              <dt>Plan ID</dt>
+              <dd>{{ detail.run.plan_id }}</dd>
+            </div>
+            <div>
+              <dt>Library ID</dt>
+              <dd>{{ detail.run.library_id }}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{{ detail.run.status.value }}</dd>
+            </div>
+            <div>
+              <dt>Started</dt>
+              <dd>{{ detail.run.started_at.isoformat() }}</dd>
+            </div>
+            <div>
+              <dt>Completed</dt>
+              <dd>{{ detail.run.completed_at.isoformat() if detail.run.completed_at else "-" }}</dd>
+            </div>
+            <div class="detail-grid__wide">
+              <dt>Error</dt>
+              <dd>{{ detail.run.error_summary or "-" }}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="panel">
+          <h2>File Events</h2>
+          {% if detail.file_events %}
+            <table>
+              <thead>
+                <tr>
+                  <th>Seq</th>
+                  <th>Event</th>
+                  <th>Action</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Source</th>
+                  <th>Target</th>
+                  <th>Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for event in detail.file_events %}
+                  <tr>
+                    <td>{{ event.sequence_no }}</td>
+                    <td>{{ event.event_id }}</td>
+                    <td>{{ event.plan_action_id }}</td>
+                    <td>{{ event.event_type.value }}</td>
+                    <td><span class="status-chip status-chip--compact">{{ event.status.value }}</span></td>
+                    <td>{{ event.source_path }}</td>
+                    <td>{{ event.target_path }}</td>
+                    <td>{{ event.error_message or event.error_code or "-" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="muted">No file events.</p>
+          {% endif %}
+        </section>
+      {% endif %}
+    </main>
+  </body>
+</html>
