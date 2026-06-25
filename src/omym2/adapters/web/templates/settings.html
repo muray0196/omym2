@@ -12,6 +12,12 @@
         <p class="eyebrow">Local Console</p>
         <h1>OMYM2 Settings</h1>
       </div>
+      <nav class="topnav" aria-label="Console navigation">
+        <a class="{% if active_nav == 'settings' %}topnav__link--active{% endif %}" href="/settings">Settings</a>
+        <a class="{% if active_nav == 'history' %}topnav__link--active{% endif %}" href="/history">History</a>
+        <a class="{% if active_nav == 'check' %}topnav__link--active{% endif %}" href="/check">Check</a>
+        <a class="{% if active_nav == 'tracks' %}topnav__link--active{% endif %}" href="/tracks">Tracks</a>
+      </nav>
       <div class="status-chip {% if validation.valid %}status-chip--ok{% else %}status-chip--bad{% endif %}">
         {% if validation.valid %}Valid{% else %}Invalid{% endif %}
       </div>

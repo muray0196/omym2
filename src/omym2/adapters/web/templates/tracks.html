@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OMYM2 Tracks</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/settings.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Local Console</p>
+        <h1>OMYM2 Tracks</h1>
+      </div>
+      <nav class="topnav" aria-label="Console navigation">
+        <a class="{% if active_nav == 'settings' %}topnav__link--active{% endif %}" href="/settings">Settings</a>
+        <a class="{% if active_nav == 'history' %}topnav__link--active{% endif %}" href="/history">History</a>
+        <a class="{% if active_nav == 'check' %}topnav__link--active{% endif %}" href="/check">Check</a>
+        <a class="{% if active_nav == 'tracks' %}topnav__link--active{% endif %}" href="/tracks">Tracks</a>
+      </nav>
+    </header>
+
+    <main class="page">
+      {% if errors %}
+        <div class="notice notice--bad">
+          {% for error in errors %}
+            <p>{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <section class="panel">
+        <h2>Tracks</h2>
+        {% if tracks %}
+          <table>
+            <thead>
+              <tr>
+                <th>Track</th>
+                <th>Library</th>
+                <th>Status</th>
+                <th>Current path</th>
+                <th>Canonical path</th>
+                <th>Title</th>
+                <th>Artist</th>
+                <th>Album</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for track in tracks %}
+                <tr>
+                  <td>{{ track.track_id }}</td>
+                  <td>{{ track.library_id }}</td>
+                  <td><span class="status-chip status-chip--compact">{{ track.status.value }}</span></td>
+                  <td>{{ track.current_path }}</td>
+                  <td>{{ track.canonical_path }}</td>
+                  <td>{{ track.metadata.title or "-" }}</td>
+                  <td>{{ track.metadata.artist or "-" }}</td>
+                  <td>{{ track.metadata.album or "-" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% elif not errors %}
+          <p class="muted">No tracks.</p>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>

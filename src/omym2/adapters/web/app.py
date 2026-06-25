@@ -15,6 +15,12 @@ from fastapi.templating import Jinja2Templates
 
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.toml_config_store import TomlConfigStore
+from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
+from omym2.adapters.fs.file_scanner import FilesystemFileScanner
+from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
+from omym2.adapters.fs.path_resolver import FilesystemPathResolver
+from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
+from omym2.adapters.web.routes.inspection import InspectionRouteContext, create_inspection_router
 from omym2.adapters.web.routes.settings import SettingsRouteContext, create_settings_router
 from omym2.config import (
     WEB_APP_TITLE,
@@ -25,14 +31,20 @@ from omym2.config import (
     WEB_STATIC_ROUTE,
     WEB_TEMPLATE_DIRECTORY_NAME,
 )
+from omym2.features.check.ports import CheckLibraryPorts
+from omym2.features.history.ports import HistoryPorts
 from omym2.features.settings.ports import SettingsPorts
+from omym2.features.tracks.ports import TracksPorts
 
 
-def create_web_app(config_path: Path | None = None) -> FastAPI:
+def create_web_app(config_path: Path | None = None, database_path: Path | None = None) -> FastAPI:
     """Create the localhost settings console application."""
     package_dir = Path(__file__).resolve().parent
     templates = Jinja2Templates(directory=str(package_dir / WEB_TEMPLATE_DIRECTORY_NAME))
-    store = TomlConfigStore(config_path or default_application_paths().config_file)
+    app_paths = default_application_paths()
+    config_file = config_path or app_paths.config_file
+    database_file = database_path or app_paths.database_file
+    store = TomlConfigStore(config_file)
 
     app = FastAPI(title=WEB_APP_TITLE)
     app.mount(
@@ -46,6 +58,22 @@ def create_web_app(config_path: Path | None = None) -> FastAPI:
                 csrf_token=secrets.token_urlsafe(WEB_CSRF_TOKEN_BYTES),
                 ports=SettingsPorts(config_store=store),
                 templates=templates,
+            )
+        )
+    )
+    app.include_router(
+        create_inspection_router(
+            InspectionRouteContext(
+                check_ports_factory=lambda: CheckLibraryPorts(
+                    uow=SQLiteUnitOfWork(database_file),
+                    file_scanner=FilesystemFileScanner(),
+                    file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=MutagenMetadataReader()),
+                    config_store=store,
+                    path_resolver=FilesystemPathResolver(),
+                ),
+                history_ports_factory=lambda: HistoryPorts(uow=SQLiteUnitOfWork(database_file)),
+                templates=templates,
+                tracks_ports_factory=lambda: TracksPorts(uow=SQLiteUnitOfWork(database_file)),
             )
         )
     )

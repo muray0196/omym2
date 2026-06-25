@@ -214,6 +214,7 @@ def _render_settings(
         request,
         WEB_SETTINGS_TEMPLATE_NAME,
         {
+            "active_nav": "settings",
             "choices": _template_choices(),
             "csrf_token": context.csrf_token,
             "current_config": state.current_config,
