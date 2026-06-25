@@ -38,12 +38,28 @@ DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_MAX_CHARS = 120_000
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_REVIEW_MODEL = "omym2-review"
+DEFAULT_REVIEW_MODE = "general"
+REVIEW_MODES: tuple[str, ...] = (
+    "general",
+    "tests",
+    "missing-tests",
+    "invariants",
+    "architecture",
+    "mutation-safety",
+)
 DEFAULT_CONTEXT_FILES: tuple[str, ...] = (
     "AGENTS.md",
     "ARCHITECTURE.md",
     "docs/index.md",
     "docs/development.md",
 )
+MODE_CONTEXT_FILES: dict[str, tuple[str, ...]] = {
+    "tests": ("docs/testing.md",),
+    "missing-tests": ("docs/testing.md", "docs/domain.md", "docs/execution.md"),
+    "invariants": ("docs/domain.md", "docs/execution.md", "docs/storage.md"),
+    "architecture": ("docs/domain.md",),
+    "mutation-safety": ("docs/execution.md", "docs/storage.md"),
+}
 DEFAULT_PROMPT_PATH = Path("docs/agent/local_llm_review_prompt.md")
 DEFAULT_REVIEW_DIR = Path(".reviews")
 EXCLUDED_DIFF_PATH_PREFIXES = (".reviews/", ".git/", "__pycache__/")
@@ -73,6 +89,7 @@ class ParsedArgs(argparse.Namespace):
         self.diff_file: Path | None = None
         self.log: Path | None = None
         self.repo: str | None = None
+        self.mode: str = DEFAULT_REVIEW_MODE
         self.context: list[str] = list(DEFAULT_CONTEXT_FILES)
         self.prompt: Path = DEFAULT_PROMPT_PATH
         self.output: Path | None = None
@@ -104,14 +121,14 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
         review_input = _resolve_review_input(args)
-        context = _load_context(args.context)
+        context = _load_context(_context_paths_for_mode(args.mode, args.context))
         system_prompt = _load_system_prompt(args.prompt)
         model = args.model or os.environ.get("OMYM2_REVIEW_MODEL") or os.environ.get("OMYM2_LOCAL_LLM_MODEL")
         if model is None:
             model = (
                 DEFAULT_REVIEW_MODEL if args.agent else _discover_first_model(args.base_url, args.api_key, args.timeout)
             )
-        user_prompt = _build_user_prompt(review_input, context, args.max_chars)
+        user_prompt = _build_user_prompt(review_input, context, args.max_chars, args.mode)
         if args.agent:
             agent_result = run_local_repo_agent(
                 user_request=_build_agent_user_prompt(system_prompt, user_prompt),
@@ -133,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
                 timeout=args.timeout,
                 temperature=args.temperature,
             )
-        _write_review(review_input.output_path, review_input, context, model, args.base_url, review)
+        _write_review(review_input.output_path, review_input, context, model, args.base_url, args.mode, review)
     except ReviewError as exc:
         _ = sys.stderr.write(f"local LLM review failed: {exc}\n")
         return 1
@@ -158,6 +175,12 @@ def _parse_args(argv: list[str] | None) -> ParsedArgs:
         "--repo",
         default=None,
         help="Optional GitHub repository for gh pr diff, for example owner/name.",
+    )
+    _ = parser.add_argument(
+        "--mode",
+        choices=REVIEW_MODES,
+        default=DEFAULT_REVIEW_MODE,
+        help="Focused review mode. Use tests or missing-tests for smaller, more reliable local reviews.",
     )
     _ = parser.add_argument(
         "--context",
@@ -198,36 +221,43 @@ def _parse_args(argv: list[str] | None) -> ParsedArgs:
 
 
 def _resolve_review_input(args: ParsedArgs) -> ReviewInput:
+    suffix = _review_output_suffix(args.mode)
     if args.pr is not None:
         content = _load_pr_diff(args.pr, args.repo)
         return ReviewInput(
             source_label=f"pr-{args.pr}",
             content=content,
-            output_path=args.output or DEFAULT_REVIEW_DIR / f"pr-{args.pr}-local.md",
+            output_path=args.output or DEFAULT_REVIEW_DIR / f"pr-{args.pr}-{suffix}.md",
         )
     if args.stdin:
         return ReviewInput(
             source_label="stdin",
             content=sys.stdin.read(),
-            output_path=args.output or DEFAULT_REVIEW_DIR / "stdin-local.md",
+            output_path=args.output or DEFAULT_REVIEW_DIR / f"stdin-{suffix}.md",
         )
     if args.diff_file is not None:
         return ReviewInput(
             source_label=f"diff-file:{args.diff_file}",
             content=_read_text_file(args.diff_file),
-            output_path=args.output or DEFAULT_REVIEW_DIR / "diff-local.md",
+            output_path=args.output or DEFAULT_REVIEW_DIR / f"diff-{suffix}.md",
         )
     if args.log is not None:
         return ReviewInput(
             source_label=f"log:{args.log}",
             content=_read_text_file(args.log),
-            output_path=args.output or DEFAULT_REVIEW_DIR / "log-local.md",
+            output_path=args.output or DEFAULT_REVIEW_DIR / f"log-{suffix}.md",
         )
     return ReviewInput(
         source_label="worktree",
         content=_load_worktree_diff(),
-        output_path=args.output or DEFAULT_REVIEW_DIR / "worktree-local.md",
+        output_path=args.output or DEFAULT_REVIEW_DIR / f"worktree-{suffix}.md",
     )
+
+
+def _review_output_suffix(mode: str) -> str:
+    if mode == DEFAULT_REVIEW_MODE:
+        return "local"
+    return f"{mode}-local"
 
 
 def _load_pr_diff(pr_number: int, repo: str | None) -> str:
@@ -305,6 +335,18 @@ def _run_command(command: list[str], allow_exit_codes: set[int] | None = None) -
         stderr = result.stderr.strip()
         raise ReviewError(f"command failed ({' '.join(command)}): {stderr or result.returncode}")
     return result.stdout
+
+
+def _context_paths_for_mode(mode: str, context_paths: list[str]) -> list[str]:
+    return _unique_strings([*context_paths, *MODE_CONTEXT_FILES.get(mode, ())])
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    unique_values: list[str] = []
+    for value in values:
+        if value not in unique_values:
+            unique_values.append(value)
+    return unique_values
 
 
 def _load_context(context_paths: list[str]) -> list[tuple[str, str]]:
@@ -522,7 +564,7 @@ def _openai_url(base_url: str, endpoint: str) -> str:
     return f"{normalized}/v1/{endpoint}"
 
 
-def _build_user_prompt(review_input: ReviewInput, context: list[tuple[str, str]], max_chars: int) -> str:
+def _build_user_prompt(review_input: ReviewInput, context: list[tuple[str, str]], max_chars: int, mode: str) -> str:
     context_blocks = "\n\n".join(f"## {path}\n\n```text\n{content}\n```" for path, content in context)
     input_content = review_input.content
     truncated_notice = ""
@@ -530,13 +572,20 @@ def _build_user_prompt(review_input: ReviewInput, context: list[tuple[str, str]]
         input_content = input_content[:max_chars]
         truncated_notice = f"\n\nInput was truncated to {max_chars} characters. Call out that limitation."
 
+    mode_instructions = _mode_instructions(mode)
+    sections = _mode_output_sections(mode)
     return "\n".join(
         [
             f"Review source: {review_input.source_label}",
+            f"Review mode: {mode}",
             "",
             "Project context:",
             "",
             context_blocks,
+            "",
+            "Mode-specific instructions:",
+            "",
+            mode_instructions,
             "",
             "Review input:",
             "",
@@ -546,18 +595,136 @@ def _build_user_prompt(review_input: ReviewInput, context: list[tuple[str, str]]
             "",
             "Produce Markdown with exactly these sections:",
             "",
-            "# Local LLM Review",
-            "## Verdict",
-            "## Blocking",
-            "## Major",
-            "## Minor",
-            "## Missing Tests",
-            "## OMYM2 Invariant Risks",
-            "## Suggested Agent Prompt",
+            sections,
             "",
             "Keep findings grounded in the provided context and input. Do not invent files or behavior not shown.",
+            "Ignore syntax, formatting, and type-checker issues unless they directly affect the selected review mode.",
             truncated_notice.strip(),
         ]
+    ).strip()
+
+
+def _mode_instructions(mode: str) -> str:
+    if mode == "tests":
+        return textwrap.dedent(
+            """
+            Review only changed tests and test support code.
+            Focus on whether tests protect OMYM2 behavior rather than implementation trivia.
+            Flag vague test names, weak assertions, over-mocking, and tests that do not verify important side effects or ordering.
+            Do not review production implementation correctness except where a test clearly encodes the wrong contract.
+            """
+        ).strip()
+    if mode == "missing-tests":
+        return textwrap.dedent(
+            """
+            Infer missing tests from the diff and OMYM2 project rules.
+            Prefer concrete pytest test cases with suggested file and test names.
+            Prioritize Plan, PlanAction, FileEvent ordering, root-relative stored paths, library_id identity, and adapter boundary risks.
+            Do not ask for broad test coverage; list only tests tied to changed behavior.
+            """
+        ).strip()
+    if mode == "invariants":
+        return textwrap.dedent(
+            """
+            Review only OMYM2 invariants.
+            Flag possible violations of Plan-centered mutation, recorded PlanAction application, FileEvent-before-mutation ordering,
+            library_id identity, root-relative stored paths, and blocked/failed/skipped semantics.
+            Avoid style or local refactoring comments.
+            """
+        ).strip()
+    if mode == "architecture":
+        return textwrap.dedent(
+            """
+            Review only architecture and dependency boundaries.
+            Flag domain/features depending on concrete adapters, usecase logic leaking into CLI/web/adapters, adapter concerns leaking into domain,
+            misplaced path policy logic, and source file naming that conflicts with ARCHITECTURE.md.
+            Ignore ordinary import ordering and formatting.
+            """
+        ).strip()
+    if mode == "mutation-safety":
+        return textwrap.dedent(
+            """
+            Review only filesystem mutation safety.
+            Flag any path that may rename, move, delete, write, overwrite, or otherwise mutate library-managed music files without a Plan,
+            recorded PlanActions, FileEvents before mutation, and explicit failure handling.
+            Treat possible data loss as Blocking even if uncertain.
+            """
+        ).strip()
+    return textwrap.dedent(
+        """
+        Review OMYM2 changes for correctness risks, design invariant risks, architecture boundary issues, missing tests, and harness risk.
+        Prefer a small number of concrete findings over broad commentary.
+        """
+    ).strip()
+
+
+def _mode_output_sections(mode: str) -> str:
+    if mode == "tests":
+        return textwrap.dedent(
+            """
+            # Local LLM Test Review
+            ## Verdict
+            ## Weak Or Misleading Tests
+            ## Missing Assertions
+            ## Over-Mocking Risks
+            ## Suggested Test Rewrites
+            """
+        ).strip()
+    if mode == "missing-tests":
+        return textwrap.dedent(
+            """
+            # Local LLM Missing Tests Review
+            ## Verdict
+            ## P0 Missing Tests
+            ## P1 Missing Tests
+            ## P2 Missing Tests
+            ## Suggested Agent Prompt
+            """
+        ).strip()
+    if mode == "invariants":
+        return textwrap.dedent(
+            """
+            # Local LLM Invariant Review
+            ## Verdict
+            ## Blocking Invariant Risks
+            ## Major Invariant Risks
+            ## Minor Invariant Risks
+            ## Suggested Agent Prompt
+            """
+        ).strip()
+    if mode == "architecture":
+        return textwrap.dedent(
+            """
+            # Local LLM Architecture Review
+            ## Verdict
+            ## Boundary Violations
+            ## Misplaced Responsibilities
+            ## Naming Or Layout Issues
+            ## Suggested Agent Prompt
+            """
+        ).strip()
+    if mode == "mutation-safety":
+        return textwrap.dedent(
+            """
+            # Local LLM Mutation Safety Review
+            ## Verdict
+            ## Blocking Data-Loss Risks
+            ## Major Mutation Safety Risks
+            ## Missing Safety Tests
+            ## Suggested Agent Prompt
+            """
+        ).strip()
+    return textwrap.dedent(
+        """
+        # Local LLM Review
+        ## Verdict
+        ## Blocking
+        ## Major
+        ## Minor
+        ## Missing Tests
+        ## OMYM2 Invariant Risks
+        ## Suggested Agent Prompt
+        """
     ).strip()
 
 
@@ -612,6 +779,7 @@ def _write_review(
     context: list[tuple[str, str]],
     model: str,
     base_url: str,
+    mode: str,
     review: str,
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -621,6 +789,7 @@ def _write_review(
         [
             "---",
             f"source: {json.dumps(review_input.source_label)}",
+            f"mode: {json.dumps(mode)}",
             f"model: {json.dumps(model)}",
             f"base_url: {json.dumps(base_url.rstrip('/'))}",
             f"generated_at: {json.dumps(generated_at)}",
