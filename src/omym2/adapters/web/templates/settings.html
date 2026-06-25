@@ -19,6 +19,7 @@
 
     <main class="layout">
       <form class="settings-form" method="post" action="/settings">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         {% if status_message %}
           <div class="notice notice--ok">{{ status_message }}</div>
         {% endif %}

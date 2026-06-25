@@ -5,6 +5,7 @@ Why: Wires browser routes to settings usecases without involving CLI code.
 
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -17,6 +18,7 @@ from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.web.routes.settings import SettingsRouteContext, create_settings_router
 from omym2.config import (
     WEB_APP_TITLE,
+    WEB_CSRF_TOKEN_BYTES,
     WEB_ROOT_ROUTE,
     WEB_SETTINGS_ROUTE,
     WEB_STATIC_DIRECTORY_NAME,
@@ -41,6 +43,7 @@ def create_web_app(config_path: Path | None = None) -> FastAPI:
     app.include_router(
         create_settings_router(
             SettingsRouteContext(
+                csrf_token=secrets.token_urlsafe(WEB_CSRF_TOKEN_BYTES),
                 ports=SettingsPorts(config_store=store),
                 templates=templates,
             )

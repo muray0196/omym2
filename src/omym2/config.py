@@ -17,6 +17,7 @@ SQLITE_DATABASE_FILE_NAME: Final = "omym2.sqlite3"  # SQLite database file name
 WEB_DEFAULT_HOST: Final = "127.0.0.1"  # local Web UI bind host
 WEB_DEFAULT_PORT: Final = 8765  # local Web UI bind port
 WEB_APP_TITLE: Final = "OMYM2 Settings"  # local Web UI application title
+WEB_CSRF_TOKEN_BYTES: Final = 32  # random bytes used for local Web UI save-token generation
 WEB_ROOT_ROUTE: Final = "/"  # local Web UI root path
 WEB_SETTINGS_ROUTE: Final = "/settings"  # local Web UI settings path
 WEB_STATIC_ROUTE: Final = "/static"  # local Web UI static asset mount path

@@ -6,6 +6,7 @@ Why: Exposes settings display, editing, validation, diff, and preview in one scr
 from __future__ import annotations
 
 from dataclasses import dataclass
+from secrets import compare_digest
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs
 
@@ -39,6 +40,7 @@ from omym2.adapters.web.schemas.settings_form import (
     FORM_ACTION_FIELD,
     FORM_ACTION_SAVE,
     FORM_ACTION_VALIDATE,
+    FORM_CSRF_FIELD,
     SettingsChange,
     describe_config_changes,
     parse_settings_form,
@@ -77,7 +79,9 @@ if TYPE_CHECKING:
     from omym2.features.settings.ports import SettingsPorts
 
 ERROR_STATUS_CODE = 400
+FORBIDDEN_STATUS_CODE = 403
 SUCCESS_STATUS_CODE = 200
+SAVE_CSRF_ERROR_MESSAGE = "Settings save request failed CSRF validation."
 SETTINGS_SAVED_MESSAGE = "Settings saved."
 SETTINGS_VALID_MESSAGE = "Settings are valid."
 
@@ -86,6 +90,7 @@ SETTINGS_VALID_MESSAGE = "Settings are valid."
 class SettingsRouteContext:
     """Concrete dependencies for settings routes."""
 
+    csrf_token: str
     ports: SettingsPorts
     templates: Jinja2Templates
 
@@ -145,6 +150,19 @@ def create_settings_router(context: SettingsRouteContext) -> APIRouter:
         changes = describe_config_changes(current_config, proposed_config)
         action = form_data.get(FORM_ACTION_FIELD, FORM_ACTION_VALIDATE)
         if action == FORM_ACTION_SAVE:
+            if not _has_valid_csrf_token(context, form_data):
+                return _render_settings(
+                    context,
+                    request,
+                    SettingsTemplateState(
+                        current_config=current_config,
+                        form_config=proposed_config,
+                        errors=(SAVE_CSRF_ERROR_MESSAGE,),
+                        status_message="",
+                        changes=changes,
+                        status_code=FORBIDDEN_STATUS_CODE,
+                    ),
+                )
             try:
                 SaveSettingsUseCase(context.ports).execute(SaveSettingsRequest(config=proposed_config))
             except OSError as exc:
@@ -197,6 +215,7 @@ def _render_settings(
         WEB_SETTINGS_TEMPLATE_NAME,
         {
             "choices": _template_choices(),
+            "csrf_token": context.csrf_token,
             "current_config": state.current_config,
             "errors": state.errors,
             "fields": _template_fields(),
@@ -226,6 +245,11 @@ def _validate_persisted_settings(ports: SettingsPorts) -> ValidateSettingsResult
         return ValidateSettingsUseCase(ports).execute()
     except OSError as exc:
         return ValidateSettingsResult(valid=False, errors=(f"Config I/O error: {exc}",))
+
+
+def _has_valid_csrf_token(context: SettingsRouteContext, form_data: dict[str, str]) -> bool:
+    supplied_token = form_data.get(FORM_CSRF_FIELD, "")
+    return compare_digest(supplied_token, context.csrf_token)
 
 
 async def _read_urlencoded_form(request: Request) -> dict[str, str]:
