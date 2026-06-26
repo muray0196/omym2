@@ -12,7 +12,6 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -20,6 +19,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from http.client import HTTPResponse
 
 DEFAULT_BASE_URL = "http://localhost:1234/v1"
@@ -27,15 +27,15 @@ DEFAULT_MODEL = "omym2-review"
 DEFAULT_API_KEY = "lm-studio"
 DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_TEMPERATURE = 0.1
-DEFAULT_TOOL_ITERATIONS = 8
-DEFAULT_MAX_OUTPUT_TOKENS = 4096
+DEFAULT_TOOL_ITERATIONS = 32
+DEFAULT_MAX_OUTPUT_TOKENS = 8192
 DEFAULT_LIST_FILE_LIMIT = 200
 DEFAULT_GREP_MATCH_LIMIT = 80
 DEFAULT_READ_LINE_LIMIT = 160
 DEFAULT_GIT_DIFF_BASE = "HEAD~1"
 DEFAULT_GIT_DIFF_CHAR_LIMIT = 120_000
-MAX_TOOL_ITERATIONS = 32
-MAX_OUTPUT_TOKENS = 8192
+MAX_TOOL_ITERATIONS = 96
+MAX_OUTPUT_TOKENS = 16384
 MAX_LIST_FILE_LIMIT = 500
 MAX_GREP_MATCH_LIMIT = 200
 MAX_READ_LINE_LIMIT = 240
@@ -800,7 +800,7 @@ def _write_trace(trace_dir: Path | None, name: str, value: JsonValue) -> None:
     safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
     try:
         trace_dir.mkdir(parents=True, exist_ok=True)
-        (trace_dir / safe_name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        _ = (trace_dir / safe_name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError:
         return
 

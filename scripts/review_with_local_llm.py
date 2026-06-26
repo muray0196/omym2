@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 from local_repo_agent import (  # pyright: ignore[reportImplicitRelativeImport]  # adjacent developer script import
     DEFAULT_TOOL_ITERATIONS,
+    LocalRepoAgentError,
     run_local_repo_agent,
 )
 
@@ -130,15 +131,18 @@ def main(argv: list[str] | None = None) -> int:
             )
         user_prompt = _build_user_prompt(review_input, context, args.max_chars, args.mode)
         if args.agent:
-            agent_result = run_local_repo_agent(
-                user_request=_build_agent_user_prompt(system_prompt, user_prompt),
-                base_url=args.base_url,
-                api_key=args.api_key,
-                model=model,
-                timeout=args.timeout,
-                temperature=args.temperature,
-                max_tool_iterations=args.max_tool_iterations,
-            )
+            try:
+                agent_result = run_local_repo_agent(
+                    user_request=_build_agent_user_prompt(system_prompt, user_prompt),
+                    base_url=args.base_url,
+                    api_key=args.api_key,
+                    model=model,
+                    timeout=args.timeout,
+                    temperature=args.temperature,
+                    max_tool_iterations=args.max_tool_iterations,
+                )
+            except LocalRepoAgentError as exc:
+                raise ReviewError(str(exc)) from exc
             review = _format_agent_review(agent_result.content, agent_result.tool_iterations)
         else:
             review = _request_review(
