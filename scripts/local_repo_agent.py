@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -27,31 +28,44 @@ DEFAULT_API_KEY = "lm-studio"
 DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_TOOL_ITERATIONS = 8
+DEFAULT_MAX_OUTPUT_TOKENS = 4096
 DEFAULT_LIST_FILE_LIMIT = 200
 DEFAULT_GREP_MATCH_LIMIT = 80
 DEFAULT_READ_LINE_LIMIT = 160
 DEFAULT_GIT_DIFF_BASE = "HEAD~1"
 DEFAULT_GIT_DIFF_CHAR_LIMIT = 120_000
+MAX_TOOL_ITERATIONS = 32
+MAX_OUTPUT_TOKENS = 8192
 MAX_LIST_FILE_LIMIT = 500
 MAX_GREP_MATCH_LIMIT = 200
 MAX_READ_LINE_LIMIT = 240
 MAX_GIT_DIFF_CHAR_LIMIT = 200_000
 TEXT_FILE_SIZE_LIMIT_BYTES = 1_000_000
 MATCH_LINE_TEXT_LIMIT = 240
+READ_LINE_TEXT_LIMIT = 500
 TOOL_RESULT_CHAR_LIMIT = 60_000
 JSON_PREVIEW_LIMIT = 1000
+GIT_COMMAND_TIMEOUT_SECONDS = 30
+SAFE_GIT_BASE_RE = re.compile(r"^[A-Za-z0-9._/\-~^]+$")
 IGNORED_DIRECTORY_NAMES = frozenset(
     {
         ".git",
         ".venv",
+        "venv",
         "__pycache__",
         ".pytest_cache",
         ".mypy_cache",
         ".ruff_cache",
+        ".tox",
+        ".nox",
+        ".cache",
         ".data",
         ".reviews",
+        "node_modules",
         "dist",
         "build",
+        "coverage",
+        "htmlcov",
     }
 )
 GIT_DIFF_DEFAULT_PATHS = (
@@ -70,15 +84,33 @@ You cannot see repository files unless you call tools.
 
 Use tools to inspect only the minimum relevant context.
 
-Prefer grep or list_files before read_file unless an exact path is already known.
+Prefer this order:
+1. Use git_status or git_diff when the request is about recent changes.
+2. Use grep or list_files to find relevant files.
+3. Use read_file only for bounded line ranges.
+4. Produce the final review only after inspecting enough evidence.
 
-When reading files, request bounded line ranges.
+Rules:
+- Work only inside the repository root.
+- Do not request write access.
+- Do not request shell access.
+- Do not invent file contents.
+- Do not invent file paths.
+- Report findings with file paths and line numbers when possible.
+- Mark uncertainty explicitly.
+- Distinguish confirmed findings from suggestions.
+- If no repository evidence supports a finding, say so.
 
-Do not request write access.
+When using native tools, call the provided tool directly.
+If native tool calls are unavailable, return exactly one JSON object:
+{"tool": "grep", "arguments": {"pattern": "..."}}
 
-Do not request shell access.
-
-Report findings with file paths and line numbers when possible. Mark uncertainty explicitly."""
+For final answers, write concise review text with:
+- Findings
+- Risks
+- Suggested fixes
+- Evidence
+"""
 
 type JsonValue = None | bool | int | float | str | JsonArray | JsonObject
 type JsonArray = list[JsonValue]
@@ -108,7 +140,9 @@ class ParsedArgs(argparse.Namespace):
         self.api_key: str = os.environ.get("OMYM2_LOCAL_LLM_API_KEY", DEFAULT_API_KEY)
         self.model: str = os.environ.get("OMYM2_REVIEW_MODEL", DEFAULT_MODEL)
         self.timeout: int = DEFAULT_TIMEOUT_SECONDS
-        self.max_tool_iterations: int = DEFAULT_TOOL_ITERATIONS
+        self.max_tool_iterations: int = _env_int("OMYM2_MAX_TOOL_ITERATIONS", DEFAULT_TOOL_ITERATIONS)
+        self.max_output_tokens: int = _env_int("OMYM2_REVIEW_MAX_OUTPUT_TOKENS", DEFAULT_MAX_OUTPUT_TOKENS)
+        self.trace_dir: Path | None = None
 
 
 class RepoReadOnlyTools:
@@ -121,16 +155,16 @@ class RepoReadOnlyTools:
         """List readable text files under the repository root."""
         limit = _clamp_int(max_results, minimum=1, maximum=MAX_LIST_FILE_LIMIT)
         paths: list[str] = []
-        for path in sorted(self._repo_root.rglob("*")):
-            if len(paths) >= limit:
-                break
-            if not path.is_file() or self._is_ignored_path(path):
-                continue
+        truncated = False
+        for path in self._iter_candidate_files():
             relative_path = self._relative_path(path)
             if substring and substring not in relative_path:
                 continue
             if self._read_text(path) is None:
                 continue
+            if len(paths) >= limit:
+                truncated = True
+                break
             paths.append(relative_path)
         return cast(
             "JsonObject",
@@ -138,7 +172,7 @@ class RepoReadOnlyTools:
                 "files": paths,
                 "count": len(paths),
                 "limit": limit,
-                "truncated": len(paths) >= limit,
+                "truncated": truncated,
             },
         )
 
@@ -151,11 +185,11 @@ class RepoReadOnlyTools:
             return {"error": f"invalid regex: {exc}"}
 
         matches: list[JsonObject] = []
-        for path in sorted(self._repo_root.rglob("*")):
+        truncated = False
+        for path in self._iter_candidate_files():
             if len(matches) >= limit:
+                truncated = True
                 break
-            if not path.is_file() or self._is_ignored_path(path):
-                continue
             text = self._read_text(path)
             if text is None:
                 continue
@@ -167,10 +201,11 @@ class RepoReadOnlyTools:
                     {
                         "path": relative_path,
                         "line": line_number,
-                        "text": line.strip()[:MATCH_LINE_TEXT_LIMIT],
+                        "text": _truncate_text(line.strip(), MATCH_LINE_TEXT_LIMIT),
                     }
                 )
                 if len(matches) >= limit:
+                    truncated = True
                     break
         return cast(
             "JsonObject",
@@ -178,7 +213,7 @@ class RepoReadOnlyTools:
                 "matches": matches,
                 "count": len(matches),
                 "limit": limit,
-                "truncated": len(matches) >= limit,
+                "truncated": truncated,
                 "search_mode": "python-regex",
             },
         )
@@ -195,7 +230,10 @@ class RepoReadOnlyTools:
         lines = text.splitlines()
         selected = lines[start - 1 : start - 1 + limit]
         end_line = start + len(selected) - 1 if selected else start - 1
-        numbered_content = "\n".join(f"{line_number}: {line}" for line_number, line in enumerate(selected, start=start))
+        numbered_content = "\n".join(
+            f"{line_number}: {_truncate_text(line, READ_LINE_TEXT_LIMIT)}"
+            for line_number, line in enumerate(selected, start=start)
+        )
         return cast(
             "JsonObject",
             {
@@ -207,20 +245,63 @@ class RepoReadOnlyTools:
             },
         )
 
+    def git_status(self) -> JsonObject:
+        """Read bounded porcelain git status for review-relevant repository areas."""
+        command = [
+            "git",
+            "-C",
+            str(self._repo_root),
+            "status",
+            "--short",
+            "--",
+            *GIT_DIFF_DEFAULT_PATHS,
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return {"error": f"git status timed out after {GIT_COMMAND_TIMEOUT_SECONDS} seconds"}
+        if result.returncode != 0:
+            return {"error": result.stderr.strip() or f"git status failed with exit code {result.returncode}"}
+        status = result.stdout.strip()
+        return cast(
+            "JsonObject",
+            {
+                "paths": list(GIT_DIFF_DEFAULT_PATHS),
+                "status": status,
+                "count": len(status.splitlines()) if status else 0,
+            },
+        )
+
     def git_diff(self, base: str = DEFAULT_GIT_DIFF_BASE, max_chars: int = DEFAULT_GIT_DIFF_CHAR_LIMIT) -> JsonObject:
         """Read a bounded no-ext-diff git diff for review-relevant repository areas."""
         limit = _clamp_int(max_chars, minimum=1, maximum=MAX_GIT_DIFF_CHAR_LIMIT)
+        safe_base = _validate_git_base(base)
         command = [
             "git",
             "-C",
             str(self._repo_root),
             "diff",
             "--no-ext-diff",
-            base,
+            safe_base,
             "--",
             *GIT_DIFF_DEFAULT_PATHS,
         ]
-        result = subprocess.run(command, check=False, capture_output=True, text=True)
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return {"error": f"git diff timed out after {GIT_COMMAND_TIMEOUT_SECONDS} seconds"}
         if result.returncode not in {0, 1}:
             return {"error": result.stderr.strip() or f"git diff failed with exit code {result.returncode}"}
         diff = result.stdout
@@ -230,7 +311,7 @@ class RepoReadOnlyTools:
         return cast(
             "JsonObject",
             {
-                "base": base,
+                "base": safe_base,
                 "paths": list(GIT_DIFF_DEFAULT_PATHS),
                 "diff": diff,
                 "truncated": truncated,
@@ -240,6 +321,9 @@ class RepoReadOnlyTools:
 
     def execute(self, name: str, arguments: JsonObject) -> JsonObject:
         """Run a named read-only tool after model arguments have been parsed."""
+        parse_error = arguments.get("_parse_error")
+        if isinstance(parse_error, str):
+            return {"error": parse_error}
         try:
             if name == "list_files":
                 return self.list_files(
@@ -263,6 +347,8 @@ class RepoReadOnlyTools:
                     start_line=_optional_int(arguments.get("start_line"), 1),
                     max_lines=_optional_int(arguments.get("max_lines"), DEFAULT_READ_LINE_LIMIT),
                 )
+            if name == "git_status":
+                return self.git_status()
             if name == "git_diff":
                 return self.git_diff(
                     base=_optional_str(arguments.get("base")) or DEFAULT_GIT_DIFF_BASE,
@@ -284,6 +370,18 @@ class RepoReadOnlyTools:
         if not resolved_path.is_file():
             raise LocalRepoAgentError("path is not a readable file")
         return resolved_path
+
+    def _iter_candidate_files(self) -> Iterable[Path]:
+        for dirpath, dirnames, filenames in os.walk(self._repo_root):
+            dirnames[:] = sorted(dirname for dirname in dirnames if dirname not in IGNORED_DIRECTORY_NAMES)
+            current_dir = Path(dirpath)
+            for filename in sorted(filenames):
+                path = current_dir / filename
+                if path.is_symlink():
+                    continue
+                if not path.is_file() or self._is_ignored_path(path):
+                    continue
+                yield path
 
     def _is_ignored_path(self, path: Path) -> bool:
         try:
@@ -315,35 +413,50 @@ def run_local_repo_agent(
     user_request: str,
     repo_root: Path | None = None,
     base_url: str | None = None,
-    api_key: str = DEFAULT_API_KEY,
+    api_key: str | None = None,
     model: str | None = None,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     temperature: float = DEFAULT_TEMPERATURE,
     max_tool_iterations: int = DEFAULT_TOOL_ITERATIONS,
+    max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
+    trace_dir: Path | None = None,
 ) -> AgentResult:
     """Run the local read-only repository review agent."""
     root = Path.cwd() if repo_root is None else repo_root
     tools = RepoReadOnlyTools(root)
     endpoint_base_url = base_url or os.environ.get("OMYM2_LMSTUDIO_BASE_URL", DEFAULT_BASE_URL)
+    selected_api_key = api_key or os.environ.get("OMYM2_LOCAL_LLM_API_KEY", DEFAULT_API_KEY)
     selected_model = model or os.environ.get("OMYM2_REVIEW_MODEL", DEFAULT_MODEL)
-    iterations = _clamp_int(max_tool_iterations, minimum=0, maximum=DEFAULT_TOOL_ITERATIONS)
+    selected_trace_dir = trace_dir or _optional_trace_dir()
+    iterations = _clamp_int(max_tool_iterations, minimum=0, maximum=MAX_TOOL_ITERATIONS)
+    completion_token_limit = _clamp_int(max_output_tokens, minimum=256, maximum=MAX_OUTPUT_TOKENS)
     messages: list[JsonObject] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_request},
     ]
 
     for iteration in range(iterations + 1):
+        _write_trace(
+            selected_trace_dir,
+            f"{iteration:02d}_request.json",
+            cast("JsonObject", {"messages": messages, "include_tools": iteration < iterations}),
+        )
         payload = _request_chat_completion(
             base_url=endpoint_base_url,
-            api_key=api_key,
+            api_key=selected_api_key,
             model=selected_model,
             messages=messages,
             timeout=timeout,
             temperature=temperature,
+            max_tokens=completion_token_limit,
             include_tools=iteration < iterations,
         )
+        _write_trace(selected_trace_dir, f"{iteration:02d}_response.json", payload)
         message = _first_message(payload)
         tool_calls = _tool_calls(message)
+        fallback_tool_call = _fallback_content_tool_call(message)
+        if not tool_calls and fallback_tool_call is not None:
+            tool_calls = [fallback_tool_call]
         if not tool_calls:
             return AgentResult(
                 content=_message_content(message),
@@ -360,14 +473,30 @@ def run_local_repo_agent(
             )
 
         messages.append(message)
-        for tool_call in tool_calls:
+        for tool_call_index, tool_call in enumerate(tool_calls):
             tool_name = _tool_call_name(tool_call)
             tool_arguments = _tool_call_arguments(tool_call)
             result = tools.execute(tool_name, tool_arguments)
+            _write_trace(selected_trace_dir, f"{iteration:02d}_tool_{tool_call_index}_{tool_name}.json", result)
+            if tool_call.get("_fallback") is True:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Tool result for {tool_name}:\n"
+                            f"{_json_tool_result(result)}\n\n"
+                            "Continue. Use another tool if needed, otherwise provide the final review."
+                        ),
+                    }
+                )
+                continue
             messages.append(
                 {
                     "role": "tool",
-                    "tool_call_id": _tool_call_id(tool_call),
+                    "tool_call_id": _tool_call_id(
+                        tool_call,
+                        fallback=f"missing-tool-call-id-{iteration}-{tool_call_index}",
+                    ),
                     "content": _json_tool_result(result),
                 }
             )
@@ -387,6 +516,7 @@ def _request_chat_completion(
     messages: list[JsonObject],
     timeout: int,
     temperature: float,
+    max_tokens: int,
     include_tools: bool,
 ) -> JsonObject:
     body: JsonObject = cast(
@@ -395,6 +525,7 @@ def _request_chat_completion(
             "model": model,
             "messages": messages,
             "temperature": temperature,
+            "max_tokens": max_tokens,
             "stream": False,
         },
     )
@@ -433,6 +564,12 @@ def _tool_schemas() -> JsonArray:
                 "max_lines": {"type": "integer", "minimum": 1, "maximum": MAX_READ_LINE_LIMIT},
             },
             ["path"],
+        ),
+        _tool_schema(
+            "git_status",
+            "Read git status --short for review-relevant paths.",
+            {},
+            [],
         ),
         _tool_schema(
             "git_diff",
@@ -496,11 +633,40 @@ def _tool_calls(message: JsonObject) -> list[JsonObject]:
     return [tool_call for tool_call in tool_calls if isinstance(tool_call, dict)]
 
 
-def _tool_call_id(tool_call: JsonObject) -> str:
+def _fallback_content_tool_call(message: JsonObject) -> JsonObject | None:
+    content = _message_content(message)
+    if not content.startswith("{"):
+        return None
+    try:
+        parsed = cast("JsonValue", json.loads(content))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+
+    tool = parsed.get("tool")
+    arguments = parsed.get("arguments")
+    if not isinstance(tool, str) or not isinstance(arguments, dict):
+        return None
+
+    return cast(
+        "JsonObject",
+        {
+            "id": "fallback-content-tool-call",
+            "function": {
+                "name": tool,
+                "arguments": arguments,
+            },
+            "_fallback": True,
+        },
+    )
+
+
+def _tool_call_id(tool_call: JsonObject, fallback: str = "missing-tool-call-id") -> str:
     tool_call_id = tool_call.get("id")
     if isinstance(tool_call_id, str):
         return tool_call_id
-    return "missing-tool-call-id"
+    return fallback
 
 
 def _tool_call_name(tool_call: JsonObject) -> str:
@@ -585,11 +751,58 @@ def _optional_str(value: JsonValue) -> str | None:
 
 
 def _optional_int(value: JsonValue, default: int) -> int:
+    if isinstance(value, bool):
+        return default
     return value if isinstance(value, int) else default
+
+
+def _optional_trace_dir() -> Path | None:
+    raw_trace_dir = os.environ.get("OMYM2_LOCAL_REPO_AGENT_TRACE_DIR")
+    return Path(raw_trace_dir) if raw_trace_dir else None
+
+
+def _env_int(name: str, default: int) -> int:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(raw_value)
+    except ValueError:
+        return default
 
 
 def _clamp_int(value: int, *, minimum: int, maximum: int) -> int:
     return max(minimum, min(value, maximum))
+
+
+def _truncate_text(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}...[TRUNCATED]"
+
+
+def _validate_git_base(base: str) -> str:
+    candidate = base.strip()
+    if not candidate:
+        return DEFAULT_GIT_DIFF_BASE
+    if candidate.startswith("-"):
+        raise LocalRepoAgentError("git diff base must not start with '-'")
+    if ".." in candidate or "//" in candidate or any(character.isspace() for character in candidate):
+        raise LocalRepoAgentError("git diff base contains unsafe characters")
+    if SAFE_GIT_BASE_RE.fullmatch(candidate) is None:
+        raise LocalRepoAgentError(f"unsupported git diff base: {candidate}")
+    return candidate
+
+
+def _write_trace(trace_dir: Path | None, name: str, value: JsonValue) -> None:
+    if trace_dir is None:
+        return
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
+    try:
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        (trace_dir / safe_name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        return
 
 
 def _parse_args(argv: list[str] | None) -> ParsedArgs:
@@ -614,8 +827,20 @@ def _parse_args(argv: list[str] | None) -> ParsedArgs:
     _ = parser.add_argument(
         "--max-tool-iterations",
         type=int,
-        default=DEFAULT_TOOL_ITERATIONS,
-        help="Maximum read-only tool-call rounds.",
+        default=_env_int("OMYM2_MAX_TOOL_ITERATIONS", DEFAULT_TOOL_ITERATIONS),
+        help=f"Maximum read-only tool-call rounds. Values above {MAX_TOOL_ITERATIONS} are clamped.",
+    )
+    _ = parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=_env_int("OMYM2_REVIEW_MAX_OUTPUT_TOKENS", DEFAULT_MAX_OUTPUT_TOKENS),
+        help=f"Maximum completion tokens. Values above {MAX_OUTPUT_TOKENS} are clamped.",
+    )
+    _ = parser.add_argument(
+        "--trace-dir",
+        type=Path,
+        default=_optional_trace_dir(),
+        help="Optional directory for local repo agent request/response traces.",
     )
     return parser.parse_args(argv, namespace=ParsedArgs())
 
@@ -635,6 +860,8 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             timeout=args.timeout,
             max_tool_iterations=args.max_tool_iterations,
+            max_output_tokens=args.max_output_tokens,
+            trace_dir=args.trace_dir,
         )
     except LocalRepoAgentError as exc:
         _ = sys.stderr.write(f"local repo agent failed: {exc}\n")
