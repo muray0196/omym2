@@ -10,9 +10,3 @@ __pycache__/
 *.egg-info/
 .ruff_cache/
 .coverage
-# Codex
-.codex/*
-!.codex/
-!.codex/config.toml
-!.codex/agents/
-!.codex/agents/*.toml
