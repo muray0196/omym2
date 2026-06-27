@@ -15,8 +15,6 @@ Design rules should not be duplicated across documents unless the duplication is
 * Read [development.md](development.md) for development workflow, quality gates, validation commands, suppressions, and Python runtime configuration policy.
 * Read [agent/subagents.md](agent/subagents.md) when configuring or explicitly using Codex subagents for OMYM2 work.
 * Read [testing.md](testing.md) for architecture tests, unit tests, integration tests, fixture policy, and tests to write first.
-* Read [implementation_plan.md](implementation_plan.md) for dependency-first and vertical-slice-first implementation phases.
-* Read [mvp.md](mvp.md) for the short MVP completion checklist.
 * Read [decisions/](decisions/) for accepted architecture decision records when a task touches a previously decided trade-off.
 
 ## Authoritative Homes
@@ -29,6 +27,4 @@ Design rules should not be duplicated across documents unless the duplication is
 * Development workflow and quality gates: [development.md](development.md)
 * Codex subagent routing and model policy: [agent/subagents.md](agent/subagents.md)
 * Test requirements: [testing.md](testing.md)
-* Implementation order: [implementation_plan.md](implementation_plan.md)
-* MVP definition: [mvp.md](mvp.md)
 * Accepted architecture decisions: [decisions/](decisions/)
