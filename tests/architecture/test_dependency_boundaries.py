@@ -8,11 +8,16 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-DOMAIN_FORBIDDEN_IMPORT_PREFIXES = (
-    "omym2.adapters",
-    "omym2.platform",
+DOMAIN_ALLOWED_IMPORT_PREFIXES = (
+    "omym2.config",
+    "omym2.domain",
+    "omym2.shared",
 )
-FEATURE_FORBIDDEN_IMPORT_PREFIXES = ("omym2.adapters",)
+FEATURE_COMMON_ALLOWED_IMPORT_PREFIXES = DOMAIN_ALLOWED_IMPORT_PREFIXES
+SHARED_ALLOWED_IMPORT_PREFIXES = (
+    "omym2.config",
+    "omym2.shared",
+)
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
 PYTHON_FILE_PATTERN = "*.py"
 
@@ -20,22 +25,49 @@ PYTHON_FILE_PATTERN = "*.py"
 def test_domain_does_not_import_adapters_or_platform() -> None:
     """Domain modules must stay pure and adapter-free."""
     for source_file in _python_files_under(_source_root() / "omym2" / "domain"):
-        assert not _imports_any_prefix(source_file, DOMAIN_FORBIDDEN_IMPORT_PREFIXES)
+        assert not _violating_project_imports(source_file, DOMAIN_ALLOWED_IMPORT_PREFIXES)
 
 
 def test_usecase_does_not_import_concrete_sqlite_or_filesystem_adapter() -> None:
     """Feature modules must depend on ports, not concrete adapter code."""
-    for source_file in _python_files_under(_source_root() / "omym2" / "features"):
-        assert not _imports_any_prefix(source_file, FEATURE_FORBIDDEN_IMPORT_PREFIXES)
+    features_root = _source_root() / "omym2" / "features"
+    for source_file in _python_files_under(features_root):
+        allowed_prefixes = _allowed_feature_import_prefixes(source_file, features_root)
+
+        assert not _violating_project_imports(source_file, allowed_prefixes)
 
 
-def _imports_any_prefix(source_file: Path, prefixes: tuple[str, ...]) -> bool:
-    imported_modules = _imported_modules(source_file)
-    return any(
-        imported_module == prefix or imported_module.startswith(f"{prefix}.")
-        for imported_module in imported_modules
-        for prefix in prefixes
+def test_shared_does_not_import_upper_layers() -> None:
+    """Shared modules must stay below domain, features, adapters, and platform."""
+    for source_file in _python_files_under(_source_root() / "omym2" / "shared"):
+        assert not _violating_project_imports(source_file, SHARED_ALLOWED_IMPORT_PREFIXES)
+
+
+def _allowed_feature_import_prefixes(source_file: Path, features_root: Path) -> tuple[str, ...]:
+    relative_parts = source_file.relative_to(features_root).parts
+    if source_file.name == "common_ports.py" or len(relative_parts) == 1:
+        return FEATURE_COMMON_ALLOWED_IMPORT_PREFIXES
+
+    feature_name = relative_parts[0]
+    return (
+        "omym2.config",
+        "omym2.domain",
+        "omym2.shared",
+        "omym2.features.common_ports",
+        f"omym2.features.{feature_name}",
     )
+
+
+def _violating_project_imports(source_file: Path, allowed_prefixes: tuple[str, ...]) -> set[str]:
+    return {
+        imported_module
+        for imported_module in _imported_modules(source_file)
+        if imported_module.startswith("omym2.") and not _matches_any_prefix(imported_module, allowed_prefixes)
+    }
+
+
+def _matches_any_prefix(imported_module: str, prefixes: tuple[str, ...]) -> bool:
+    return any(imported_module == prefix or imported_module.startswith(f"{prefix}.") for prefix in prefixes)
 
 
 def _imported_modules(source_file: Path) -> set[str]:
