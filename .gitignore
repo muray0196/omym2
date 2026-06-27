@@ -11,4 +11,8 @@ __pycache__/
 .ruff_cache/
 .coverage
 # Codex
-.codex/
+.codex/*
+!.codex/
+!.codex/config.toml
+!.codex/agents/
+!.codex/agents/*.toml

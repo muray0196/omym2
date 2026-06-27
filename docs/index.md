@@ -13,6 +13,7 @@ Design rules should not be duplicated across documents unless the duplication is
 * Read [commands.md](commands.md) for CLI command surface and command-level behavior. Detailed execution rules live in [execution.md](execution.md).
 * Read [storage.md](storage.md) for TOML config, SQLite responsibilities, Library identity and registration storage, table responsibilities, DB consistency, config reproducibility, and stored path representation.
 * Read [development.md](development.md) for development workflow, quality gates, validation commands, suppressions, and Python runtime configuration policy.
+* Read [agent/subagents.md](agent/subagents.md) when configuring or explicitly using Codex subagents for OMYM2 work.
 * Read [testing.md](testing.md) for architecture tests, unit tests, integration tests, fixture policy, and tests to write first.
 * Read [implementation_plan.md](implementation_plan.md) for dependency-first and vertical-slice-first implementation phases.
 * Read [mvp.md](mvp.md) for the short MVP completion checklist.
@@ -26,6 +27,7 @@ Design rules should not be duplicated across documents unless the duplication is
 * Command surface: [commands.md](commands.md)
 * Config, DB, Library identity/registration, and path storage: [storage.md](storage.md)
 * Development workflow and quality gates: [development.md](development.md)
+* Codex subagent routing and model policy: [agent/subagents.md](agent/subagents.md)
 * Test requirements: [testing.md](testing.md)
 * Implementation order: [implementation_plan.md](implementation_plan.md)
 * MVP definition: [mvp.md](mvp.md)
