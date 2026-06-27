@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 12 settings preview usecase.
+Summary: Tests settings preview usecase.
 Why: Protects Web UI path preview behavior at the feature boundary.
 """
 

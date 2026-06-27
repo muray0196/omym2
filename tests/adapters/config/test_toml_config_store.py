@@ -1,6 +1,6 @@
 """
 Summary: Tests TOML-backed config persistence.
-Why: Verifies Phase 4 settings storage without touching the user home.
+Why: Verifies settings storage without touching the user home.
 """
 
 from __future__ import annotations

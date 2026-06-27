@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 11 CLI commands.
+Summary: Tests check, history, and undo CLI commands.
 Why: Verifies check, history, and undo through the public CLI entry point.
 """
 

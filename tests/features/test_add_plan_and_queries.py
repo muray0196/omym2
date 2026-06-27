@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 8 add Plan and plan query behavior.
+Summary: Tests add Plan and plan query behavior.
 Why: Protects reviewed incoming imports before file mutation exists.
 """
 

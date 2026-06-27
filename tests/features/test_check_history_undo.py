@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 11 check, history, and undo behavior.
+Summary: Tests check, history, and undo behavior.
 Why: Protects diagnostics and recovery without direct file mutation.
 """
 

@@ -62,7 +62,7 @@ Use in-memory repositories for usecase tests.
 
 Use fixed Clock and IdGenerator ports in tests so time and IDs are deterministic.
 
-Filesystem fixtures should be minimal and task-focused. Read-only filesystem fixtures are appropriate for FileScanner, metadata, hashing, and FileSnapshotReader tests. File-moving fixtures should wait until the apply vertical slice because apply is the first phase that mutates Library music files.
+Filesystem fixtures should be minimal and task-focused. Read-only filesystem fixtures are appropriate for FileScanner, metadata, hashing, and FileSnapshotReader tests. File-moving fixtures should wait until apply behavior is under test because apply is the workflow that mutates Library music files.
 
 ## Test Commands
 

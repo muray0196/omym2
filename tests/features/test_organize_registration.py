@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 7 organize registration behavior.
+Summary: Tests organize registration behavior.
 Why: Protects Library registration and review-plan creation before apply exists.
 """
 

@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 10 refresh relocation planning.
+Summary: Tests refresh relocation planning.
 Why: Protects Plan-centered tag-correction relocation behavior.
 """
 

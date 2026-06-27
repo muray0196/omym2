@@ -47,7 +47,7 @@ def test_settings_command_opens_browser_and_runs_server() -> None:
 
 
 def test_settings_command_rejects_arguments() -> None:
-    """The settings command does not accept phase-12 arguments."""
+    """The settings command does not accept positional arguments."""
     stdout = StringIO()
     stderr = StringIO()
 

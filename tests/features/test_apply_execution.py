@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 9 apply execution behavior.
+Summary: Tests apply execution behavior.
 Why: Protects durable FileEvent order before Library file mutation.
 """
 

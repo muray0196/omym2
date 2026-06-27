@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 12 Web settings routes.
+Summary: Tests Web settings routes.
 Why: Verifies settings display, validation, diff, preview, and saving through HTTP.
 """
 

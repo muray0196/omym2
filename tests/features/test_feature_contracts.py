@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 3 feature contracts and fakes.
+Summary: Tests feature contracts and fakes.
 Why: Protects port boundaries before concrete adapters are implemented.
 """
 
@@ -58,7 +58,7 @@ SOURCE_PATH = "/incoming/song.flac"
 TARGET_PATH = "Artist/Album/01_Title.flac"
 TRACK_TITLE = "Title"
 TRACK_ARTIST = "Artist"
-UNEXPECTED_IO_MESSAGE = "Phase 3 skeleton tests must not call I/O fakes."
+UNEXPECTED_IO_MESSAGE = "Feature contract tests must not call I/O fakes."
 
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
@@ -113,7 +113,7 @@ def test_fixed_clock_and_sequence_id_generator_are_deterministic() -> None:
 
 
 def test_in_memory_repositories_store_models_by_usecase_query_shape() -> None:
-    """Repository fakes support the Phase 3 query shapes usecases need."""
+    """Repository fakes support the query shapes usecases need."""
     uow = InMemoryUnitOfWork()
     library = _library()
     track = _track()
@@ -159,8 +159,8 @@ def test_in_memory_unit_of_work_records_commit_and_rollback_intent() -> None:
     assert uow.rollback_count == EXPECTED_ONE_CALL
 
 
-def test_phase11_usecases_handle_empty_repository_contracts() -> None:
-    """Phase 11 usecases are instantiable through their port contracts."""
+def test_diagnostics_and_recovery_usecases_handle_empty_repository_contracts() -> None:
+    """Diagnostics and recovery usecases are instantiable through their ports."""
     uow = InMemoryUnitOfWork()
     scanner = NoopFileScanner()
     snapshot_reader = NoopFileSnapshotReader()

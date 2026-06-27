@@ -1,6 +1,6 @@
 """
 Summary: Tests inspect CLI command behavior.
-Why: Verifies Phase 6 read-only inspection through the public entry point.
+Why: Verifies read-only inspection through the public entry point.
 """
 
 from __future__ import annotations

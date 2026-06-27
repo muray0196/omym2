@@ -1,6 +1,6 @@
 """
 Summary: Tests read-only filesystem adapters.
-Why: Verifies Phase 6 scanning, hashing, snapshots, and path resolution.
+Why: Verifies scanning, hashing, snapshots, and path resolution.
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ def test_file_presence_reports_existing_paths_without_reading(tmp_path: Path) ->
 
 
 def test_file_mover_moves_file_and_creates_parent_directory(tmp_path: Path) -> None:
-    """FileMover performs the Phase 9 filesystem mutation."""
+    """FileMover performs the planned filesystem mutation."""
     source_path = tmp_path / AUDIO_FILE_NAME
     target_path = tmp_path / "Artist" / TARGET_FILE_NAME
     _ = source_path.write_bytes(AUDIO_CONTENT)

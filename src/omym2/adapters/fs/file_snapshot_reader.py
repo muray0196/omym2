@@ -31,7 +31,7 @@ class FilesystemFileSnapshotReader:
         content_hash = self.hasher.calculate(file_path)
 
         # The snapshot is an observation, not an atomic filesystem lock. Later
-        # plan/apply phases re-check hashes before mutating Library files.
+        # Plan and apply workflows re-check hashes before mutating Library files.
         return FileSnapshot(
             path=str(file_path),
             size=stat_result.st_size,

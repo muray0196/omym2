@@ -1,6 +1,6 @@
 """
 Summary: Tests the SQLite persistence foundation.
-Why: Verifies Phase 5 storage, migration, and UnitOfWork behavior.
+Why: Verifies storage, migration, and UnitOfWork behavior.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ REQUIRED_TABLES = {
 
 
 def test_sqlite_migrations_create_required_tables(tmp_path: Path) -> None:
-    """Migration runner creates the Phase 5 SQLite table set."""
+    """Migration runner creates the SQLite table set."""
     database_file = default_application_paths(tmp_path).database_file
 
     migrate_database(database_file)
@@ -110,7 +110,7 @@ def test_internal_storage_is_created_lazily_when_needed(tmp_path: Path) -> None:
 
 
 def test_sqlite_repositories_round_trip_domain_models(tmp_path: Path) -> None:
-    """SQLite repositories persist and restore every Phase 5 domain model."""
+    """SQLite repositories persist and restore every persisted domain model."""
     database_file = default_application_paths(tmp_path).database_file
     library = _library()
     track = _track()

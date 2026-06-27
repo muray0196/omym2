@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 4 settings usecases.
+Summary: Tests settings usecases.
 Why: Protects config feature boundaries before concrete UI settings work.
 """
 

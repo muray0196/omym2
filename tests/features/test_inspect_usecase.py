@@ -1,5 +1,5 @@
 """
-Summary: Tests Phase 6 inspect usecase behavior.
+Summary: Tests inspect usecase behavior.
 Why: Protects read-only snapshot and canonical-path projection.
 """
 

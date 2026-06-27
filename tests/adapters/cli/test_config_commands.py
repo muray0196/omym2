@@ -1,6 +1,6 @@
 """
 Summary: Tests config CLI commands.
-Why: Verifies the Phase 4 command surface through the public CLI entry point.
+Why: Verifies the config command surface through the public CLI entry point.
 """
 
 from __future__ import annotations
