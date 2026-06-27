@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from omym2.config import (
-    APP_DIRECTORY_NAME,
     CONFIG_DIRECTORY_NAME,
     CONFIG_FILE_NAME,
     DATA_DIRECTORY_NAME,
@@ -44,7 +43,6 @@ class ApplicationPaths:
         return self.data_dir / SQLITE_DATABASE_FILE_NAME
 
 
-def default_application_paths(home: Path | None = None) -> ApplicationPaths:
-    """Resolve application paths from a user home directory."""
-    base_home = Path.home() if home is None else home
-    return ApplicationPaths(app_root=base_home / APP_DIRECTORY_NAME)
+def default_application_paths(app_root: Path | None = None) -> ApplicationPaths:
+    """Resolve application paths from the runtime application root."""
+    return ApplicationPaths(app_root=Path.cwd() if app_root is None else app_root)

@@ -57,6 +57,8 @@ Config has a version so future migrations can be supported.
 
 Config files, DB files, and internal directories are created lazily when commands need them. Missing config or DB is not an error by itself; missing required paths are errors only for commands that need those paths.
 
+Config files and internal DB files must stay under the application root so OMYM2 remains portable, excluding user-selected Library and Incoming paths.
+
 The initial config intentionally avoids associated-file handling, unprocessed-folder routing, delete-empty-directory policy, and hash suffix configuration. Those can be added later without changing the core Plan / Run / FileEvent model.
 
 ## Config Location
@@ -64,7 +66,7 @@ The initial config intentionally avoids associated-file handling, unprocessed-fo
 Expected location of the settings file:
 
 ```text
-~/omym2/config/config.toml
+.config/config.toml
 ```
 
 ## DB Location
@@ -72,7 +74,7 @@ Expected location of the settings file:
 Expected location of the SQLite DB:
 
 ```text
-~/omym2/.data/omym2.sqlite3
+.data/omym2.sqlite3
 ```
 
 The `.data/` directory is reserved for OMYM2 internal data under the application root.

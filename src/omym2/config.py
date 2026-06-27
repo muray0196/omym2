@@ -7,8 +7,7 @@ from __future__ import annotations
 
 from typing import Final
 
-APP_DIRECTORY_NAME: Final = "omym2"  # application root directory under the user home
-CONFIG_DIRECTORY_NAME: Final = "config"  # user config directory under the application root
+CONFIG_DIRECTORY_NAME: Final = ".config"  # user config directory under the application root
 CONFIG_FILE_ENCODING: Final = "utf-8"  # TOML config file encoding
 CONFIG_FILE_NAME: Final = "config.toml"  # TOML settings file name
 CURRENT_DIRECTORY_REFERENCE: Final = "."
