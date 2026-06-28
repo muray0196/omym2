@@ -36,7 +36,7 @@ body:
     id: authoritative_docs
     attributes:
       label: Authoritative docs to read
-      description: Link the task-specific docs from docs/index.md.
+      description: Link AGENTS.md and the task-specific docs it routes to.
     validations:
       required: true
   - type: textarea
