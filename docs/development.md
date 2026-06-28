@@ -25,11 +25,27 @@ Ruff auto-fix runs before formatting. Basedpyright reports errors only. Do not
 use verbose, statistics, JSON output, or full-project diagnostics during the edit
 loop.
 
+Use this command group after editing the React Web UI:
+
+```bash
+cd web
+npm ci
+npm run format:check
+npm run lint
+npm run build
+```
+
 ## Final Quality Gates
 
 Run these commands in order before marking implementation work complete:
 
 ```bash
+cd web
+npm ci
+npm run format:check
+npm run lint
+npm run build
+cd ..
 uv run ruff check . --output-format=concise
 uv run ruff format . --check -q
 uv run basedpyright
@@ -38,6 +54,10 @@ uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
 
 All gates must pass:
 
+* Frontend installation fails if `package-lock.json` is out of sync.
+* Frontend formatting fails if Prettier would change any file.
+* Frontend linting fails if ESLint reports any issue.
+* Frontend build fails if TypeScript or the Vite production build fails.
 * Linting fails if any lint error remains.
 * Formatting fails if Ruff would change any file.
 * Type checking fails if `basedpyright` reports any error or warning.

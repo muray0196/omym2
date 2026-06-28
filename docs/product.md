@@ -122,7 +122,7 @@ Initial assumptions:
 Language: Python
 DB: SQLite
 Config: TOML
-Web: FastAPI + Jinja2 + htmx
+Web: FastAPI + React + Vite
 CLI: Typer or argparse
 Test: pytest + pytest-mock
 Coverage: pytest-cov for optional local reporting

@@ -28,6 +28,13 @@ jobs:
         with:
           python-version-file: .python-version
 
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
       - name: Set up uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -37,11 +44,27 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-extras --dev
 
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Check frontend format
+        working-directory: web
+        run: npm run format:check
+
+      - name: Run frontend lint
+        working-directory: web
+        run: npm run lint
+
+      - name: Build frontend
+        working-directory: web
+        run: npm run build
+
       - name: Run Ruff lint
-        run: uv run ruff check --fix -q
+        run: uv run ruff check . --output-format=concise
 
       - name: Run Ruff format
-        run: uv run ruff format . -q
+        run: uv run ruff format . --check -q
 
       - name: Run basedpyright
         run: uv run basedpyright

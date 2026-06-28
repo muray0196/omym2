@@ -26,6 +26,12 @@ description: Run the documented quality gates for OMYM2, classify failures as en
    - [ -n "$files" ] && uv run basedpyright $files --level error
 3. If the same error remains after two focused fix attempts, stop and report the likely cause.
 4. Before marking implementation work complete, run or inspect the final documented quality gates:
+   - cd web
+   - npm ci
+   - npm run format:check
+   - npm run lint
+   - npm run build
+   - cd ..
    - uv run ruff check . --output-format=concise
    - uv run ruff format . --check -q
    - uv run basedpyright

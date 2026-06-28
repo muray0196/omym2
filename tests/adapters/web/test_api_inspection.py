@@ -1,12 +1,12 @@
 """
-Summary: Tests Web inspection routes.
-Why: Verifies history, run detail, check, and Tracks render through HTTP.
+Summary: Tests Web inspection JSON API routes.
+Why: Verifies history, check, and Tracks data for the React UI.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -17,10 +17,9 @@ from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.adapters.web.app import create_web_app
 from omym2.config import (
     CONFIG_FILE_ENCODING,
-    WEB_CHECK_ROUTE,
-    WEB_HISTORY_ROUTE,
-    WEB_SETTINGS_ROUTE,
-    WEB_TRACKS_ROUTE,
+    WEB_API_CHECK_ROUTE,
+    WEB_API_HISTORY_ROUTE,
+    WEB_API_TRACKS_ROUTE,
 )
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
@@ -59,108 +58,102 @@ TRACK_TITLE = "Title"
 METADATA = TrackMetadata(title=TRACK_TITLE, artist=TRACK_ARTIST, album=TRACK_ALBUM, year=2026, track_number=2)
 
 
-def test_history_page_lists_runs_and_links_to_detail(tmp_path: Path) -> None:
-    """History screen renders persisted Runs through the Web route."""
+class _JsonResponse(Protocol):
+    def json(self) -> object: ...
+
+
+def test_history_api_lists_runs(tmp_path: Path) -> None:
+    """History API returns persisted Runs newest-first."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     library_root.mkdir()
     _seed_run_history(app_paths.database_file, str(library_root))
     client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
 
-    response = client.get(WEB_HISTORY_ROUTE)
+    response = client.get(WEB_API_HISTORY_ROUTE)
 
     assert response.status_code == SUCCESS_STATUS_CODE
-    assert "OMYM2 History" in response.text
-    assert str(RUN_ID) in response.text
-    assert f"/history/{RUN_ID}" in response.text
-    assert str(PLAN_ID) in response.text
-    assert str(LIBRARY_ID) in response.text
-    assert RunStatus.SUCCEEDED.value in response.text
+    assert response.json()["errors"] == []
+    assert response.json()["runs"] == [
+        {
+            "run_id": str(RUN_ID),
+            "plan_id": str(PLAN_ID),
+            "library_id": str(LIBRARY_ID),
+            "status": RunStatus.SUCCEEDED.value,
+            "started_at": BASE_TIME.isoformat(),
+            "completed_at": BASE_TIME.isoformat(),
+            "error_summary": None,
+        }
+    ]
 
 
-def test_history_page_renders_empty_state(tmp_path: Path) -> None:
-    """History screen reports an empty database without an error."""
+def test_history_api_returns_empty_runs(tmp_path: Path) -> None:
+    """History API reports an empty database without an error."""
     app_paths = default_application_paths(tmp_path)
     client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
 
-    response = client.get(WEB_HISTORY_ROUTE)
+    response = client.get(WEB_API_HISTORY_ROUTE)
 
     assert response.status_code == SUCCESS_STATUS_CODE
-    assert "No runs." in response.text
+    assert response.json() == {"runs": [], "errors": []}
 
 
-def test_run_detail_page_lists_file_events(tmp_path: Path) -> None:
-    """Run detail screen renders durable FileEvents in sequence order."""
+def test_run_detail_api_lists_file_events(tmp_path: Path) -> None:
+    """Run detail API returns one Run and its durable FileEvents."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     library_root.mkdir()
     _seed_run_history(app_paths.database_file, str(library_root))
     client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
 
-    response = client.get(f"/history/{RUN_ID}")
+    response = client.get(f"{WEB_API_HISTORY_ROUTE}/{RUN_ID}")
 
     assert response.status_code == SUCCESS_STATUS_CODE
-    assert "OMYM2 Run Detail" in response.text
-    assert str(RUN_ID) in response.text
-    assert str(PLAN_ID) in response.text
-    assert str(LIBRARY_ID) in response.text
-    assert str(EVENT_ID) in response.text
-    assert str(ACTION_ID) in response.text
-    assert SOURCE_PATH in response.text
-    assert TARGET_PATH in response.text
-    assert FileEventType.MOVE_FILE.value in response.text
-    assert FileEventStatus.SUCCEEDED.value in response.text
-    assert ">1<" in response.text
+    payload = _json_payload(response)
+    detail = _object_payload(payload, "detail")
+    run = _object_payload(detail, "run")
+    first_event = _object_list_payload(detail, "file_events")[0]
+    assert payload["errors"] == []
+    assert run["run_id"] == str(RUN_ID)
+    assert first_event["event_id"] == str(EVENT_ID)
+    assert first_event["plan_action_id"] == str(ACTION_ID)
+    assert first_event["source_path"] == SOURCE_PATH
+    assert first_event["target_path"] == TARGET_PATH
+    assert first_event["event_type"] == FileEventType.MOVE_FILE.value
+    assert first_event["status"] == FileEventStatus.SUCCEEDED.value
+    assert first_event["sequence_no"] == 1
 
 
-def test_run_detail_page_returns_not_found_for_missing_run(tmp_path: Path) -> None:
-    """Run detail screen reports missing or invalid Run IDs as not found."""
+def test_run_detail_api_returns_not_found_for_missing_or_invalid_run(tmp_path: Path) -> None:
+    """Run detail API reports missing and malformed Run IDs as not found."""
     app_paths = default_application_paths(tmp_path)
     client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
 
-    response = client.get(f"/history/{MISSING_RUN_ID}")
+    missing_response = client.get(f"{WEB_API_HISTORY_ROUTE}/{MISSING_RUN_ID}")
+    invalid_response = client.get(f"{WEB_API_HISTORY_ROUTE}/{INVALID_RUN_ID_TEXT}")
 
-    assert response.status_code == NOT_FOUND_STATUS_CODE
-    assert "Run was not found." in response.text
-
-
-def test_run_detail_page_returns_not_found_for_invalid_run_id(tmp_path: Path) -> None:
-    """Run detail screen treats malformed Run IDs as not found."""
-    app_paths = default_application_paths(tmp_path)
-    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
-
-    response = client.get(f"/history/{INVALID_RUN_ID_TEXT}")
-
-    assert response.status_code == NOT_FOUND_STATUS_CODE
-    assert "Run was not found." in response.text
+    assert missing_response.status_code == NOT_FOUND_STATUS_CODE
+    assert missing_response.json() == {"detail": None, "errors": ["Run was not found."]}
+    assert invalid_response.status_code == NOT_FOUND_STATUS_CODE
+    assert invalid_response.json() == {"detail": None, "errors": ["Run was not found."]}
 
 
-def test_history_page_renders_database_errors(tmp_path: Path) -> None:
-    """History screen reports database startup errors as local HTML."""
+def test_history_api_reports_database_errors(tmp_path: Path) -> None:
+    """History API reports database startup errors as JSON."""
     app_paths = default_application_paths(tmp_path)
     invalid_database_path = tmp_path / "not-a-database"
     invalid_database_path.mkdir()
     client = TestClient(create_web_app(app_paths.config_file, invalid_database_path))
 
-    response = client.get("/history")
+    response = client.get(WEB_API_HISTORY_ROUTE)
 
     assert response.status_code == SERVER_ERROR_STATUS_CODE
-    assert "Inspection failed" in response.text
+    assert response.json()["runs"] == []
+    assert "Inspection failed" in response.json()["errors"][0]
 
 
-def test_check_page_renders_no_issues_for_empty_database(tmp_path: Path) -> None:
-    """Check screen reports a clean empty database as no issues."""
-    app_paths = default_application_paths(tmp_path)
-    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
-
-    response = client.get(WEB_CHECK_ROUTE)
-
-    assert response.status_code == SUCCESS_STATUS_CODE
-    assert "No issues." in response.text
-
-
-def test_check_page_renders_library_state_issue(tmp_path: Path) -> None:
-    """Check screen renders usecase issues without route-level filesystem work."""
+def test_check_api_returns_issues_and_config_errors(tmp_path: Path) -> None:
+    """Check API returns usecase issues and preserves config error categorization."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     library_root.mkdir()
@@ -169,72 +162,67 @@ def test_check_page_renders_library_state_issue(tmp_path: Path) -> None:
         uow.commit()
     client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
 
-    response = client.get(WEB_CHECK_ROUTE)
+    response = client.get(WEB_API_CHECK_ROUTE)
 
     assert response.status_code == SUCCESS_STATUS_CODE
-    assert "OMYM2 Check" in response.text
-    assert response.text.count("library_blocked") == 1
-    assert str(LIBRARY_ID) in response.text
+    assert response.json()["errors"] == []
+    assert response.json()["issues"][0]["issue_type"] == "library_blocked"
+    assert response.json()["issues"][0]["library_id"] == str(LIBRARY_ID)
 
-
-def test_check_page_renders_config_validation_error(tmp_path: Path) -> None:
-    """Check screen reports invalid TOML config as a client-facing error."""
-    app_paths = default_application_paths(tmp_path)
     app_paths.config_file.parent.mkdir(parents=True)
     _ = app_paths.config_file.write_text("version = ", encoding=CONFIG_FILE_ENCODING)
-    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+    invalid_response = client.get(WEB_API_CHECK_ROUTE)
 
-    response = client.get(WEB_CHECK_ROUTE)
+    assert invalid_response.status_code == ERROR_STATUS_CODE
+    assert invalid_response.json()["issues"] == []
+    assert "Invalid TOML" in invalid_response.json()["errors"][0]
 
-    assert response.status_code == ERROR_STATUS_CODE
-    assert "Invalid TOML" in response.text
 
-
-def test_tracks_page_renders_empty_state(tmp_path: Path) -> None:
-    """Tracks screen reports an empty database without an error."""
+def test_tracks_api_returns_empty_and_managed_tracks(tmp_path: Path) -> None:
+    """Tracks API returns managed Track state without checking the filesystem."""
     app_paths = default_application_paths(tmp_path)
     client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
 
-    response = client.get(WEB_TRACKS_ROUTE)
+    empty_response = client.get(WEB_API_TRACKS_ROUTE)
 
-    assert response.status_code == SUCCESS_STATUS_CODE
-    assert "No tracks." in response.text
+    assert empty_response.status_code == SUCCESS_STATUS_CODE
+    assert empty_response.json() == {"tracks": [], "errors": []}
 
-
-def test_tracks_page_renders_managed_tracks(tmp_path: Path) -> None:
-    """Tracks screen renders DB state without checking the filesystem."""
-    app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     library_root.mkdir()
     with SQLiteUnitOfWork(app_paths.database_file) as uow:
         uow.libraries.save(_library(str(library_root)))
         uow.tracks.save(_track())
         uow.commit()
-    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
 
-    response = client.get(WEB_TRACKS_ROUTE)
+    response = client.get(WEB_API_TRACKS_ROUTE)
 
     assert response.status_code == SUCCESS_STATUS_CODE
-    assert "OMYM2 Tracks" in response.text
-    assert str(TRACK_ID) in response.text
-    assert str(LIBRARY_ID) in response.text
-    assert TRACK_TITLE in response.text
-    assert TRACK_ARTIST in response.text
-    assert TRACK_ALBUM in response.text
-    assert TARGET_PATH in response.text
-    assert TrackStatus.ACTIVE.value in response.text
+    payload = _json_payload(response)
+    first_track = _object_list_payload(payload, "tracks")[0]
+    metadata = _object_payload(first_track, "metadata")
+    assert payload["errors"] == []
+    assert first_track["track_id"] == str(TRACK_ID)
+    assert first_track["library_id"] == str(LIBRARY_ID)
+    assert first_track["status"] == TrackStatus.ACTIVE.value
+    assert first_track["current_path"] == TARGET_PATH
+    assert metadata["title"] == TRACK_TITLE
+    assert metadata["artist"] == TRACK_ARTIST
+    assert metadata["album"] == TRACK_ALBUM
 
 
-def test_top_navigation_marks_active_screen(tmp_path: Path) -> None:
-    """Each console route marks its navigation item as active."""
+def test_tracks_api_reports_database_errors(tmp_path: Path) -> None:
+    """Tracks API reports database startup errors as JSON."""
     app_paths = default_application_paths(tmp_path)
-    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+    invalid_database_path = tmp_path / "not-a-database"
+    invalid_database_path.mkdir()
+    client = TestClient(create_web_app(app_paths.config_file, invalid_database_path))
 
-    for route in (WEB_SETTINGS_ROUTE, WEB_HISTORY_ROUTE, WEB_CHECK_ROUTE, WEB_TRACKS_ROUTE):
-        response = client.get(route)
+    response = client.get(WEB_API_TRACKS_ROUTE)
 
-        assert response.status_code == SUCCESS_STATUS_CODE
-        assert f'class="topnav__link--active" href="{route}"' in response.text
+    assert response.status_code == SERVER_ERROR_STATUS_CODE
+    assert response.json()["tracks"] == []
+    assert "Inspection failed" in response.json()["errors"][0]
 
 
 def _seed_run_history(database_file: Path, library_root: str) -> None:
@@ -245,6 +233,22 @@ def _seed_run_history(database_file: Path, library_root: str) -> None:
         uow.runs.save(_run())
         uow.file_events.save(_event())
         uow.commit()
+
+
+def _json_payload(response: _JsonResponse) -> dict[str, object]:
+    return cast("dict[str, object]", response.json())
+
+
+def _object_payload(payload: dict[str, object], key: str) -> dict[str, object]:
+    value = payload[key]
+    assert isinstance(value, dict)
+    return cast("dict[str, object]", value)
+
+
+def _object_list_payload(payload: dict[str, object], key: str) -> list[dict[str, object]]:
+    value = payload[key]
+    assert isinstance(value, list)
+    return cast("list[dict[str, object]]", value)
 
 
 def _library(library_root: str, *, status: LibraryStatus = LibraryStatus.REGISTERED) -> Library:

@@ -1,0 +1,63 @@
+"""
+Summary: Converts settings JSON payloads into AppConfig values.
+Why: Keeps Web API request parsing separate from settings route orchestration.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+from omym2.adapters.config.config_validator import INCOMING_KEY, LIBRARY_KEY, PATHS_SECTION, validate_config_data
+from omym2.features.common_ports import ConfigStoreValidationError
+
+if TYPE_CHECKING:
+    from omym2.domain.models.app_config import AppConfig
+
+CONFIG_FIELD = "config"
+CONFIG_FIELD_ERROR = "Request body must contain a config object."
+REQUEST_BODY_ERROR = "Request body must be a JSON object."
+
+
+@dataclass(frozen=True, slots=True)
+class SettingsJsonResult:
+    """Parsed settings JSON result."""
+
+    config: AppConfig | None
+    errors: tuple[str, ...]
+
+
+def parse_settings_json(payload: object) -> SettingsJsonResult:
+    """Convert a JSON request body into a validated AppConfig."""
+    if not isinstance(payload, Mapping):
+        return SettingsJsonResult(config=None, errors=(REQUEST_BODY_ERROR,))
+
+    payload_mapping = cast("Mapping[str, object]", payload)
+    config_payload = payload_mapping.get(CONFIG_FIELD)
+    if not isinstance(config_payload, Mapping):
+        return SettingsJsonResult(config=None, errors=(CONFIG_FIELD_ERROR,))
+
+    try:
+        config = validate_config_data(_normalized_config(cast("Mapping[str, object]", config_payload)))
+    except ConfigStoreValidationError as exc:
+        return SettingsJsonResult(config=None, errors=exc.errors)
+    return SettingsJsonResult(config=config, errors=())
+
+
+def _normalized_config(config_payload: Mapping[str, object]) -> dict[str, object]:
+    normalized_config = dict(config_payload)
+    paths_payload = normalized_config.get(PATHS_SECTION)
+    if not isinstance(paths_payload, Mapping):
+        return normalized_config
+
+    normalized_paths = dict(cast("Mapping[str, object]", paths_payload))
+    for path_key in (LIBRARY_KEY, INCOMING_KEY):
+        if _is_empty_optional_path(normalized_paths.get(path_key)):
+            _ = normalized_paths.pop(path_key, None)
+    normalized_config[PATHS_SECTION] = normalized_paths
+    return normalized_config
+
+
+def _is_empty_optional_path(value: object) -> bool:
+    return value is None or (isinstance(value, str) and value.strip() == "")

@@ -84,7 +84,7 @@ Examples:
 
 ```text
 adapters/cli/commands/add.py
-adapters/web/routes/settings.py
+adapters/web/routes/api.py
 adapters/db/sqlite/unit_of_work.py
 adapters/fs/file_scanner.py
 adapters/fs/file_snapshot_reader.py
