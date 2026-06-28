@@ -23,6 +23,37 @@ Do not spawn subagents just to use every configured model. Use a subagent only
 when parallelism, context isolation, or a focused specialist prompt improves the
 task.
 
+## Operational Flow
+
+At task start, the main agent decides whether delegation would reduce risk,
+speed up evidence gathering, or isolate focused work. The main agent must keep
+the issue scope, architecture judgment, final correctness judgment, and final
+user response.
+
+Use this timing:
+
+* Before editing unfamiliar code, use `scout` to find files, symbols, call
+  paths, related tests, and dependency edges.
+* After a focused check fails, use `test_triage` to classify the failure before
+  changing source code.
+* For small mechanical patches, use `patch_spark` only after the main agent
+  names the target files, expected behavior, and verification command.
+* Before accepting API, DTO, port, schema, config, docs, prompt, or skill
+  changes, use `contract_check` when consistency risk is real.
+* Before accepting Plan, apply, undo, storage, path identity, DB, security, or
+  data-loss-sensitive changes, use `risk_review`.
+
+Each subagent handoff must include:
+
+* the current GitHub Issue or task boundary
+* exact files or areas to inspect
+* commands the subagent may run
+* whether edits are allowed
+* expected output format
+
+The main agent must re-read cited code, decide which findings are valid, and
+record any issue or PR update needed by [WORK_TRACKING.md](WORK_TRACKING.md).
+
 ## Configured Agents
 
 | Agent | Model | Reasoning | Sandbox | Purpose |
