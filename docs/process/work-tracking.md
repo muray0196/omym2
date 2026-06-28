@@ -11,6 +11,7 @@ Repository documentation stores durable specifications and process schemas only.
 | Concern | Source |
 | --- | --- |
 | Active work item | GitHub Issue |
+| Idea inbox | GitHub Project draft item |
 | Work breakdown | GitHub sub-issues |
 | Blockers | GitHub issue dependencies |
 | Planning metadata | GitHub Project fields |
@@ -18,9 +19,9 @@ Repository documentation stores durable specifications and process schemas only.
 | Durable technical decisions | [../decisions/](../decisions/) |
 | Active specifications | [../../ARCHITECTURE.md](../../ARCHITECTURE.md) and task-relevant docs under [../](../) |
 
-## Issue Types
+## Work Types
 
-Use these issue types:
+Use these `Work type` values in issue templates and the GitHub Project field:
 
 * feature
 * bug
@@ -31,6 +32,25 @@ Use these issue types:
 * storage
 * execution
 * agent
+
+OMYM2 does not require GitHub native issue types. The issue form body and
+Project fields are the tracking contract.
+
+## Workflow
+
+GitHub Project drafts are inbox ideas only. They can hold rough future work, but
+they are not active work items and agents should not implement from them.
+
+Before work moves to `Ready`:
+
+* Convert or create a GitHub Issue.
+* Fill the relevant issue template.
+* Set required Project fields.
+* Link direct blockers or blocked work.
+* Assign a Milestone only for a real phase or release grouping.
+
+Work becomes active only after a GitHub Issue exists. Use sub-issues for
+breakdown and issue dependencies for blockers.
 
 ## Implementation Issue Body
 
@@ -50,16 +70,20 @@ Every implementation issue should include:
 
 ## Project Fields
 
-Recommended Project fields:
+Required Project fields:
 
 | Field | Values |
 | --- | --- |
 | Status | Backlog, Ready, In progress, Blocked, In review, Done |
-| Area | architecture, product, domain, execution, storage, config, db, commands, testing, agent |
+| Work type | feature, bug, refactor, test, docs, architecture, storage, execution, agent |
+| Area | architecture, product, domain, execution, storage, config, db, cli, web, testing, docs, agent |
 | Risk | low, medium, high |
 | Needs docs | yes, no |
 | Needs ADR | yes, no |
 | Agent-ready | yes, no |
+
+`Backlog` may include draft ideas or issues. `Ready`, `In progress`,
+`Blocked`, `In review`, and `Done` are issue-only states.
 
 ## Agent Context Budget
 

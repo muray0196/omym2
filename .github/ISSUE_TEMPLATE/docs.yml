@@ -2,12 +2,12 @@ name: Documentation
 description: Track durable documentation changes.
 title: "[Docs] "
 labels:
-  - docs
+  - documentation
 body:
   - type: dropdown
-    id: issue_type
+    id: work_type
     attributes:
-      label: Issue type
+      label: Work type
       options:
         - docs
         - architecture

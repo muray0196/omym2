@@ -5,9 +5,9 @@ labels:
   - implementation
 body:
   - type: dropdown
-    id: issue_type
+    id: work_type
     attributes:
-      label: Issue type
+      label: Work type
       options:
         - feature
         - refactor
@@ -43,7 +43,7 @@ body:
     id: affected_areas
     attributes:
       label: Affected areas
-      description: List impacted architecture, domain, execution, storage, config, commands, tests, or agent areas.
+      description: List impacted architecture, domain, execution, storage, config, CLI, Web, tests, or agent areas.
     validations:
       required: true
   - type: textarea
