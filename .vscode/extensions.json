@@ -5,5 +5,7 @@
         "detachhead.basedpyright",
         "charliermarsh.ruff",
         "openai.chatgpt",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
     ]
 }
