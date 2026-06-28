@@ -1,187 +1,43 @@
 # Architecture
 
-This document is authoritative for OMYM2 architecture, dependency direction, layer responsibility, ports, UnitOfWork policy, transaction boundaries, durable operation log policy, and source file naming.
+This document is the top-level OMYM2 architecture entry point.
 
-Domain semantics are in [docs/domain.md](docs/domain.md), execution semantics are in [docs/execution.md](docs/execution.md), and persistence details are in [docs/storage.md](docs/storage.md).
+It is authoritative for the architecture overview, non-negotiable architecture rules, and routing to detailed architecture documents. Detailed architecture rules live in [docs/architecture/](docs/architecture/).
 
-## Feature-Oriented Hexagonal Architecture
+Domain semantics are in [docs/domain.md](docs/domain.md), execution semantics are in [docs/execution/](docs/execution/), and storage contracts are in [docs/storage.md](docs/storage.md) plus [docs/contracts/](docs/contracts/).
+
+## Architecture Model
 
 OMYM2 adopts Feature-oriented Hexagonal Architecture.
 
-Core concepts such as Library, Track, Plan, Run, FileEvent, and PathPolicy are not split by feature. They are placed in `domain/` as the shared domain kernel for all of OMYM2.
+Core concepts such as Library, Track, Plan, Run, FileEvent, and PathPolicy are shared as a domain kernel. Features are divided by user goal. CLI and Web are inbound adapters. DB, filesystem, metadata reader, and config loader are outbound adapters.
 
-Features are divided by user goal, such as `settings`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`, `plans`, `history`, `tracks`, and `inspect`.
-
-CLI and Web call feature usecases as inbound adapters. DB, filesystem, metadata reader, and config loader implement ports as outbound adapters.
-
-## Directory Structure
-
-The Python package adopts the `src/` layout.
+The package uses the Python `src/` layout:
 
 ```text
 src/
   omym2/
     domain/
-      models/
-        app_config.py
-        library.py
-        track.py
-        track_metadata.py
-        file_scan_entry.py
-        file_snapshot.py
-        plan.py
-        plan_action.py
-        run.py
-        file_event.py
-        check_issue.py
-      services/
-        path_policy.py
-        plan_builder.py
-        collision_policy.py
-        duplicate_policy.py
-        metadata_fingerprint.py
-        content_fingerprint.py
-        config_fingerprint.py
-      errors.py
-
     features/
-      common_ports.py
-
-      add/
-        usecases/
-          create_add_plan.py
-        ports.py
-        dto.py
-
-      organize/
-        usecases/
-          create_organize_plan.py
-        ports.py
-        dto.py
-
-      refresh/
-        usecases/
-          create_refresh_plan.py
-        ports.py
-        dto.py
-
-      apply/
-        usecases/
-          apply_plan.py
-        ports.py
-        dto.py
-
-      undo/
-        usecases/
-          create_undo_plan.py
-        ports.py
-        dto.py
-
-      check/
-        usecases/
-          check_library.py
-        ports.py
-        dto.py
-
-      plans/
-        usecases/
-          list_plans.py
-          get_plan_detail.py
-        ports.py
-        dto.py
-
-      history/
-        usecases/
-          list_runs.py
-          get_run_detail.py
-        ports.py
-        dto.py
-
-      inspect/
-        usecases/
-          inspect_file.py
-        ports.py
-        dto.py
-
-      tracks/
-        usecases/
-          list_tracks.py
-        ports.py
-        dto.py
-
-      settings/
-        usecases/
-          load_settings.py
-          save_settings.py
-          validate_settings.py
-          preview_path_policy.py
-        ports.py
-        dto.py
-
     adapters/
-      cli/
-        main.py
-        app.py
-        commands/
-          add.py
-          organize.py
-          refresh.py
-          apply.py
-          undo.py
-          check.py
-          plans.py
-          history.py
-          inspect.py
-          config.py
-          settings.py
-          output.py
-          confirmation.py
-
-      web/
-        app.py
-        routes/
-          settings.py
-          inspection.py
-        schemas/
-          settings_form.py
-        templates/
-        static/
-
-      db/
-        sqlite/
-          connection.py
-          migration_runner.py
-          unit_of_work.py
-          repositories.py
-          migrations/
-            202606220001_initial_schema.sql
-
-      fs/
-        file_scanner.py
-        file_snapshot_reader.py
-        file_mover.py
-        path_resolver.py
-        hash_calculator.py
-
-      metadata/
-        mutagen_reader.py
-
-      config/
-        toml_config_store.py
-        config_validator.py
-        default_config.py
-        application_paths.py
-
     platform/
-
     shared/
-      result.py
-      ids.py
-      paths.py
-      time.py
 ```
 
-`empty_dir_cleaner.py` is deferred until delete-empty-directory behavior is explicitly designed.
+## Non-Negotiable Rules
+
+* Domain and features must not depend on concrete adapters.
+* Domain performs no I/O.
+* Features access the external world through ports.
+* Direct imports between features are prohibited in principle.
+* Feature-to-feature chaining belongs in CLI, Web, or platform orchestration.
+* Adapters may create and restore domain models, but must not contain business rules.
+* Library music file mutations must go through a Plan.
+* Apply must use recorded PlanActions and must not recalculate target paths from the latest AppConfig.
+* FileEvents record Library music file mutations before those mutations execute.
+* Library identity is stable by `library_id`, not root path.
+* Stored Library-managed paths are Library-root-relative.
+* Source file names under `src/` must follow the documented naming rules.
 
 ## Dependency Direction
 
@@ -212,319 +68,81 @@ domain/
 ## Forbidden Dependencies
 
 ```text
-domain → adapters
-domain → platform
-domain → db
-domain → fs
-domain → web
-domain → cli
+domain -> adapters
+domain -> platform
+domain -> db
+domain -> fs
+domain -> web
+domain -> cli
 
-features → concrete db/fs/web/cli implementations
-features → internal implementations of other features
+features -> concrete db/fs/web/cli implementations
+features -> internal implementations of other features
 
-adapters/web/routes → direct filesystem operations
-adapters/cli/commands → direct filesystem operations
-templates → filesystem operations
+adapters/web/routes -> direct filesystem operations
+adapters/cli/commands -> direct filesystem operations
+templates -> filesystem operations
 ```
 
 Direct imports between features are prohibited in principle. When multiple usecases are chained, orchestration is done in CLI, Web, or platform.
 
-For example, `omym2 add --apply` does not have `features/add` call `features/apply` directly. Instead, the CLI or platform calls `ApplyPlanUseCase` after executing `AddUseCase`.
-
 ## Layer Responsibilities
 
-### domain/
+`domain/` contains the shared domain kernel and pure domain rules. It performs no I/O and does not import DB, filesystem, HTTP, CLI, Web, TOML, or mutagen.
 
-`domain/` contains the core concepts of OMYM2 and pure domain rules.
+`features/` contains usecases divided by user goal. Usecases access the external world through ports and do not depend on concrete implementations such as SQLite, shutil, mutagen, FastAPI, or Typer.
 
-Main targets:
+`adapters/` implement ports and handle external I/O. Adapters may create and restore domain models, but they must not contain business rules such as conflict judgment, duplicate judgment, canonical path calculation, metadata validation, or PlanAction status decisions.
 
-* AppConfig
-* Library
-* Track
-* TrackMetadata
-* FileScanEntry
-* FileSnapshot
-* Plan
-* PlanAction
-* Run
-* FileEvent
-* PathPolicy
-* CollisionPolicy
-* DuplicatePolicy
-* CheckIssue
+`platform/` wires concrete adapters to feature usecases and owns application runtime assembly.
 
-`domain/` performs no I/O. It does not import DB, filesystem, HTTP, CLI, Web, TOML, or mutagen.
+`shared/` contains only pure auxiliary primitives. It does not depend on domain, features, adapters, or platform.
 
-PathPolicy is a pure domain service.
+## Ports And UnitOfWork Summary
 
-```text
-metadata + file extension + path policy config
-  ↓
-Library-root-relative canonical_path
-```
+External I/O is expressed as ports. Representative ports include UnitOfWork, FileScanner, FileSnapshotReader, MetadataReader, FileMover, ConfigStore, Clock, and IdGenerator.
 
-This process does not call `path.exists()` and does not join with the Library root. The usecase checks the existence of actual files through ports after PathResolver has resolved the Library-root-relative path to an absolute filesystem path.
+The baseline policy is `1 usecase = 1 UnitOfWork`. Concrete repositories and transaction mechanics stay behind the UnitOfWork adapter.
 
-### features/
+`Clock` and `IdGenerator` are ports so tests can fix time and IDs. IdGenerator creates typed IDs for Library, Track, Plan, PlanAction, Run, and FileEvent.
 
-`features/` contains usecases divided by user goal.
+`apply` and `undo` are practical exceptions to the simple `1 usecase = 1 UnitOfWork` shape because Library music file operations and DB transactions cannot be made fully atomic. They use FileEvents as a durable operation log.
 
-* `settings`: read and write config, validate it, and preview path policy
-* `organize`: scan the selected Library, create a relocation plan when needed, and register the Library when clean
-* `add`: create an add plan from Incoming / specified source
-* `refresh`: reload metadata and create a relocation plan
-* `apply`: apply a Plan and update run / file_events / tracks
-* `undo`: create an undo plan from a run and apply it if needed
-* `check`: detect inconsistencies between the DB and the filesystem
-* `plans`: get plan lists and details
-* `history`: get runs / file_events
-* `tracks`: list managed Tracks for read-only inspection
-* `inspect`: check metadata / hash / canonical path for a single file
+## Naming Summary
 
-Usecases access the external world through ports. They do not depend on concrete implementations such as SQLite, shutil, mutagen, FastAPI, or Typer.
+Python module names use `snake_case.py`. Classes use `PascalCase`. Functions and variables use `snake_case`. Constants use `UPPER_SNAKE_CASE`.
 
-When a usecase needs files from a directory, it uses FileScanner only to discover FileScanEntry values. When it needs metadata or hashes, it captures FileSnapshot values through a separate port.
-
-### adapters/
-
-`adapters/` implement ports and handle external I/O.
-
-* `adapters/db/sqlite`: SQLite repositories / UnitOfWork
-* `adapters/fs`: file discovery / snapshot capture / move / path operations / hash calculation
-* `adapters/metadata`: metadata reading with mutagen
-* `adapters/config`: TOML config store / validator / defaults
-* `adapters/cli`: CLI commands
-* `adapters/web`: local Web UI
-
-Adapters may create and restore domain models. They must not contain business rules.
-
-Bad example:
-
-```python
-# adapters/db/sqlite/repositories.py
-
-if target_path_exists:
-    action = PlanAction.conflict(...)
-```
-
-Conflict judgment is the responsibility of a domain service or usecase.
-
-Good example:
-
-```python
-# adapters/db/sqlite/repositories.py
-
-return Track(
-    id=row["id"],
-    current_path=row["current_path"],
-    metadata_hash=row["metadata_hash"],
-)
-```
-
-This only restores a domain model from persisted data, so it is allowed.
-
-### platform/
-
-`platform/` is the composition root. It wires concrete adapters to feature usecases and owns application runtime assembly.
-
-Feature-to-feature chaining belongs in CLI, Web, or platform orchestration, not inside a feature importing another feature's internals.
-
-### shared/
-
-`shared/` contains only pure auxiliary primitives.
-
-* Result type
-* ID value object helpers
-* Pure functions for path string processing
-* Time type helpers
-* Typing helpers
-
-`shared/` does not depend on domain, features, adapters, or platform.
-
-## Ports and UnitOfWork Policy
-
-External I/O is expressed as ports.
-
-Representative examples:
-
-```python
-class UnitOfWork(Protocol):
-    tracks: TrackRepository
-    plans: PlanRepository
-    runs: RunRepository
-    file_events: FileEventRepository
-
-    def __enter__(self) -> "UnitOfWork": ...
-    def __exit__(self, exc_type, exc, tb) -> None: ...
-    def commit(self) -> None: ...
-    def rollback(self) -> None: ...
-```
-
-```python
-class FileScanner(Protocol):
-    def scan(self, root: PathLike) -> list[FileScanEntry]: ...
-```
-
-```python
-class FileSnapshotReader(Protocol):
-    def capture(self, path: PathLike) -> FileSnapshot: ...
-```
-
-```python
-class MetadataReader(Protocol):
-    def read(self, path: PathLike) -> TrackMetadata: ...
-```
-
-FileScanner must not read tags or calculate hashes. FileSnapshotReader may compose filesystem stat, MetadataReader, hash calculation, and Clock, but it must not decide conflicts, duplicates, canonical paths, or PlanAction status.
-
-```python
-class FileMover(Protocol):
-    def move(self, source: PathLike, target: PathLike) -> None: ...
-```
-
-```python
-class ConfigStore(Protocol):
-    def load(self) -> AppConfig: ...
-    def save(self, config: AppConfig) -> None: ...
-```
-
-```python
-class Clock(Protocol):
-    def now(self) -> datetime: ...
-```
-
-```python
-class IdGenerator(Protocol):
-    def new_track_id(self) -> TrackId: ...
-    def new_plan_id(self) -> PlanId: ...
-    def new_run_id(self) -> RunId: ...
-```
-
-`Clock` and `IdGenerator` are also ports. This makes it possible to fix time and IDs during tests.
-
-In the initial implementation, IdGenerator returns UUIDv7-backed IDs. Domain and usecases depend on typed IDs such as TrackId, PlanId, and RunId, not on a concrete UUID library.
-
-The basic policy is `1 usecase = 1 UnitOfWork`.
-
-## Transaction and Durable Operation Log Policy
-
-`apply` and `undo` are practical exceptions to the simple `1 usecase = 1 UnitOfWork` shape because Library music file operations and DB transactions cannot be made fully atomic.
-
-They must use FileEvents as a durable operation log rather than relying on one huge transaction.
-
-Architecture preserves these boundaries:
-
-* Usecases coordinate the operation.
-* Adapters perform I/O through ports.
-* FileEvents record Library music file mutations before they are executed.
-
-Detailed apply order is authoritative in [docs/execution.md](docs/execution.md). DB consistency details are authoritative in [docs/storage.md](docs/storage.md).
-
-## Source File Naming Rules
-
-File naming under `src` is part of Feature-oriented Hexagonal Architecture. Naming rules preserve responsibility boundaries.
-
-### Common Rules
+Avoid vague module names:
 
 ```text
-Python module name   snake_case.py
-Class name           PascalCase
-Function / variable  snake_case
-Constant             UPPER_SNAKE_CASE
-```
-
-Avoid ambiguous names.
-
-```text
-Names to avoid:
-  utils.py
-  helpers.py
-  manager.py
-  service.py
-```
-
-Even when placing shared processing as an exception, use a concrete concern name.
-
-### Naming in domain
-
-`domain/` is noun-based. Do not place names that imply I/O or execution procedures.
-
-Examples:
-
-```text
-domain/models/
-  track.py
-  track_metadata.py
-  file_scan_entry.py
-  file_snapshot.py
-  plan.py
-  plan_action.py
-  run.py
-  file_event.py
-  check_issue.py
-
-domain/services/
-  path_policy.py
-  plan_builder.py
-  collision_policy.py
-  duplicate_policy.py
-  metadata_fingerprint.py
-  content_fingerprint.py
-```
-
-Even under `domain/services/`, do not append `_service.py` to file names. The directory already indicates that they are services.
-
-### Naming in features
-
-`features/{feature}/` is divided by user goal.
-
-```text
-features/{feature}/
-  usecases/
-    {verb}_{object}.py
-  ports.py
-  dto.py
-```
-
-Examples:
-
-```text
-features/add/usecases/create_add_plan.py
-features/apply/usecases/apply_plan.py
-features/check/usecases/check_library.py
+utils.py
+helpers.py
+manager.py
+service.py
+common.py
 ```
 
 Do not create `features/{feature}/domain/` or `features/{feature}/adapters/` in principle.
 
-### Naming in adapters
+## Architecture Document Routing
 
-Adapter names may include technical names or role names.
+| Task | Read |
+| --- | --- |
+| Source layout, package placement, new directories | [docs/architecture/source-layout.md](docs/architecture/source-layout.md) |
+| Dependency direction, imports, adapter boundaries, business-rule placement | [docs/architecture/dependency-boundaries.md](docs/architecture/dependency-boundaries.md) |
+| Ports, UnitOfWork, Clock, IdGenerator, transactions, durable operation log architecture | [docs/architecture/ports-uow.md](docs/architecture/ports-uow.md) |
+| Python module naming, class/function/constant naming, banned vague names | [docs/architecture/naming.md](docs/architecture/naming.md) |
 
-Examples:
+## Tests
 
-```text
-adapters/cli/commands/add.py
-adapters/web/routes/settings.py
-adapters/db/sqlite/unit_of_work.py
-adapters/fs/file_scanner.py
-adapters/fs/file_snapshot_reader.py
-adapters/metadata/mutagen_reader.py
-```
+Architecture tests enforce the highest-risk rules:
 
-Do not use the name DAO in the DB adapter.
+* source files follow naming conventions
+* usecases do not import concrete SQLite or filesystem adapters
+* domain does not import adapters or platform
+* shared stays below upper layers
 
-### Naming Not Adopted
+## Execution And Storage Links
 
-The following are not adopted.
+Plan-centered execution rules are authoritative in [docs/execution/model.md](docs/execution/model.md), [docs/execution/apply.md](docs/execution/apply.md), and the task-specific execution docs.
 
-```text
-features/{feature}/domain/
-features/{feature}/adapters/
-platform/*_dao.py
-*_service.py
-utils.py
-helpers.py
-manager.py
-common.py
-```
+Storage responsibility is authoritative in [docs/storage.md](docs/storage.md). Config, DB schema, path identity, and status values are authoritative in [docs/contracts/](docs/contracts/).

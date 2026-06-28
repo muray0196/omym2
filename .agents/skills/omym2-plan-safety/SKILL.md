@@ -12,9 +12,14 @@ description: Review any change that can affect Plan, PlanAction, Run, FileEvent,
 - whether PlanAction / Run / FileEvent status logic is touched
 
 ## Read first
-- docs/execution.md
+- docs/execution/model.md
+- docs/execution/apply.md
+- docs/execution/failure-policy.md
 - docs/domain.md
 - docs/storage.md
+- docs/contracts/status-reason-catalog.md
+
+## Read when tests or validation are in scope
 - docs/testing.md
 
 ## Steps

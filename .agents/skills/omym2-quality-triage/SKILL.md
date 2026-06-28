@@ -12,6 +12,8 @@ description: Run the documented quality gates for OMYM2, classify failures as en
 
 ## Read first
 - docs/development.md
+
+## Read when tool configuration or CI parity is in scope
 - pyproject.toml
 - .github/workflows/ci.yml
 

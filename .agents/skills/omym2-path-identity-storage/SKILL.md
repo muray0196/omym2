@@ -13,7 +13,14 @@ description: Review changes touching stored paths, PathPolicy, Library identity,
 ## Read first
 - docs/domain.md
 - docs/storage.md
-- docs/execution.md
+- docs/contracts/path-identity-storage.md
+- docs/contracts/db-schema.md
+- docs/execution/organize.md
+
+## Read when config or path-policy behavior is in scope
+- docs/contracts/config.md
+
+## Read when implementation or tests are in scope
 - src/omym2/shared/paths.py
 - tests/shared/test_paths.py
 

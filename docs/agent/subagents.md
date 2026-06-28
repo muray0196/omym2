@@ -65,6 +65,7 @@ Use `contract_check` for surface consistency:
 
 * DTOs, ports, config, schema, CLI/Web forms, docs, prompts, and skills
 * renamed fields, changed command behavior, or changed validation contracts
+* contract docs under `docs/contracts/`, execution docs under `docs/execution/`, and architecture docs under `docs/architecture/`
 
 Use `risk_review` for high-risk behavior:
 

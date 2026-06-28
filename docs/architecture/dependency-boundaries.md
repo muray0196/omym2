@@ -1,0 +1,105 @@
+# Dependency Boundaries
+
+This document is authoritative for OMYM2 dependency direction, forbidden dependencies, direct feature-to-feature import rules, adapter rules, and business rule placement.
+
+Source placement is in [source-layout.md](source-layout.md).
+
+## Dependency Direction
+
+Inbound adapters call features, features use domain, and domain may use shared primitives.
+
+```text
+adapters/cli, adapters/web
+  ↓
+features/*/usecases/*.py
+  ↓
+domain/
+  ↓
+shared/
+```
+
+Outbound adapters implement ports owned by features or common feature ports.
+
+```text
+adapters/db, adapters/fs, adapters/metadata, adapters/config
+  ↓
+features/*/ports.py or features/common_ports.py
+  ↓
+domain/
+```
+
+`platform/` is the composition root and wires features and adapters together.
+
+## Forbidden Dependencies
+
+```text
+domain -> adapters
+domain -> platform
+domain -> db
+domain -> fs
+domain -> web
+domain -> cli
+
+features -> concrete db/fs/web/cli implementations
+features -> internal implementations of other features
+
+adapters/web/routes -> direct filesystem operations
+adapters/cli/commands -> direct filesystem operations
+templates -> filesystem operations
+```
+
+Direct imports between features are prohibited in principle. When multiple usecases are chained, orchestration is done in CLI, Web, or platform.
+
+For example, `omym2 add --apply` does not have `features/add` call `features/apply` directly. Instead, the CLI or platform calls `ApplyPlanUseCase` after executing `AddUseCase`.
+
+## Business Rule Placement
+
+Domain services and usecases decide business rules.
+
+Adapters persist, restore, read, write, scan, move, render, parse, and call external tools. They must not decide conflicts, duplicates, canonical paths, metadata validity, or PlanAction status.
+
+Bad example:
+
+```python
+# adapters/db/sqlite/repositories.py
+
+if target_path_exists:
+    action = PlanAction.conflict(...)
+```
+
+Conflict judgment is the responsibility of a domain service or usecase.
+
+Good example:
+
+```python
+# adapters/db/sqlite/repositories.py
+
+return Track(
+    id=row["id"],
+    current_path=row["current_path"],
+    metadata_hash=row["metadata_hash"],
+)
+```
+
+This only restores a domain model from persisted data, so it is allowed.
+
+## Inbound Adapter Rule
+
+CLI and Web route user intent to usecases. They may orchestrate multiple usecases when the command contract requires it, but they must not perform filesystem mutations directly.
+
+Route handlers and command handlers should stay thin. They translate input, call usecases, and format output.
+
+## Outbound Adapter Rule
+
+DB, filesystem, metadata, and config adapters implement ports.
+
+FileScanner must not read tags or calculate hashes. FileSnapshotReader may compose filesystem stat, MetadataReader, hash calculation, and Clock, but it must not decide conflicts, duplicates, canonical paths, or PlanAction status.
+
+## Tests
+
+Architecture tests enforce the highest-risk dependency rules:
+
+* source files follow naming conventions
+* usecases do not import concrete SQLite or filesystem adapters
+* domain does not import adapters or platform
+* shared stays below upper layers

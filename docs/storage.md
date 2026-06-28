@@ -1,97 +1,52 @@
 # Storage
 
-This document is authoritative for config storage, DB responsibilities, DB consistency, reproducibility, and stored path representation.
+This document is authoritative for OMYM2 storage responsibilities, the TOML-vs-SQLite boundary, DB consistency principles, reproducibility principles, and high-level stored path policy.
 
-Domain concepts are defined in [domain.md](domain.md), and execution order is defined in [execution.md](execution.md).
+Detailed contracts live in:
 
-## TOML Config Design
+* [contracts/config.md](contracts/config.md) for AppConfig, TOML schema, defaults, validation, versioning, PathPolicyConfig, metadata policy, collision policy, and UI settings.
+* [contracts/db-schema.md](contracts/db-schema.md) for SQLite tables, migrations, stored JSON fields, timestamp policy, and repository persistence boundaries.
+* [contracts/path-identity-storage.md](contracts/path-identity-storage.md) for Library identity, Track identity, relink behavior, Library-root-relative stored paths, PathResolver boundaries, and absolute-path exceptions.
+* [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md) for allowed status, reason, action type, event type, error code, and check issue values.
 
-Settings are managed in TOML, not SQLite.
+Domain concepts are defined in [domain.md](domain.md), and execution order is defined in [execution/](execution/).
 
-Initial example:
+## Storage Boundary
 
-```toml
-version = 1
+OMYM2 uses TOML for editable application settings and SQLite for managed state, plans, runs, and durable operation logs.
 
-[paths]
-library = "/Users/me/Music/Library"
-incoming = "/Users/me/Music/Incoming"
-
-[add]
-default_mode = "plan_first"
-auto_apply = false
-
-[organize]
-default_mode = "plan_first"
-auto_apply = false
-only_misplaced = true
-
-[refresh]
-default_mode = "plan_first"
-auto_apply = false
-
-[path_policy]
-template = "{album_artist}/{year}_{album}/{disc}-{track}_{title}"
-unknown_artist = "Unknown Artist"
-unknown_album = "Unknown Album"
-sanitize = true
-max_filename_length = 180
-
-[metadata]
-prefer_album_artist = true
-require_title = true
-require_artist = true
-require_album = false
-
-[collision]
-on_target_exists = "conflict"
-on_duplicate_hash = "skip"
-on_missing_metadata = "block"
-
-[ui]
-theme = "system"
-show_advanced_settings = false
-```
-
-Config has a version so future migrations can be supported.
+| Concern | Store |
+| --- | --- |
+| Editable settings | TOML |
+| Config defaults and validation results | Config adapter / AppConfig |
+| Managed Library and Track state | SQLite |
+| Plans and PlanActions | SQLite |
+| Runs and FileEvents | SQLite |
+| Actual music files | Filesystem, not DB |
 
 Config files, DB files, and internal directories are created lazily when commands need them. Missing config or DB is not an error by itself; missing required paths are errors only for commands that need those paths.
 
 Config files and internal DB files must stay under the application root so OMYM2 remains portable, excluding user-selected Library and Incoming paths.
 
-The initial config intentionally avoids associated-file handling, unprocessed-folder routing, delete-empty-directory policy, and hash suffix configuration. Those can be added later without changing the core Plan / Run / FileEvent model.
+## TOML Responsibility
 
-## Config Location
+Settings are managed in TOML, not SQLite.
 
-Expected location of the settings file:
+The exact settings file location, TOML schema, and PathPolicyConfig rules are authoritative in [contracts/config.md](contracts/config.md).
 
-```text
-.config/config.toml
-```
+Domain and usecases do not read TOML directly. Config loading and saving are adapter concerns.
 
-## DB Location
-
-Expected location of the SQLite DB:
-
-```text
-.data/omym2.sqlite3
-```
-
-The `.data/` directory is reserved for OMYM2 internal data under the application root.
-
-## SQLite Responsibility Boundary
+## SQLite Responsibility
 
 OMYM2 uses a single application database.
 
 The DB records OMYM2's last known managed state, scheduled plans, execution attempts, and durable Library music file operation logs.
 
-The DB is not used as the editable settings store. Settings are managed as human-readable TOML files.
-
-The DB is not the source of truth for the actual filesystem. The filesystem can diverge from the DB because users or external tools may move, delete, rename, or modify files. Such divergence is detected by `check`.
+The DB is not used as the editable settings store. It is not the source of truth for the actual filesystem. The filesystem can diverge from the DB because users or external tools may move, delete, rename, or modify files. Such divergence is detected by `check`.
 
 The DB stores Library identity and registration state. Registration is distinct from Track rows and is not defined by whether the `tracks` table has rows.
 
-Main information to store:
+The exact database file location and schema are authoritative in [contracts/db-schema.md](contracts/db-schema.md). Main information to store:
 
 ```text
 libraries
@@ -102,218 +57,42 @@ runs
 file_events
 ```
 
-The DB adapter persists and restores domain models. It must not contain business rules such as conflict judgment, duplicate judgment, canonical path calculation, or metadata validation.
+## Repository Boundary
 
-The DB is responsible for:
+The DB adapter persists and restores domain models. It must not contain business rules such as conflict judgment, duplicate judgment, canonical path calculation, metadata validation, or PlanAction status decisions.
 
-* persisting managed track state
-* persisting Library identity and registration state
-* persisting created plans and plan actions
-* persisting apply attempts as runs
-* persisting Library music file mutation logs as file_events
-* supporting history, undo, check, and crash inspection
-* enforcing basic relational consistency with primary keys and foreign keys
+Repositories must preserve `library_id` on Library-managed records and restore path fields according to [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 
-The DB is not responsible for:
-
-* storing editable user settings
-* reading TOML
-* reading music metadata
-* scanning the filesystem
-* moving files
-* calculating canonical paths
-* deciding conflicts
-* deciding duplicates
-* validating metadata policy
-
-## libraries
-
-The current identity, root path, and acceptance state of each Library known to OMYM2.
-
-Minimum representative fields:
-
-* library_id
-* root_path
-* path_policy_hash
-* registered_at
-* status
-* created_at
-* updated_at
-
-`library_id` is generated by OMYM2 and remains stable for the lifetime of the Library. `root_path` is mutable and represents the current filesystem location of that Library.
-
-A Library has stable identity independent of its current root path. Moving a Library to another directory must not create a second Library row when identity is known.
-
-Initial status examples:
-
-* registered
-* unregistered
-* stale
-* blocked
-
-`path_policy_hash` may be replaced by an equivalent config identity that represents the current PathPolicy. Changing PathPolicy invalidates prior registration for that Library.
-
-Relink is an internal concept. It preserves `library_id`, updates only `libraries.root_path`, and does not duplicate Tracks, Plans, PlanActions, FileEvents, or Library-managed history records. It also does not rewrite Library-relative paths.
-
-DB-only Library state or root updates are not Library music file mutations and do not create FileEvents.
-
-## tracks
-
-The current managed state of files known to OMYM2.
-
-Minimum representative fields:
-
-* track_id
-* library_id
-* current_path
-* canonical_path
-* content_hash
-* metadata_hash
-* metadata_json
-* status
-* timestamps
-
-`track_id` is generated by OMYM2 and remains stable for the lifetime of the managed Track. Each Track belongs to exactly one Library through `library_id`. The DB stores OMYM2's last known Library-root-relative path and hashes. It does not prove that the file still exists or that the content has not changed.
-
-## plans
-
-Scheduled operations before execution.
-
-Minimum representative fields:
-
-* plan_id
-* library_id
-* plan_type
-* status
-* created_at
-* config_hash
-* library_root_at_plan
-* summary_json
-
-Each Plan belongs to exactly one Library through `library_id`.
-
-Storage must retain `config_hash` and `library_root_at_plan` so the apply usecase can enforce the execution contract defined in [execution.md](execution.md#apply-behavior).
-
-## plan_actions
-
-Each scheduled operation inside a Plan.
-
-Minimum representative fields:
-
-* action_id
-* plan_id
-* library_id
-* track_id (nullable)
-* action_type
-* source_path
-* target_path
-* content_hash_at_plan
-* metadata_hash_at_plan
-* status
-* reason
-* sort_order
-
-Each PlanAction belongs to exactly one Library through `library_id`. `track_id` may be null for PlanActions that target files not yet registered as Tracks, such as new files in an add plan.
-
-For actions that mutate Library music files, `target_path` is a Library-root-relative path. `source_path` is absolute only when the source is outside the Library.
-
-`conflict` and `error` should not be stored as action types. They should be represented by `status` and `reason`.
-
-## runs
-
-Execution attempts for applying Plans.
-
-Minimum representative fields:
-
-* run_id
-* plan_id
-* library_id
-* status
-* started_at
-* completed_at
-* error_summary
-
-A Run is created before applying plan actions. If a failure occurs after some Library music file operations have succeeded, the Run becomes `partial_failed`.
-
-Each Run belongs to exactly one Library through `library_id`.
-
-## file_events
-
-A durable operation log for Library music file mutations.
-
-The `file_events` table stores durable operation-log entries created by apply. Event creation and status transitions are defined in [execution.md](execution.md#fileevent-behavior).
-
-Minimum representative fields:
-
-* event_id
-* library_id
-* run_id
-* plan_action_id
-* event_type
-* source_path
-* target_path
-* status
-* started_at
-* completed_at
-* error_code
-* error_message
-* sequence_no
-
-Initial event type:
-
-* move_file
-
-file_events are used for:
-
-* run detail display
-* diagnosing partial failures
-* crash inspection
-* undo plan creation
-
-FileEvent scope is defined in [domain.md](domain.md#fileevent). Each FileEvent belongs to exactly one Library through `library_id`.
-
-## Apply and DB Consistency
-
-This is the storage-facing summary of apply consistency. The authoritative execution order is in [execution.md](execution.md#apply-behavior).
+## DB Consistency
 
 The DB must preserve enough state to inspect interrupted or partially failed apply attempts:
 
 * a Run exists for the apply attempt
 * the Plan records that apply has started
-* each Library music file mutation has a pending file_event before the mutation starts
-* file_events, plan_actions, tracks, runs, and plans are updated as the apply attempt progresses
+* each Library music file mutation has a pending FileEvent before the mutation starts
+* FileEvents, PlanActions, Tracks, Runs, and Plans are updated as the apply attempt progresses
 
-If the process crashes, pending or partially recorded file_events remain available for inspection. Recovery behavior is defined in [execution.md](execution.md#durable-operation-log-behavior).
+If the process crashes, pending or partially recorded FileEvents remain available for inspection. Recovery behavior is defined in [execution/model.md](execution/model.md#durable-operation-log).
 
-## Config and Reproducibility
+## Reproducibility
 
 The DB does not store editable settings. However, a Plan must preserve enough information to explain and safely apply the reviewed result.
 
 In the initial version, this means:
 
-* store concrete path references in plan_actions, using the path representation policy below
-* store `config_hash` and `library_root_at_plan` in plans
-* apply recorded plan_actions instead of recalculating paths from the latest Config
+* store concrete path references in PlanActions according to [contracts/path-identity-storage.md](contracts/path-identity-storage.md)
+* store `config_hash` and `library_root_at_plan` in Plans
+* apply recorded PlanActions instead of recalculating paths from the latest config
 * reject or expire unapplied Plans when the owning Library root has changed since plan creation
 
 Full config snapshots or path policy snapshots are deferred until long-lived unapplied Plans require stronger reproducibility.
 
-## Path Representation Policy
+## Path Representation Summary
+
+This is a summary. The authoritative path and identity contract is [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 
 Stored paths are separated from filesystem execution paths.
 
-| Field | Representation |
-| --- | --- |
-| `libraries.root_path` | Current absolute filesystem location for the Library |
-| `config.paths.library` | Optional user-facing default or shortcut; not Library identity |
-| `tracks.current_path` | Normalized path relative to the Library root |
-| `tracks.canonical_path` | Normalized path relative to the Library root |
-| `plan_actions.target_path` | Library-root-relative path when the target is a Library music file location; absolute path only for undo restoring an imported file outside the Library |
-| `plan_actions.source_path` | Library-root-relative path for managed Library sources; absolute path for external sources such as Incoming |
-| `file_events.source_path` / `file_events.target_path` | Same path-reference convention as the corresponding PlanAction |
+Library-managed paths are stored relative to the Library root. `libraries.root_path` is the current absolute filesystem location used by PathResolver at I/O boundaries.
 
-Relative Library paths must use `/` as the logical separator, must not start with `/`, and must not escape the Library root with `..`.
-
-Stored Library-managed paths are relative to the Library root.
-
-When filesystem I/O is required, PathResolver combines `libraries.root_path` with a Library-root-relative path to create an absolute path. Domain models and repositories should not perform this resolution themselves.
+Domain models and repositories do not resolve absolute paths. When filesystem I/O is required, PathResolver combines `libraries.root_path` with a Library-root-relative path to create an absolute path.

@@ -11,7 +11,12 @@ description: Review any structural change in OMYM2 for dependency direction, por
 - any new imports between layers
 
 ## Read first
-- docs/development.md
+- docs/architecture/dependency-boundaries.md
+- docs/architecture/source-layout.md
+- docs/architecture/naming.md
+- docs/architecture/ports-uow.md
+
+## Read when tests or validation are in scope
 - docs/testing.md
 - tests/architecture/test_dependency_boundaries.py
 - tests/architecture/test_source_files.py

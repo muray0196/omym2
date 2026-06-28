@@ -1,8 +1,10 @@
 # Testing
 
-This document is authoritative for test requirements and test ordering.
+This document is authoritative for test policy, test categories, fixture policy, and when contract changes require tests.
 
-Architecture rules are in [../ARCHITECTURE.md](../ARCHITECTURE.md), domain rules are in [domain.md](domain.md), execution semantics are in [execution.md](execution.md), storage rules are in [storage.md](storage.md), and developer validation commands are in [development.md](development.md).
+Architecture rules are in [../ARCHITECTURE.md](../ARCHITECTURE.md), domain rules are in [domain.md](domain.md), execution semantics are in [execution/](execution/), storage rules are in [storage.md](storage.md), contract docs are in [contracts/](contracts/), and developer validation commands are in [development.md](development.md).
+
+This document is not a test backlog. Missing tests and future test work should be tracked in GitHub Issues with issue type `test` and linked to the relevant authoritative spec.
 
 Required test authoring uses `pytest` and `pytest-mock` only.
 
@@ -12,49 +14,53 @@ Browser E2E testing is deferred. Do not add Playwright requirements to the initi
 
 ## Architecture Tests
 
-Architecture tests should be written early to make later implementation hard to place in the wrong layer.
+Architecture tests should make later implementation hard to place in the wrong layer.
 
-Required architecture tests:
+Required architecture test coverage:
 
 * source files follow naming conventions
 * usecases do not import concrete SQLite or filesystem adapters
 * domain does not import adapters or platform
+* shared does not import upper layers
 * forbidden dependencies remain forbidden
 
 ## Unit Tests
 
 Unit tests should cover pure domain behavior and usecases through ports and fakes.
 
-Initial unit focus:
+Use unit tests for:
 
-* AppConfig and validation behavior
-* typed IDs through IdGenerator
-* Library identity stability
-* Track identity stability
-* Library-root-relative path normalization
-* PathPolicy stem rendering and source suffix append behavior
-* metadata and content fingerprint policies
-* CollisionPolicy and DuplicatePolicy
-* PlanAction status / reason behavior
-* blocked vs failed behavior
+* domain services and invariants
+* typed ID behavior through IdGenerator
+* path normalization and PathPolicy behavior
+* usecase decisions expressed through repositories, ports, and fakes
+* state transitions that do not require concrete adapters
 
 ## Integration Tests
 
 Integration tests should cover adapters and vertical slices once their dependencies exist.
 
-Initial integration focus:
+Use integration tests for:
 
 * TOML config load / save / validation
 * SQLite migrations and repositories
-* DB path under app root `.data/`
-* lazy config / DB / internal directory creation
-* FileScanner behavior
-* FileSnapshotReader behavior
-* organize read-only Library scan, identity selection, and registration
-* add registration gate
-* add plan persistence
-* apply durable operation log behavior
-* refresh, organize, check, history, and undo vertical slices
+* internal storage creation under the application root
+* filesystem scanning and snapshot capture
+* metadata adapter behavior
+* vertical flows that combine usecases with real adapters
+
+## Contract Change Test Requirements
+
+Contract changes require tests for the changed behavior.
+
+| Contract change | Required test focus |
+| --- | --- |
+| Config contract | config load, save, validation, defaults, and migration behavior |
+| DB schema contract | migrations, repositories, constraints, stored JSON, timestamps, and path representation |
+| Path identity contract | path normalization, relink, Library identity, Track identity, and Library-root-relative persistence |
+| Status catalog | state transitions, failure behavior, and persistence of allowed values |
+| Execution contract | Plan, PlanAction, Run, FileEvent, apply order, failure cases, and undo/refresh/check behavior |
+| Architecture contract | dependency-boundary tests and source naming tests |
 
 ## Fixture Policy
 
@@ -67,55 +73,3 @@ Filesystem fixtures should be minimal and task-focused. Read-only filesystem fix
 ## Test Commands
 
 Use [development.md](development.md#test-commands) for quick global checks, focused failure inspection, and deep debug commands. This document defines what to test; `docs/development.md` defines how to run validation commands.
-
-## Tests to Write First
-
-```text
-test_source_files_follow_naming_convention
-test_usecase_does_not_import_concrete_sqlite_or_filesystem_adapter
-test_domain_does_not_import_adapters_or_platform
-test_config_loads_default
-test_config_validation_fails_invalid_path_policy
-test_db_path_is_under_app_root_data
-test_library_id_is_generated_by_id_generator
-test_library_identity_is_not_derived_from_root_path
-test_track_id_is_generated_by_id_generator
-test_track_id_is_not_derived_from_path_hash_or_metadata
-test_library_managed_records_store_library_id
-test_track_paths_are_stored_relative_to_library_root
-test_path_policy_generates_relative_path_without_hash_suffix
-test_path_policy_appends_source_extension_to_rendered_stem
-test_path_policy_config_rejects_extension_placeholder
-test_path_policy_config_rejects_template_with_literal_extension
-test_file_scanner_returns_file_scan_entries_not_snapshots
-test_file_snapshot_reader_captures_metadata_and_hash
-test_sqlite_migrations_create_required_tables
-test_internal_storage_is_created_lazily_when_needed
-test_missing_config_or_db_is_not_error_by_itself
-test_organize_library_path_creates_first_library
-test_organize_library_path_matches_existing_root
-test_organize_library_path_refuses_unregistered_path_when_library_exists
-test_organize_registers_clean_library_without_mutation_plan
-test_organize_creates_plan_for_misplaced_library_file
-test_plain_organize_refuses_ambiguous_library_selection
-test_add_refuses_when_no_registered_library
-test_add_refuses_ambiguous_library_selection
-test_path_policy_change_invalidates_library_state_for_library
-test_add_plan_contains_move_action
-test_add_plan_detects_target_conflict
-test_add_plan_skips_duplicate_hash
-test_add_plan_blocks_missing_required_metadata
-test_apply_creates_run_before_file_move
-test_apply_records_file_event_pending_before_file_move
-test_apply_marks_skip_action_applied_without_file_event
-test_apply_succeeds_when_plan_has_no_eligible_move_actions
-test_apply_moves_file_and_updates_track
-test_apply_marks_run_partial_failed_when_move_fails
-test_plan_cannot_be_applied_twice
-test_apply_uses_recorded_plan_action_target_path_not_latest_config
-test_apply_expires_plan_when_library_root_changed
-test_refresh_keeps_same_track_id_after_metadata_change
-test_check_detects_missing_file_from_db
-test_check_reports_library_state
-test_undo_creates_undo_plan_from_run
-```

@@ -2,7 +2,9 @@
 
 This document is authoritative for developer quality commands, validation gates, suppressions, and Python runtime configuration policy.
 
-Product command behavior is defined in [commands.md](commands.md). Test design is defined in [testing.md](testing.md). Application config and stored path policy are defined in [storage.md](storage.md).
+Product command behavior is defined in [commands.md](commands.md). Test design is defined in [testing.md](testing.md). Application config and stored path policy are defined in [storage.md](storage.md) and [contracts/](contracts/).
+
+Active work status is tracked in GitHub Issues, GitHub Projects, and GitHub Milestones, not in repository docs. The work-tracking process schema is in [process/work-tracking.md](process/work-tracking.md).
 
 ## Edit-Loop Commands
 
@@ -11,7 +13,7 @@ Avoid project-wide diagnostics during the edit loop unless the change crosses
 many modules or the failure cannot be understood from changed-file checks.
 
 Use this command group after editing Python files. Replace <py-files>
-with the Python files changed in the current task::
+with the Python files changed in the current task:
 
 ```bash
 uv run ruff check <py-files> --fix --output-format=concise
@@ -48,9 +50,6 @@ If the Python project skeleton or tool configuration does not exist yet, report 
 Use these pytest commands by intent:
 
 ```bash
-# Quick global check; must be run before completion when tests are available.
-uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
-
 # Inspect a focused failure.
 uv run pytest <test-target> -q --tb=short --show-capture=all
 
@@ -75,4 +74,4 @@ Each suppression must include a brief justification comment explaining why the w
 
 Python/runtime configuration uses environment variables only.
 
-This does not change OMYM2 application configuration. Application config remains TOML-based and is governed by [storage.md](storage.md#toml-config-design).
+This does not change OMYM2 application configuration. Application config remains TOML-based and is governed by [contracts/config.md](contracts/config.md).

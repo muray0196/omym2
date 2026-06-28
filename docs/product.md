@@ -1,6 +1,6 @@
 # Product
 
-This document explains what OMYM2 is and is not. Detailed architecture rules live in [../ARCHITECTURE.md](../ARCHITECTURE.md), and execution semantics live in [execution.md](execution.md).
+This document explains what OMYM2 is and is not. Detailed architecture rules live in [../ARCHITECTURE.md](../ARCHITECTURE.md), and execution semantics live in [execution/](execution/).
 
 ## Overview
 
@@ -18,26 +18,13 @@ The main value is not moving files quickly. The value is moving files through a 
 
 ## Basic Policy
 
-This is a product-level summary. Architecture rules are authoritative in [../ARCHITECTURE.md](../ARCHITECTURE.md), execution rules are authoritative in [execution.md](execution.md), and storage rules are authoritative in [storage.md](storage.md).
+This is a product-level summary. Architecture invariants are not repeated here; they are required reading via [../AGENTS.md](../AGENTS.md) and authoritative in [../ARCHITECTURE.md](../ARCHITECTURE.md). Execution rules are authoritative in [execution/](execution/), and storage rules are authoritative in [storage.md](storage.md) plus [contracts/](contracts/).
 
-* Configuration files and DB are contained under the root directory, making the application portable, excluding the music library and incoming folder.
 * Execution is primarily performed from the CLI.
-* Settings can be changed and checked from the local Web UI.
-* Domain and usecases are independent from CLI, Web UI, DB, and filesystem.
-* Library music file mutations always go through a Plan.
-* Read-only scans, metadata reads, hash calculations, and inspections do not require a Plan.
-* Feature-oriented Hexagonal Architecture is adopted.
-* The `src` layout and source file naming rules are fixed as part of the architecture.
-* Core concepts such as Track, Plan, Run, FileEvent, and PathPolicy are shared as a domain kernel.
-* External I/O is confined to adapters.
-* Execution history is recorded in the DB.
-* Settings are managed as human-readable TOML files.
-* Config, DB, and internal directories are created lazily when a command needs them.
-* Library identity does not depend on the current root path.
-* Library-managed paths stored in the DB are normalized paths relative to the Library root.
-* Daily `add` requires a registered Library.
-* Tag editing is not supported.
-* Relocation after tag correction is handled by refresh.
+* The Web UI is a local settings and status console.
+* Daily use imports new files with `add` after one Library has been registered.
+* Unregistered or unorganized Libraries are accepted through `organize --library PATH` before `add`.
+* Tag editing is outside OMYM2; relocation after external tag correction is handled by `refresh`.
 
 ## Primary Use Case
 
@@ -63,52 +50,9 @@ OMYM2 is not a tool that reorganizes the entire existing library every time. Dai
 
 OMYM2 is also not a daily operation tool for arbitrary unorganized music libraries. If the Library is unregistered or unorganized, the supported path is `omym2 organize --library PATH`.
 
-```text
-Run organize --library PATH
-  ↓
-If PATH matches an existing Library root:
-    rescan / organize that Library
-If no Library exists:
-    create the first Library record
-If another Library exists and PATH is unregistered:
-    stop instead of guessing
-  ↓
-If no moves are needed and no blocking issues exist:
-    register Library
-If moves are needed:
-    create organize Plan → review → apply → register Library if clean
-If blocked issues remain:
-    do not register Library
-  ↓
-Run add against the sole registered Library
-  ↓
-review add Plan → apply
-```
+`organize` owns Library registration and reconciliation. `add` owns importing new files after the Library is registered. Detailed registration and add-plan behavior is defined in [execution/organize.md](execution/organize.md) and [execution/add.md](execution/add.md).
 
-A registered Library means OMYM2 has accepted a stable `library_id` under the current PathPolicy. Registration is distinct from Track rows in the DB.
-
-Relocation of the existing Library is separate from the daily `add` flow. Relink is an internal concept that preserves `library_id` and updates only the current root path without duplicating Library-managed records. `add` does not organize existing Library files and does not mix Incoming import actions with existing Library organization actions.
-
-## Non-Goals
-
-The initial version does not cover:
-
-* Tag editing
-* Automatic monitoring
-* Electron / Tauri packaging
-* Complex duplicate resolution
-* Advanced library management
-* Large-scale file operations through a full GUI
-* Associated file handling such as cover images, cue files, lyrics, or booklets
-* Audio-part hashing
-* GUI-based plan application
-* Automatic filesystem repair
-* Full multi-library management
-* Automatic Library relink detection
-* Required marker files
-* Retrying partially failed Plans
-
-Tag correction is delegated to external tools. OMYM2 is responsible for re-evaluation and relocation after correction.
+Relocation of the existing Library is separate from the daily `add` flow. Path identity and relink rules are defined in [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 
 ## Usage Image
 

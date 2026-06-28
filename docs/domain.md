@@ -1,6 +1,6 @@
 # Domain
 
-This document is authoritative for OMYM2 domain concepts, domain invariants, and ID design policy. Execution semantics are in [execution.md](execution.md), and persistence/path storage details are in [storage.md](storage.md). Any storage representation mentioned here is a domain-facing summary only.
+This document is authoritative for OMYM2 domain concepts, domain invariants, and ID design policy. Execution semantics are in [execution/](execution/), and persistence/path storage details are in [storage.md](storage.md) and [contracts/path-identity-storage.md](contracts/path-identity-storage.md). Any storage representation mentioned here is a domain-facing summary only.
 
 The central concepts are independent from CLI, Web UI, SQLite, TOML, filesystem APIs, and metadata extraction libraries.
 
@@ -11,6 +11,8 @@ Application behavior settings used by usecases.
 AppConfig is the in-memory representation of user settings. It may be loaded from TOML by a ConfigStore adapter, but domain and usecases do not read TOML directly.
 
 Usecases may receive AppConfig. Pure domain services should receive narrow config objects when possible. For example, PathPolicy should receive PathPolicyConfig instead of the entire AppConfig.
+
+The config schema and defaults are authoritative in [contracts/config.md](contracts/config.md).
 
 ## FileScanEntry
 
@@ -97,45 +99,9 @@ and appends it after rendering the template. The final PlanAction target path
 is recorded with the extension included. Apply uses the recorded target path
 without recalculating it.
 
-Allowed placeholders:
+Allowed placeholders, initial template, preview behavior, and config validation rules are authoritative in [contracts/config.md](contracts/config.md#pathpolicyconfig).
 
-* `{album_artist}`
-* `{album}`
-* `{disc}`
-* `{track}`
-* `{title}`
-* `{artist}`
-* `{year}`
-
-Initial template:
-
-```text
-{album_artist}/{year}_{album}/{disc}-{track}_{title}
-```
-
-The initial template does not include hash-based suffixes. If the final generated target path already exists, the PlanAction becomes blocked as a conflict. PathPolicy does not solve collisions by itself.
-
-The GUI provides a PathPolicy preview.
-
-```text
-Metadata:
-  album_artist: Aimer
-  year: 2024
-  album: Example Album
-  disc: 1
-  track: 3
-  title: Example Song
-  source suffix: .FLAC
-
-Template:
-  {album_artist}/{year}_{album}/{disc}-{track}_{title}
-
-Rendered stem:
-  Aimer/2024_Example Album/1-03_Example Song
-
-Preview:
-  Aimer/2024_Example Album/1-03_Example Song.flac
-```
+If the final generated target path already exists, the PlanAction becomes blocked as a conflict. PathPolicy does not solve collisions by itself.
 
 ## Library
 
@@ -157,7 +123,7 @@ The `library_id` is the stable internal identity of the Library. The initial imp
 
 `root_path` is mutable because a Library may move to another directory. Moving a Library must preserve `library_id` and must not duplicate Tracks, Plans, PlanActions, FileEvents, or Library-managed history records.
 
-Library registration behavior is defined in [execution.md](execution.md#library-registration-behavior), and storage is defined in [storage.md](storage.md#libraries).
+Allowed Library status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#library-status). Library registration behavior is defined in [execution/organize.md](execution/organize.md#library-registration-behavior), and storage representation is defined in [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 
 ## Track
 
@@ -187,12 +153,7 @@ The `track_id` is the stable internal identity of the Track. The initial impleme
 
 Every Track belongs to exactly one Library through `library_id`. Track rows do not define whether the Library is registered.
 
-Initial Track status examples:
-
-* active
-* removed
-
-`missing` is reported by `check` in the initial version rather than automatically persisted as Track status.
+Allowed Track status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#track-status). `missing` is reported by `check` in the initial version rather than automatically persisted as Track status.
 
 ## Plan
 
@@ -219,17 +180,9 @@ Plan types:
 * refresh
 * undo
 
-Initial Plan status examples:
+Allowed Plan status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#plan-status).
 
-* ready
-* applying
-* applied
-* partial_failed
-* failed
-* cancelled
-* expired
-
-Execution summary: a Plan stores reviewed action data, including `library_root_at_plan`, for later apply. The authoritative apply contract is in [execution.md](execution.md#apply-behavior), including stale-root handling in [Apply-Time Precondition Failure Behavior](execution.md#apply-time-precondition-failure-behavior).
+Execution summary: a Plan stores reviewed action data, including `library_root_at_plan`, for later apply. The authoritative apply contract is in [execution/apply.md](execution/apply.md), including stale-root handling in [Apply-Time Precondition Failures](execution/apply.md#apply-time-precondition-failures).
 
 A Plan is single-use in the initial version.
 
@@ -254,37 +207,15 @@ Representative fields:
 * reason
 * sort_order
 
-Path representation summary: for Library music file destinations, `target_path` is stored as a normalized path relative to the owning Library root. `target_path` may be absolute only for an undo Plan that restores an imported file back outside the Library. `source_path` is stored as a Library-root-relative path when it points to an already managed Library file, and as an absolute path when it points outside the Library, such as an Incoming file. The authoritative storage policy is in [storage.md](storage.md#path-representation-policy).
+Path representation summary: for Library music file destinations, `target_path` is stored as a normalized path relative to the owning Library root. `target_path` may be absolute only for an undo Plan that restores an imported file back outside the Library. `source_path` is stored as a Library-root-relative path when it points to an already managed Library file, and as an absolute path when it points outside the Library, such as an Incoming file. The authoritative storage policy is in [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 
 File operations must resolve path references through PathResolver.
 
-Initial action types:
+Allowed action types, statuses, and reasons are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#planaction-action-type).
 
-* move
-* skip
-
-Initial action status examples:
-
-* planned
-* blocked
-* applied
-* failed
-
-Execution summary: `apply` handles blocked and eligible PlanActions according to [execution.md](execution.md#apply-behavior).
+Execution summary: `apply` handles blocked and eligible PlanActions according to [execution/apply.md](execution/apply.md#apply-behavior).
 
 Issues detected during plan creation are represented as `blocked`. Precondition failures detected during apply are represented as `failed`.
-
-Blocked reason examples:
-
-* target_exists
-* missing_required_metadata
-* invalid_path
-* source_missing
-* source_changed
-
-Skip reason examples:
-
-* duplicate_hash
 
 `conflict` and `error` are not action types. They are represented as status and reason.
 
@@ -294,7 +225,7 @@ Skip reason examples:
 
 An execution attempt for applying a Plan.
 
-Execution summary: Run creation and status transitions follow [execution.md](execution.md#run-behavior).
+Execution summary: Run creation and status transitions follow [execution/model.md](execution/model.md#run-behavior) and [execution/apply.md](execution/apply.md#run-status).
 
 Representative fields:
 
@@ -306,12 +237,7 @@ Representative fields:
 * completed_at
 * error_summary
 
-Run status examples:
-
-* running
-* succeeded
-* partial_failed
-* failed
+Allowed Run status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#run-status).
 
 A Run is not merely a historical label. It is the parent unit for FileEvents and the main unit used by history and undo.
 
@@ -319,7 +245,7 @@ A Run is not merely a historical label. It is the parent unit for FileEvents and
 
 A durable operation log entry for one Library music file mutation.
 
-Execution summary: FileEvent creation and result updates follow [execution.md](execution.md#fileevent-behavior).
+Execution summary: FileEvent creation and result updates follow [execution/model.md](execution/model.md#fileevent-behavior) and [execution/apply.md](execution/apply.md#fileevent-status).
 
 Representative fields:
 
@@ -337,9 +263,7 @@ Representative fields:
 * error_message
 * sequence_no
 
-Initial event type:
-
-* move_file
+Allowed FileEvent types, statuses, and error-code policy are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#fileevent-event-type).
 
 DB-only state changes such as registering or updating Tracks are not FileEvents. They are performed by usecases and persisted in tracks / plan_actions / runs.
 
@@ -354,19 +278,7 @@ FileEvents are used for:
 
 An inconsistency detected between OMYM2's last known managed state and the actual filesystem state.
 
-Representative issue types:
-
-* db_file_missing
-* unmanaged_file_exists
-* content_hash_changed
-* metadata_hash_changed
-* current_path_differs_from_canonical_path
-* duplicate_candidate
-* plan_source_changed
-* pending_file_event_exists
-* library_unregistered
-* library_stale
-* library_blocked
+Allowed issue types are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#checkissue-issue-type).
 
 CheckIssue is not persisted as primary state in the initial version. It is calculated by `check` from the DB and filesystem observations.
 

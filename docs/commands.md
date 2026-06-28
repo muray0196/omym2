@@ -1,6 +1,6 @@
 # Commands
 
-This document is authoritative for the CLI command surface. Per-command descriptions are summaries only. Detailed Plan, Run, FileEvent, and failure semantics live in [execution.md](execution.md), and storage details live in [storage.md](storage.md).
+This document is authoritative for the CLI command surface. Per-command descriptions are summaries only. Detailed Plan, Run, FileEvent, and failure semantics live in [execution/](execution/), and storage details live in [storage.md](storage.md).
 
 The CLI is the primary execution interface. Complex settings editing is left to the GUI.
 
@@ -48,25 +48,13 @@ omym2 check
 omym2 inspect <file>
 ```
 
-Primary commands are purpose-based.
-
-Internally, `add` and `refresh` create Plans, `organize` creates a Plan when Library music files need to move or blocking actions must be reviewed, and `apply` applies a Plan.
-
-Config, DB, and internal directories are created lazily when commands need them. Missing config or DB is not an error by itself. Missing required paths are errors only for commands that need them.
+Primary commands are purpose-based. Plan orchestration and lazy bootstrap rules are defined in [execution/model.md](execution/model.md).
 
 ## add
 
 `add` creates an add plan from Incoming or a specified source directory.
 
-In the MVP, `add` targets the sole registered Library. If no registered Library exists or Library selection is ambiguous, `add` refuses to create a plan. The user-facing remedy is `omym2 organize --library <path>`.
-
-`add` does not organize existing Library files and does not mix Incoming import actions with existing Library organization actions. It does not register, reconcile, or relink a Library.
-
-Incoming-source selection follows [Bootstrap Behavior](execution.md#bootstrap-behavior): without a configured Incoming path, `add` requires an explicit source directory.
-
-`add --apply` creates and applies the plan in the same command. `add --apply --yes` skips apply confirmation through `ApplyOptions.yes`.
-
-Detailed add behavior is defined in [execution.md](execution.md#add-plan-behavior).
+Detailed add behavior is defined in [execution/add.md](execution/add.md).
 
 ## plans
 
@@ -80,33 +68,25 @@ Detailed add behavior is defined in [execution.md](execution.md#add-plan-behavio
 
 `apply <plan-id> --yes` skips confirmation through `ApplyOptions.yes`.
 
-Detailed apply behavior is defined in [execution.md](execution.md#apply-behavior).
+Detailed apply behavior is defined in [execution/apply.md](execution/apply.md).
 
 ## refresh
 
 `refresh` re-evaluates metadata after external tag correction and creates a relocation plan when needed.
 
-Targets can be file / directory / all. `refresh <file> --apply` applies the created plan within the same command.
-
-Detailed refresh behavior is defined in [execution.md](execution.md#refresh-behavior).
+Detailed refresh behavior is defined in [execution/refresh.md](execution/refresh.md).
 
 ## organize
 
-`organize --library <path>` is the primary user-facing operation for registering and reconciling a Library. It scans the specified Library read-only, compares files with canonical paths under the current PathPolicy, and creates a move plan when files need to move.
+`organize --library <path>` registers or reconciles a Library.
 
-Plain `organize` is valid only when exactly one known Library can be selected unambiguously. Otherwise it fails with a clear message and asks for `organize --library <path>`.
-
-If no moves are needed and no blocking issues exist, `organize` can register the Library without creating a mutation Plan. If an organize Plan is applied successfully and no blocking Library-state issues remain, the Library becomes registered. If blocked actions remain, it does not become registered.
-
-`organize --apply` applies the created plan within the same command. `organize --library <path> --apply` does the same after selecting or registering the Library identity for `<path>`.
-
-Detailed organize behavior is defined in [execution.md](execution.md#organize-behavior).
+Detailed organize behavior is defined in [execution/organize.md](execution/organize.md).
 
 ## history
 
 `history` shows execution history backed by Runs and FileEvents.
 
-Run and FileEvent semantics are defined in [execution.md](execution.md#run-behavior) and [execution.md](execution.md#fileevent-behavior).
+Run and FileEvent semantics are defined in [execution/model.md](execution/model.md#run-behavior) and [execution/model.md](execution/model.md#fileevent-behavior).
 
 ## undo
 
@@ -114,13 +94,13 @@ Run and FileEvent semantics are defined in [execution.md](execution.md#run-behav
 
 `undo <run-id> --apply` applies the created undo plan within the same command.
 
-Detailed undo behavior is defined in [execution.md](execution.md#undo-behavior).
+Detailed undo behavior is defined in [execution/undo.md](execution/undo.md).
 
 ## check
 
 `check` reports inconsistencies between the DB and the filesystem and reports Library state.
 
-Detailed check behavior is defined in [execution.md](execution.md#check-behavior).
+Detailed check behavior is defined in [execution/check.md](execution/check.md).
 
 ## inspect
 
@@ -132,13 +112,13 @@ It is read-only.
 
 `config show` displays the current TOML-backed configuration.
 
-Config storage is defined in [storage.md](storage.md#toml-config-design).
+Config storage is defined in [contracts/config.md](contracts/config.md).
 
 ## config validate
 
 `config validate` validates the current TOML-backed configuration.
 
-Config validation is implemented through the config adapter and settings usecase boundaries defined in [../ARCHITECTURE.md](../ARCHITECTURE.md).
+Config validation is implemented through the config adapter and settings usecase boundaries defined in [../ARCHITECTURE.md](../ARCHITECTURE.md) and [contracts/config.md](contracts/config.md).
 
 ## settings
 

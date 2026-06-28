@@ -1,0 +1,97 @@
+name: Implementation
+description: Track code-bearing implementation work.
+title: "[Implementation] "
+labels:
+  - implementation
+body:
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue type
+      options:
+        - feature
+        - refactor
+        - test
+        - architecture
+        - storage
+        - execution
+        - agent
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: State the intended outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: State what is intentionally out of scope.
+    validations:
+      required: true
+  - type: textarea
+    id: authoritative_docs
+    attributes:
+      label: Authoritative docs to read
+      description: Link the task-specific docs from docs/index.md.
+    validations:
+      required: true
+  - type: textarea
+    id: affected_areas
+    attributes:
+      label: Affected areas
+      description: List impacted architecture, domain, execution, storage, config, commands, tests, or agent areas.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_code_paths
+    attributes:
+      label: Expected code paths
+      description: List likely source files or packages.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_test_paths
+    attributes:
+      label: Expected test paths
+      description: List likely test files or packages.
+    validations:
+      required: true
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariants that must not be violated
+      description: Include Plan, FileEvent, dependency, path, identity, storage, and status rules as relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: List observable completion criteria.
+    validations:
+      required: true
+  - type: textarea
+    id: verification_commands
+    attributes:
+      label: Verification commands
+      description: Include focused checks and final gates where applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: documentation_updates
+    attributes:
+      label: Documentation updates required
+      description: Name docs that must be updated, or state none with rationale.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Blocking / blocked-by issues
+      description: Link direct blockers or blocked work.
+    validations:
+      required: true
