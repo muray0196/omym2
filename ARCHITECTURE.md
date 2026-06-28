@@ -8,9 +8,9 @@ Domain semantics are in [docs/domain.md](docs/domain.md), execution semantics ar
 
 OMYM2 adopts Feature-oriented Hexagonal Architecture.
 
-Core concepts such as Track, Plan, Run, FileEvent, and PathPolicy are not split by feature. They are placed in `domain/` as the shared domain kernel for all of OMYM2.
+Core concepts such as Library, Track, Plan, Run, FileEvent, and PathPolicy are not split by feature. They are placed in `domain/` as the shared domain kernel for all of OMYM2.
 
-Features are divided by user goal, such as `settings`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`, `plans`, `history`, and `inspect`.
+Features are divided by user goal, such as `settings`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`, `plans`, `history`, `tracks`, and `inspect`.
 
 CLI and Web call feature usecases as inbound adapters. DB, filesystem, metadata reader, and config loader implement ports as outbound adapters.
 
@@ -24,6 +24,7 @@ src/
     domain/
       models/
         app_config.py
+        library.py
         track.py
         track_metadata.py
         file_scan_entry.py
@@ -40,6 +41,7 @@ src/
         duplicate_policy.py
         metadata_fingerprint.py
         content_fingerprint.py
+        config_fingerprint.py
       errors.py
 
     features/
@@ -101,6 +103,12 @@ src/
         ports.py
         dto.py
 
+      tracks/
+        usecases/
+          list_tracks.py
+        ports.py
+        dto.py
+
       settings/
         usecases/
           load_settings.py
@@ -126,31 +134,27 @@ src/
           inspect.py
           config.py
           settings.py
-        args/
-          paths.py
-          apply_options.py
-          output_options.py
+          output.py
+          confirmation.py
 
       web/
         app.py
         routes/
           settings.py
-          plans.py
-          history.py
-          check.py
-          tracks.py
+          inspection.py
         schemas/
           settings_form.py
-          path_policy_preview_form.py
         templates/
         static/
 
       db/
         sqlite/
+          connection.py
+          migration_runner.py
           unit_of_work.py
           repositories.py
           migrations/
-            202606160001_initial_schema.sql
+            202606220001_initial_schema.sql
 
       fs/
         file_scanner.py
@@ -166,18 +170,15 @@ src/
         toml_config_store.py
         config_validator.py
         default_config.py
+        application_paths.py
 
     platform/
-      wiring.py
-      runtime.py
-      app_context.py
 
     shared/
       result.py
       ids.py
       paths.py
       time.py
-      typing.py
 ```
 
 `empty_dir_cleaner.py` is deferred until delete-empty-directory behavior is explicitly designed.
@@ -239,6 +240,7 @@ For example, `omym2 add --apply` does not have `features/add` call `features/app
 Main targets:
 
 * AppConfig
+* Library
 * Track
 * TrackMetadata
 * FileScanEntry
@@ -277,6 +279,7 @@ This process does not call `path.exists()` and does not join with the Library ro
 * `check`: detect inconsistencies between the DB and the filesystem
 * `plans`: get plan lists and details
 * `history`: get runs / file_events
+* `tracks`: list managed Tracks for read-only inspection
 * `inspect`: check metadata / hash / canonical path for a single file
 
 Usecases access the external world through ports. They do not depend on concrete implementations such as SQLite, shutil, mutagen, FastAPI, or Typer.
