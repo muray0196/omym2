@@ -43,6 +43,12 @@ TEST_REVIEW_MODES: tuple[str, ...] = ("review", "cases")
 EMPTY_REVIEW_MESSAGE = "local LLM returned an empty review"
 TEXT_FILE_SIZE_LIMIT_BYTES = 500_000
 MARKDOWN_FENCE_BOUNDARY_LINE_COUNT = 2
+MAX_FINDINGS = 6
+MAX_MISSING_TEST_CASES = 6
+MAX_FLAKY_RISKS = 4
+MAX_REVIEW_POINTS = 5
+MAX_DO_NOT_CHANGE = 4
+MAX_TEST_INVENTORY_LINES = 240
 RESOLV_CONF_NAMESERVER_FIELD_COUNT = 2
 IP_ROUTE_DEFAULT_GATEWAY_FIELD_COUNT = 3
 IP_ROUTE_DEFAULT_GATEWAY_INDEX = 2
@@ -96,6 +102,7 @@ TEST_PATH_MARKERS = (
 )
 DIFF_HEADER_PATH_RE = re.compile(r"^diff --git a/(.*?) b/(.*?)$")
 DIFF_NEW_PATH_RE = re.compile(r"^\+\+\+ b/(.*?)$")
+TEST_FUNCTION_RE = re.compile(r"^\s*(?:async\s+def|def)\s+(test_[A-Za-z0-9_]+)\(")
 
 
 type JsonValue = None | bool | int | float | str | JsonArray | JsonObject
@@ -166,53 +173,63 @@ Hard scope:
 - Never suggest file edits as a patch.
 - Do not claim certainty when the provided evidence is incomplete.
 - Prefer concrete, reviewable findings over generic advice.
+- Omit weak, redundant, or purely hypothetical items. Empty arrays are better than noisy arrays.
+- Before proposing a missing test, check the existing_tests inventory and context files for likely existing coverage.
+- Do not report generic SQLite, filesystem, ordering, or concurrency flake risk unless the diff introduces shared state, nondeterminism, or a reused resource.
+- Severity calibration: high means a likely real bug or required test gate failure; medium means a plausible regression hole tied to evidence; low means a minor maintainability point.
+- Put ambiguous product/testing questions in review_points instead of findings.
 
 Output rules:
 - Return JSON only. No Markdown. No code fences. No commentary outside JSON.
 - Keep findings grounded in the provided diff, logs, and file contents.
 """.strip()
 
-JSON_OUTPUT_CONTRACT = """
+JSON_OUTPUT_CONTRACT = f"""
 Return exactly one JSON object with this shape:
-{
+{{
   "mode": "review | cases",
   "scope": "test-only",
   "summary": "string",
   "risk_level": "low | medium | high",
   "findings": [
-    {
+    {{
       "severity": "low | medium | high",
       "category": "coverage | assertion | mock | fixture | flaky | naming | structure | regression | maintainability | other",
       "location": "file path, test name, or null",
       "evidence": "specific evidence from the provided input",
       "recommendation": "specific action for a human to consider"
-    }
+    }}
   ],
   "missing_test_cases": [
-    {
+    {{
       "name": "short test-case name",
       "reason": "why this case matters",
       "priority": "low | medium | high"
-    }
+    }}
   ],
   "flaky_risks": [
-    {
+    {{
       "risk": "risk description",
       "evidence": "specific evidence or null if inferred",
       "mitigation": "how to reduce the risk"
-    }
+    }}
   ],
   "review_points": ["question or decision for the reviewing agent"],
   "do_not_change": ["test/code area that should probably not be changed unnecessarily"],
   "confidence": "low | medium | high"
-}
+}}
 
 Limits:
-- findings: max 10 items
-- missing_test_cases: max 12 items
-- flaky_risks: max 8 items
-- review_points: max 8 items
-- do_not_change: max 6 items
+- findings: max {MAX_FINDINGS} items; omit if there is no concrete defect or regression risk
+- missing_test_cases: max {MAX_MISSING_TEST_CASES} items; omit cases already represented in existing_tests or context
+- flaky_risks: max {MAX_FLAKY_RISKS} items; omit generic risks without a concrete shared resource or nondeterminism
+- review_points: max {MAX_REVIEW_POINTS} items
+- do_not_change: max {MAX_DO_NOT_CHANGE} items
+
+Evidence rules:
+- Each finding evidence must name a file, test, line-like snippet, or observed behavior from the supplied input.
+- missing_test_cases must explain why existing tests do not already cover the case.
+- If evidence is weak, lower confidence or use review_points instead of findings.
 """.strip()
 
 MODE_INSTRUCTIONS: dict[str, str] = {
@@ -227,6 +244,7 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         - Over-mocking, brittle fixtures, hidden shared state, and fixture lifetime mistakes.
         - Flaky risks from time, timezone, async, ordering, randomness, network, filesystem, database state, or concurrency.
         - Test names and structure only when they affect maintainability.
+        Report only issues that are actionable from the provided input. Do not fill every output array.
         Do not propose production-code refactors unless directly required to make the tests meaningful.
         """
     ).strip(),
@@ -239,6 +257,8 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         - OMYM2 domain risks: Plan/PlanAction semantics, FileEvent-before-mutation ordering, root-relative stored paths, library_id identity, and adapter boundary behavior.
         - Cases likely to catch real defects.
         - Cases that should not be added because they would be redundant or too coupled to implementation details.
+        First eliminate cases that are likely already covered by existing_tests or context files.
+        Prefer a few high-signal cases over a broad backlog.
         Do not generate full test code unless a very small pseudocode sketch is necessary inside a recommendation field.
         """
     ).strip(),
@@ -253,7 +273,8 @@ def main(argv: list[str] | None = None) -> int:
         model = _resolve_model(args.model)
         source = _resolve_review_source(args)
         context = _dedupe_context_files(_load_base_context(args, repo_root, source))
-        user_prompt = _build_user_prompt(args.command, source, context, args)
+        existing_tests = _test_inventory(repo_root, source)
+        user_prompt = _build_user_prompt(args.command, source, context, args, existing_tests)
         if args.dry_prompt:
             _print_dry_prompt(SYSTEM_PROMPT, user_prompt)
             return 0
@@ -268,7 +289,9 @@ def main(argv: list[str] | None = None) -> int:
             max_output_tokens=args.max_output_tokens,
             use_response_format=not args.no_response_format,
         )
-        result = _compact_review_output(_normalize_review_json(_extract_json_object(review), args.command))
+        result = _compact_review_output(
+            _normalize_review_json(_extract_json_object(review), args.command, existing_tests)
+        )
         _write_or_print_json(result, args.output)
     except ReviewError as exc:
         _ = sys.stderr.write(f"local LLM test review failed: {exc}\n")
@@ -682,7 +705,43 @@ def _dedupe_context_files(files: list[ContextFile]) -> list[ContextFile]:
     return result
 
 
-def _build_user_prompt(mode: str, source: ReviewSource, context_files: list[ContextFile], args: ParsedArgs) -> str:
+def _test_inventory(repo_root: Path, source: ReviewSource) -> str:
+    """Return a compact index that helps the model avoid duplicate test ideas."""
+    test_paths = sorted(path for path in _tracked_file_set() if _is_test_path(path) and path.endswith(".py"))
+    lines: list[str] = []
+    for path in _prioritize_test_inventory_paths(test_paths, source.changed_files):
+        full_path = repo_root / path
+        try:
+            content = full_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        test_names = _parse_test_names(content)
+        if not test_names:
+            continue
+        lines.extend(f"{path}::{test_name}" for test_name in test_names)
+        if len(lines) >= MAX_TEST_INVENTORY_LINES:
+            clipped = lines[:MAX_TEST_INVENTORY_LINES]
+            clipped.append("[test inventory clipped]")
+            return "\n".join(clipped)
+    return "\n".join(lines) if lines else "[none]"
+
+
+def _prioritize_test_inventory_paths(test_paths: list[str], changed_files: tuple[str, ...]) -> list[str]:
+    changed_tests = [path for path in changed_files if path in test_paths]
+    return _unique_strings([*changed_tests, *test_paths])
+
+
+def _parse_test_names(content: str) -> list[str]:
+    return [match.group(1) for line in content.splitlines() if (match := TEST_FUNCTION_RE.match(line)) is not None]
+
+
+def _build_user_prompt(
+    mode: str,
+    source: ReviewSource,
+    context_files: list[ContextFile],
+    args: ParsedArgs,
+    existing_tests: str,
+) -> str:
     context_blocks = (
         "\n\n".join(
             _xml_block(
@@ -700,6 +759,7 @@ def _build_user_prompt(mode: str, source: ReviewSource, context_files: list[Cont
         JSON_OUTPUT_CONTRACT,
         _xml_block("source_label", source.source_label),
         _xml_block("changed_files", "\n".join(source.changed_files) or "[none]"),
+        _xml_block("existing_tests", existing_tests),
         _xml_block("diff", diff or "[no diff supplied]"),
         _xml_block("context_files", context_blocks),
     ]
@@ -879,7 +939,7 @@ def _extract_json_object(text: str) -> JsonObject:
     return payload
 
 
-def _normalize_review_json(obj: JsonObject, mode: str) -> JsonObject:
+def _normalize_review_json(obj: JsonObject, mode: str, existing_tests: str = "") -> JsonObject:
     _ = obj.setdefault("mode", mode)
     _ = obj.setdefault("scope", "test-only")
     _ = obj.setdefault("summary", "")
@@ -897,20 +957,80 @@ def _normalize_review_json(obj: JsonObject, mode: str) -> JsonObject:
         obj["risk_level"] = "low"
     if obj.get("confidence") not in {"low", "medium", "high"}:
         obj["confidence"] = "low"
-    _limit_list_field(obj, "findings", 10)
-    _limit_list_field(obj, "missing_test_cases", 12)
-    _limit_list_field(obj, "flaky_risks", 8)
-    _limit_list_field(obj, "review_points", 8)
-    _limit_list_field(obj, "do_not_change", 6)
+    _filter_items_without_evidence(obj, "findings")
+    _filter_items_without_evidence(obj, "flaky_risks")
+    _filter_existing_missing_test_cases(obj, existing_tests)
+    _dedupe_and_limit_list_field(obj, "findings", MAX_FINDINGS)
+    _dedupe_and_limit_list_field(obj, "missing_test_cases", MAX_MISSING_TEST_CASES)
+    _dedupe_and_limit_list_field(obj, "flaky_risks", MAX_FLAKY_RISKS)
+    _dedupe_and_limit_list_field(obj, "review_points", MAX_REVIEW_POINTS)
+    _dedupe_and_limit_list_field(obj, "do_not_change", MAX_DO_NOT_CHANGE)
     return obj
 
 
-def _limit_list_field(obj: JsonObject, key: str, limit: int) -> None:
+def _dedupe_and_limit_list_field(obj: JsonObject, key: str, limit: int) -> None:
     value = obj.get(key)
     if not isinstance(value, list):
         obj[key] = []
         return
-    obj[key] = value[:limit]
+    seen: set[str] = set()
+    items: JsonArray = []
+    for item in value:
+        fingerprint = json.dumps(item, sort_keys=True, ensure_ascii=False)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        items.append(item)
+        if len(items) >= limit:
+            break
+    obj[key] = items
+
+
+def _filter_items_without_evidence(obj: JsonObject, key: str) -> None:
+    value = obj.get(key)
+    if not isinstance(value, list):
+        return
+    obj[key] = [item for item in value if _has_specific_evidence(item)]
+
+
+def _has_specific_evidence(item: JsonValue) -> bool:
+    if not isinstance(item, dict):
+        return False
+    evidence = item.get("evidence")
+    return isinstance(evidence, str) and bool(evidence.strip())
+
+
+def _filter_existing_missing_test_cases(obj: JsonObject, existing_tests: str) -> None:
+    value = obj.get("missing_test_cases")
+    if not isinstance(value, list):
+        return
+    existing_names = _existing_test_name_set(existing_tests)
+    if not existing_names:
+        return
+    obj["missing_test_cases"] = [item for item in value if _missing_test_case_name(item) not in existing_names]
+
+
+def _existing_test_name_set(existing_tests: str) -> set[str]:
+    names: set[str] = set()
+    for line in existing_tests.splitlines():
+        if "::" not in line:
+            continue
+        _, raw_name = line.rsplit("::", maxsplit=1)
+        normalized = _normalized_test_name(raw_name)
+        if normalized:
+            names.add(normalized)
+    return names
+
+
+def _missing_test_case_name(item: JsonValue) -> str:
+    if not isinstance(item, dict):
+        return ""
+    name = item.get("name")
+    return _normalized_test_name(name) if isinstance(name, str) else ""
+
+
+def _normalized_test_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
 
 
 def _compact_review_output(obj: JsonObject) -> JsonObject:

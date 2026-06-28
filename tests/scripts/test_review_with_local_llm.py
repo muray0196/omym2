@@ -9,12 +9,19 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import pytest
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
 MODULE_LOAD_ERROR_MESSAGE = "Unable to load review_with_local_llm.py"
+EXPECTED_MISSING_TEST_CASE_CAP = 6
+EXPECTED_FLAKY_RISK_CAP = 4
+EXPECTED_REVIEW_POINT_CAP = 5
+EXPECTED_DO_NOT_CHANGE_CAP = 4
 
 
 class ReviewModule(Protocol):
@@ -22,6 +29,7 @@ class ReviewModule(Protocol):
 
     ReviewError: type[Exception]
     EMPTY_REVIEW_MESSAGE: str
+    ReviewSource: Callable[[str, str, tuple[str, ...], tuple[str, ...]], object]
 
     def _request_review(
         self,
@@ -39,9 +47,23 @@ class ReviewModule(Protocol):
 
     def _extract_json_object(self, text: str) -> dict[str, object]: ...
 
-    def _normalize_review_json(self, obj: dict[str, object], mode: str) -> dict[str, object]: ...
+    def _normalize_review_json(
+        self,
+        obj: dict[str, object],
+        mode: str,
+        existing_tests: str = ...,
+    ) -> dict[str, object]: ...
 
     def _compact_review_output(self, obj: dict[str, object]) -> dict[str, object]: ...
+
+    def _build_user_prompt(
+        self,
+        mode: str,
+        source: object,
+        context_files: list[object],
+        args: object,
+        existing_tests: str,
+    ) -> str: ...
 
     def _validate_context_path(self, repo_root: Path, raw_path: str, tracked_files: set[str]) -> str | None: ...
 
@@ -151,6 +173,97 @@ def test_compact_review_output_removes_metadata_scope_and_empty_fields() -> None
         "missing_test_cases": [{"name": "covers blank response"}],
         "review_points": ["agent should verify the reported case"],
     }
+
+
+def test_prompt_includes_noise_filters_and_existing_test_inventory() -> None:
+    """The model should see dedupe context before inventing missing cases."""
+    module = _review_module()
+    args = module._parse_args(["review", "--stdin"])  # pyright: ignore[reportPrivateUsage]
+    source_factory = module.ReviewSource
+    # The prompt builder is the intentional unit seam for this standalone script.
+    build_prompt = module._build_user_prompt  # pyright: ignore[reportPrivateUsage]
+    source = source_factory(
+        "stdin",
+        "diff --git a/tests/scripts/test_review_with_local_llm.py b/tests/scripts/test_review_with_local_llm.py",
+        ("tests/scripts/test_review_with_local_llm.py",),
+        (),
+    )
+
+    prompt = build_prompt(
+        "review",
+        source,
+        [],
+        args,
+        "tests/scripts/test_review_with_local_llm.py::test_prompt_includes_noise_filters_and_existing_test_inventory",
+    )
+
+    assert "<existing_tests>" in prompt
+    assert "tests/scripts/test_review_with_local_llm.py::test_" in prompt
+    assert "omit if there is no concrete defect" in prompt
+    assert "missing_test_cases must explain why existing tests do not already cover the case" in prompt
+
+
+def test_normalize_review_json_deduplicates_and_caps_noisy_lists() -> None:
+    """Overlong or repeated model output should be trimmed deterministically."""
+    module = _review_module()
+    duplicate_finding = {"evidence": "same evidence"}
+
+    result = module._normalize_review_json(  # pyright: ignore[reportPrivateUsage]
+        {
+            "findings": [
+                duplicate_finding,
+                duplicate_finding,
+                *({"evidence": f"evidence {index}"} for index in range(8)),
+            ],
+            "missing_test_cases": [{"name": f"case {index}"} for index in range(8)],
+            "flaky_risks": [{"risk": f"risk {index}", "evidence": f"evidence {index}"} for index in range(6)],
+            "review_points": [f"point {index}" for index in range(7)],
+            "do_not_change": [f"area {index}" for index in range(6)],
+        },
+        "review",
+    )
+
+    assert result["findings"] == [
+        {"evidence": "same evidence"},
+        {"evidence": "evidence 0"},
+        {"evidence": "evidence 1"},
+        {"evidence": "evidence 2"},
+        {"evidence": "evidence 3"},
+        {"evidence": "evidence 4"},
+    ]
+    assert len(cast("list[object]", result["missing_test_cases"])) == EXPECTED_MISSING_TEST_CASE_CAP
+    assert len(cast("list[object]", result["flaky_risks"])) == EXPECTED_FLAKY_RISK_CAP
+    assert len(cast("list[object]", result["review_points"])) == EXPECTED_REVIEW_POINT_CAP
+    assert len(cast("list[object]", result["do_not_change"])) == EXPECTED_DO_NOT_CHANGE_CAP
+
+
+def test_normalize_review_json_removes_unsupported_noise() -> None:
+    """Weak local-model items should be removed before another agent reads them."""
+    module = _review_module()
+    existing_tests = "tests/features/test_apply_execution.py::test_apply_marks_skip_action_applied_without_file_event"
+
+    result = module._normalize_review_json(  # pyright: ignore[reportPrivateUsage]
+        {
+            "findings": [
+                {"evidence": ""},
+                {"evidence": "tests/features/test_apply_execution.py verifies the apply transition"},
+            ],
+            "missing_test_cases": [
+                {"name": "test_apply_marks_skip_action_applied_without_file_event"},
+                {"name": "test_apply_records_move_failure"},
+            ],
+            "flaky_risks": [
+                {"risk": "SQLite might conflict", "evidence": None},
+                {"risk": "shared database file", "evidence": "Both tests use /tmp/shared.sqlite3"},
+            ],
+        },
+        "review",
+        existing_tests,
+    )
+
+    assert result["findings"] == [{"evidence": "tests/features/test_apply_execution.py verifies the apply transition"}]
+    assert result["missing_test_cases"] == [{"name": "test_apply_records_move_failure"}]
+    assert result["flaky_risks"] == [{"risk": "shared database file", "evidence": "Both tests use /tmp/shared.sqlite3"}]
 
 
 @pytest.mark.parametrize("legacy_mode", ["tests", "missing-tests"])
