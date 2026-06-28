@@ -125,12 +125,7 @@ Do not create `features/{feature}/domain/` or `features/{feature}/adapters/` in 
 
 ## Architecture Document Routing
 
-| Task | Read |
-| --- | --- |
-| Source layout, package placement, new directories | [docs/architecture/source-layout.md](docs/architecture/source-layout.md) |
-| Dependency direction, imports, adapter boundaries, business-rule placement | [docs/architecture/dependency-boundaries.md](docs/architecture/dependency-boundaries.md) |
-| Ports, UnitOfWork, Clock, IdGenerator, transactions, durable operation log architecture | [docs/architecture/ports-uow.md](docs/architecture/ports-uow.md) |
-| Python module naming, class/function/constant naming, banned vague names | [docs/architecture/naming.md](docs/architecture/naming.md) |
+Detailed architecture routing is in [docs/architecture/index.md](docs/architecture/index.md).
 
 ## Tests
 

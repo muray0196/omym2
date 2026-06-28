@@ -4,14 +4,40 @@ Current task-specific rules are maintained in the split documentation files unde
 
 ## Required Reading
 
-Before non-trivial implementation work:
+Before non-trivial OMYM2 work:
 
 * Read `ARCHITECTURE.md`.
-* Read `docs/index.md`, then follow only the smallest task-specific document set it routes to.
+* Read `docs/SUBAGENTS.md`.
+* Read `docs/WORK_TRACKING.md`.
 
 When code or tests change, read:
 
 * `docs/development.md`
+
+Follow the smallest task-specific document set from the docs router below.
+
+## Subagents
+
+Subagents are always allowed for OMYM2 work. Use them whenever they improve
+evidence gathering, focused patching, contract checks, test triage, or risk
+review.
+
+## Docs Router
+
+| Path | Use |
+| --- | --- |
+| `docs/SUBAGENTS.md` | Codex subagent routing, model choice, and handoff policy. |
+| `docs/WORK_TRACKING.md` | GitHub Issues, Projects, Milestones, blockers, and active-work process. |
+| `docs/architecture/` | Detailed architecture rules for source layout, dependencies, ports, and naming. |
+| `docs/commands.md` | CLI command surface and command behavior. |
+| `docs/contracts/` | Config, DB schema, path identity, storage representation, and status values. |
+| `docs/decisions/` | Accepted durable product or architecture rationale. |
+| `docs/development.md` | Development commands, quality gates, suppressions, and runtime configuration. |
+| `docs/domain.md` | Domain concepts, invariants, and ID behavior. |
+| `docs/execution/` | Plan, apply, undo, refresh, organize, check, and failure semantics. |
+| `docs/product.md` | Product scope, non-goals, and UI role. |
+| `docs/storage.md` | Storage responsibilities and persisted-state boundaries. |
+| `docs/testing.md` | Test policy and coverage expectations. |
 
 ## Skills
 

@@ -1,6 +1,6 @@
 ---
 name: omym2-docs-update
-description: Update OMYM2 documentation safely. Use for docs restructuring, redundancy cleanup, authoritative-home routing, stale-link cleanup, docs/index routing changes, AGENTS.md or skill-doc synchronization, and deciding whether documentation content is live, duplicated, or dead.
+description: Update OMYM2 documentation safely. Use for docs restructuring, redundancy cleanup, AGENTS.md routing changes, folder-index routing, stale-link cleanup, skill-doc synchronization, and deciding whether documentation content is live, duplicated, or dead.
 ---
 
 # OMYM2 Docs Update
@@ -17,12 +17,12 @@ description: Update OMYM2 documentation safely. Use for docs restructuring, redu
 
 ## Read when workflow, tracking, or skill guidance is in scope
 - docs/development.md
-- docs/process/work-tracking.md
-- docs/agent/subagents.md
+- docs/WORK_TRACKING.md
+- docs/SUBAGENTS.md
 - .agents/skills/*/SKILL.md
 
 ## Steps
-1. Treat `AGENTS.md`, `ARCHITECTURE.md`, and `docs/index.md` as the common reading path. Do not repeat their rules in lower-level docs unless the local file explicitly needs a short summary.
+1. Treat `AGENTS.md`, `ARCHITECTURE.md`, `docs/SUBAGENTS.md`, and `docs/WORK_TRACKING.md` as the common reading path. Do not repeat their rules in lower-level docs unless the local file explicitly needs a short summary.
 2. Classify each sentence or section before editing:
    - authoritative rule
    - local summary
@@ -40,8 +40,8 @@ description: Update OMYM2 documentation safely. Use for docs restructuring, redu
 6. When deleting, moving, or splitting docs, update every router and durable pointer in the same change:
    - AGENTS.md
    - ARCHITECTURE.md
-   - docs/index.md
    - affected docs under `docs/`
+   - affected folder indexes under `docs/`
    - affected `.agents/skills/*/SKILL.md`
 7. Keep active progress, backlog, blockers, assignment, and partial completion state out of repository docs. Route that content to GitHub Issues, Projects, and Milestones.
 8. Use `docs/decisions/` only for durable rationale when changing or challenging a product or architecture rule. Do not use decision records as active specifications.
@@ -57,8 +57,8 @@ description: Update OMYM2 documentation safely. Use for docs restructuring, redu
 ## Checks
 - No rule is removed unless it still exists in an authoritative home or is confirmed dead.
 - Summaries are marked or written as summaries and point to the owner.
-- `AGENTS.md` stays a short shared entrypoint.
-- `docs/index.md` stays the visible-doc router and authoritative-home map.
+- `AGENTS.md` stays the first-hop docs router and common reading path.
+- Folder indexes route only within their folder.
 - Skills keep `Read first` lists task-specific and do not repeat common required reading.
 - Completed plan/checklist docs are not preserved as durable specs by default.
 

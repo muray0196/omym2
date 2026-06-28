@@ -4,7 +4,7 @@ This document is authoritative for developer quality commands, validation gates,
 
 Product command behavior is defined in [commands.md](commands.md). Test design is defined in [testing.md](testing.md). Application config and stored path policy are defined in [storage.md](storage.md) and [contracts/](contracts/).
 
-Active work status is tracked in GitHub Issues, GitHub Projects, and GitHub Milestones, not in repository docs. The work-tracking process schema is in [process/work-tracking.md](process/work-tracking.md).
+Active work status is tracked in GitHub Issues, GitHub Projects, and GitHub Milestones, not in repository docs. The work-tracking process schema is in [WORK_TRACKING.md](WORK_TRACKING.md).
 
 ## Edit-Loop Commands
 

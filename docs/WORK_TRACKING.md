@@ -16,8 +16,8 @@ Repository documentation stores durable specifications and process schemas only.
 | Blockers | GitHub issue dependencies |
 | Planning metadata | GitHub Project fields |
 | Phase or release grouping | GitHub Milestones |
-| Durable technical decisions | [../decisions/](../decisions/) |
-| Active specifications | [../../ARCHITECTURE.md](../../ARCHITECTURE.md) and task-relevant docs under [../](../) |
+| Durable technical decisions | [decisions/](decisions/) |
+| Active specifications | [../ARCHITECTURE.md](../ARCHITECTURE.md) and task-relevant docs under this directory |
 
 ## Work Types
 
@@ -91,12 +91,11 @@ Agents must not read the whole project board, all historical issues, or all clos
 
 For a task, an agent should read only:
 
-1. [../../AGENTS.md](../../AGENTS.md)
-2. [../index.md](../index.md)
-3. the current GitHub Issue
-4. directly linked authoritative docs
-5. directly blocking or blocked-by issues
-6. directly related PRs if the current issue references them
+1. [../AGENTS.md](../AGENTS.md)
+2. the current GitHub Issue
+3. directly linked authoritative docs
+4. directly blocking or blocked-by issues
+5. directly related PRs if the current issue references them
 
 ## Closing Rule
 
