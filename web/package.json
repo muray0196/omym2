@@ -9,6 +9,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "build": "tsc --noEmit && vite build",
+    "vercel:build": "tsc --noEmit && vite build --outDir dist",
     "preview": "vite preview"
   },
   "dependencies": {
