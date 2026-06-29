@@ -5,6 +5,13 @@
 .reviews/
 !tests/.config/
 !src/omym/config/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+
 # Python
 __pycache__/
 *.egg-info/

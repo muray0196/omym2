@@ -1,6 +1,7 @@
 {
     "vscode-neovim.wslDistribution": "Ubuntu-26.04",
     "terminal.integrated.defaultProfile.linux": "zsh",
+    "task.allowAutomaticTasks": "on",
     "files.exclude": {
         ".ruff_cache": true,
         ".coverage": true,
