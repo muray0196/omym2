@@ -1,6 +1,6 @@
-# Architecture
+# OMYM2 Architecture Contract Map
 
-This document is the top-level OMYM2 architecture entry point.
+This document is the always-read top-level OMYM2 architecture contract and map.
 
 It is authoritative for the architecture overview, non-negotiable architecture rules, and routing to detailed architecture documents. Detailed architecture rules live in [docs/architecture/](docs/architecture/).
 

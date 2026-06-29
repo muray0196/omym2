@@ -1,7 +1,8 @@
-# Architecture Docs
+# Detailed Architecture Rules Index
 
-This folder contains detailed architecture rules. `ARCHITECTURE.md` remains the
-always-read architecture contract.
+This folder index routes to the detailed architecture rule documents.
+`ARCHITECTURE.md` remains the always-read top-level architecture contract and
+map.
 
 | Path | Use |
 | --- | --- |
