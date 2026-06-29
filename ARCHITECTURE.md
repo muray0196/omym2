@@ -39,51 +39,11 @@ src/
 * Stored Library-managed paths are Library-root-relative.
 * Source file names under `src/` must follow the documented naming rules.
 
-## Dependency Direction
+## Dependency Boundaries Summary
 
-Inbound adapters call features, features use domain, and domain may use shared primitives.
+Inbound adapters call features, features use domain, and domain may use shared primitives. Outbound adapters implement ports owned by features or common feature ports. `platform/` is the composition root and wires features and adapters together.
 
-```text
-adapters/cli, adapters/web
-  ↓
-features/*/usecases/*.py
-  ↓
-domain/
-  ↓
-shared/
-```
-
-Outbound adapters implement ports owned by features or common feature ports.
-
-```text
-adapters/db, adapters/fs, adapters/metadata, adapters/config
-  ↓
-features/*/ports.py or features/common_ports.py
-  ↓
-domain/
-```
-
-`platform/` is the composition root and wires features and adapters together.
-
-## Forbidden Dependencies
-
-```text
-domain -> adapters
-domain -> platform
-domain -> db
-domain -> fs
-domain -> web
-domain -> cli
-
-features -> concrete db/fs/web/cli implementations
-features -> internal implementations of other features
-
-adapters/web/routes -> direct filesystem operations
-adapters/cli/commands -> direct filesystem operations
-templates -> filesystem operations
-```
-
-Direct imports between features are prohibited in principle. When multiple usecases are chained, orchestration is done in CLI, Web, or platform.
+Detailed dependency direction, forbidden dependency lists, direct feature-to-feature import rules, and adapter boundary examples are authoritative in [docs/architecture/dependency-boundaries.md](docs/architecture/dependency-boundaries.md).
 
 ## Layer Responsibilities
 
@@ -129,12 +89,7 @@ Detailed architecture routing is in [docs/architecture/index.md](docs/architectu
 
 ## Tests
 
-Architecture tests enforce the highest-risk rules:
-
-* source files follow naming conventions
-* usecases do not import concrete SQLite or filesystem adapters
-* domain does not import adapters or platform
-* shared stays below upper layers
+Architecture tests enforce the highest-risk dependency and naming rules. The detailed architecture test scope is summarized in [docs/architecture/dependency-boundaries.md](docs/architecture/dependency-boundaries.md) and [docs/architecture/naming.md](docs/architecture/naming.md).
 
 ## Execution And Storage Links
 
