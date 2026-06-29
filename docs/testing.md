@@ -4,7 +4,7 @@ This document is authoritative for test policy, test categories, fixture policy,
 
 Architecture rules are in [../ARCHITECTURE.md](../ARCHITECTURE.md), domain rules are in [domain.md](domain.md), execution semantics are in [execution/](execution/), storage rules are in [storage.md](storage.md), contract docs are in [contracts/](contracts/), and developer validation commands are in [development.md](development.md).
 
-This document is not a test backlog. Missing tests and future test work should be tracked in GitHub Issues with issue type `test` and linked to the relevant authoritative spec.
+This document is not a test backlog.
 
 Required test authoring uses `pytest` and `pytest-mock` only.
 
