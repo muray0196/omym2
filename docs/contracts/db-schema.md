@@ -8,7 +8,7 @@ Do not invent exact SQL here unless it exists in the implementation. When implem
 
 ## Responsibilities
 
-The DB records OMYM2's last known managed state, scheduled plans, execution attempts, and durable Library music file operation logs.
+As summarized in the storage overview, the DB records OMYM2's last known managed state, scheduled plans, execution attempts, and durable Library music file operation logs.
 
 The DB is not:
 
