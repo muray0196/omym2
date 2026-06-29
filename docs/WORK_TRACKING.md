@@ -1,199 +1,418 @@
 # Work Tracking
 
-This document defines how OMYM2 development work is tracked.
+This document is the operating contract for tracking OMYM2 work in GitHub.
 
-It is not a progress ledger. Active progress lives in GitHub Issues, GitHub Projects, and GitHub Milestones.
+It is written for agents. A future agent must be able to open one GitHub Issue,
+read the linked authoritative docs, and continue safely without reading the
+whole project board or guessing from chat history.
 
-Repository documentation stores durable specifications and process schemas only.
+Active progress does **not** live in repository Markdown files. Repository docs
+store durable rules, contracts, and process. GitHub Issues, Projects, Pull
+Requests, and Milestones store live work state.
 
-## Source Of Truth
+## Non-Negotiable Rules
 
-| Concern | Source |
-| --- | --- |
-| Active work item | GitHub Issue |
-| Idea inbox | GitHub Project draft item |
-| Work breakdown | GitHub sub-issues |
-| Blockers | GitHub issue dependencies |
-| Planning metadata | GitHub Project fields |
-| Phase or release grouping | GitHub Milestones |
-| Durable technical decisions | [decisions/](decisions/) |
-| Active specifications | [../ARCHITECTURE.md](../ARCHITECTURE.md) and task-relevant docs under this directory |
+1. Durable repository changes start from a GitHub Issue.
+2. The Issue is the executable task boundary.
+3. The Project stores queue state and planning metadata.
+4. The Pull Request stores review, verification, and change history.
+5. Milestones group real phases or releases only.
+6. Repository docs must not become progress ledgers.
+7. Agents must leave enough GitHub state for the next agent to resume safely.
+8. If a preferred GitHub tracking feature is unavailable, record the intended
+   update in an Issue or PR comment.
 
-## Work Types
+## Sources Of Truth
 
-Use these `Work type` values in issue templates and the GitHub Project field:
+| Concern | Source of truth | Notes |
+| --- | --- | --- |
+| Task boundary | GitHub Issue body | Goal, non-goals, acceptance criteria, verification, blockers. |
+| Queue/status | GitHub Project fields | `Status`, `Work type`, `Area`, `Risk`, docs/decision flags. |
+| Live progress | Issue or PR comments | Meaningful transitions only; no per-command logs. |
+| Breakdown | GitHub sub-issues | Use for independently reviewable slices of a larger goal. |
+| Blockers | GitHub issue dependencies | If unavailable, comment `Blocked by #...` explicitly. |
+| Review/change record | Pull Request | Link issue, summarize scope, record verification. |
+| Phase/release grouping | GitHub Milestone | Do not use as status or priority. |
+| Durable rationale | `docs/decisions/` | Rationale only, not active status. |
+| Durable specs/process | `ARCHITECTURE.md`, `AGENTS.md`, `docs/` | Current rules and contracts. |
+| Local progress ledger | Nowhere | Do not create progress Markdown files. |
 
-* feature
-* bug
-* refactor
-* test
-* docs
-* architecture
-* storage
-* execution
-* agent
+## When An Issue Is Required
 
-OMYM2 does not require GitHub native issue types. The issue form body and
-Project fields are the tracking contract.
+Create or select a GitHub Issue before changing repository files when the task
+changes code, tests, configuration, documentation, prompts, skills, process, or
+GitHub metadata.
 
-## Operational Flow
+An issue is not required for answer-only chat, read-only explanation, or a quick
+inspection that produces no durable repository or GitHub change. If inspection
+discovers follow-up implementation work, create or select an issue before making
+that change.
 
-Use this flow whenever work is driven through GitHub Projects.
+Before creating a new issue:
 
-Default agent-driven work starts by creating or selecting a GitHub Issue. If the
-user asks for implementation, review, or documentation work without linking an
-issue, the agent creates the issue first and then works from that issue.
+1. Search open issues and PRs for the same goal.
+2. Use an existing issue when it already defines the task.
+3. Create a new issue only when no suitable issue exists.
+4. Link related issues or PRs from the body or first comment.
 
-### 1. Capture Ideas
+When the user requests a durable change without providing an issue, the agent
+creates a concise issue from the request and starts from that issue.
 
-Capture uncertain or future work as a GitHub Project draft item with `Status = Backlog`.
+## Issue Ready Contract
 
-Drafts are inbox items only. They can hold rough future work, but they are not
-active work items and agents must not implement from them.
+An issue is `Agent-ready = yes` only when another agent can execute from it
+without reading unrelated issues or the full Project board.
 
-If the user request is only an idea and does not contain a concrete goal, the
-agent may create a draft item and stop. Do not implement from a draft.
+Required sections:
 
-### 2. Prepare Ready Work
+```markdown
+## Goal
+One concrete outcome.
 
-Before work moves to `Ready`:
+## Non-goals
+Explicit exclusions and boundaries.
 
-* Convert the draft to a GitHub Issue or create a new GitHub Issue.
-* Fill the relevant issue template.
-* Add the issue to the GitHub Project and set all required Project fields.
-* Link direct blockers or blocked work.
-* Create sub-issues when the work is too large for one reviewable PR.
-* Assign a Milestone only for a real phase or release grouping.
+## Context
+Why this is needed. Include the user request summary when agent-created.
 
-Set `Agent-ready = yes` only after the issue has enough context for an agent to
-start without reading the whole project board or unrelated issues. Set
-`Status = Ready` only when direct blockers are closed or none exist.
+## Authoritative docs to read
+- `AGENTS.md`
+- Task-specific docs only.
 
-If direct blockers remain open, keep `Agent-ready = no`, set `Status = Blocked`,
-and link the blocking issue.
+## Affected areas
+Files, packages, commands, docs, or GitHub metadata likely to change.
 
-### 3. Create Agent-Started Work
+## Invariants and constraints
+Rules that must not be violated.
 
-When an agent receives a concrete request without an existing issue:
+## Acceptance criteria
+- [ ] Observable result 1
+- [ ] Observable result 2
 
-* Create a GitHub Issue before editing code or durable docs.
-* Choose the issue template that matches the work type.
-* Fill the issue from the user request, `AGENTS.md`, and task-specific docs.
-* State inferred scope explicitly in the issue body.
-* Add the issue to the GitHub Project and set all required Project fields.
-* Set `Agent-ready = yes` only if the issue is complete enough to execute.
-* Set `Status = In progress` when the agent will start immediately.
-* Link blockers or create blocker issues before implementation if the work
-  cannot proceed independently.
+## Verification
+Commands, checks, or review method required before completion.
 
-For small direct requests, the issue may be concise, but it still must include
-the goal, non-goals, authoritative docs, acceptance criteria, verification, and
-blocking or blocked-by issues.
+## Dependencies
+Blocked by: none / #...
+Blocking: none / #...
 
-### 4. Start Agent Work
+## Notes for agents
+Known risks, assumptions, and allowed scope inference.
+```
 
-An agent may start only from a GitHub Issue with `Agent-ready = yes` and no
-open blockers.
+For small documentation or test tasks, the issue may be concise, but it still
+needs a goal, non-goals, acceptance criteria, verification, and dependency state.
 
-At start:
+Set `Agent-ready = yes` only when the goal is explicit, acceptance criteria are
+checkable, required docs are listed, blockers are absent or closed, risk is
+classified, and verification is known or explicitly not applicable.
 
-* Move `Status` to `In progress`.
-* Read only the context listed in [Agent Context Budget](#agent-context-budget).
-* Treat the issue body as the task boundary.
-* Use sub-issues only for the current issue's direct breakdown.
-
-If required context is missing, update the issue or ask for clarification before
-implementation. Do not infer scope from Project draft text.
-
-### 5. Implement
-
-During implementation:
-
-* Work against the issue goal, non-goals, invariants, acceptance criteria, and
-  verification commands.
-* Keep status and scope discussion on the GitHub Issue or PR, not in repository
-  docs.
-* If scope changes, update the issue before expanding the implementation.
-* If the task becomes blocked, move `Status` to `Blocked`, link the blocker, and
-  comment with the minimum unblock condition.
-
-### 6. Open Review
-
-When a branch is ready for review:
-
-* Open a PR linked to the issue.
-* Fill the PR template with scope, verification, docs impact, and closure
-  intent.
-* Move `Status` to `In review`.
-* Use `Closes #` only when the PR fully resolves the issue.
-* Use `Partially addresses #` when remaining work should stay on the issue.
-
-### 7. Complete Or Continue
-
-After review and merge:
-
-* Move `Status` to `Done` only when the issue is fully resolved.
-* Close the issue only when the PR or final issue comment records full
-  resolution.
-* For partial work, leave the issue open, update the remaining acceptance
-  criteria, and keep or reset the Project status to match the next action.
-
-Work becomes active only after a GitHub Issue exists. Use sub-issues for
-breakdown and issue dependencies for blockers.
-
-## Implementation Issue Body
-
-Every implementation issue should include:
-
-* Goal
-* Non-goals
-* Authoritative docs to read
-* Affected areas
-* Expected code paths
-* Expected test paths
-* Invariants that must not be violated
-* Acceptance criteria
-* Verification commands
-* Documentation updates required
-* Blocking / blocked-by issues
+If a required section is missing, update the issue from available evidence. Ask
+the user only when the missing information changes scope or risk and cannot be
+inferred safely.
 
 ## Project Fields
 
-Required Project fields:
+Use the smallest field set that changes agent behavior. Do not add Project
+fields for data that already has a GitHub-native home, such as assignee, labels,
+or milestone.
+
+Required fields:
 
 | Field | Values |
 | --- | --- |
-| Status | Backlog, Ready, In progress, Blocked, In review, Done |
-| Work type | feature, bug, refactor, test, docs, architecture, storage, execution, agent |
-| Area | architecture, product, domain, execution, storage, config, db, cli, web, testing, docs, agent |
-| Risk | low, medium, high |
-| Needs docs | yes, no |
-| Needs ADR | yes, no |
-| Agent-ready | yes, no |
+| `Status` | `Backlog`, `Ready`, `In progress`, `Blocked`, `In review`, `Done` |
+| `Work type` | `feature`, `bug`, `refactor`, `test`, `docs`, `architecture`, `investigation`, `chore` |
+| `Area` | `product`, `architecture`, `domain`, `execution`, `storage`, `config`, `db`, `cli`, `web`, `testing`, `docs`, `agent`, `repo` |
+| `Risk` | `low`, `medium`, `high` |
+| `Needs docs` | `yes`, `no` |
+| `Needs decision record` | `yes`, `no` |
+| `Agent-ready` | `yes`, `no` |
 
-`Backlog` may include draft ideas or issues. `Ready`, `In progress`,
-`Blocked`, `In review`, and `Done` are issue-only states.
+Status meanings:
 
-## Agent Context Budget
+| Status | Meaning |
+| --- | --- |
+| `Backlog` | Captured but not ready, not prioritized, or underspecified. Draft Project items may exist only here. |
+| `Ready` | Issue exists, `Agent-ready = yes`, and no open blockers exist. |
+| `In progress` | An agent or human has started execution. |
+| `Blocked` | Work cannot continue until linked blockers are resolved or missing information is provided. |
+| `In review` | A PR or equivalent review artifact is open. |
+| `Done` | Acceptance criteria are satisfied and the issue is closed or ready to close. |
 
-Agents must not read the whole project board, all historical issues, or all closed issues.
+If an agent cannot update Project fields because the available tool does not
+support Projects, it must leave an issue comment like this:
 
-For a task, an agent should read only:
+```markdown
+Project update unavailable to this agent.
+Intended fields: Status=In progress, Work type=docs, Area=agent, Risk=low,
+Needs docs=yes, Needs decision record=no, Agent-ready=yes.
+```
 
-1. [../AGENTS.md](../AGENTS.md)
-2. the current GitHub Issue
-3. directly linked authoritative docs
-4. directly blocking or blocked-by issues
-5. directly related PRs if the current issue references them
+Do not claim Project state was updated unless it was actually updated.
 
-## Closing Rule
+## Agent Workflow
 
-A PR should close the issue using GitHub linking keywords only when the issue is fully resolved.
+### 1. Load Context
 
-If the PR partially resolves the issue, update the issue with remaining work instead of closing it.
+For non-trivial work, read:
 
-## Repository Docs Boundary
+1. `AGENTS.md`
+2. `ARCHITECTURE.md`
+3. `docs/SUBAGENTS.md`
+4. this document
+5. the current issue
+6. only task-specific docs linked by the issue or docs router
 
-Do not add Markdown progress ledgers such as `docs/implementation-progress.md` or `docs/progress/`.
+Do not read all open issues, all closed issues, or the whole Project board just
+to begin a task.
 
-Use repository docs for stable specifications, process schemas, and decision records. Use GitHub Issues, Projects, and Milestones for current status, backlog, assignment, blockers, and partial completion state.
+### 2. Select Or Create The Issue
+
+Use a linked issue when the user provides one. Otherwise search for an existing
+open issue with the same goal. Create a new issue only when no existing issue is
+a correct task boundary.
+
+An agent-created issue must include the user request summary, inferred scope,
+non-goals, acceptance criteria, verification, known blockers, and authoritative
+docs to read.
+
+### 3. Normalize Before Editing
+
+Before editing files:
+
+- fill missing issue body sections;
+- add or record intended Project fields;
+- link blockers or record `none known`;
+- create sub-issues if the work is too large for one reviewable PR;
+- set `Status = In progress` when starting immediately.
+
+### 4. Start Work
+
+When possible, create a branch named with the issue number:
+
+```text
+<work-type>/<issue-number>-<short-slug>
+```
+
+Examples:
+
+```text
+docs/28-work-tracking-protocol
+fix/31-apply-plan-status
+```
+
+Leave a short start comment for non-trivial work:
+
+```markdown
+### Agent start
+- Branch: `docs/28-work-tracking-protocol`
+- Scope: ...
+- Docs read: ...
+- Intended verification: ...
+- Project update: Status=In progress
+```
+
+### 5. Update During Work
+
+Keep updates sparse. Comment when status changes, a blocker appears or clears,
+scope changes, acceptance criteria change, verification fails in a way the next
+agent must know, work is handed off, or a PR is opened.
+
+Do not comment for every command, minor edit, or local observation. If detailed
+command output matters, summarize it in the PR.
+
+If scope expands, update the issue before implementing the expanded scope. If the
+scope becomes too large, split it into sub-issues.
+
+### 6. Handle Blockers
+
+When blocked:
+
+1. Set `Status = Blocked` when possible.
+2. Add an issue dependency when possible.
+3. Comment with the minimum unblock condition.
+4. Stop implementation unless independent unblocked work remains.
+
+Blocked comment format:
+
+```markdown
+### Blocked
+- Blocked by: #...
+- Minimum unblock condition: ...
+- Safe remaining work: none / ...
+- Project update: Status=Blocked
+```
+
+### 7. Open A Pull Request
+
+Open a PR for code, test, configuration, or durable documentation changes unless
+the repository owner explicitly requests direct commits.
+
+The PR body must include:
+
+- linked issue;
+- summary of changes;
+- non-goals or deferred work;
+- verification run and result;
+- docs impact;
+- risk notes;
+- closure intent.
+
+Use `Closes #...`, `Fixes #...`, or `Resolves #...` only when the PR fully
+satisfies the issue. Use `Refs #...`, `Partially addresses #...`, or manual
+linkage when the issue should remain open.
+
+Set `Status = In review` when a PR is open.
+
+### 8. Complete Or Continue
+
+An issue may move to `Done` and close only when:
+
+- all acceptance criteria are satisfied or explicitly revised with rationale;
+- verification passed, or the reason it was not run is recorded;
+- required docs and decision records are updated;
+- no remaining blocker affects the stated goal;
+- the PR is merged or the issue contains a final no-PR resolution comment.
+
+For partial completion, leave the issue open, check off completed acceptance
+criteria, rewrite remaining criteria, keep or reset `Status`, and do not use PR
+closing keywords.
+
+### 9. Handoff
+
+A handoff is required when an agent stops with unmerged work, unresolved
+verification, or remaining scope.
+
+Handoff comment format:
+
+```markdown
+### Handoff
+- Current branch / PR: ...
+- Completed: ...
+- Not completed: ...
+- Verification run: ...
+- Verification not run: ...
+- Known blockers: ...
+- Next safe action: ...
+```
+
+The next agent should be able to resume from the issue, linked PR, and linked
+docs without reconstructing context from chat.
+
+## Sub-Issues And Parent Issues
+
+Use a parent issue for a goal that needs coordination across multiple reviewable
+changes. Use sub-issues for independently reviewable slices.
+
+Parent issue:
+
+- contains the overall goal, non-goals, invariants, and done definition;
+- does not track line-by-line implementation progress;
+- stays open until required sub-issues are complete or intentionally removed.
+
+Sub-issue:
+
+- has its own acceptance criteria and verification;
+- can be implemented and reviewed independently;
+- links back to the parent through GitHub sub-issue relationships when possible;
+- does not duplicate the full parent context.
+
+## Milestones And Labels
+
+Use Milestones only for real phases, releases, or externally meaningful batches.
+An issue may have no Milestone.
+
+Labels are secondary discovery aids. They must not be the only place where task
+state, blockers, or acceptance criteria exist. Do not create labels that
+duplicate Project `Status`.
+
+## Repository Documentation Boundary
+
+Allowed repository documentation changes:
+
+- durable product behavior;
+- architecture rules;
+- contracts and schemas;
+- command semantics;
+- testing policy;
+- process rules such as this document;
+- decision records under `docs/decisions/`.
+
+Forbidden repository documentation changes:
+
+- `docs/progress.md`;
+- `docs/implementation-progress.md`;
+- `docs/progress/`;
+- per-issue running logs;
+- status tables that duplicate GitHub Projects;
+- stale checklists copied from issues.
+
+If a progress fact matters only until the issue or PR is complete, put it in
+GitHub, not in repository docs.
+
+## Subagent Tracking
+
+The main agent owns GitHub state.
+
+When using subagents, the main agent must pass the current issue boundary,
+re-read cited files or evidence before accepting findings, record only material
+findings in the issue or PR, and update blockers, acceptance criteria, or PR
+notes when subagent findings change the work state.
+
+## Capability Fallbacks
+
+Agents may not always have the same GitHub permissions or tool support.
+
+| Preferred operation | Fallback |
+| --- | --- |
+| Update Project field | Issue comment with intended field update. |
+| Add issue dependency | Issue comment naming `Blocked by` or `Blocking`. |
+| Create sub-issue | New issue linked from parent and child bodies/comments. |
+| Open PR | Branch or commit reference plus issue handoff comment. |
+| Run verification | Record exact command not run and reason. |
+
+Fallbacks must be explicit. Silent failure to update tracking state is not
+allowed.
+
+## Prohibited Agent Behavior
+
+Agents must not:
+
+- implement from a Project draft item without converting or replacing it with an
+  Issue;
+- treat chat-only context as the lasting task boundary after changing repository
+  files;
+- close an issue from a PR that only partially resolves it;
+- expand scope without updating the issue first;
+- mark work done without verification evidence or an explicit reason verification
+  was not run;
+- create repository-local progress ledgers;
+- rely on labels when required issue body or Project fields are missing;
+- read broad unrelated GitHub history to compensate for an underspecified issue.
+
+## Minimal Checklists
+
+Before editing:
+
+- [ ] Issue selected or created.
+- [ ] Goal and non-goals are clear.
+- [ ] Acceptance criteria are checkable.
+- [ ] Required docs are listed.
+- [ ] Blockers are linked or recorded as none.
+- [ ] Project fields are updated or fallback comment is posted.
+
+Before opening PR:
+
+- [ ] Issue is linked.
+- [ ] Scope matches issue.
+- [ ] Verification is run or not-run reason is recorded.
+- [ ] Docs impact is stated.
+- [ ] Closure intent is correct.
+
+Before closing issue:
+
+- [ ] All acceptance criteria are satisfied or explicitly revised.
+- [ ] Required verification is recorded.
+- [ ] Required docs or decision records are complete.
+- [ ] Remaining work is none, or issue remains open.
