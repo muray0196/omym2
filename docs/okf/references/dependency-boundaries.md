@@ -5,8 +5,7 @@ description: Architecture direction and business-rule placement.
 tags: [architecture, dependencies, adapters, domain]
 authoritative: false
 canonical_docs:
-  - ../../../ARCHITECTURE.md#dependency-boundaries-summary
-  - ../../architecture/dependency-boundaries.md
+  - ../../codebase/dependency-boundaries.md
 ---
 
 # Dependency Boundaries
@@ -15,8 +14,7 @@ OMYM2 keeps domain and feature behavior independent from concrete adapters. Inbo
 
 ## Authoritative sources
 
-- [Architecture dependency summary](../../../ARCHITECTURE.md#dependency-boundaries-summary)
-- [Dependency boundaries](../../architecture/dependency-boundaries.md)
+- [Dependency boundaries](../../codebase/dependency-boundaries.md)
 
 ## Relationships
 

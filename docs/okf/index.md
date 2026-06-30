@@ -2,7 +2,7 @@
 
 This optional knowledge bundle helps agents discover OMYM2 concepts, execution patterns, and architecture references before implementation or review.
 
-It is not authoritative. Existing OMYM2 docs remain the source of truth, especially `ARCHITECTURE.md`, `docs/domain.md`, `docs/execution/`, `docs/storage.md`, and `docs/contracts/`.
+It is not authoritative. Existing OMYM2 docs remain the source of truth, especially `docs/domain.md`, `docs/execution/`, `docs/storage.md`, and `docs/contracts/`.
 
 ## Directories
 

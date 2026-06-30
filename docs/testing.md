@@ -2,7 +2,7 @@
 
 This document is authoritative for test policy, test categories, fixture policy, and when contract changes require tests.
 
-Architecture rules are in [../ARCHITECTURE.md](../ARCHITECTURE.md), domain rules are in [domain.md](domain.md), execution semantics are in [execution/](execution/), storage rules are in [storage.md](storage.md), contract docs are in [contracts/](contracts/), and developer validation commands are in [development.md](development.md).
+Domain rules are in [domain.md](domain.md), execution semantics are in [execution/](execution/), storage rules are in [storage.md](storage.md), contract docs are in [contracts/](contracts/), and developer validation commands are in [development.md](development.md).
 
 This document is not a test backlog.
 

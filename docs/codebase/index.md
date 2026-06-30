@@ -1,7 +1,6 @@
-# Architecture Docs
+# Codebase Docs
 
-This folder contains detailed architecture rules. `ARCHITECTURE.md` remains the
-always-read architecture contract.
+This folder contains detailed source layout, dependency, port, and naming rules.
 
 | Path | Use |
 | --- | --- |

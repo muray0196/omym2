@@ -118,7 +118,7 @@ Config storage is defined in [contracts/config.md](contracts/config.md).
 
 `config validate` validates the current TOML-backed configuration.
 
-Config validation is implemented through the config adapter and settings usecase boundaries defined in [../ARCHITECTURE.md](../ARCHITECTURE.md) and [contracts/config.md](contracts/config.md).
+Config validation is implemented through the config adapter and settings usecase boundaries defined in [contracts/config.md](contracts/config.md).
 
 ## settings
 

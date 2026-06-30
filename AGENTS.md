@@ -1,39 +1,21 @@
 # OMYM2 Agent Instructions
 
-Current task-specific rules are maintained in the split documentation files under `docs/`.
+Use this routing before choosing task-specific docs.
 
 ## Required Reading
 
-Before non-trivial OMYM2 work:
-
-* Read `ARCHITECTURE.md`.
-
-When code or tests change, read:
-
-* `docs/development.md`
-
-Follow the smallest task-specific document set from the docs router below.
-
-## Work Tracking
-
-Linear is the issue source. Symphony may dispatch Codex against Linear issues.
-Keep active progress, queue state, blockers, and handoff notes out of repository
-docs.
+* `ARCHITECTURE.md`
 
 ## Knowledge Navigation
 
-`docs/okf/index.md` is an optional navigation aid for investigation and design.
-It links OMYM2 concepts to their authoritative documentation.
-
-Do not treat OKF-lite files as authoritative specs. When implementing or
-reviewing behavior, follow `ARCHITECTURE.md` and the task-specific docs under
-`docs/`.
+`docs/okf/index.md` is an optional, non-authoritative navigation aid for
+investigation and design.
 
 ## Docs Router
 
 | Path | Use |
 | --- | --- |
-| `docs/architecture/` | Detailed architecture rules for source layout, dependencies, ports, and naming. |
+| `docs/codebase/` | Detailed source layout, dependency, port, and naming rules. |
 | `docs/commands.md` | CLI command surface and command behavior. |
 | `docs/contracts/` | Config, DB schema, path identity, storage representation, and status values. |
 | `docs/development.md` | Development commands, quality gates, suppressions, and runtime configuration. |

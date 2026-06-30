@@ -1,10 +1,8 @@
 # Architecture
 
-This document is the top-level OMYM2 architecture entry point.
+This document is the top-level OMYM2 architecture contract.
 
-It is authoritative for the architecture overview, non-negotiable architecture rules, and routing to detailed architecture documents. Detailed architecture rules live in [docs/architecture/](docs/architecture/).
-
-Domain semantics are in [docs/domain.md](docs/domain.md), execution semantics are in [docs/execution/](docs/execution/), and storage contracts are in [docs/storage.md](docs/storage.md) plus [docs/contracts/](docs/contracts/).
+It is authoritative for the architecture overview and non-negotiable architecture rules.
 
 ## Architecture Model
 
@@ -43,7 +41,7 @@ src/
 
 Inbound adapters call features, features use domain, and domain may use shared primitives. Outbound adapters implement ports owned by features or common feature ports. `platform/` is the composition root and wires features and adapters together.
 
-Detailed dependency direction, forbidden dependency lists, direct feature-to-feature import rules, and adapter boundary examples are authoritative in [docs/architecture/dependency-boundaries.md](docs/architecture/dependency-boundaries.md).
+Detailed dependency direction, forbidden dependency lists, direct feature-to-feature import rules, and adapter boundary examples are authoritative in [docs/codebase/dependency-boundaries.md](docs/codebase/dependency-boundaries.md).
 
 ## Layer Responsibilities
 
@@ -83,16 +81,6 @@ common.py
 
 Do not create `features/{feature}/domain/` or `features/{feature}/adapters/` in principle.
 
-## Architecture Document Routing
-
-Detailed architecture routing is in [docs/architecture/index.md](docs/architecture/index.md).
-
 ## Tests
 
-Architecture tests enforce the highest-risk dependency and naming rules. The detailed architecture test scope is summarized in [docs/architecture/dependency-boundaries.md](docs/architecture/dependency-boundaries.md) and [docs/architecture/naming.md](docs/architecture/naming.md).
-
-## Execution And Storage Links
-
-Plan-centered execution rules are authoritative in [docs/execution/model.md](docs/execution/model.md), [docs/execution/apply.md](docs/execution/apply.md), and the task-specific execution docs.
-
-Storage responsibility is authoritative in [docs/storage.md](docs/storage.md). Config, DB schema, path identity, and status values are authoritative in [docs/contracts/](docs/contracts/).
+Architecture tests enforce the highest-risk dependency and naming rules. The detailed architecture test scope is summarized in [docs/codebase/dependency-boundaries.md](docs/codebase/dependency-boundaries.md) and [docs/codebase/naming.md](docs/codebase/naming.md).

@@ -1,6 +1,6 @@
 # Product
 
-This document explains what OMYM2 is and is not. Detailed architecture rules live in [../ARCHITECTURE.md](../ARCHITECTURE.md), and execution semantics live in [execution/](execution/).
+This document explains what OMYM2 is and is not. Execution semantics live in [execution/](execution/).
 
 ## Overview
 
@@ -18,7 +18,7 @@ The main value is not moving files quickly. The value is moving files through a 
 
 ## Basic Policy
 
-This is a product-level summary. Architecture invariants are not repeated here; they are required reading via [../AGENTS.md](../AGENTS.md) and authoritative in [../ARCHITECTURE.md](../ARCHITECTURE.md). Execution rules are authoritative in [execution/](execution/), and storage rules are authoritative in [storage.md](storage.md) plus [contracts/](contracts/).
+This is a product-level summary. Execution rules are authoritative in [execution/](execution/), and storage rules are authoritative in [storage.md](storage.md) plus [contracts/](contracts/).
 
 * Execution is primarily performed from the CLI.
 * The Web UI is a local settings and status console.
@@ -114,7 +114,7 @@ Applying Plans from the GUI is deferred.
 
 ## Product-Facing Technical Policy
 
-This section is a product-facing summary of technology choices. Layering and adapter responsibilities are authoritative in [../ARCHITECTURE.md](../ARCHITECTURE.md).
+This section is a product-facing summary of technology choices.
 
 Initial assumptions:
 

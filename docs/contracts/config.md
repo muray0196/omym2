@@ -2,7 +2,7 @@
 
 This document is authoritative for the OMYM2 application config contract.
 
-Storage responsibility is summarized in [../storage.md](../storage.md). Domain concepts are in [../domain.md](../domain.md), and config adapter boundaries are in [../../ARCHITECTURE.md](../../ARCHITECTURE.md).
+Storage responsibility is summarized in [../storage.md](../storage.md). Domain concepts are in [../domain.md](../domain.md).
 
 ## Responsibilities
 

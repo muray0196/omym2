@@ -5,8 +5,7 @@ description: Port usage, transaction boundaries, and durable operation-log excep
 tags: [architecture, ports, unit-of-work, execution]
 authoritative: false
 canonical_docs:
-  - ../../../ARCHITECTURE.md#ports-and-unitofwork-summary
-  - ../../architecture/ports-uow.md
+  - ../../codebase/ports-uow.md
 ---
 
 # Ports and UnitOfWork
@@ -15,8 +14,7 @@ External I/O is expressed through ports, and usecases coordinate persistence thr
 
 ## Authoritative sources
 
-- [Architecture ports summary](../../../ARCHITECTURE.md#ports-and-unitofwork-summary)
-- [Ports and UnitOfWork](../../architecture/ports-uow.md)
+- [Ports and UnitOfWork](../../codebase/ports-uow.md)
 
 ## Relationships
 
