@@ -11,8 +11,8 @@ description: Review changes touching stored paths, PathPolicy, Library identity,
 - whether library registration or relink behavior changes
 
 ## Read first
-- docs/domain.md
-- docs/storage.md
+- docs/DOMAIN.md
+- docs/STORAGE.md
 - docs/contracts/path-identity-storage.md
 - docs/contracts/db-schema.md
 - docs/execution/organize.md

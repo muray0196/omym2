@@ -11,7 +11,7 @@ description: Run the documented quality gates for OMYM2, classify failures as en
 - whether local environment is available
 
 ## Read first
-- docs/development.md
+- docs/DEVELOPMENT.md
 
 ## Read when tool configuration or CI parity is in scope
 - pyproject.toml

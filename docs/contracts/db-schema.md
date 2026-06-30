@@ -2,7 +2,7 @@
 
 This document is authoritative for the OMYM2 SQLite schema contract, table responsibilities, migrations, stored JSON fields, timestamp policy, and repository persistence boundaries.
 
-Storage responsibility is summarized in [../storage.md](../storage.md). Path and identity representation rules are in [path-identity-storage.md](path-identity-storage.md).
+Storage responsibility is summarized in [../STORAGE.md](../STORAGE.md). Path and identity representation rules are in [path-identity-storage.md](path-identity-storage.md).
 
 Do not invent exact SQL here unless it exists in the implementation. When implementation evidence is missing, describe the required behavior as a contract.
 

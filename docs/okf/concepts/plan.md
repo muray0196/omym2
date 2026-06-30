@@ -5,7 +5,7 @@ description: Reviewed scheduled set of PlanActions before execution.
 tags: [domain, execution, safety, plan]
 authoritative: false
 canonical_docs:
-  - ../../domain.md#plan
+  - ../../DOMAIN.md#plan
   - ../../execution/model.md#plan-centered-execution
   - ../../execution/apply.md#apply-behavior
 ---
@@ -16,7 +16,7 @@ A Plan is the reviewed schedule of work created before execution. It contains Pl
 
 ## Authoritative sources
 
-- [Domain Plan](../../domain.md#plan)
+- [Domain Plan](../../DOMAIN.md#plan)
 - [Plan-centered execution](../../execution/model.md#plan-centered-execution)
 - [Apply behavior](../../execution/apply.md#apply-behavior)
 

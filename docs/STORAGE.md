@@ -9,7 +9,7 @@ Detailed contracts live in:
 * [contracts/path-identity-storage.md](contracts/path-identity-storage.md) for Library identity, Track identity, relink behavior, Library-root-relative stored paths, PathResolver boundaries, and absolute-path exceptions.
 * [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md) for allowed status, reason, action type, event type, error code, and check issue values.
 
-Domain concepts are defined in [domain.md](domain.md), and execution order is defined in [execution/](execution/).
+Domain concepts are defined in [DOMAIN.md](DOMAIN.md), and execution order is defined in [execution/](execution/).
 
 ## Storage Boundary
 

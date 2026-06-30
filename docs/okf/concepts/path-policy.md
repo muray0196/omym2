@@ -5,7 +5,7 @@ description: Pure canonical path generation for Library-root-relative destinatio
 tags: [domain, path, config, execution]
 authoritative: false
 canonical_docs:
-  - ../../domain.md#pathpolicy
+  - ../../DOMAIN.md#pathpolicy
   - ../../contracts/config.md#pathpolicyconfig
   - ../../contracts/path-identity-storage.md#pathresolver-boundary
   - ../../execution/apply.md#apply-behavior
@@ -17,7 +17,7 @@ PathPolicy is pure domain logic that generates Library-root-relative canonical p
 
 ## Authoritative sources
 
-- [Domain PathPolicy](../../domain.md#pathpolicy)
+- [Domain PathPolicy](../../DOMAIN.md#pathpolicy)
 - [PathPolicyConfig](../../contracts/config.md#pathpolicyconfig)
 - [PathResolver boundary](../../contracts/path-identity-storage.md#pathresolver-boundary)
 - [Apply behavior](../../execution/apply.md#apply-behavior)

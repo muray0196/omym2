@@ -6,7 +6,7 @@ Common execution rules are in [model.md](model.md). Path identity rules are in [
 
 ## Library Registration Behavior
 
-Library identity is defined in [../domain.md](../domain.md#library).
+Library identity is defined in [../DOMAIN.md](../DOMAIN.md#library).
 
 Registration is per Library and is tied to:
 

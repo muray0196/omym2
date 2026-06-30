@@ -5,7 +5,7 @@ description: Storage responsibility split between settings, managed state, and m
 tags: [storage, config, sqlite, filesystem]
 authoritative: false
 canonical_docs:
-  - ../../storage.md#storage-boundary
+  - ../../STORAGE.md#storage-boundary
   - ../../contracts/config.md#responsibilities
   - ../../contracts/db-schema.md#responsibilities
 ---
@@ -16,7 +16,7 @@ TOML stores editable settings, SQLite stores managed Library and Track state plu
 
 ## Authoritative sources
 
-- [Storage boundary](../../storage.md#storage-boundary)
+- [Storage boundary](../../STORAGE.md#storage-boundary)
 - [Config responsibilities](../../contracts/config.md#responsibilities)
 - [DB responsibilities](../../contracts/db-schema.md#responsibilities)
 

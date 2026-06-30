@@ -5,10 +5,10 @@ description: Library identity, Track identity, and stored path representation.
 tags: [storage, path, identity, library]
 authoritative: false
 canonical_docs:
-  - ../../storage.md#path-representation-summary
+  - ../../STORAGE.md#path-representation-summary
   - ../../contracts/path-identity-storage.md
-  - ../../domain.md#library
-  - ../../domain.md#track
+  - ../../DOMAIN.md#library
+  - ../../DOMAIN.md#track
 ---
 
 # Path Identity and Storage
@@ -17,10 +17,10 @@ OMYM2 separates identity from filesystem location. Library-managed paths are sto
 
 ## Authoritative sources
 
-- [Path representation summary](../../storage.md#path-representation-summary)
+- [Path representation summary](../../STORAGE.md#path-representation-summary)
 - [Path identity and storage contract](../../contracts/path-identity-storage.md)
-- [Domain Library](../../domain.md#library)
-- [Domain Track](../../domain.md#track)
+- [Domain Library](../../DOMAIN.md#library)
+- [Domain Track](../../DOMAIN.md#track)
 
 ## Relationships
 

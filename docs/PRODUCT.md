@@ -18,7 +18,7 @@ The main value is not moving files quickly. The value is moving files through a 
 
 ## Basic Policy
 
-This is a product-level summary. Execution rules are authoritative in [execution/](execution/), and storage rules are authoritative in [storage.md](storage.md) plus [contracts/](contracts/).
+This is a product-level summary. Execution rules are authoritative in [execution/](execution/), and storage rules are authoritative in [STORAGE.md](STORAGE.md) plus [contracts/](contracts/).
 
 * Execution is primarily performed from the CLI.
 * The Web UI is a local settings and status console.

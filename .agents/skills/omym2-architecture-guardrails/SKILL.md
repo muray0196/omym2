@@ -17,7 +17,7 @@ description: Review any structural change in OMYM2 for dependency direction, por
 - docs/codebase/ports-uow.md
 
 ## Read when tests or validation are in scope
-- docs/testing.md
+- docs/TESTING.md
 - tests/architecture/test_dependency_boundaries.py
 - tests/architecture/test_source_files.py
 

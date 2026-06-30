@@ -2,7 +2,7 @@
 
 This document is authoritative for OMYM2 port usage, UnitOfWork policy, Clock and IdGenerator ports, transaction boundaries, and the apply / undo durable operation log exception.
 
-Detailed execution order is in [../execution/apply.md](../execution/apply.md), and DB consistency details are in [../storage.md](../storage.md).
+Detailed execution order is in [../execution/apply.md](../execution/apply.md), and DB consistency details are in [../STORAGE.md](../STORAGE.md).
 
 ## Ports
 

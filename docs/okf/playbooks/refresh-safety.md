@@ -6,8 +6,8 @@ tags: [execution, refresh, metadata, path-policy]
 authoritative: false
 canonical_docs:
   - ../../execution/refresh.md
-  - ../../domain.md#track
-  - ../../domain.md#pathpolicy
+  - ../../DOMAIN.md#track
+  - ../../DOMAIN.md#pathpolicy
   - ../../execution/apply.md#apply-behavior
 ---
 
@@ -18,8 +18,8 @@ Refresh re-evaluates managed Tracks after external tag correction. It reloads me
 ## Authoritative sources
 
 - [Refresh execution](../../execution/refresh.md)
-- [Domain Track](../../domain.md#track)
-- [Domain PathPolicy](../../domain.md#pathpolicy)
+- [Domain Track](../../DOMAIN.md#track)
+- [Domain PathPolicy](../../DOMAIN.md#pathpolicy)
 - [Apply behavior](../../execution/apply.md#apply-behavior)
 
 ## Relationships

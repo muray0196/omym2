@@ -1,6 +1,6 @@
 # Commands
 
-This document is authoritative for the CLI command surface. Per-command descriptions are summaries only. Detailed Plan, Run, FileEvent, and failure semantics live in [execution/](execution/), and storage details live in [storage.md](storage.md).
+This document is authoritative for the CLI command surface. Per-command descriptions are summaries only. Detailed Plan, Run, FileEvent, and failure semantics live in [execution/](execution/), and storage details live in [STORAGE.md](STORAGE.md).
 
 The CLI is the primary execution interface. Complex settings editing is left to the GUI.
 

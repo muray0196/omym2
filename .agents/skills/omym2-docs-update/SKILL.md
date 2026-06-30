@@ -20,7 +20,7 @@ description: Update OMYM2 documentation safely. Use for docs restructuring, redu
 ## Read when workflow, tracking, or skill guidance is in scope
 
 - AGENTS.md
-- docs/development.md
+- docs/DEVELOPMENT.md
 - .agents/skills/\*/SKILL.md
 
 ## Steps
@@ -55,7 +55,7 @@ description: Update OMYM2 documentation safely. Use for docs restructuring, redu
 - Run a Markdown relative-link existence check when links change.
 - Run a duplicate-prose scan when doing redundancy cleanup.
 - Run `git diff --check` for docs-only edits.
-- If code or tests changed, use the relevant quality gates from `docs/development.md`.
+- If code or tests changed, use the relevant quality gates from `docs/DEVELOPMENT.md`.
 
 ## Checks
 

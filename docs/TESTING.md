@@ -2,7 +2,7 @@
 
 This document is authoritative for test policy, test categories, fixture policy, and when contract changes require tests.
 
-Domain rules are in [domain.md](domain.md), execution semantics are in [execution/](execution/), storage rules are in [storage.md](storage.md), contract docs are in [contracts/](contracts/), and developer validation commands are in [development.md](development.md).
+Domain rules are in [DOMAIN.md](DOMAIN.md), execution semantics are in [execution/](execution/), storage rules are in [STORAGE.md](STORAGE.md), contract docs are in [contracts/](contracts/), and developer validation commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 This document is not a test backlog.
 
@@ -72,4 +72,4 @@ Filesystem fixtures should be minimal and task-focused. Read-only filesystem fix
 
 ## Test Commands
 
-Use [development.md](development.md#test-commands) for quick global checks, focused failure inspection, and deep debug commands. This document defines what to test; `docs/development.md` defines how to run validation commands.
+Use [DEVELOPMENT.md](DEVELOPMENT.md#test-commands) for quick global checks, focused failure inspection, and deep debug commands. This document defines what to test; `docs/DEVELOPMENT.md` defines how to run validation commands.

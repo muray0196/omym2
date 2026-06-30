@@ -5,9 +5,9 @@ description: In-memory settings used by usecases after TOML loading.
 tags: [domain, config, settings]
 authoritative: false
 canonical_docs:
-  - ../../domain.md#appconfig
+  - ../../DOMAIN.md#appconfig
   - ../../contracts/config.md
-  - ../../storage.md#toml-responsibility
+  - ../../STORAGE.md#toml-responsibility
 ---
 
 # AppConfig
@@ -16,9 +16,9 @@ AppConfig is the in-memory settings object that usecases receive after config ad
 
 ## Authoritative sources
 
-- [Domain AppConfig](../../domain.md#appconfig)
+- [Domain AppConfig](../../DOMAIN.md#appconfig)
 - [Config contract](../../contracts/config.md)
-- [TOML responsibility](../../storage.md#toml-responsibility)
+- [TOML responsibility](../../STORAGE.md#toml-responsibility)
 
 ## Relationships
 

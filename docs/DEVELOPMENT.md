@@ -2,7 +2,7 @@
 
 This document is authoritative for developer quality commands, validation gates, suppressions, and Python runtime configuration policy.
 
-Product command behavior is defined in [commands.md](commands.md). Test design is defined in [testing.md](testing.md). Application config and stored path policy are defined in [storage.md](storage.md) and [contracts/](contracts/).
+Product command behavior is defined in [COMMANDS.md](COMMANDS.md). Test design is defined in [TESTING.md](TESTING.md). Application config and stored path policy are defined in [STORAGE.md](STORAGE.md) and [contracts/](contracts/).
 
 Keep this file limited to commands and validation policy.
 

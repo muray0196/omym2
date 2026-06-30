@@ -2,7 +2,7 @@
 
 This document is authoritative for Library identity, Track identity, relink behavior, stored path representation, PathResolver boundaries, absolute-path exceptions, and path escape prevention.
 
-Domain concepts are in [../domain.md](../domain.md). Storage responsibility is summarized in [../storage.md](../storage.md). Library registration behavior is in [../execution/organize.md](../execution/organize.md).
+Domain concepts are in [../DOMAIN.md](../DOMAIN.md). Storage responsibility is summarized in [../STORAGE.md](../STORAGE.md). Library registration behavior is in [../execution/organize.md](../execution/organize.md).
 
 ## Identity Rules
 

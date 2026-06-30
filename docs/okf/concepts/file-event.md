@@ -5,10 +5,10 @@ description: Durable operation log entry for Library music file mutations.
 tags: [domain, execution, storage, undo]
 authoritative: false
 canonical_docs:
-  - ../../domain.md#fileevent
+  - ../../DOMAIN.md#fileevent
   - ../../execution/model.md#fileevent-behavior
   - ../../execution/apply.md#fileevent-status
-  - ../../storage.md#db-consistency
+  - ../../STORAGE.md#db-consistency
 ---
 
 # FileEvent
@@ -17,10 +17,10 @@ A FileEvent is the durable operation log entry for one attempted Library music f
 
 ## Authoritative sources
 
-- [Domain FileEvent](../../domain.md#fileevent)
+- [Domain FileEvent](../../DOMAIN.md#fileevent)
 - [FileEvent behavior](../../execution/model.md#fileevent-behavior)
 - [FileEvent status](../../execution/apply.md#fileevent-status)
-- [DB consistency](../../storage.md#db-consistency)
+- [DB consistency](../../STORAGE.md#db-consistency)
 
 ## Relationships
 

@@ -5,7 +5,7 @@ description: One reviewed action inside a Plan.
 tags: [domain, execution, status, plan]
 authoritative: false
 canonical_docs:
-  - ../../domain.md#planaction
+  - ../../DOMAIN.md#planaction
   - ../../execution/apply.md#planaction-status
   - ../../contracts/status-reason-catalog.md#planaction-action-type
 ---
@@ -16,7 +16,7 @@ A PlanAction is the reviewed unit of work inside a Plan. Its source and target p
 
 ## Authoritative sources
 
-- [Domain PlanAction](../../domain.md#planaction)
+- [Domain PlanAction](../../DOMAIN.md#planaction)
 - [PlanAction status transitions](../../execution/apply.md#planaction-status)
 - [PlanAction action type catalog](../../contracts/status-reason-catalog.md#planaction-action-type)
 

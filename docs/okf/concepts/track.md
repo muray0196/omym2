@@ -5,9 +5,9 @@ description: Current managed state of one music file known to OMYM2.
 tags: [domain, storage, identity]
 authoritative: false
 canonical_docs:
-  - ../../domain.md#track
+  - ../../DOMAIN.md#track
   - ../../contracts/path-identity-storage.md#stored-path-representation
-  - ../../storage.md#sqlite-responsibility
+  - ../../STORAGE.md#sqlite-responsibility
 ---
 
 # Track
@@ -16,9 +16,9 @@ A Track is OMYM2's current managed state for one music file. It records the last
 
 ## Authoritative sources
 
-- [Domain Track](../../domain.md#track)
+- [Domain Track](../../DOMAIN.md#track)
 - [Stored path representation](../../contracts/path-identity-storage.md#stored-path-representation)
-- [SQLite responsibility](../../storage.md#sqlite-responsibility)
+- [SQLite responsibility](../../STORAGE.md#sqlite-responsibility)
 
 ## Relationships
 

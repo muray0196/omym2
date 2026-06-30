@@ -15,12 +15,12 @@ description: Review any change that can affect Plan, PlanAction, Run, FileEvent,
 - docs/execution/model.md
 - docs/execution/apply.md
 - docs/execution/failure-policy.md
-- docs/domain.md
-- docs/storage.md
+- docs/DOMAIN.md
+- docs/STORAGE.md
 - docs/contracts/status-reason-catalog.md
 
 ## Read when tests or validation are in scope
-- docs/testing.md
+- docs/TESTING.md
 
 ## Steps
 1. Decide whether the change can lead to a Library music file mutation.

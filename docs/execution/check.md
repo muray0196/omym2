@@ -22,4 +22,4 @@ Reported issues include:
 * pending file_events
 * Library state issues
 
-The CheckIssue model is defined in [../domain.md](../domain.md#checkissue).
+The CheckIssue model is defined in [../DOMAIN.md](../DOMAIN.md#checkissue).

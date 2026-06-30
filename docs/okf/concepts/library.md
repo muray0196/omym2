@@ -5,7 +5,7 @@ description: Stable music Library identity with a mutable runtime root.
 tags: [domain, storage, identity]
 authoritative: false
 canonical_docs:
-  - ../../domain.md#library
+  - ../../DOMAIN.md#library
   - ../../contracts/path-identity-storage.md#identity-rules
   - ../../execution/organize.md
 ---
@@ -16,7 +16,7 @@ A Library is a music collection managed by OMYM2. Its identity is stable through
 
 ## Authoritative sources
 
-- [Domain Library](../../domain.md#library)
+- [Domain Library](../../DOMAIN.md#library)
 - [Identity rules](../../contracts/path-identity-storage.md#identity-rules)
 - [Organize execution](../../execution/organize.md)
 

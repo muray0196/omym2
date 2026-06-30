@@ -7,7 +7,7 @@ authoritative: false
 canonical_docs:
   - ../../execution/model.md#plan-centered-execution
   - ../../execution/apply.md#apply-behavior
-  - ../../storage.md#db-consistency
+  - ../../STORAGE.md#db-consistency
 ---
 
 # Plan-centered Apply
@@ -18,7 +18,7 @@ Library music file mutations go through Plan review and apply execution. Apply u
 
 - [Plan-centered execution](../../execution/model.md#plan-centered-execution)
 - [Apply behavior](../../execution/apply.md#apply-behavior)
-- [DB consistency](../../storage.md#db-consistency)
+- [DB consistency](../../STORAGE.md#db-consistency)
 
 ## Relationships
 

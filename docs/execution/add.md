@@ -2,7 +2,7 @@
 
 This document is authoritative for add plan creation, Incoming/source scan behavior, the registered Library gate, duplicate-hash skips, missing-metadata blocks, target-conflict blocks, and `add --apply` orchestration.
 
-Common execution rules are in [model.md](model.md). Apply rules are in [apply.md](apply.md). Command syntax is summarized in [../commands.md](../commands.md).
+Common execution rules are in [model.md](model.md). Apply rules are in [apply.md](apply.md). Command syntax is summarized in [../COMMANDS.md](../COMMANDS.md).
 
 ## Add Plan Behavior
 

@@ -38,7 +38,7 @@ DEFAULT_MAX_TOTAL_FILE_CHARS = 80_000
 DEFAULT_MAX_OUTPUT_TOKENS = 32768
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_REVIEW_MODEL = "gpt-oss:20b"
-DEFAULT_CONTEXT_FILES: tuple[str, ...] = ("docs/testing.md", "pyproject.toml")
+DEFAULT_CONTEXT_FILES: tuple[str, ...] = ("docs/TESTING.md", "pyproject.toml")
 TEST_REVIEW_MODES: tuple[str, ...] = ("review", "cases")
 EMPTY_REVIEW_MESSAGE = "local LLM returned an empty review"
 TEXT_FILE_SIZE_LIMIT_BYTES = 500_000
@@ -347,7 +347,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--context",
         action="append",
         default=list(DEFAULT_CONTEXT_FILES),
-        help="Small always-included context file. Defaults to docs/testing.md and pyproject.toml.",
+        help="Small always-included context file. Defaults to docs/TESTING.md and pyproject.toml.",
     )
     _ = parser.add_argument(
         "--max-file-chars",

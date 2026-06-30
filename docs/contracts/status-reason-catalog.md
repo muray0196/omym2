@@ -2,7 +2,7 @@
 
 This document is authoritative for allowed status, reason, action type, event type, error code, and check issue values.
 
-Domain concepts are in [../domain.md](../domain.md). Execution state transitions are in [../execution/model.md](../execution/model.md), [../execution/apply.md](../execution/apply.md), and [../execution/failure-policy.md](../execution/failure-policy.md).
+Domain concepts are in [../DOMAIN.md](../DOMAIN.md). Execution state transitions are in [../execution/model.md](../execution/model.md), [../execution/apply.md](../execution/apply.md), and [../execution/failure-policy.md](../execution/failure-policy.md).
 
 ## Library Status
 

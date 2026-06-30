@@ -5,7 +5,7 @@ description: Execution attempt for applying a Plan.
 tags: [domain, execution, history]
 authoritative: false
 canonical_docs:
-  - ../../domain.md#run
+  - ../../DOMAIN.md#run
   - ../../execution/model.md#run-behavior
   - ../../execution/apply.md#run-status
 ---
@@ -16,7 +16,7 @@ A Run records an attempt to apply a Plan. It is the parent unit for FileEvents a
 
 ## Authoritative sources
 
-- [Domain Run](../../domain.md#run)
+- [Domain Run](../../DOMAIN.md#run)
 - [Run behavior](../../execution/model.md#run-behavior)
 - [Run status](../../execution/apply.md#run-status)
 
