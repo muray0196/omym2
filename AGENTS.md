@@ -30,6 +30,7 @@ docs.
 | `docs/development.md` | Development commands, quality gates, suppressions, and runtime configuration. |
 | `docs/domain.md` | Domain concepts, invariants, and ID behavior. |
 | `docs/execution/` | Plan, apply, undo, refresh, organize, check, and failure semantics. |
+| `docs/okf/index.md` | Optional OKF-lite navigation aid for investigation/design; authoritative rules remain in the routed docs above. |
 | `docs/product.md` | Product scope, non-goals, and UI role. |
 | `docs/storage.md` | Storage responsibilities and persisted-state boundaries. |
 | `docs/testing.md` | Test policy and coverage expectations. |
