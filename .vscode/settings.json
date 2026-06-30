@@ -1,7 +1,6 @@
 {
     "vscode-neovim.wslDistribution": "Ubuntu-26.04",
     "terminal.integrated.defaultProfile.linux": "zsh",
-    "task.allowAutomaticTasks": "on",
     "files.exclude": {
         ".ruff_cache": true,
         ".coverage": true,
@@ -18,9 +17,6 @@
         "diffEditor.ignoreTrimWhitespace": false,
         "editor.defaultFormatter": "charliermarsh.ruff"
     },
-    "[markdown]": {
-        "editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
-    },
     "[html]": {
         "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
@@ -29,5 +25,4 @@
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
-    "markdownlint.severityForError": "Ignore",
 }
