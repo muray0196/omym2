@@ -20,6 +20,15 @@ Linear is the issue source. Symphony may dispatch Codex against Linear issues.
 Keep active progress, queue state, blockers, and handoff notes out of repository
 docs.
 
+## Knowledge Navigation
+
+`docs/okf/index.md` is an optional navigation aid for investigation and design.
+It links OMYM2 concepts to their authoritative documentation.
+
+Do not treat OKF-lite files as authoritative specs. When implementing or
+reviewing behavior, follow `ARCHITECTURE.md` and the task-specific docs under
+`docs/`.
+
 ## Docs Router
 
 | Path | Use |
