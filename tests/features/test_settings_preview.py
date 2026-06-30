@@ -10,7 +10,7 @@ from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.features.settings.dto import PathPolicyPreviewRequest
 from omym2.features.settings.usecases.preview_path_policy import PreviewPathPolicyUseCase
 
-EXPECTED_PREVIEW_PATH = "Aimer/2024_Example Album/1-03_Example Song.flac"
+EXPECTED_PREVIEW_PATH = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
 SOURCE_EXTENSION = ".FLAC"
 
 
