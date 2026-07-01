@@ -14,12 +14,13 @@ from omym2.config import (
     CONFIG_FILE_ENCODING,
     WEB_API_PREFIX,
     WEB_API_SETTINGS_ROUTE,
-    WEB_ASSETS_ROUTE,
     WEB_CHECK_ROUTE,
     WEB_HISTORY_ROUTE,
-    WEB_REACT_BUILD_MISSING_MESSAGE,
+    WEB_NEXT_STATIC_ROUTE,
+    WEB_PATH_POLICY_ROUTE,
     WEB_ROOT_ROUTE,
     WEB_SETTINGS_ROUTE,
+    WEB_STATIC_EXPORT_MISSING_MESSAGE,
     WEB_TRACKS_ROUTE,
 )
 
@@ -40,6 +41,7 @@ def test_spa_routes_return_react_index(tmp_path: Path) -> None:
     for route in (
         WEB_ROOT_ROUTE,
         WEB_SETTINGS_ROUTE,
+        WEB_PATH_POLICY_ROUTE,
         WEB_HISTORY_ROUTE,
         f"{WEB_HISTORY_ROUTE}/018f6a4f-3c2d-7b8a-9abc-def01234567d",
         WEB_CHECK_ROUTE,
@@ -51,25 +53,36 @@ def test_spa_routes_return_react_index(tmp_path: Path) -> None:
         assert "OMYM2 React Test Shell" in response.text
 
 
-def test_default_packaged_react_build_is_served() -> None:
-    """The committed Vite build is available through the default app factory."""
+def test_default_packaged_web_build_is_served() -> None:
+    """The committed Next static export is available through the default app factory."""
     client = TestClient(create_web_app())
 
     response = client.get(WEB_ROOT_ROUTE)
 
     assert response.status_code == SUCCESS_STATUS_CODE
-    assert '<div id="root"></div>' in response.text
+    assert "OMYM2 Console" in response.text
 
 
-def test_assets_are_served_from_react_build(tmp_path: Path) -> None:
-    """Vite assets are served separately from SPA entry routes."""
+def test_next_static_assets_are_served_from_web_build(tmp_path: Path) -> None:
+    """Next static assets are served separately from SPA entry routes."""
     static_dist = _static_dist(tmp_path)
     client = TestClient(create_web_app(tmp_path / "config.toml", tmp_path / "omym2.sqlite3", static_dist))
 
-    response = client.get(f"{WEB_ASSETS_ROUTE}/app.js")
+    response = client.get(f"{WEB_NEXT_STATIC_ROUTE}/app.js")
 
     assert response.status_code == SUCCESS_STATUS_CODE
     assert "window.__OMYM2_TEST__" in response.text
+
+
+def test_root_static_assets_are_served_from_web_build(tmp_path: Path) -> None:
+    """Root public files emitted by the static export are served directly."""
+    static_dist = _static_dist(tmp_path)
+    client = TestClient(create_web_app(tmp_path / "config.toml", tmp_path / "omym2.sqlite3", static_dist))
+
+    response = client.get("/icon.svg")
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    assert "omym2-test-icon" in response.text
 
 
 def test_api_routes_do_not_fall_through_to_spa(tmp_path: Path) -> None:
@@ -91,7 +104,7 @@ def test_missing_react_build_returns_503_without_breaking_api(tmp_path: Path) ->
     api_response = client.get(WEB_API_SETTINGS_ROUTE)
 
     assert spa_response.status_code == MISSING_BUILD_STATUS_CODE
-    assert spa_response.text == WEB_REACT_BUILD_MISSING_MESSAGE
+    assert spa_response.text == WEB_STATIC_EXPORT_MISSING_MESSAGE
     assert api_response.status_code == SUCCESS_STATUS_CODE
     assert api_response.json()["config"]["version"] == 1
 
@@ -108,11 +121,12 @@ def test_old_settings_post_route_is_removed(tmp_path: Path) -> None:
 
 def _static_dist(tmp_path: Path) -> Path:
     static_dist = tmp_path / "static_dist"
-    assets_dir = static_dist / "assets"
+    assets_dir = static_dist / "_next" / "static"
     assets_dir.mkdir(parents=True)
     _ = (static_dist / "index.html").write_text(
         '<!doctype html><html><body><div id="root">OMYM2 React Test Shell</div></body></html>',
         encoding=CONFIG_FILE_ENCODING,
     )
     _ = (assets_dir / "app.js").write_text("window.__OMYM2_TEST__ = true;", encoding=CONFIG_FILE_ENCODING)
+    _ = (static_dist / "icon.svg").write_text("<svg>omym2-test-icon</svg>", encoding=CONFIG_FILE_ENCODING)
     return static_dist
