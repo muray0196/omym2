@@ -12,9 +12,10 @@ import {
   SlidersHorizontal,
   Tags,
 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useApp } from "../app-context"
-import { TEMPLATE_TOKENS, configHash, diffConfig, renderPath, validateConfig } from "../lib"
+import { previewSettings } from "../api-client"
+import { TEMPLATE_TOKENS, configHash, diffConfig, validateConfig } from "../lib"
 import type { AppConfig } from "../types"
 import { Button, Mono, Notice, Panel, StatusBadge } from "../primitives"
 import { Field, Select, TextArea, TextInput, Toggle } from "../forms"
@@ -25,17 +26,6 @@ const THEME_LABELS: Record<string, string> = {
   dark: "Dark",
   light: "Light",
   system: "System",
-}
-
-const PREVIEW_SAMPLE = {
-  title: "Example Song",
-  artist: "Aimer",
-  album: "Example Album",
-  album_artist: "Aimer",
-  year: "2024",
-  disc_number: "1",
-  track_number: "3",
-  extension: "flac",
 }
 
 type SaveState = "idle" | "saving" | "success" | "error"
@@ -56,6 +46,7 @@ export function SettingsScreen() {
   } = useApp()
   const [saveState, setSaveState] = useState<SaveState>("idle")
   const [validated, setValidated] = useState(true)
+  const [draftPreview, setDraftPreview] = useState(settingsPreview)
 
   const localValidation = useMemo(() => validateConfig(draftConfig), [draftConfig])
   const validation = validated
@@ -72,12 +63,37 @@ export function SettingsScreen() {
     return diffConfig(savedConfig, draftConfig)
   }, [draftConfig, savedConfig, settingsChanges])
   const hash = useMemo(() => configHash(draftConfig), [draftConfig])
-  const localPreview = useMemo(
-    () => renderPath(draftConfig.path_policy.template, PREVIEW_SAMPLE, draftConfig.path_policy),
-    [draftConfig.path_policy],
-  )
-  const preview = validated ? settingsPreview : localPreview
+  const preview = validated ? settingsPreview : draftPreview
   const validationErrors = uniqueMessages([...settingsErrors, ...validation.errors])
+
+  useEffect(() => {
+    setDraftPreview(settingsPreview)
+  }, [settingsPreview])
+
+  useEffect(() => {
+    if (validated) return
+
+    let cancelled = false
+    const timeout = window.setTimeout(() => {
+      previewSettings(draftConfig)
+        .then((result) => {
+          if (!cancelled) setDraftPreview(result)
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setDraftPreview({
+              path: null,
+              errors: [error instanceof Error ? error.message : "Path preview failed."],
+            })
+          }
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [draftConfig, validated])
 
   // Generic nested updater.
   function update<K extends keyof AppConfig>(key: K, value: Partial<AppConfig[K]>) {

@@ -28,7 +28,7 @@ from omym2.adapters.web.routes.api_serializers import (
     serialize_validation_result,
 )
 from omym2.adapters.web.schemas.settings_changes import describe_config_changes
-from omym2.adapters.web.schemas.settings_json import parse_settings_json
+from omym2.adapters.web.schemas.settings_json import parse_path_preview_json, parse_settings_json
 from omym2.config import (
     PATH_POLICY_PREVIEW_ALBUM,
     PATH_POLICY_PREVIEW_ALBUM_ARTIST,
@@ -41,6 +41,7 @@ from omym2.config import (
     WEB_API_CHECK_ROUTE,
     WEB_API_HISTORY_ROUTE,
     WEB_API_RUN_DETAIL_ROUTE,
+    WEB_API_SETTINGS_PREVIEW_ROUTE,
     WEB_API_SETTINGS_ROUTE,
     WEB_API_SETTINGS_SAVE_ROUTE,
     WEB_API_SETTINGS_VALIDATE_ROUTE,
@@ -111,6 +112,9 @@ def create_api_router(context: ApiRouteContext) -> APIRouter:
     async def validate_settings(request: Request) -> JSONResponse:
         return await _validate_settings(context, request)
 
+    async def preview_settings(request: Request) -> JSONResponse:
+        return await _preview_settings(request)
+
     async def save_settings(request: Request) -> JSONResponse:
         return await _save_settings(context, request)
 
@@ -127,6 +131,7 @@ def create_api_router(context: ApiRouteContext) -> APIRouter:
         return _get_tracks(context)
 
     router.add_api_route(WEB_API_SETTINGS_ROUTE, get_settings, methods=["GET"])
+    router.add_api_route(WEB_API_SETTINGS_PREVIEW_ROUTE, preview_settings, methods=["POST"])
     router.add_api_route(WEB_API_SETTINGS_VALIDATE_ROUTE, validate_settings, methods=["POST"])
     router.add_api_route(WEB_API_SETTINGS_SAVE_ROUTE, save_settings, methods=["POST"])
     router.add_api_route(WEB_API_HISTORY_ROUTE, get_history, methods=["GET"])
@@ -173,6 +178,29 @@ async def _validate_settings(context: ApiRouteContext, request: Request) -> JSON
             ],
             "preview": serialize_path_preview(_preview_path_policy(proposed_config)),
         },
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+async def _preview_settings(request: Request) -> JSONResponse:
+    payload, payload_errors = await _read_json_payload(request)
+    if payload_errors:
+        return _settings_preview_error(payload_errors)
+
+    preview_result = parse_path_preview_json(payload)
+    if preview_result.config is None:
+        return _settings_preview_error(preview_result.errors)
+    if preview_result.errors:
+        return _settings_preview_error(preview_result.errors)
+
+    return JSONResponse(
+        serialize_path_preview(
+            _preview_path_policy(
+                preview_result.config,
+                metadata=preview_result.metadata,
+                file_extension=preview_result.file_extension,
+            )
+        ),
         status_code=SUCCESS_STATUS_CODE,
     )
 
@@ -299,6 +327,10 @@ def _settings_validation_error(errors: tuple[str, ...]) -> JSONResponse:
     )
 
 
+def _settings_preview_error(errors: tuple[str, ...]) -> JSONResponse:
+    return JSONResponse({"path": None, "errors": list(errors)}, status_code=ERROR_STATUS_CODE)
+
+
 def _settings_save_error(errors: tuple[str, ...]) -> JSONResponse:
     return JSONResponse({"saved": False, "errors": list(errors), "changes": []}, status_code=ERROR_STATUS_CODE)
 
@@ -319,12 +351,17 @@ def _validate_persisted_settings(ports: SettingsPorts) -> ValidateSettingsResult
         return ValidateSettingsResult(valid=False, errors=(f"Config I/O error: {exc}",))
 
 
-def _preview_path_policy(config: AppConfig) -> PathPolicyPreviewResult:
+def _preview_path_policy(
+    config: AppConfig,
+    *,
+    metadata: TrackMetadata | None = None,
+    file_extension: str | None = None,
+) -> PathPolicyPreviewResult:
     return PreviewPathPolicyUseCase().execute(
         PathPolicyPreviewRequest(
             path_policy=config.path_policy,
-            metadata=_preview_metadata(),
-            file_extension=PATH_POLICY_PREVIEW_FILE_EXTENSION,
+            metadata=_preview_metadata() if metadata is None else metadata,
+            file_extension=PATH_POLICY_PREVIEW_FILE_EXTENSION if file_extension is None else file_extension,
         )
     )
 

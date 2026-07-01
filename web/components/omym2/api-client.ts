@@ -11,12 +11,15 @@ import {
   mockSettingsState,
   mockTracksResponse,
   mockValidateSettings,
+  mockPreviewSettings,
 } from "./mock-data"
 import type {
   AppConfig,
   CheckResponse,
   HistoryResponse,
   RunDetailResponse,
+  SampleMetadata,
+  SettingsPreviewResult,
   SettingsSaveResult,
   SettingsState,
   SettingsValidateResult,
@@ -68,6 +71,19 @@ export async function validateSettings(config: AppConfig): Promise<SettingsValid
   }
   return requestJson<SettingsValidateResult>("/api/settings/validate", {
     body: JSON.stringify({ config }),
+    method: "POST",
+  })
+}
+
+export async function previewSettings(
+  config: AppConfig,
+  metadata?: SampleMetadata,
+): Promise<SettingsPreviewResult> {
+  if (isMockApiMode()) {
+    return clonePayload(mockPreviewSettings())
+  }
+  return requestJson<SettingsPreviewResult>("/api/settings/preview", {
+    body: JSON.stringify(metadata ? { config, metadata } : { config }),
     method: "POST",
   })
 }

@@ -28,6 +28,7 @@ WEB_TRACKS_ROUTE: Final = "/tracks"  # local Web UI Track listing SPA path
 WEB_NEXT_STATIC_ROUTE: Final = "/_next/static"  # Next static asset mount path
 WEB_API_PREFIX: Final = "/api"  # local Web UI JSON API path prefix
 WEB_API_SETTINGS_ROUTE: Final = "/api/settings"  # settings JSON API path
+WEB_API_SETTINGS_PREVIEW_ROUTE: Final = "/api/settings/preview"  # settings path preview JSON API path
 WEB_API_SETTINGS_VALIDATE_ROUTE: Final = "/api/settings/validate"  # settings validation JSON API path
 WEB_API_SETTINGS_SAVE_ROUTE: Final = "/api/settings/save"  # settings save JSON API path
 WEB_API_HISTORY_ROUTE: Final = "/api/history"  # Run history JSON API path

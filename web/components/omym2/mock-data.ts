@@ -6,13 +6,13 @@ import type {
   HistoryResponse,
   RunDetailResponse,
   RunSummary,
+  SettingsPreviewResult,
   SettingsSaveResult,
   SettingsState,
   SettingsValidateResult,
   TracksResponse,
   TrackSummary,
 } from "./types"
-import { renderPath } from "./lib"
 
 export const LIBRARY_ID = "lib_9f3c1a7b-4e21-4d8a-9c10-2f6b0a5e7d44"
 
@@ -82,18 +82,16 @@ export const mockSettingsState: SettingsState = {
 }
 
 export function mockValidateSettings(config: AppConfig): SettingsValidateResult {
-  const preview = renderPath(config.path_policy.template, MOCK_PREVIEW_SAMPLE, config.path_policy)
   return {
     valid: config.path_policy.template.trim() !== "",
     errors:
       config.path_policy.template.trim() === "" ? ["Path policy template must not be empty."] : [],
     changes: [],
-    preview,
+    preview: mockPreviewSettings(),
   }
 }
 
 export function mockSaveSettings(config: AppConfig): SettingsSaveResult {
-  const preview = renderPath(config.path_policy.template, MOCK_PREVIEW_SAMPLE, config.path_policy)
   return {
     saved: true,
     errors: [],
@@ -104,19 +102,12 @@ export function mockSaveSettings(config: AppConfig): SettingsSaveResult {
       errors: [],
       config_hash: "mock-saved-config-hash",
     },
-    preview,
+    preview: mockPreviewSettings(),
   }
 }
 
-const MOCK_PREVIEW_SAMPLE = {
-  title: "Example Song",
-  artist: "Aimer",
-  album: "Example Album",
-  album_artist: "Aimer",
-  year: "2024",
-  disc_number: "1",
-  track_number: "3",
-  extension: "FLAC",
+export function mockPreviewSettings(): SettingsPreviewResult {
+  return mockSettingsState.preview
 }
 
 export const mockRuns: RunSummary[] = [

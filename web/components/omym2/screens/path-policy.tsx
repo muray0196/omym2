@@ -1,10 +1,11 @@
 "use client"
 
 import { Braces, Music, RotateCcw } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useApp } from "../app-context"
-import { TEMPLATE_TOKENS, renderPath } from "../lib"
-import type { SampleMetadata } from "../types"
+import { previewSettings } from "../api-client"
+import { TEMPLATE_TOKENS } from "../lib"
+import type { PathPreview as PathPreviewResult, SampleMetadata } from "../types"
 import { Button, Mono, Panel } from "../primitives"
 import { Field, Select, TextArea, TextInput } from "../forms"
 import { PathPreview } from "../widgets"
@@ -92,6 +93,7 @@ export function PathPolicyScreen() {
 
   const [presetId, setPresetId] = useState(SAMPLE_PRESETS[0].id)
   const [meta, setMeta] = useState<SampleMetadata>(SAMPLE_PRESETS[0].meta)
+  const [preview, setPreview] = useState<PathPreviewResult>({ path: null, errors: [] })
 
   function selectPreset(id: string) {
     setPresetId(id)
@@ -104,7 +106,28 @@ export function PathPolicyScreen() {
     setPresetId("custom")
   }
 
-  const preview = useMemo(() => renderPath(policy.template, meta, policy), [policy, meta])
+  useEffect(() => {
+    let cancelled = false
+    const timeout = window.setTimeout(() => {
+      previewSettings(savedConfig, meta)
+        .then((result) => {
+          if (!cancelled) setPreview(result)
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setPreview({
+              path: null,
+              errors: [error instanceof Error ? error.message : "Path preview failed."],
+            })
+          }
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [savedConfig, meta])
 
   return (
     <>
