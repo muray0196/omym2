@@ -110,7 +110,7 @@ PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "artist",
     "year",
 )  # placeholders allowed in path policy stem templates
-PATH_POLICY_BEHAVIOR_VERSION: Final = 2  # version included in hashes when canonical path behavior changes
+PATH_POLICY_BEHAVIOR_VERSION: Final = 3  # version included in hashes when canonical path behavior changes
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
 PATH_POLICY_TRACK_NUMBER_WIDTH: Final = 2  # zero-padding width for generated track numbers
 PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in metadata path components

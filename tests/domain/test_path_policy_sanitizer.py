@@ -37,24 +37,29 @@ LONG_UNICODE_REPEAT = 80
         ("Hello World!", "Hello-World"),
         ("A---B!!!C", "A-B-C"),
         ("---hello---", "hello"),
-        ("\uff11\uff12 Café / Song???", "12-Cafe-Song"),
-        ("Beyonce\u0301", "Beyonce"),
-        ("\u2116\uff11\uff12", "No-12"),
-        ("東京", "Dong-Jing"),
+        ("\uff11\uff12 Café / Song???", "12-Café-Song"),
+        ("Beyonce\u0301", "Beyoncé"),
+        ("\u2116\uff11\uff12", "No12"),
+        ("こんにちは", "こんにちは"),
+        ("안녕하세요", "안녕하세요"),
+        ("你好", "你好"),
+        ("Café", "Café"),
+        ("über", "über"),
+        ("東京", "東京"),
         ("½", "1-2"),
         (12.5, "12-5"),
     ],
 )
 def test_sanitize_string_matches_migrated_golden_values(value: str | float | None, expected: str) -> None:
-    """The migrated sanitizer follows the OMYM Unidecode-first pipeline."""
+    """The migrated sanitizer preserves Unicode letters after NFKC normalization."""
     assert sanitize_string(value) == expected
 
 
 def test_sanitize_string_limits_utf8_bytes_after_sanitizing() -> None:
-    """Byte limits are enforced after transliteration and unsafe replacement."""
+    """Byte limits are enforced after normalization and unsafe replacement."""
     sanitized = sanitize_string("é" * LONG_UNICODE_REPEAT, max_length=SANITIZER_ARTIST_MAX_BYTES)
 
-    assert sanitized == "e" * SANITIZER_ARTIST_MAX_BYTES
+    assert sanitized == "é" * (SANITIZER_ARTIST_MAX_BYTES // len("é".encode()))
     assert len(sanitized.encode()) == SANITIZER_ARTIST_MAX_BYTES
     assert sanitize_string("ab-cd", max_length=EXTENSION_STEM_LIMIT) == "ab"
 

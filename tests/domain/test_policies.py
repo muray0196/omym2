@@ -27,6 +27,7 @@ FILE_EXTENSION = ".FLAC"
 GENRE = "J-Pop"
 OCCUPIED_PATH = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
 SANITIZED_ARTIST = "Artist-Name"
+SANITIZED_UNICODE_PATH = "こんにちは/2024_你好/1-03_Café-Song.flac"
 SANITIZED_PATH = "Artist-Name/2024_Example-Album/1-03_Example-Song.flac"
 SHORT_FILENAME_LENGTH = 3
 TITLE = "Example Song"
@@ -74,6 +75,22 @@ def test_path_policy_sanitizes_metadata_path_components() -> None:
 
     assert canonical_path == SANITIZED_PATH
     assert canonical_path.startswith(SANITIZED_ARTIST)
+
+
+def test_path_policy_sanitizer_preserves_unicode_letters() -> None:
+    """Sanitizing path text preserves Japanese, Chinese, and Latin-1 letters."""
+    metadata = TrackMetadata(
+        title="Café Song",
+        artist="こんにちは",
+        album="你好",
+        year=YEAR,
+        track_number=TRACK_NUMBER,
+        disc_number=DISC_NUMBER,
+    )
+
+    canonical_path = PathPolicy(PathPolicyConfig()).canonical_path(metadata, FILE_EXTENSION)
+
+    assert canonical_path == SANITIZED_UNICODE_PATH
 
 
 def test_path_policy_can_leave_metadata_components_unsanitized() -> None:

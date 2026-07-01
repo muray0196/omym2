@@ -42,11 +42,142 @@ export const TEMPLATE_TOKENS = [
   "{year}",
 ] as const
 
-const INVALID_FS_CHARS = /[<>:"/\\|?*\u0000-\u001f]/g
+const SANITIZER_REPLACEMENT = "-"
+const UNSAFE_PATH_TEXT = /[^\p{Letter}\p{Number}_-]/gu
+const HYPHEN_RUN = /-+/g
+const ALLOWED_EXTENSION = /^[A-Za-z0-9]+$/
 
-function sanitizeSegment(segment: string, enable: boolean): string {
-  if (!enable) return segment
-  return segment.replace(INVALID_FS_CHARS, "_").replace(/\s+/g, " ").trim()
+function utf8Length(value: string): number {
+  return new TextEncoder().encode(value).length
+}
+
+function limitUtf8(value: string, maxLength: number | null): string {
+  if (maxLength === null) return value
+  if (maxLength <= 0) return ""
+
+  let output = ""
+  for (const char of Array.from(value)) {
+    const next = output + char
+    if (utf8Length(next) > maxLength) break
+    output = next
+  }
+  return output
+}
+
+function stripReplacement(value: string): string {
+  return value.replace(/^-+|-+$/g, "")
+}
+
+function sanitizeBaseText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replaceAll("'", "")
+    .replace(UNSAFE_PATH_TEXT, SANITIZER_REPLACEMENT)
+    .replace(HYPHEN_RUN, SANITIZER_REPLACEMENT)
+    .replace(/^-+|-+$/g, "")
+}
+
+function splitPreservedExtension(value: string, preserveExtension: boolean): [string, string] {
+  if (!preserveExtension) return [value, ""]
+
+  const dotIndex = value.lastIndexOf(".")
+  if (dotIndex <= 0 || dotIndex === value.length - 1) return [value, ""]
+
+  const extension = value.slice(dotIndex + 1)
+  if (!ALLOWED_EXTENSION.test(extension)) return [value, ""]
+  return [value.slice(0, dotIndex), `.${extension}`]
+}
+
+function sanitizeString(
+  value: string | number | null | undefined,
+  maxLength: number | null = null,
+  preserveExtension = false,
+): string {
+  if (!value) return ""
+
+  const [baseText, extensionSuffix] = splitPreservedExtension(String(value), preserveExtension)
+  const sanitizedBase = sanitizeBaseText(baseText)
+  if (extensionSuffix) {
+    const limitedBase = stripReplacement(limitUtf8(sanitizedBase, maxLength))
+    return `${limitedBase || "_"}${extensionSuffix}`
+  }
+  return stripReplacement(limitUtf8(sanitizedBase, maxLength))
+}
+
+function sanitizePathComponent(
+  value: string | number | null | undefined,
+  maxLength: number | null = null,
+  preserveExtension = false,
+): string {
+  if (!value) return ""
+  return sanitizeString(value, maxLength, preserveExtension) || "_"
+}
+
+function normalizeExtensionSuffix(extension: string): string | null {
+  const trimmed = extension.trim().toLowerCase().replace(/^\./, "")
+  if (!trimmed) return null
+
+  const sanitized = sanitizeString(trimmed, trimmed.length)
+  return sanitized ? `.${sanitized}` : null
+}
+
+function limitComponent(value: string, maxLength: number): string {
+  return limitUtf8(value, maxLength)
+}
+
+function limitComponentWithSuffix(
+  value: string,
+  extensionSuffix: string,
+  maxLength: number,
+): string {
+  const extensionBytes = utf8Length(extensionSuffix)
+  if (maxLength <= extensionBytes) {
+    return extensionBytes > maxLength ? "" : extensionSuffix
+  }
+  return `${limitComponent(value, maxLength - extensionBytes)}${extensionSuffix}`
+}
+
+function normalizeGeneratedPath(
+  renderedStem: string,
+  extensionSuffix: string,
+  policy: Pick<AppConfig["path_policy"], "sanitize" | "max_filename_length">,
+): string {
+  const parts = renderedStem.split("/")
+  if (policy.sanitize) {
+    const segments = parts
+      .slice(0, -1)
+      .map((part) => sanitizePathComponent(part, policy.max_filename_length))
+    segments.push(
+      sanitizePathComponent(
+        `${parts[parts.length - 1]}${extensionSuffix}`,
+        policy.max_filename_length,
+        true,
+      ),
+    )
+    return segments.join("/")
+  }
+
+  const segments = parts
+    .slice(0, -1)
+    .map((part) => limitComponent(part, policy.max_filename_length))
+  segments.push(
+    limitComponentWithSuffix(parts[parts.length - 1], extensionSuffix, policy.max_filename_length),
+  )
+  return segments.join("/")
+}
+
+function normalizeLibraryRelativePath(path: string): string | null {
+  if (!path) return null
+
+  const parts = path.replaceAll("\\", "/").split("/")
+  const normalizedParts: string[] = []
+  for (const part of parts) {
+    if (!part || part === ".") continue
+    if (part === "..") return null
+    normalizedParts.push(part)
+  }
+  if (path.startsWith("/") || normalizedParts.length === 0) return null
+  return normalizedParts.join("/")
 }
 
 export interface PathPreviewResult {
@@ -83,18 +214,24 @@ export function renderPath(
   const disc = meta.disc_number?.trim() || ""
   const track = meta.track_number?.trim() || ""
 
+  const artist = meta.artist.trim() || meta.album_artist.trim() || policy.unknown_artist
+  const albumArtist = meta.album_artist.trim() || meta.artist.trim() || policy.unknown_artist
+  const album = meta.album.trim() || policy.unknown_album
+  const title = meta.title.trim()
   const values: Record<string, string> = {
-    "{album_artist}": meta.album_artist.trim() || meta.artist.trim() || policy.unknown_artist,
-    "{album}": meta.album.trim() || policy.unknown_album,
-    "{artist}": meta.artist.trim() || policy.unknown_artist,
+    "{album_artist}": policy.sanitize ? sanitizePathComponent(albumArtist, 50) : albumArtist,
+    "{album}": policy.sanitize ? sanitizePathComponent(album, 90) : album,
+    "{artist}": policy.sanitize ? sanitizePathComponent(artist, 50) : artist,
     "{title}": meta.title.trim(),
     "{year}": meta.year.trim(),
-    "{disc}": disc ? String(Number(disc)) : "",
-    "{track}": track ? String(Number(track)).padStart(2, "0") : "",
+    "{disc}": disc ? String(Number(disc)) : "_",
+    "{track}": track ? String(Number(track)).padStart(2, "0") : "_",
   }
 
-  if (!values["{title}"]) {
+  if (!title) {
     errors.push("Missing required metadata: title.")
+  } else if (policy.sanitize) {
+    values["{title}"] = sanitizeString(title) || "Unknown-Title"
   }
 
   const unknownTokens = template.match(/\{[a-z_]+\}/g)?.filter((t) => !(t in values))
@@ -107,29 +244,16 @@ export function renderPath(
     rendered = rendered.split(token).join(value)
   }
 
-  // Split into path segments, sanitize each.
-  const segments = rendered
-    .split("/")
-    .map((seg) => sanitizeSegment(seg, policy.sanitize))
-    .filter((seg) => seg.length > 0)
-
-  if (segments.length === 0) {
-    errors.push("Rendered path is empty after sanitization.")
+  const extensionSuffix = normalizeExtensionSuffix(meta.extension)
+  if (!extensionSuffix) {
+    errors.push("File extension must not be empty.")
     return { path: null, errors }
   }
 
-  // Enforce max filename length on the final (file) segment.
-  const last = segments[segments.length - 1]
-  const ext = meta.extension.trim().replace(/^\./, "")
-  const fileWithExt = ext ? `${last}.${ext}` : last
-  if (fileWithExt.length > policy.max_filename_length) {
-    errors.push(
-      `Filename exceeds max_filename_length (${fileWithExt.length} > ${policy.max_filename_length}).`,
-    )
-  }
-
-  segments[segments.length - 1] = fileWithExt
-  const path = segments.join("/")
+  const path = normalizeLibraryRelativePath(
+    normalizeGeneratedPath(rendered, extensionSuffix, policy),
+  )
+  if (!path) errors.push("Rendered path must be a non-empty Library-relative path.")
 
   return { path: errors.length > 0 ? null : path, errors }
 }
