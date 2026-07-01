@@ -79,6 +79,10 @@ CONFIG_FINGERPRINT_ALGORITHM: Final = "sha256"  # config fingerprint hash algori
 CONFIG_FINGERPRINT_ENCODING: Final = "utf-8"  # config fingerprint payload encoding
 CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR: Final = ","  # canonical JSON item separator
 CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR: Final = ":"  # canonical JSON key separator
+CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY: Final = (
+    "path_policy_behavior_version"  # canonical JSON key for path policy behavior identity
+)
+CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY: Final = "path_policy"  # canonical JSON key for path policy settings
 METADATA_FINGERPRINT_ALGORITHM: Final = "sha256"  # metadata fingerprint hash algorithm
 METADATA_FINGERPRINT_ENCODING: Final = "utf-8"  # metadata fingerprint payload encoding
 METADATA_FINGERPRINT_JSON_ITEM_SEPARATOR: Final = ","  # canonical JSON item separator
@@ -86,6 +90,15 @@ METADATA_FINGERPRINT_JSON_KEY_SEPARATOR: Final = ":"  # canonical JSON key separ
 PERSISTED_JSON_ITEM_SEPARATOR: Final = ","  # compact JSON item separator for SQLite payloads
 PERSISTED_JSON_KEY_SEPARATOR: Final = ":"  # compact JSON key separator for SQLite payloads
 PATH_EXTENSION_PREFIX: Final = "."  # separator before generated file extensions
+SANITIZER_ALBUM_MAX_BYTES: Final = 90  # maximum sanitized album text length, UTF-8 bytes
+SANITIZER_ALLOWED_EXTENSION_PATTERN: Final = r"^[A-Za-z0-9]+$"  # extension pattern preserved by sanitizer
+SANITIZER_APOSTROPHE: Final = "'"  # ASCII apostrophe removed before unsafe character replacement
+SANITIZER_ARTIST_MAX_BYTES: Final = 50  # maximum sanitized artist text length, UTF-8 bytes
+SANITIZER_FALLBACK_TITLE: Final = "Unknown-Title"  # title text used when sanitized title is empty
+SANITIZER_HYPHEN_RUN_PATTERN: Final = r"-+"  # repeated hyphens collapsed after replacement
+SANITIZER_REPLACEMENT: Final = "-"  # replacement for sanitizer characters outside [\w-]
+SANITIZER_UNSAFE_PATTERN: Final = r"[^\w-]"  # characters converted to sanitizer replacement
+SANITIZER_UTF8_ENCODING: Final = "utf-8"  # encoding used for sanitizer byte limits
 PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "album_artist",
     "album",
@@ -95,6 +108,7 @@ PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "artist",
     "year",
 )  # placeholders allowed in path policy stem templates
+PATH_POLICY_BEHAVIOR_VERSION: Final = 2  # version included in hashes when canonical path behavior changes
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
 PATH_POLICY_TRACK_NUMBER_WIDTH: Final = 2  # zero-padding width for generated track numbers
 PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in metadata path components

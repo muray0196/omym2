@@ -15,6 +15,9 @@ from omym2.config import (
     CONFIG_FINGERPRINT_ENCODING,
     CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR,
     CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR,
+    CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY,
+    CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY,
+    PATH_POLICY_BEHAVIOR_VERSION,
 )
 
 if TYPE_CHECKING:
@@ -27,7 +30,9 @@ def calculate_config_fingerprint(config: AppConfig, algorithm: str = CONFIG_FING
     """Return a stable fingerprint for the complete AppConfig value."""
     # Canonical JSON keeps the hash independent from TOML formatting, comments,
     # and table ordering while still reflecting every AppConfig field.
-    payload = json.dumps(asdict(config), sort_keys=True, separators=JSON_SEPARATORS)
+    config_payload = asdict(config)
+    config_payload[CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY] = PATH_POLICY_BEHAVIOR_VERSION
+    payload = json.dumps(config_payload, sort_keys=True, separators=JSON_SEPARATORS)
     return _fingerprint_payload(payload, algorithm)
 
 
@@ -38,7 +43,11 @@ def calculate_path_policy_fingerprint(
     """Return a stable fingerprint for Library registration path policy."""
     # Library registration depends on canonical path rules, not unrelated
     # settings such as UI display choices or command defaults.
-    payload = json.dumps(asdict(path_policy_config), sort_keys=True, separators=JSON_SEPARATORS)
+    path_policy_payload = {
+        CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY: PATH_POLICY_BEHAVIOR_VERSION,
+        CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY: asdict(path_policy_config),
+    }
+    payload = json.dumps(path_policy_payload, sort_keys=True, separators=JSON_SEPARATORS)
     return _fingerprint_payload(payload, algorithm)
 
 

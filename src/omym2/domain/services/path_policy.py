@@ -5,15 +5,27 @@ Why: Centralizes pure path policy shared by add, organize, and refresh.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from unidecode import unidecode
 
 from omym2.config import (
     LOGICAL_PATH_SEPARATOR,
     PATH_EXTENSION_PREFIX,
     PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT,
     PATH_POLICY_TRACK_NUMBER_WIDTH,
-    PATH_POLICY_UNSAFE_CHARACTERS,
+    SANITIZER_ALBUM_MAX_BYTES,
+    SANITIZER_ALLOWED_EXTENSION_PATTERN,
+    SANITIZER_APOSTROPHE,
+    SANITIZER_ARTIST_MAX_BYTES,
+    SANITIZER_FALLBACK_TITLE,
+    SANITIZER_HYPHEN_RUN_PATTERN,
+    SANITIZER_REPLACEMENT,
+    SANITIZER_UNSAFE_PATTERN,
+    SANITIZER_UTF8_ENCODING,
 )
 from omym2.shared.paths import normalize_library_relative_path
 
@@ -23,6 +35,10 @@ if TYPE_CHECKING:
 
 EMPTY_FILE_EXTENSION_MESSAGE = "File extension must not be empty."
 MISSING_TITLE_MESSAGE = "Track title is required for canonical path generation."
+
+_ALLOWED_EXTENSION_PATTERN = re.compile(SANITIZER_ALLOWED_EXTENSION_PATTERN)
+_HYPHEN_RUN_PATTERN = re.compile(SANITIZER_HYPHEN_RUN_PATTERN)
+_UNSAFE_PATTERN = re.compile(SANITIZER_UNSAFE_PATTERN)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,8 +51,8 @@ class PathPolicy:
         """Generate a normalized Library-root-relative canonical path."""
         extension_suffix = _normalize_extension_suffix(file_extension)
         raw_stem = self._render_raw_stem(metadata)
-        path_stem = _normalize_generated_stem(raw_stem, self.config, len(extension_suffix))
-        return normalize_library_relative_path(_append_extension(path_stem, extension_suffix))
+        generated_path = _normalize_generated_path(raw_stem, extension_suffix, self.config)
+        return normalize_library_relative_path(generated_path)
 
     def _render_raw_stem(self, metadata: TrackMetadata) -> str:
         return self.config.template.format(
@@ -50,18 +66,23 @@ class PathPolicy:
         )
 
     def _album_artist(self, metadata: TrackMetadata) -> str:
-        return self._component(metadata.album_artist or metadata.artist or self.config.unknown_artist)
+        return self._artist_component(metadata.album_artist or metadata.artist or self.config.unknown_artist)
 
     def _artist(self, metadata: TrackMetadata) -> str:
-        return self._component(metadata.artist or metadata.album_artist or self.config.unknown_artist)
+        return self._artist_component(metadata.artist or metadata.album_artist or self.config.unknown_artist)
 
     def _album(self, metadata: TrackMetadata) -> str:
-        return self._component(metadata.album or self.config.unknown_album)
+        value = metadata.album or self.config.unknown_album
+        if not self.config.sanitize:
+            return value
+        return sanitize_path_component(value, SANITIZER_ALBUM_MAX_BYTES)
 
     def _title(self, metadata: TrackMetadata) -> str:
         if metadata.title is None or metadata.title.strip() == "":
             raise ValueError(MISSING_TITLE_MESSAGE)
-        return self._component(metadata.title)
+        if not self.config.sanitize:
+            return metadata.title
+        return sanitize_track_title(metadata.title)
 
     def _disc_number(self, metadata: TrackMetadata) -> str:
         return self._optional_number(metadata.disc_number)
@@ -76,10 +97,90 @@ class PathPolicy:
             return PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT
         return str(value)
 
-    def _component(self, value: str) -> str:
+    def _artist_component(self, value: str) -> str:
         if not self.config.sanitize:
             return value
-        return _sanitize_component(value, self.config.max_filename_length)
+        return sanitize_path_component(value, SANITIZER_ARTIST_MAX_BYTES)
+
+
+def sanitize_string(
+    value: str | float | None,
+    max_length: int | None = None,
+    *,
+    preserve_extension: bool = False,
+) -> str:
+    """Sanitize text using the migrated OMYM filename pipeline.
+
+    Args:
+        value: Text-like value supplied by metadata or wrapper code.
+        max_length: Optional maximum output length measured in UTF-8 bytes.
+        preserve_extension: Whether to preserve an allowed final extension.
+
+    Returns:
+        Sanitized text, or an empty string when no allowed content remains.
+    """
+    if not value:
+        return ""
+
+    raw_text = str(value)
+    base_text, extension_suffix = _split_preserved_extension(raw_text, preserve_extension=preserve_extension)
+    sanitized_base = _sanitize_base_text(base_text)
+    return _limit_sanitized_with_extension(sanitized_base, extension_suffix, max_length)
+
+
+def sanitize_artist_name(value: str | float | None) -> str:
+    """Sanitize artist text using the migrated artist byte limit."""
+    return sanitize_string(value, max_length=SANITIZER_ARTIST_MAX_BYTES)
+
+
+def sanitize_album_name(value: str | float | None) -> str:
+    """Sanitize album text using the migrated album byte limit."""
+    return sanitize_string(value, max_length=SANITIZER_ALBUM_MAX_BYTES)
+
+
+def sanitize_track_title(value: str | float | None, max_length: int | None = None) -> str:
+    """Sanitize title text and fall back when no title-safe text remains."""
+    sanitized_title = sanitize_string(value, max_length=max_length)
+    if sanitized_title != "":
+        return sanitized_title
+    return _limit_utf8(SANITIZER_FALLBACK_TITLE, max_length)
+
+
+def sanitize_path_component(
+    value: str | float | None,
+    max_length: int | None = None,
+    *,
+    preserve_extension: bool = False,
+) -> str:
+    """Sanitize one path component with optional final-extension preservation."""
+    if not value:
+        return ""
+
+    sanitized_component = sanitize_string(value, max_length=max_length, preserve_extension=preserve_extension)
+    if sanitized_component != "":
+        return sanitized_component
+
+    # Path generation cannot store empty non-final components. Keep the generic
+    # sanitizer empty-result behavior, but give path components a stable name.
+    return PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT
+
+
+def sanitize_path_components(value: str | float | None, max_length: int | None = None) -> str:
+    """Sanitize a logical path, preserving an allowed extension on the final component."""
+    if not value:
+        return ""
+
+    raw_components = str(value).split(LOGICAL_PATH_SEPARATOR)
+    final_index = len(raw_components) - 1
+    sanitized_components = [
+        sanitize_path_component(
+            component,
+            max_length=max_length,
+            preserve_extension=index == final_index,
+        )
+        for index, component in enumerate(raw_components)
+    ]
+    return LOGICAL_PATH_SEPARATOR.join(component for component in sanitized_components if component != "")
 
 
 def _normalize_extension_suffix(file_extension: str) -> str:
@@ -88,35 +189,91 @@ def _normalize_extension_suffix(file_extension: str) -> str:
         extension = extension.removeprefix(PATH_EXTENSION_PREFIX)
     if extension == "":
         raise ValueError(EMPTY_FILE_EXTENSION_MESSAGE)
-    return f"{PATH_EXTENSION_PREFIX}{_sanitize_component(extension, len(extension))}"
+    sanitized_extension = sanitize_string(extension, len(extension))
+    if sanitized_extension == "":
+        raise ValueError(EMPTY_FILE_EXTENSION_MESSAGE)
+    return f"{PATH_EXTENSION_PREFIX}{sanitized_extension}"
 
 
-def _normalize_generated_stem(raw_stem: str, config: PathPolicyConfig, reserved_suffix_length: int) -> str:
+def _normalize_generated_path(raw_stem: str, extension_suffix: str, config: PathPolicyConfig) -> str:
     parts = raw_stem.split(LOGICAL_PATH_SEPARATOR)
-    final_component_length = config.max_filename_length - reserved_suffix_length
     if config.sanitize:
-        normalized_parts = [_sanitize_component(part, config.max_filename_length) for part in parts[:-1]]
-        normalized_parts.append(_sanitize_component(parts[-1], final_component_length))
+        normalized_parts = [sanitize_path_component(part, config.max_filename_length) for part in parts[:-1]]
+        normalized_parts.append(
+            sanitize_path_component(
+                _append_extension(parts[-1], extension_suffix),
+                config.max_filename_length,
+                preserve_extension=True,
+            )
+        )
     else:
         normalized_parts = [_limit_component(part, config.max_filename_length) for part in parts[:-1]]
-        normalized_parts.append(_limit_component(parts[-1], final_component_length))
+        normalized_parts.append(_limit_component_with_suffix(parts[-1], extension_suffix, config.max_filename_length))
     return LOGICAL_PATH_SEPARATOR.join(normalized_parts)
 
 
-def _sanitize_component(value: str, max_length: int) -> str:
-    cleaned = value.strip()
-    for unsafe_character in PATH_POLICY_UNSAFE_CHARACTERS:
-        cleaned = cleaned.replace(unsafe_character, PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT)
-    cleaned = _limit_component(cleaned, max_length)
-    if cleaned in {"", ".", ".."}:
-        return PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT
-    return cleaned
+def _sanitize_base_text(value: str) -> str:
+    # The OMYM pipeline transliterates first; NFKC then handles compatibility
+    # characters in Unidecode output without changing the source extension.
+    normalized = unicodedata.normalize("NFKC", unidecode(value))
+    without_apostrophes = normalized.replace(SANITIZER_APOSTROPHE, "")
+    replaced = _UNSAFE_PATTERN.sub(SANITIZER_REPLACEMENT, without_apostrophes)
+    collapsed = _HYPHEN_RUN_PATTERN.sub(SANITIZER_REPLACEMENT, replaced)
+    return collapsed.strip(SANITIZER_REPLACEMENT)
+
+
+def _split_preserved_extension(value: str, *, preserve_extension: bool) -> tuple[str, str]:
+    if not preserve_extension:
+        return value, ""
+
+    base, separator, extension = value.rpartition(PATH_EXTENSION_PREFIX)
+    if separator == "" or extension == "":
+        return value, ""
+    if _ALLOWED_EXTENSION_PATTERN.fullmatch(extension) is None:
+        return value, ""
+    return base, f"{PATH_EXTENSION_PREFIX}{extension}"
+
+
+def _limit_sanitized_with_extension(base: str, extension_suffix: str, max_length: int | None) -> str:
+    if extension_suffix != "":
+        limited_base = _limit_utf8(base, max_length).strip(SANITIZER_REPLACEMENT)
+        if limited_base == "":
+            return f"{PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT}{extension_suffix}"
+        return f"{limited_base}{extension_suffix}"
+
+    if max_length is None:
+        return base
+    if max_length <= 0:
+        return ""
+
+    return _limit_utf8(base, max_length).strip(SANITIZER_REPLACEMENT)
+
+
+def _limit_component_with_suffix(value: str, extension_suffix: str, max_length: int) -> str:
+    extension_bytes = _utf8_length(extension_suffix)
+    if max_length <= extension_bytes:
+        return "" if extension_bytes > max_length else extension_suffix
+    return f"{_limit_component(value, max_length - extension_bytes)}{extension_suffix}"
 
 
 def _limit_component(value: str, max_length: int) -> str:
+    return _limit_utf8(value, max_length)
+
+
+def _limit_utf8(value: str, max_length: int | None) -> str:
+    if max_length is None:
+        return value
     if max_length <= 0:
         return ""
-    return value[:max_length]
+
+    encoded = value.encode(SANITIZER_UTF8_ENCODING)
+    if len(encoded) <= max_length:
+        return value
+    return encoded[:max_length].decode(SANITIZER_UTF8_ENCODING, errors="ignore")
+
+
+def _utf8_length(value: str) -> int:
+    return len(value.encode(SANITIZER_UTF8_ENCODING))
 
 
 def _append_extension(path_stem: str, extension_suffix: str) -> str:
