@@ -24,8 +24,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 ERROR_STATUS_CODE = 400
-EXPECTED_DEFAULT_PREVIEW = "Aimer/2024_Example Album/1-03_Example Song.flac"
-EXPECTED_UPDATED_PREVIEW = "Aimer/03_Example Song.flac"
+EXPECTED_DEFAULT_PREVIEW = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
+EXPECTED_UPDATED_PREVIEW = "Aimer/03_Example-Song.flac"
 FORBIDDEN_STATUS_CODE = 403
 INCOMING_PATH = "/music/incoming"
 LIBRARY_PATH = "/music/library"

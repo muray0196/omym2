@@ -40,10 +40,10 @@ BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 CONTENT_HASH = calculate_content_fingerprint(AUDIO_CONTENT)
 ERROR_EXIT_CODE = 1
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
-NEW_PATH = "Artist/2026_Album/1-02_New Title.flac"
-OLD_PATH = "Artist/2026_Album/1-02_Old Title.flac"
-SECOND_NEW_PATH = "Artist/2026_Album/1-03_Second New.flac"
-SECOND_OLD_PATH = "Artist/2026_Album/1-03_Second Old.flac"
+NEW_PATH = "Artist/2026_Album/1-02_New-Title.flac"
+OLD_PATH = "Artist/2026_Album/1-02_Old-Title.flac"
+SECOND_NEW_PATH = "Artist/2026_Album/1-03_Second-New.flac"
+SECOND_OLD_PATH = "Artist/2026_Album/1-03_Second-Old.flac"
 SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
 SUCCESS_EXIT_CODE = 0
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))

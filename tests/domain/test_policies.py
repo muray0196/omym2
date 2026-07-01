@@ -21,16 +21,18 @@ ALBUM_ARTIST = "Aimer"
 CONTENT = b"content"
 DIFFERENT_CONTENT = b"different content"
 DISC_NUMBER = 1
-EXPECTED_CANONICAL_PATH = "Aimer/2024_Example Album/1-03_Example Song.flac"
-EXPECTED_STEM_TEMPLATE_PATH = "Aimer/Example Album/1-03 - Example Song.flac"
+EXPECTED_CANONICAL_PATH = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
+EXPECTED_STEM_TEMPLATE_PATH = "Aimer/Example-Album/1-03-Example-Song.flac"
 FILE_EXTENSION = ".FLAC"
 GENRE = "J-Pop"
-OCCUPIED_PATH = "Aimer/2024_Example Album/1-03_Example Song.flac"
-SANITIZED_ARTIST = "Artist_Name"
-SANITIZED_PATH = "Artist_Name/2024_Example Album/1-03_Example Song.flac"
+OCCUPIED_PATH = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
+SANITIZED_ARTIST = "Artist-Name"
+SANITIZED_PATH = "Artist-Name/2024_Example-Album/1-03_Example-Song.flac"
+SHORT_FILENAME_LENGTH = 3
 TITLE = "Example Song"
 TRACK_NUMBER = 3
 TRUNCATED_FILENAME_LENGTH = 12
+TRUNCATED_FINAL_COMPONENT = "1-03_AAAAAAA.flac"
 UNSANITIZED_ARTIST = "Artist:Name"
 UNSANITIZED_PATH = "Artist:Name/2024_Example Album/1-03_Example Song.flac"
 YEAR = 2024
@@ -106,8 +108,39 @@ def test_path_policy_preserves_extension_when_limiting_long_filename() -> None:
     )
 
     final_component = canonical_path.rsplit("/", maxsplit=1)[-1]
-    assert final_component == "1-03_AA.flac"
-    assert len(final_component) == TRUNCATED_FILENAME_LENGTH
+    assert final_component == TRUNCATED_FINAL_COMPONENT
+    assert len(final_component.removesuffix(".flac")) == TRUNCATED_FILENAME_LENGTH
+
+
+def test_path_policy_preserves_extension_when_stem_budget_is_shorter_than_extension() -> None:
+    """PathPolicy applies max_filename_length to the stem before appending the suffix."""
+    metadata = _track_metadata()
+
+    canonical_path = PathPolicy(PathPolicyConfig(max_filename_length=SHORT_FILENAME_LENGTH)).canonical_path(
+        metadata,
+        FILE_EXTENSION,
+    )
+
+    final_component = canonical_path.rsplit("/", maxsplit=1)[-1]
+    assert final_component == "1-0.flac"
+    assert final_component.endswith(".flac")
+    assert final_component.removesuffix(".flac") != ""
+
+
+def test_path_policy_falls_back_when_metadata_component_sanitizes_empty() -> None:
+    """Non-empty metadata components that sanitize away still produce relative paths."""
+    metadata = TrackMetadata(
+        title=TITLE,
+        artist="!!!",
+        album="!!!",
+        year=YEAR,
+        track_number=TRACK_NUMBER,
+        disc_number=DISC_NUMBER,
+    )
+
+    canonical_path = PathPolicy(PathPolicyConfig()).canonical_path(metadata, FILE_EXTENSION)
+
+    assert canonical_path == "_/2024__/1-03_Example-Song.flac"
 
 
 def test_path_policy_blocks_missing_title() -> None:
