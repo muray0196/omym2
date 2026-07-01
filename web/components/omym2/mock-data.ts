@@ -6,6 +6,7 @@ import type {
   HistoryResponse,
   RunDetailResponse,
   RunSummary,
+  SettingsPreviewResult,
   SettingsSaveResult,
   SettingsState,
   SettingsValidateResult,
@@ -86,10 +87,7 @@ export function mockValidateSettings(config: AppConfig): SettingsValidateResult 
     errors:
       config.path_policy.template.trim() === "" ? ["Path policy template must not be empty."] : [],
     changes: [],
-    preview: {
-      path: config.path_policy.template.trim() === "" ? null : mockSettingsState.preview.path,
-      errors: [],
-    },
+    preview: mockPreviewSettings(),
   }
 }
 
@@ -104,11 +102,12 @@ export function mockSaveSettings(config: AppConfig): SettingsSaveResult {
       errors: [],
       config_hash: "mock-saved-config-hash",
     },
-    preview: {
-      path: config.path_policy.template.trim() === "" ? null : mockSettingsState.preview.path,
-      errors: [],
-    },
+    preview: mockPreviewSettings(),
   }
+}
+
+export function mockPreviewSettings(): SettingsPreviewResult {
+  return mockSettingsState.preview
 }
 
 export const mockRuns: RunSummary[] = [

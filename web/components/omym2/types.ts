@@ -107,6 +107,8 @@ export interface SettingsValidateResult {
   preview: PathPreview
 }
 
+export type SettingsPreviewResult = PathPreview
+
 export interface SettingsSaveResult {
   saved: boolean
   errors: string[]

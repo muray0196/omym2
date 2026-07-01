@@ -13,6 +13,7 @@ from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.web.app import create_web_app
 from omym2.config import (
     CONFIG_FILE_ENCODING,
+    WEB_API_SETTINGS_PREVIEW_ROUTE,
     WEB_API_SETTINGS_ROUTE,
     WEB_API_SETTINGS_SAVE_ROUTE,
     WEB_API_SETTINGS_VALIDATE_ROUTE,
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
 ERROR_STATUS_CODE = 400
 EXPECTED_DEFAULT_PREVIEW = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
 EXPECTED_UPDATED_PREVIEW = "Aimer/03_Example-Song.flac"
+EXPECTED_UNICODE_PREVIEW = "こんにちは/2024_你好/1-03_Café-Song.flac"
 FORBIDDEN_STATUS_CODE = 403
 INCOMING_PATH = "/music/incoming"
 LIBRARY_PATH = "/music/library"
@@ -78,6 +80,43 @@ def test_validate_settings_returns_changes_and_preview_without_saving(tmp_path: 
         {"label": "Path template", "before": AppConfig().path_policy.template, "after": UPDATED_TEMPLATE},
     ]
     assert not config_path.exists()
+
+
+def test_preview_settings_returns_backend_path_policy_result(tmp_path: Path) -> None:
+    """Settings preview renders custom sample metadata through the backend usecase."""
+    client = TestClient(create_web_app(tmp_path / "config.toml"))
+    payload = _settings_payload(AppConfig())
+    payload["metadata"] = {
+        "title": "Café Song",
+        "artist": "こんにちは",
+        "album": "你好",
+        "album_artist": "",
+        "year": "2024",
+        "disc_number": "1",
+        "track_number": "3",
+        "extension": "FLAC",
+    }
+
+    response = client.post(WEB_API_SETTINGS_PREVIEW_ROUTE, json=payload)
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    response_payload = _json_payload(response)
+    assert response_payload["path"] == EXPECTED_UNICODE_PREVIEW
+    assert response_payload["errors"] == []
+
+
+def test_preview_settings_rejects_invalid_metadata(tmp_path: Path) -> None:
+    """Preview metadata parsing reports invalid sample numbers without saving settings."""
+    client = TestClient(create_web_app(tmp_path / "config.toml"))
+    payload = _settings_payload(AppConfig())
+    payload["metadata"] = {"title": "Song", "track_number": "not-a-number", "extension": "flac"}
+
+    response = client.post(WEB_API_SETTINGS_PREVIEW_ROUTE, json=payload)
+
+    assert response.status_code == ERROR_STATUS_CODE
+    response_payload = _json_payload(response)
+    assert response_payload["path"] is None
+    assert response_payload["errors"] == ["Preview metadata.track_number must be an integer."]
 
 
 def test_save_settings_persists_valid_config_with_csrf(tmp_path: Path) -> None:

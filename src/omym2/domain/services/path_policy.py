@@ -10,8 +10,6 @@ import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from unidecode import unidecode
-
 from omym2.config import (
     LOGICAL_PATH_SEPARATOR,
     PATH_EXTENSION_PREFIX,
@@ -213,9 +211,9 @@ def _normalize_generated_path(raw_stem: str, extension_suffix: str, config: Path
 
 
 def _sanitize_base_text(value: str) -> str:
-    # The OMYM pipeline transliterates first; NFKC then handles compatibility
-    # characters in Unidecode output without changing the source extension.
-    normalized = unicodedata.normalize("NFKC", unidecode(value))
+    # NFKC folds compatibility characters while preserving letters from
+    # non-Latin scripts, matching the legacy OMYM sanitizer behavior.
+    normalized = unicodedata.normalize("NFKC", value)
     without_apostrophes = normalized.replace(SANITIZER_APOSTROPHE, "")
     replaced = _UNSAFE_PATTERN.sub(SANITIZER_REPLACEMENT, without_apostrophes)
     collapsed = _HYPHEN_RUN_PATTERN.sub(SANITIZER_REPLACEMENT, replaced)

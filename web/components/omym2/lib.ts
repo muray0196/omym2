@@ -1,4 +1,4 @@
-import type { AppConfig, CheckIssueType, IssueSeverity, SampleMetadata } from "./types"
+import type { AppConfig, CheckIssueType, IssueSeverity } from "./types"
 
 /** Truncate a long string in the middle, keeping head and tail visible. */
 export function truncateMiddle(value: string, max = 42): string {
@@ -41,98 +41,6 @@ export const TEMPLATE_TOKENS = [
   "{artist}",
   "{year}",
 ] as const
-
-const INVALID_FS_CHARS = /[<>:"/\\|?*\u0000-\u001f]/g
-
-function sanitizeSegment(segment: string, enable: boolean): string {
-  if (!enable) return segment
-  return segment.replace(INVALID_FS_CHARS, "_").replace(/\s+/g, " ").trim()
-}
-
-export interface PathPreviewResult {
-  path: string | null
-  errors: string[]
-}
-
-/**
- * Render a canonical relative path from a template + sample metadata.
- * The file extension is appended AFTER rendering; templates must not
- * include an extension. The result is relative to the Library root.
- */
-export function renderPath(
-  template: string,
-  meta: SampleMetadata,
-  policy: Pick<
-    AppConfig["path_policy"],
-    "unknown_artist" | "unknown_album" | "sanitize" | "max_filename_length"
-  >,
-): PathPreviewResult {
-  const errors: string[] = []
-
-  if (!template.trim()) {
-    errors.push("Template is empty.")
-    return { path: null, errors }
-  }
-
-  if (/\.[a-z0-9]{1,5}\s*$/i.test(template.trim())) {
-    errors.push(
-      "Template must not include a file extension. The source extension is appended automatically.",
-    )
-  }
-
-  const disc = meta.disc_number?.trim() || ""
-  const track = meta.track_number?.trim() || ""
-
-  const values: Record<string, string> = {
-    "{album_artist}": meta.album_artist.trim() || meta.artist.trim() || policy.unknown_artist,
-    "{album}": meta.album.trim() || policy.unknown_album,
-    "{artist}": meta.artist.trim() || policy.unknown_artist,
-    "{title}": meta.title.trim(),
-    "{year}": meta.year.trim(),
-    "{disc}": disc ? String(Number(disc)) : "",
-    "{track}": track ? String(Number(track)).padStart(2, "0") : "",
-  }
-
-  if (!values["{title}"]) {
-    errors.push("Missing required metadata: title.")
-  }
-
-  const unknownTokens = template.match(/\{[a-z_]+\}/g)?.filter((t) => !(t in values))
-  if (unknownTokens && unknownTokens.length > 0) {
-    errors.push(`Unknown template token(s): ${Array.from(new Set(unknownTokens)).join(", ")}`)
-  }
-
-  let rendered = template
-  for (const [token, value] of Object.entries(values)) {
-    rendered = rendered.split(token).join(value)
-  }
-
-  // Split into path segments, sanitize each.
-  const segments = rendered
-    .split("/")
-    .map((seg) => sanitizeSegment(seg, policy.sanitize))
-    .filter((seg) => seg.length > 0)
-
-  if (segments.length === 0) {
-    errors.push("Rendered path is empty after sanitization.")
-    return { path: null, errors }
-  }
-
-  // Enforce max filename length on the final (file) segment.
-  const last = segments[segments.length - 1]
-  const ext = meta.extension.trim().replace(/^\./, "")
-  const fileWithExt = ext ? `${last}.${ext}` : last
-  if (fileWithExt.length > policy.max_filename_length) {
-    errors.push(
-      `Filename exceeds max_filename_length (${fileWithExt.length} > ${policy.max_filename_length}).`,
-    )
-  }
-
-  segments[segments.length - 1] = fileWithExt
-  const path = segments.join("/")
-
-  return { path: errors.length > 0 ? null : path, errors }
-}
 
 /** A tiny stable "hash" of the config object for display only. */
 export function configHash(config: AppConfig): string {

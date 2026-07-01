@@ -28,6 +28,7 @@ WEB_TRACKS_ROUTE: Final = "/tracks"  # local Web UI Track listing SPA path
 WEB_NEXT_STATIC_ROUTE: Final = "/_next/static"  # Next static asset mount path
 WEB_API_PREFIX: Final = "/api"  # local Web UI JSON API path prefix
 WEB_API_SETTINGS_ROUTE: Final = "/api/settings"  # settings JSON API path
+WEB_API_SETTINGS_PREVIEW_ROUTE: Final = "/api/settings/preview"  # settings path preview JSON API path
 WEB_API_SETTINGS_VALIDATE_ROUTE: Final = "/api/settings/validate"  # settings validation JSON API path
 WEB_API_SETTINGS_SAVE_ROUTE: Final = "/api/settings/save"  # settings save JSON API path
 WEB_API_HISTORY_ROUTE: Final = "/api/history"  # Run history JSON API path
@@ -110,7 +111,7 @@ PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "artist",
     "year",
 )  # placeholders allowed in path policy stem templates
-PATH_POLICY_BEHAVIOR_VERSION: Final = 2  # version included in hashes when canonical path behavior changes
+PATH_POLICY_BEHAVIOR_VERSION: Final = 3  # version included in hashes when canonical path behavior changes
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
 PATH_POLICY_TRACK_NUMBER_WIDTH: Final = 2  # zero-padding width for generated track numbers
 PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in metadata path components
