@@ -19,6 +19,7 @@ import {
   saveSettings as saveSettingsRequest,
   validateSettings,
 } from "./api-client"
+import { savedArtistIdEntries } from "./lib"
 import { defaultConfig, mockSettingsState } from "./mock-data"
 import type {
   AppConfig,
@@ -268,9 +269,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const result = await generateArtistIdsRequest(artistNames, overwrite, csrfToken)
           setSettingsErrors(result.errors)
           if (!result.generated) return false
-          const generatedEntries = Object.fromEntries(
-            result.entries.map((entry) => [entry.source_artist, entry.artist_id]),
-          )
+          const generatedEntries = savedArtistIdEntries(result.entries)
           setSavedConfig((prev) => ({
             ...prev,
             artist_ids: {

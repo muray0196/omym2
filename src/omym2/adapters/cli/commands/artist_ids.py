@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 
 ERROR_EXIT_CODE = 1
 FASTTEXT_MODEL_OPTION = "--fasttext-model"
+FASTTEXT_MODEL_LOAD_ERROR_MESSAGE = "fastText model load failed."
 FASTTEXT_OPTIONAL_DEPENDENCY_MESSAGE = "fastText support requires the optional fasttext package."
+FASTTEXT_MODEL_LOAD_ERROR_TYPES = (OSError, RuntimeError, ValueError)
 GENERATE_SUBCOMMAND = "generate"
 OVERWRITE_OPTION = "--overwrite"
 SUCCESS_EXIT_CODE = 0
@@ -67,11 +69,11 @@ def run_artist_ids_command(
         return USAGE_EXIT_CODE
 
     command_dependencies = ArtistIdsCommandDependencies() if dependencies is None else dependencies
-    try:
-        detector = command_dependencies.language_detector or _language_detector(parsed_args.fasttext_model_path)
-    except ModuleNotFoundError as exc:
-        write_line(stderr, f"{FASTTEXT_OPTIONAL_DEPENDENCY_MESSAGE} ({exc})")
+    detector, detector_error = _command_language_detector(command_dependencies, parsed_args.fasttext_model_path)
+    if detector_error is not None or detector is None:
+        write_line(stderr, detector_error or FASTTEXT_MODEL_LOAD_ERROR_MESSAGE)
         return ERROR_EXIT_CODE
+
     resolver = command_dependencies.artist_resolver or MusicBrainzArtistLookup()
     usecase = GenerateArtistIdsUseCase(
         config_store=TomlConfigStore(config_path or default_application_paths().config_file),
@@ -123,6 +125,20 @@ def _language_detector(model_path: Path | None) -> ArtistLanguageDetector:
     if model_path is None:
         return _NonJapaneseLanguageDetector()
     return FastTextLanguageDetector(model_path=model_path)
+
+
+def _command_language_detector(
+    dependencies: ArtistIdsCommandDependencies,
+    fasttext_model_path: Path | None,
+) -> tuple[ArtistLanguageDetector | None, str | None]:
+    if dependencies.language_detector is not None:
+        return dependencies.language_detector, None
+    try:
+        return _language_detector(fasttext_model_path), None
+    except ModuleNotFoundError as exc:
+        return None, f"{FASTTEXT_OPTIONAL_DEPENDENCY_MESSAGE} ({exc})"
+    except FASTTEXT_MODEL_LOAD_ERROR_TYPES as exc:
+        return None, f"{FASTTEXT_MODEL_LOAD_ERROR_MESSAGE} ({exc})"
 
 
 @dataclass(frozen=True, slots=True)

@@ -5,7 +5,7 @@ Why: Gives usecases typed settings without depending on TOML adapters.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from string import Formatter
 
 from omym2.config import (
@@ -161,7 +161,7 @@ class AppConfig:
     organize: OrganizeConfig = OrganizeConfig()
     refresh: CommandConfig = CommandConfig(auto_apply=DEFAULT_REFRESH_AUTO_APPLY)
     path_policy: PathPolicyConfig = PathPolicyConfig()
-    artist_ids: ArtistIdConfig = ArtistIdConfig()
+    artist_ids: ArtistIdConfig = field(default_factory=ArtistIdConfig)
     metadata: MetadataConfig = MetadataConfig()
     collision: CollisionConfig = CollisionConfig()
     ui: UiConfig = UiConfig()

@@ -1,4 +1,4 @@
-import type { AppConfig, CheckIssueType, IssueSeverity } from "./types"
+import type { AppConfig, ArtistIdGenerationEntry, CheckIssueType, IssueSeverity } from "./types"
 
 /** Truncate a long string in the middle, keeping head and tail visible. */
 export function truncateMiddle(value: string, max = 42): string {
@@ -132,6 +132,13 @@ export function diffConfig(before: AppConfig, after: AppConfig): ConfigDiffRow[]
     }
   }
   return rows.sort((x, y) => x.field.localeCompare(y.field))
+}
+
+/** Return only artist ID entries that the backend actually persisted. */
+export function savedArtistIdEntries(entries: ArtistIdGenerationEntry[]): Record<string, string> {
+  return Object.fromEntries(
+    entries.filter((entry) => entry.saved).map((entry) => [entry.source_artist, entry.artist_id]),
+  )
 }
 
 export function cn(...classes: Array<string | false | null | undefined>): string {

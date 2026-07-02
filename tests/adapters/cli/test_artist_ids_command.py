@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 JAPANESE_ARTIST = "米津玄師"
 RESOLVED_ARTIST = "Kenshi Yonezu"
 ENGLISH_ARTIST = "John Smith"
+MODEL_LOAD_ERROR = "model cannot be loaded"
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,3 +110,35 @@ def test_artist_ids_generate_command_reports_missing_fasttext_dependency(
     assert exit_code == 1
     assert stdout.getvalue() == ""
     assert "fastText support requires the optional fasttext package." in stderr.getvalue()
+
+
+def test_artist_ids_generate_command_reports_fasttext_model_load_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI reports unreadable model files without surfacing a traceback."""
+    config_path = tmp_path / "config.toml"
+    stdout = StringIO()
+    stderr = StringIO()
+
+    @dataclass(frozen=True, slots=True)
+    class BrokenFastTextModule:
+        def load_model(self, _path: str) -> object:
+            raise ValueError(MODEL_LOAD_ERROR)
+
+    def broken_fasttext_module(_name: str) -> object:
+        return BrokenFastTextModule()
+
+    monkeypatch.setattr(importlib, "import_module", broken_fasttext_module)
+
+    exit_code = run_artist_ids_command(
+        ["generate", "--fasttext-model", str(tmp_path / "missing.bin"), ENGLISH_ARTIST],
+        stdout,
+        stderr,
+        config_path,
+    )
+
+    assert exit_code == 1
+    assert stdout.getvalue() == ""
+    assert "fastText model load failed." in stderr.getvalue()
+    assert MODEL_LOAD_ERROR in stderr.getvalue()
