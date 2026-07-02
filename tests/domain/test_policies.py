@@ -30,8 +30,12 @@ OCCUPIED_PATH = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
 SANITIZED_ARTIST = "Artist-Name"
 SANITIZED_UNICODE_PATH = "こんにちは/2024_你好/1-03_Café-Song.flac"
 SANITIZED_PATH = "Artist-Name/2024_Example-Album/1-03_Example-Song.flac"
+SHORT_BUDGET_FILENAME_LENGTH = 5
+SHORT_BUDGET_FINAL_COMPONENT = "SomeT.flac"
+SHORT_BUDGET_TITLE = "SomeTitle"
 SHORT_FILENAME_LENGTH = 3
 TITLE = "Example Song"
+TITLE_ONLY_TEMPLATE = "{title}"
 TRACK_NUMBER = 3
 TRUNCATED_FILENAME_LENGTH = 12
 TRUNCATED_FINAL_COMPONENT = "1-03_AAAAAAA.flac"
@@ -154,6 +158,22 @@ def test_path_policy_preserves_extension_when_stem_budget_is_shorter_than_extens
     assert final_component == "1-0.flac"
     assert final_component.endswith(".flac")
     assert final_component.removesuffix(".flac") != ""
+
+
+def test_canonical_path_currently_budgets_max_length_against_stem_only_when_sanitized() -> None:
+    """Characterizes current behavior: max_filename_length is applied to the
+    sanitized stem before the extension suffix is appended back on, so the
+    final component's total length can exceed max_filename_length. This is
+    the current contract; it is not validated against the full byte budget.
+    """
+    metadata = TrackMetadata(title=SHORT_BUDGET_TITLE)
+
+    canonical_path = PathPolicy(
+        PathPolicyConfig(template=TITLE_ONLY_TEMPLATE, max_filename_length=SHORT_BUDGET_FILENAME_LENGTH)
+    ).canonical_path(metadata, FILE_EXTENSION)
+
+    assert canonical_path == SHORT_BUDGET_FINAL_COMPONENT
+    assert len(SHORT_BUDGET_FINAL_COMPONENT) > SHORT_BUDGET_FILENAME_LENGTH
 
 
 def test_path_policy_falls_back_when_metadata_component_sanitizes_empty() -> None:

@@ -49,6 +49,7 @@ if TYPE_CHECKING:
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+CASE_INSENSITIVE_DUPLICATE_TARGET_PATH = "artist/2026_Album/1-02_Title.flac"
 CONTENT = b"audio"
 CONTENT_HASH = calculate_content_fingerprint(CONTENT)
 EXPECTED_CANONICAL_PATH = "Artist/2026_Album/1-02_Title.flac"
@@ -58,6 +59,14 @@ INCOMING_FILE = "/music/incoming/Title.flac"
 INCOMING_ROOT = "/music/incoming"
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 LIBRARY_ROOT = "/music/library"
+LOWERCASE_ARTIST_METADATA = TrackMetadata(
+    title="Title",
+    artist="artist",
+    album="Album",
+    year=2026,
+    track_number=2,
+    disc_number=1,
+)
 METADATA = TrackMetadata(
     title="Title",
     artist="Artist",
@@ -75,6 +84,8 @@ MISSING_ARTIST_METADATA = TrackMetadata(
 )
 OTHER_CONTENT_HASH = calculate_content_fingerprint(b"other audio")
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
+SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
+SECOND_INCOMING_FILE = "/music/incoming/Title2.flac"
 SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 SECOND_LIBRARY_ROOT = "/music/second"
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
@@ -296,6 +307,38 @@ def test_add_plan_blocks_source_changed_after_scan() -> None:
     assert action.target_path is None
     assert action.content_hash_at_plan == CONTENT_HASH
     assert plan.summary["blocked_actions"] == "1"
+
+
+def test_add_plan_currently_allows_case_insensitive_duplicate_targets() -> None:
+    """Characterizes current behavior: two incoming files whose canonical target
+    paths differ only by case are both planned as MOVE with no TARGET_EXISTS
+    block, because target comparison is an exact string match. Exact-match
+    target comparison is the intended current contract; this does not protect
+    case-insensitive filesystems.
+    """
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE), _entry(SECOND_INCOMING_FILE)),
+        {
+            INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH),
+            SECOND_INCOMING_FILE: _snapshot(SECOND_INCOMING_FILE, LOWERCASE_ARTIST_METADATA, OTHER_CONTENT_HASH),
+        },
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID, SECOND_ACTION_ID))),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    first_action, second_action = plan.actions
+    assert first_action.target_path == EXPECTED_CANONICAL_PATH
+    assert second_action.target_path == CASE_INSENSITIVE_DUPLICATE_TARGET_PATH
+    assert first_action.action_type == ActionType.MOVE
+    assert second_action.action_type == ActionType.MOVE
+    assert first_action.status == ActionStatus.PLANNED
+    assert second_action.status == ActionStatus.PLANNED
+    assert first_action.reason is None
+    assert second_action.reason is None
 
 
 def test_plans_list_and_detail_usecases_return_recorded_actions() -> None:
