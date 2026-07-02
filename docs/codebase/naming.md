@@ -13,7 +13,7 @@ Function / variable  snake_case
 Constant             UPPER_SNAKE_CASE
 ```
 
-Avoid ambiguous names.
+Avoid ambiguous names. This is the authoritative list of banned ambiguous module names:
 
 ```text
 Names to avoid:
@@ -21,6 +21,7 @@ Names to avoid:
   helpers.py
   manager.py
   service.py
+  common.py
 ```
 
 Even when placing shared processing as an exception, use a concrete concern name.
@@ -45,9 +46,9 @@ domain/models/
 
 domain/services/
   path_policy.py
-  plan_builder.py
   collision_policy.py
   duplicate_policy.py
+  config_fingerprint.py
   metadata_fingerprint.py
   content_fingerprint.py
 ```
@@ -74,7 +75,7 @@ features/apply/usecases/apply_plan.py
 features/check/usecases/check_library.py
 ```
 
-Do not create `features/{feature}/domain/` or `features/{feature}/adapters/` in principle.
+Feature-local `domain/` and `adapters/` directories are not created in principle; the authoritative placement rule is in [source-layout.md](source-layout.md).
 
 ## Naming In adapters/
 
@@ -98,12 +99,8 @@ Do not use the name DAO in the DB adapter.
 The following are not adopted:
 
 ```text
-features/{feature}/domain/
-features/{feature}/adapters/
 platform/*_dao.py
 *_service.py
-utils.py
-helpers.py
-manager.py
-common.py
 ```
+
+Banned ambiguous module names are listed once in [Common Rules](#common-rules). Forbidden feature-local directories (`features/{feature}/domain/`, `features/{feature}/adapters/`) are authoritative in [source-layout.md](source-layout.md).

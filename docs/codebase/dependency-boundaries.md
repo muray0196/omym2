@@ -28,7 +28,7 @@ features/*/ports.py or features/common_ports.py
 domain/
 ```
 
-`platform/` is the composition root and wires features and adapters together.
+`platform/` is the intended composition root and wires features and adapters together. Today it is an empty placeholder package, and the actual wiring is currently done in `adapters/cli/commands/` and `adapters/web/app.py`.
 
 ## Forbidden Dependencies
 

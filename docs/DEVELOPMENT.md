@@ -57,7 +57,7 @@ All gates must pass:
 * Frontend installation fails if `package-lock.json` is out of sync.
 * Frontend formatting fails if Prettier would change any file.
 * Frontend linting fails if ESLint reports any issue.
-* Frontend build fails if TypeScript or the Vite production build fails.
+* Frontend build fails if TypeScript or the Next.js production build fails.
 * Linting fails if any lint error remains.
 * Formatting fails if Ruff would change any file.
 * Type checking fails if `basedpyright` reports any error or warning.
