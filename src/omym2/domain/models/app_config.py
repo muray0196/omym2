@@ -5,12 +5,14 @@ Why: Gives usecases typed settings without depending on TOML adapters.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from string import Formatter
 
 from omym2.config import (
     CONFIG_VERSION,
     DEFAULT_ADD_AUTO_APPLY,
+    DEFAULT_ARTIST_ID_FALLBACK,
+    DEFAULT_ARTIST_ID_MAX_LENGTH,
     DEFAULT_COLLISION_ON_DUPLICATE_HASH,
     DEFAULT_COLLISION_ON_MISSING_METADATA,
     DEFAULT_COLLISION_ON_TARGET_EXISTS,
@@ -35,6 +37,8 @@ from omym2.config import (
 )
 
 INVALID_CONFIG_VERSION_MESSAGE = "Unsupported config version."
+INVALID_ARTIST_ID_FALLBACK_MESSAGE = "ArtistIdConfig fallback_id must not be empty."
+INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE = "ArtistIdConfig max_length must be positive."
 INVALID_MAX_FILENAME_LENGTH_MESSAGE = "PathPolicy max_filename_length must be positive."
 INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE = "PathPolicy template must not include a file extension."
 INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE = "PathPolicy template contains unsupported placeholder."
@@ -84,6 +88,23 @@ class PathPolicyConfig:
         # treated as an extension-like suffix and is rejected before planning.
         if _final_component_contains_literal_extension(self.template):
             raise ValueError(INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE)
+
+
+@dataclass(frozen=True, slots=True)
+class ArtistIdConfig:
+    """Editable artist ID settings stored in TOML config."""
+
+    max_length: int = DEFAULT_ARTIST_ID_MAX_LENGTH
+    fallback_id: str = DEFAULT_ARTIST_ID_FALLBACK
+    entries: dict[str, str] | None = None
+
+    def __post_init__(self) -> None:
+        """Validate artist ID tunables and freeze user-editable entries."""
+        if self.max_length <= 0:
+            raise ValueError(INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE)
+        if self.fallback_id.strip() == "":
+            raise ValueError(INVALID_ARTIST_ID_FALLBACK_MESSAGE)
+        object.__setattr__(self, "entries", dict(self.entries or {}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +161,7 @@ class AppConfig:
     organize: OrganizeConfig = OrganizeConfig()
     refresh: CommandConfig = CommandConfig(auto_apply=DEFAULT_REFRESH_AUTO_APPLY)
     path_policy: PathPolicyConfig = PathPolicyConfig()
+    artist_ids: ArtistIdConfig = field(default_factory=ArtistIdConfig)
     metadata: MetadataConfig = MetadataConfig()
     collision: CollisionConfig = CollisionConfig()
     ui: UiConfig = UiConfig()

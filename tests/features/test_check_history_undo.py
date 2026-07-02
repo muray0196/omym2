@@ -421,7 +421,10 @@ def _library(
     return Library(
         library_id=LIBRARY_ID,
         root_path=LIBRARY_ROOT,
-        path_policy_hash=calculate_path_policy_fingerprint(default_app_config().path_policy)
+        path_policy_hash=calculate_path_policy_fingerprint(
+            default_app_config().path_policy,
+            default_app_config().artist_ids,
+        )
         if path_policy_hash is None
         else path_policy_hash,
         registered_at=BASE_TIME,

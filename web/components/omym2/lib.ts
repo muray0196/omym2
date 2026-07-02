@@ -1,4 +1,4 @@
-import type { AppConfig, CheckIssueType, IssueSeverity } from "./types"
+import type { AppConfig, ArtistIdGenerationEntry, CheckIssueType, IssueSeverity } from "./types"
 
 /** Truncate a long string in the middle, keeping head and tail visible. */
 export function truncateMiddle(value: string, max = 42): string {
@@ -40,6 +40,7 @@ export const TEMPLATE_TOKENS = [
   "{title}",
   "{artist}",
   "{year}",
+  "{artist_id}",
 ] as const
 
 /** A tiny stable "hash" of the config object for display only. */
@@ -88,6 +89,12 @@ export function validateConfig(config: AppConfig): ValidationResult {
   if (!config.path_policy.unknown_album.trim()) {
     errors.push("unknown_album fallback must not be empty.")
   }
+  if (config.artist_ids.max_length < 1) {
+    errors.push("artist_ids.max_length must be positive.")
+  }
+  if (!config.artist_ids.fallback_id.trim()) {
+    errors.push("artist_ids.fallback_id must not be empty.")
+  }
 
   return { valid: errors.length === 0, errors }
 }
@@ -125,6 +132,13 @@ export function diffConfig(before: AppConfig, after: AppConfig): ConfigDiffRow[]
     }
   }
   return rows.sort((x, y) => x.field.localeCompare(y.field))
+}
+
+/** Return only artist ID entries that the backend actually persisted. */
+export function savedArtistIdEntries(entries: ArtistIdGenerationEntry[]): Record<string, string> {
+  return Object.fromEntries(
+    entries.filter((entry) => entry.saved).map((entry) => [entry.source_artist, entry.artist_id]),
+  )
 }
 
 export function cn(...classes: Array<string | false | null | undefined>): string {

@@ -18,6 +18,7 @@ OMYM2 uses TOML for editable application settings and SQLite for managed state, 
 | Concern | Store |
 | --- | --- |
 | Editable settings | TOML |
+| Editable artist ID entries | TOML |
 | Config defaults and validation results | Config adapter / AppConfig |
 | Managed Library and Track state | SQLite |
 | Plans and PlanActions | SQLite |
@@ -35,6 +36,9 @@ Settings are managed in TOML, not SQLite.
 The exact settings file location, TOML schema, and PathPolicyConfig rules are authoritative in [contracts/config.md](contracts/config.md).
 
 Domain and usecases do not read TOML directly. Config loading and saving are adapter concerns.
+
+Artist ID entries are application config. They are stored in TOML because they
+are user-editable path/config values, not managed Library state.
 
 ## SQLite Responsibility
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from hashlib import new
+from string import Formatter
 from typing import TYPE_CHECKING
 
 from omym2.config import (
@@ -17,11 +18,12 @@ from omym2.config import (
     CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR,
     CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY,
     CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY,
+    PATH_POLICY_ARTIST_ID_PLACEHOLDER,
     PATH_POLICY_BEHAVIOR_VERSION,
 )
 
 if TYPE_CHECKING:
-    from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
+    from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig
 
 JSON_SEPARATORS = (CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR, CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR)
 
@@ -38,6 +40,7 @@ def calculate_config_fingerprint(config: AppConfig, algorithm: str = CONFIG_FING
 
 def calculate_path_policy_fingerprint(
     path_policy_config: PathPolicyConfig,
+    artist_id_config: ArtistIdConfig | None = None,
     algorithm: str = CONFIG_FINGERPRINT_ALGORITHM,
 ) -> str:
     """Return a stable fingerprint for Library registration path policy."""
@@ -47,8 +50,18 @@ def calculate_path_policy_fingerprint(
         CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY: PATH_POLICY_BEHAVIOR_VERSION,
         CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY: asdict(path_policy_config),
     }
+    if artist_id_config is not None and _template_uses_placeholder(
+        path_policy_config.template,
+        PATH_POLICY_ARTIST_ID_PLACEHOLDER,
+    ):
+        path_policy_payload["artist_ids"] = asdict(artist_id_config)
     payload = json.dumps(path_policy_payload, sort_keys=True, separators=JSON_SEPARATORS)
     return _fingerprint_payload(payload, algorithm)
+
+
+def _template_uses_placeholder(template: str, placeholder: str) -> bool:
+    """Return whether a format template contains a renderable field."""
+    return any(field_name == placeholder for _, field_name, _, _ in Formatter().parse(template))
 
 
 def _fingerprint_payload(payload: str, algorithm: str) -> str:

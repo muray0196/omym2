@@ -444,7 +444,7 @@ def _library(library_id: LibraryId, root_path: str, path_policy_hash: str | None
         library_id=library_id,
         root_path=root_path,
         path_policy_hash=(
-            calculate_path_policy_fingerprint(default_app_config().path_policy)
+            calculate_path_policy_fingerprint(default_app_config().path_policy, default_app_config().artist_ids)
             if path_policy_hash is None
             else path_policy_hash
         ),

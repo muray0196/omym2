@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from omym2.config import (
@@ -28,8 +28,11 @@ from omym2.config import (
 from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
-    from omym2.domain.models.app_config import PathPolicyConfig
+    from omym2.domain.models.app_config import ArtistIdConfig, PathPolicyConfig
     from omym2.domain.models.track_metadata import TrackMetadata
+
+from omym2.domain.models.app_config import ArtistIdConfig
+from omym2.domain.services.artist_id import generate_artist_id
 
 EMPTY_FILE_EXTENSION_MESSAGE = "File extension must not be empty."
 MISSING_TITLE_MESSAGE = "Track title is required for canonical path generation."
@@ -44,6 +47,7 @@ class PathPolicy:
     """Pure service that generates canonical Library-root-relative paths."""
 
     config: PathPolicyConfig
+    artist_ids: ArtistIdConfig = field(default_factory=ArtistIdConfig)
 
     def canonical_path(self, metadata: TrackMetadata, file_extension: str) -> str:
         """Generate a normalized Library-root-relative canonical path."""
@@ -61,6 +65,7 @@ class PathPolicy:
             track=self._track_number(metadata),
             title=self._title(metadata),
             artist=self._artist(metadata),
+            artist_id=self._artist_id(metadata),
         )
 
     def _album_artist(self, metadata: TrackMetadata) -> str:
@@ -68,6 +73,17 @@ class PathPolicy:
 
     def _artist(self, metadata: TrackMetadata) -> str:
         return self._artist_component(metadata.artist or metadata.album_artist or self.config.unknown_artist)
+
+    def _artist_id(self, metadata: TrackMetadata) -> str:
+        source_artist = metadata.artist or metadata.album_artist or self.config.unknown_artist
+        saved_artist_id = self.artist_ids.entries.get(source_artist) if self.artist_ids.entries is not None else None
+        if saved_artist_id is not None:
+            return saved_artist_id
+        return generate_artist_id(
+            source_artist,
+            max_length=self.artist_ids.max_length,
+            fallback_id=self.artist_ids.fallback_id,
+        )
 
     def _album(self, metadata: TrackMetadata) -> str:
         value = metadata.album or self.config.unknown_album

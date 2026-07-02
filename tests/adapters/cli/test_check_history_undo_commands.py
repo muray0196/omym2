@@ -207,7 +207,10 @@ def _library(library_root: str) -> Library:
     return Library(
         library_id=LIBRARY_ID,
         root_path=library_root,
-        path_policy_hash=calculate_path_policy_fingerprint(default_app_config().path_policy),
+        path_policy_hash=calculate_path_policy_fingerprint(
+            default_app_config().path_policy,
+            default_app_config().artist_ids,
+        ),
         registered_at=BASE_TIME,
         status=LibraryStatus.REGISTERED,
         created_at=BASE_TIME,

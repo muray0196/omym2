@@ -13,6 +13,7 @@ The initial CLI is expected to include:
 omym2 settings
 omym2 config show
 omym2 config validate
+omym2 artist-ids generate [--overwrite] [--fasttext-model <path>] <artist>...
 
 # Register or organize existing Library
 omym2 organize --library <path>
@@ -119,6 +120,18 @@ Config storage is defined in [contracts/config.md](contracts/config.md).
 `config validate` validates the current TOML-backed configuration.
 
 Config validation is implemented through the config adapter and settings usecase boundaries defined in [contracts/config.md](contracts/config.md).
+
+## artist-ids generate
+
+`artist-ids generate` creates editable artist ID entries in TOML config.
+
+Without `--overwrite`, existing saved entries are preserved. With
+`--fasttext-model`, the command can use fastText to decide whether a source
+artist should attempt Japanese handling and then use MusicBrainz to prefer an
+English or Latin name before deterministic ID generation.
+
+The command does not create internal Artist identities and does not write
+SQLite state.
 
 ## settings
 

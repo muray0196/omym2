@@ -14,6 +14,10 @@ Usecases may receive AppConfig. Pure domain services should receive narrow confi
 
 The config schema and defaults are authoritative in [contracts/config.md](contracts/config.md).
 
+Artist IDs are user-facing config/path values inside AppConfig. They are
+editable TOML settings and must not be modeled as internal OMYM2 identity in
+the way `track_id` and `library_id` are.
+
 ## FileScanEntry
 
 A cheap filesystem discovery result produced while scanning a directory tree.
@@ -100,6 +104,11 @@ is recorded with the extension included. Apply uses the recorded target path
 without recalculating it.
 
 Allowed placeholders, initial template, preview behavior, and config validation rules are authoritative in [contracts/config.md](contracts/config.md#pathpolicyconfig).
+
+When the template includes `{artist_id}`, PathPolicy resolves it from
+already-loaded config and metadata only. Language detection, fastText model
+loading, and MusicBrainz HTTP lookup are feature/adapter concerns and must not
+run during canonical path generation.
 
 If the final generated target path already exists, the PlanAction becomes blocked as a conflict. PathPolicy does not solve collisions by itself.
 

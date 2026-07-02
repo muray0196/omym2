@@ -58,7 +58,7 @@ class CreateRefreshPlanUseCase:
         _require_one_target_selector(request)
         config = self.ports.config_store.load()
         config_hash = calculate_config_fingerprint(config)
-        path_policy_hash = calculate_path_policy_fingerprint(config.path_policy)
+        path_policy_hash = calculate_path_policy_fingerprint(config.path_policy, config.artist_ids)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
@@ -116,7 +116,10 @@ class CreateRefreshPlanUseCase:
             return _blocked_candidate(track, PlanActionReason.MISSING_REQUIRED_METADATA, snapshot=snapshot)
 
         try:
-            target_path = PathPolicy(config.path_policy).canonical_path(snapshot.metadata, snapshot.file_extension)
+            target_path = PathPolicy(config.path_policy, config.artist_ids).canonical_path(
+                snapshot.metadata,
+                snapshot.file_extension,
+            )
         except ValueError as exc:
             return _blocked_candidate(track, _path_generation_failure_reason(exc), snapshot=snapshot)
 

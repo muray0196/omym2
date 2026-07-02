@@ -49,6 +49,11 @@ export interface AppConfig {
     sanitize: boolean
     max_filename_length: number
   }
+  artist_ids: {
+    max_length: number
+    fallback_id: string
+    entries: Record<string, string>
+  }
   metadata: {
     prefer_album_artist: boolean
     require_title: boolean
@@ -116,6 +121,20 @@ export interface SettingsSaveResult {
   config?: AppConfig
   validation?: ValidationResult
   preview?: PathPreview
+}
+
+export interface ArtistIdGenerationEntry {
+  source_artist: string
+  generation_artist: string
+  artist_id: string
+  saved: boolean
+  overwritten: boolean
+}
+
+export interface ArtistIdGenerationResult {
+  generated: boolean
+  errors: string[]
+  entries: ArtistIdGenerationEntry[]
 }
 
 export interface RunSummary {

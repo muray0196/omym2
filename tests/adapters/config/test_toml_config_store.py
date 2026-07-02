@@ -14,6 +14,7 @@ from omym2.config import CONFIG_FILE_ENCODING
 from omym2.domain.models.app_config import (
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     AppConfig,
+    ArtistIdConfig,
     PathsConfig,
     UiConfig,
 )
@@ -27,6 +28,8 @@ INCOMING_PATH = "/music/incoming"
 INVALID_MAX_FILENAME_LENGTH = 0
 LIBRARY_PATH = "/music/library"
 UI_THEME_DARK = "dark"
+ARTIST_NAME = "Jane Doe"
+ARTIST_ID = "JAND"
 
 
 def test_toml_config_store_loads_default_when_config_missing(tmp_path: Path) -> None:
@@ -45,6 +48,7 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
     store = TomlConfigStore(config_path)
     config = AppConfig(
         paths=PathsConfig(library=LIBRARY_PATH, incoming=INCOMING_PATH),
+        artist_ids=ArtistIdConfig(entries={ARTIST_NAME: ARTIST_ID}),
         ui=UiConfig(theme=UI_THEME_DARK),
     )
 
@@ -52,6 +56,7 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
 
     assert config_path.is_file()
     assert store.load() == config
+    assert f'"{ARTIST_NAME}" = "{ARTIST_ID}"' in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
 
 
 def test_toml_config_text_round_trips_default_config() -> None:
@@ -87,3 +92,10 @@ def test_toml_config_store_validation_fails_invalid_toml(tmp_path: Path) -> None
 
     with pytest.raises(ConfigStoreValidationError, match="Invalid TOML"):
         _ = TomlConfigStore(config_path).load()
+
+
+def test_toml_config_text_loads_missing_artist_id_defaults() -> None:
+    """Missing artist_ids config resolves to documented defaults."""
+    config = load_config_text("version = 1\n")
+
+    assert config.artist_ids == ArtistIdConfig()

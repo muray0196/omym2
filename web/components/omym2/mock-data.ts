@@ -12,6 +12,7 @@ import type {
   SettingsValidateResult,
   TracksResponse,
   TrackSummary,
+  ArtistIdGenerationResult,
 } from "./types"
 
 export const LIBRARY_ID = "lib_9f3c1a7b-4e21-4d8a-9c10-2f6b0a5e7d44"
@@ -41,6 +42,14 @@ export const defaultConfig: AppConfig = {
     unknown_album: "Unknown Album",
     sanitize: true,
     max_filename_length: 180,
+  },
+  artist_ids: {
+    max_length: 8,
+    fallback_id: "NOART",
+    entries: {
+      Aimer: "AIMER",
+      "John Smith": "JOHNSMTH",
+    },
   },
   metadata: {
     prefer_album_artist: true,
@@ -108,6 +117,23 @@ export function mockSaveSettings(config: AppConfig): SettingsSaveResult {
 
 export function mockPreviewSettings(): SettingsPreviewResult {
   return mockSettingsState.preview
+}
+
+export function mockGenerateArtistIds(artistNames: string[]): ArtistIdGenerationResult {
+  return {
+    generated: true,
+    errors: [],
+    entries: artistNames
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .map((name) => ({
+        source_artist: name,
+        generation_artist: name,
+        artist_id: name === "John Smith" ? "JOHNSMTH" : "NOART",
+        saved: true,
+        overwritten: false,
+      })),
+  }
 }
 
 export const mockRuns: RunSummary[] = [

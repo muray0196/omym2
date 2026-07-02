@@ -19,6 +19,7 @@ from omym2.domain.models.app_config import (
     INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE,
     INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE,
     AppConfig,
+    ArtistIdConfig,
     PathPolicyConfig,
 )
 
@@ -40,6 +41,19 @@ def test_config_loads_default() -> None:
     assert "{ext}" not in config.path_policy.template
     assert config.path_policy.unknown_artist == DEFAULT_UNKNOWN_ARTIST
     assert config.path_policy.unknown_album == DEFAULT_UNKNOWN_ALBUM
+
+
+def test_config_default_artist_id_entries_are_per_instance() -> None:
+    """Default AppConfig instances must not share editable artist ID entries."""
+    first_config = AppConfig()
+    second_config = AppConfig()
+
+    first_entries = first_config.artist_ids.entries
+    assert first_entries is not None
+    first_entries["Aimer"] = "AIMR"
+
+    assert first_config.artist_ids == ArtistIdConfig(entries={"Aimer": "AIMR"})
+    assert second_config.artist_ids == ArtistIdConfig()
 
 
 def test_config_validation_fails_invalid_version() -> None:

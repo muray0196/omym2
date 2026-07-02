@@ -15,9 +15,11 @@ import {
   getRunDetail,
   getSettings,
   getTracks,
+  generateArtistIds as generateArtistIdsRequest,
   saveSettings as saveSettingsRequest,
   validateSettings,
 } from "./api-client"
+import { savedArtistIdEntries } from "./lib"
 import { defaultConfig, mockSettingsState } from "./mock-data"
 import type {
   AppConfig,
@@ -52,6 +54,7 @@ interface AppContextValue {
   setDraftConfig: (updater: (prev: AppConfig) => AppConfig) => void
   saveConfig: () => Promise<boolean>
   resetDraft: () => void
+  generateArtistIds: (artistNames: string[], overwrite: boolean) => Promise<boolean>
   checkErrors: string[]
   checkIssues: CheckIssue[]
   checkLoaded: boolean
@@ -260,6 +263,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setDraftConfigState(savedConfig)
         setSettingsChanges([])
         setSettingsErrors([])
+      },
+      generateArtistIds: async (artistNames, overwrite) => {
+        try {
+          const result = await generateArtistIdsRequest(artistNames, overwrite, csrfToken)
+          setSettingsErrors(result.errors)
+          if (!result.generated) return false
+          const generatedEntries = savedArtistIdEntries(result.entries)
+          setSavedConfig((prev) => ({
+            ...prev,
+            artist_ids: {
+              ...prev.artist_ids,
+              entries: { ...prev.artist_ids.entries, ...generatedEntries },
+            },
+          }))
+          setDraftConfigState((prev) => ({
+            ...prev,
+            artist_ids: {
+              ...prev.artist_ids,
+              entries: { ...prev.artist_ids.entries, ...generatedEntries },
+            },
+          }))
+          setSettingsChanges([])
+          return true
+        } catch (error: unknown) {
+          setSettingsErrors([
+            error instanceof Error ? error.message : "Artist ID generation failed.",
+          ])
+          return false
+        }
       },
       checkErrors,
       checkIssues,
