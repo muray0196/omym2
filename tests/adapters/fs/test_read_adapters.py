@@ -8,6 +8,7 @@ from __future__ import annotations
 import errno
 import os
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -24,8 +25,6 @@ from omym2.domain.services.metadata_fingerprint import calculate_metadata_finger
 from tests.fakes.runtime import FixedClock
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
@@ -137,8 +136,31 @@ def test_file_mover_moves_file_across_filesystems(tmp_path: Path, monkeypatch: p
         del target
         raise OSError(errno.EXDEV, "Invalid cross-device link", source)
 
-    # Simulate os.rename failing the way it does across mounted filesystems.
-    monkeypatch.setattr(os, "rename", raise_cross_device_error)
+    # Simulate os.link failing the way it does across mounted filesystems.
+    monkeypatch.setattr(os, "link", raise_cross_device_error)
+
+    FilesystemFileMover().move(source_path, target_path)
+
+    assert not source_path.exists()
+    assert target_path.read_bytes() == AUDIO_CONTENT
+
+
+def test_file_mover_moves_file_when_filesystem_refuses_hardlinks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FileMover falls back to the exclusive copy claim when hardlinks are refused."""
+    source_path = tmp_path / AUDIO_FILE_NAME
+    target_path = tmp_path / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+
+    def raise_permission_error(source: os.PathLike[str] | str, target: os.PathLike[str] | str) -> None:
+        del target
+        raise PermissionError(errno.EPERM, "Operation not permitted", source)
+
+    # Simulate os.link failing the way it does on filesystems without hardlink
+    # support, such as exFAT and some network mounts.
+    monkeypatch.setattr(os, "link", raise_permission_error)
 
     FilesystemFileMover().move(source_path, target_path)
 
@@ -158,6 +180,39 @@ def test_file_mover_refuses_to_overwrite_existing_target(tmp_path: Path) -> None
 
     assert source_path.read_bytes() == AUDIO_CONTENT
     assert target_path.read_bytes() == b"existing"
+
+
+def test_file_mover_does_not_silently_overwrite_on_concurrent_target_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FileMover still refuses to overwrite a target that appears after a stale check.
+
+    A separate exists()-then-move sequence leaves a race window in which a target
+    created between the check and the move gets silently replaced on
+    same-filesystem moves. This regression test forces exists() to report the
+    target as free (as a stale pre-check would) and then creates the target for
+    real before the move runs, proving the mover no longer depends on that
+    check and still detects the concurrently created target.
+    """
+    source_path = tmp_path / AUDIO_FILE_NAME
+    target_path = tmp_path / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    # Simulate a stale pre-check that reported the target as free.
+    monkeypatch.setattr(Path, "exists", _report_path_as_free)
+    _ = target_path.write_bytes(b"concurrently created")
+
+    with pytest.raises(FileExistsError):
+        FilesystemFileMover().move(source_path, target_path)
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert target_path.read_bytes() == b"concurrently created"
+
+
+def _report_path_as_free(path: Path) -> bool:
+    """Stand in for a stale exists() check that always reports a path as free."""
+    del path
+    return False
 
 
 def test_file_content_hasher_rejects_invalid_chunk_size() -> None:
