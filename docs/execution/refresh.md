@@ -1,6 +1,6 @@
 # Refresh Execution
 
-This document is authoritative for refresh after external tag correction, file / directory / all targets, metadata reload, canonical path recalculation, relocation plan creation, and stable `track_id` preservation.
+This document is authoritative for refresh after external tag correction, file / directory / all targets, metadata reload, canonical path recalculation, relocation plan creation, metadata-only refresh action selection, and stable `track_id` preservation.
 
 Common execution rules are in [model.md](model.md). Apply rules are in [apply.md](apply.md).
 
@@ -27,12 +27,18 @@ reload metadata
   ↓
 recalculate canonical path
   ↓
-create move plan if needed
+create plan if needed
   ↓
 apply
   ↓
 update DB
 ```
+
+For each selected Track without a review-time issue, plan creation chooses one outcome:
+
+* If the recalculated canonical path differs from the Track's current path, refresh plans a `move` action.
+* If the canonical path is unchanged but the content hash or metadata hash differs from the managed Track, refresh plans a `refresh_metadata` action that reingests Track metadata and hashes without moving the file. Applying it updates the Track in place without creating a FileEvent, as described in [apply.md](apply.md).
+* If neither the path nor the hashes changed, refresh plans no action for that Track.
 
 `refresh` does not move files directly. As a rule, it creates a Plan.
 

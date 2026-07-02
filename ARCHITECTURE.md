@@ -39,7 +39,7 @@ src/
 
 ## Dependency Boundaries Summary
 
-Inbound adapters call features, features use domain, and domain may use shared primitives. Outbound adapters implement ports owned by features or common feature ports. `platform/` is the composition root and wires features and adapters together.
+Inbound adapters call features, features use domain, and domain may use shared primitives. Outbound adapters implement ports owned by features or common feature ports. `platform/` is the intended composition root and wires features and adapters together.
 
 Detailed dependency direction, forbidden dependency lists, direct feature-to-feature import rules, and adapter boundary examples are authoritative in [docs/codebase/dependency-boundaries.md](docs/codebase/dependency-boundaries.md).
 
@@ -51,7 +51,7 @@ Detailed dependency direction, forbidden dependency lists, direct feature-to-fea
 
 `adapters/` implement ports and handle external I/O. Adapters may create and restore domain models, but they must not contain business rules such as conflict judgment, duplicate judgment, canonical path calculation, metadata validation, or PlanAction status decisions.
 
-`platform/` wires concrete adapters to feature usecases and owns application runtime assembly.
+`platform/` is intended to wire concrete adapters to feature usecases and own application runtime assembly. Today it is an empty placeholder; wiring currently lives in `adapters/cli/commands/` and `adapters/web/app.py`.
 
 `shared/` contains only pure auxiliary primitives. It does not depend on domain, features, adapters, or platform.
 
@@ -69,17 +69,9 @@ The baseline policy is `1 usecase = 1 UnitOfWork`. Concrete repositories and tra
 
 Python module names use `snake_case.py`. Classes use `PascalCase`. Functions and variables use `snake_case`. Constants use `UPPER_SNAKE_CASE`.
 
-Avoid vague module names:
+Ambiguous module names such as `utils.py` and `helpers.py` are banned; the authoritative list is in [docs/codebase/naming.md](docs/codebase/naming.md).
 
-```text
-utils.py
-helpers.py
-manager.py
-service.py
-common.py
-```
-
-Do not create `features/{feature}/domain/` or `features/{feature}/adapters/` in principle.
+Feature-local `domain/` and `adapters/` directories are not created in principle; the authoritative placement rule is in [docs/codebase/source-layout.md](docs/codebase/source-layout.md).
 
 ## Tests
 

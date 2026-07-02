@@ -116,14 +116,14 @@ Applying Plans from the GUI is deferred.
 
 This section is a product-facing summary of technology choices.
 
-Initial assumptions:
+Current stack:
 
 ```text
 Language: Python
 DB: SQLite
 Config: TOML
-Web: FastAPI + React + Vite
-CLI: Typer or argparse
+Web: FastAPI serving a Next.js (React) static export
+CLI: hand-written command dispatch on the standard library (no CLI framework)
 Test: pytest + pytest-mock
 Coverage: pytest-cov for optional local reporting
 E2E: deferred in the initial test policy

@@ -47,9 +47,12 @@ Field: `PlanAction.action_type`.
 ```text
 move
 skip
+refresh_metadata
 ```
 
 `conflict` and `error` are not action types.
+
+`refresh_metadata` reingests Track metadata and hashes for an unchanged path without a Library music file mutation.
 
 ## PlanAction Status
 
@@ -141,6 +144,7 @@ library_blocked
 ## Cross-Cutting Rules
 
 * Skip actions become applied without FileEvent.
+* `refresh_metadata` actions become applied without FileEvent; the Track is updated in place.
 * Blocked actions remain blocked during apply.
 * Precondition failures before mutation do not create FileEvents.
 * Terminal Plans are single-use.

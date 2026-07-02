@@ -36,7 +36,6 @@ src/
     domain/
       models/
       services/
-      errors.py
 
     features/
       common_ports.py
@@ -125,7 +124,9 @@ Adapters may create and restore domain models. They must not contain business ru
 
 ## platform/
 
-`platform/` is the composition root. It wires concrete adapters to feature usecases and owns application runtime assembly.
+`platform/` is the intended composition root. It wires concrete adapters to feature usecases and owns application runtime assembly.
+
+Today `platform/` is an empty placeholder package; the actual wiring is currently done by `adapters/cli/commands/*.py` and `adapters/web/app.py`.
 
 Feature-to-feature chaining belongs in CLI, Web, or platform orchestration, not inside a feature importing another feature's internals.
 
@@ -145,7 +146,7 @@ Feature-to-feature chaining belongs in CLI, Web, or platform orchestration, not 
 
 Add a new top-level package directory only when the existing layers cannot express the responsibility.
 
-Do not add:
+Do not add feature-local layer directories. This is the authoritative statement of that rule:
 
 ```text
 features/{feature}/domain/

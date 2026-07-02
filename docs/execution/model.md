@@ -31,6 +31,8 @@ for each plan action:
 finish run
 ```
 
+Plan actions that do not mutate Library music files, such as `skip` and `refresh_metadata` actions, follow the same Plan and Run flow but omit the file_event steps.
+
 This allows the CLI, GUI, and tests to share the same processing model.
 
 User-facing commands should be purpose-based. Internal Plan concepts should not dominate primary command names.
@@ -77,7 +79,7 @@ A FileEvent is a durable operation log entry for one Library music file mutation
 
 A FileEvent is created as `pending` before the Library music file mutation. After the mutation, it is updated to `succeeded` or `failed`.
 
-FileEvents represent Library music file mutations only. DB-only state changes such as registering or updating Tracks are not FileEvents.
+FileEvents represent Library music file mutations only. DB-only state changes such as registering or updating Tracks are not FileEvents. Applying a `refresh_metadata` action updates the Track in place without moving files, so it becomes `applied` without a FileEvent.
 
 FileEvents are used for:
 
