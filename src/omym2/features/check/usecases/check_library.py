@@ -40,7 +40,7 @@ class CheckLibraryUseCase:
     def execute(self, request: CheckLibraryRequest) -> tuple[CheckIssue, ...]:
         """Report read-only consistency issues for a Library."""
         config = self.ports.config_store.load()
-        current_path_policy_hash = calculate_path_policy_fingerprint(config.path_policy)
+        current_path_policy_hash = calculate_path_policy_fingerprint(config.path_policy, config.artist_ids)
 
         with self.ports.uow as uow:
             libraries = _selected_libraries(uow, request)

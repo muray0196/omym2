@@ -6,11 +6,11 @@ Why: Lets the React UI use feature usecases without server-rendered templates.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from json import JSONDecodeError
 from secrets import compare_digest
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from omym2.adapters.metadata.mutagen_reader import MetadataReadError
 from omym2.adapters.web.routes.api_serializers import (
     serialize_app_config,
+    serialize_artist_id_generation,
     serialize_check_issue,
     serialize_path_preview,
     serialize_run_detail,
@@ -38,6 +39,7 @@ from omym2.config import (
     PATH_POLICY_PREVIEW_TITLE,
     PATH_POLICY_PREVIEW_TRACK_NUMBER,
     PATH_POLICY_PREVIEW_YEAR,
+    WEB_API_ARTIST_IDS_GENERATE_ROUTE,
     WEB_API_CHECK_ROUTE,
     WEB_API_HISTORY_ROUTE,
     WEB_API_RUN_DETAIL_ROUTE,
@@ -50,6 +52,8 @@ from omym2.config import (
 )
 from omym2.domain.models.app_config import AppConfig
 from omym2.domain.models.track_metadata import TrackMetadata
+from omym2.features.artist_ids.dto import GenerateArtistIdsRequest
+from omym2.features.artist_ids.usecases.generate_artist_ids import GenerateArtistIdsUseCase
 from omym2.features.check.dto import CheckLibraryRequest
 from omym2.features.check.usecases.check_library import CheckLibraryError, CheckLibraryUseCase
 from omym2.features.common_ports import ConfigStoreValidationError
@@ -82,6 +86,8 @@ NOT_FOUND_STATUS_CODE = 404
 SERVER_ERROR_STATUS_CODE = 500
 SUCCESS_STATUS_CODE = 200
 INVALID_JSON_ERROR_MESSAGE = "Request body must be valid JSON."
+REQUEST_BODY_ERROR = "Request body must be a JSON object."
+ARTIST_IDS_FIELD_ERROR = "Request body must contain an artist_names array."
 RUN_NOT_FOUND_MESSAGE = "Run was not found."
 SAVE_CSRF_ERROR_MESSAGE = "Settings save request failed CSRF validation."
 INSPECTION_ERROR_PREFIX = "Inspection failed"
@@ -118,6 +124,9 @@ def create_api_router(context: ApiRouteContext) -> APIRouter:
     async def save_settings(request: Request) -> JSONResponse:
         return await _save_settings(context, request)
 
+    async def generate_artist_ids(request: Request) -> JSONResponse:
+        return await _generate_artist_ids(context, request)
+
     def get_history() -> JSONResponse:
         return _get_history(context)
 
@@ -134,6 +143,7 @@ def create_api_router(context: ApiRouteContext) -> APIRouter:
     router.add_api_route(WEB_API_SETTINGS_PREVIEW_ROUTE, preview_settings, methods=["POST"])
     router.add_api_route(WEB_API_SETTINGS_VALIDATE_ROUTE, validate_settings, methods=["POST"])
     router.add_api_route(WEB_API_SETTINGS_SAVE_ROUTE, save_settings, methods=["POST"])
+    router.add_api_route(WEB_API_ARTIST_IDS_GENERATE_ROUTE, generate_artist_ids, methods=["POST"])
     router.add_api_route(WEB_API_HISTORY_ROUTE, get_history, methods=["GET"])
     router.add_api_route(WEB_API_RUN_DETAIL_ROUTE, get_run_detail, methods=["GET"])
     router.add_api_route(WEB_API_CHECK_ROUTE, get_check, methods=["GET"])
@@ -242,6 +252,36 @@ async def _save_settings(context: ApiRouteContext, request: Request) -> JSONResp
     )
 
 
+async def _generate_artist_ids(context: ApiRouteContext, request: Request) -> JSONResponse:
+    if not _has_valid_csrf_token(context, request):
+        return JSONResponse(
+            {"generated": False, "errors": [SAVE_CSRF_ERROR_MESSAGE], "entries": []},
+            status_code=FORBIDDEN_STATUS_CODE,
+        )
+
+    payload, payload_errors = await _read_json_payload(request)
+    if payload_errors:
+        return _artist_ids_error(payload_errors)
+
+    generation_request, request_errors = _artist_ids_request(payload)
+    if request_errors:
+        return _artist_ids_error(request_errors)
+
+    try:
+        result = GenerateArtistIdsUseCase(
+            config_store=context.settings_ports.config_store,
+            language_detector=_NonJapaneseLanguageDetector(),
+            artist_resolver=_NoopArtistNameResolver(),
+        ).execute(generation_request)
+    except OSError as exc:
+        return _artist_ids_error((f"Config I/O error: {exc}",))
+
+    return JSONResponse(
+        {"generated": True, "errors": [], **serialize_artist_id_generation(result)},
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
 def _get_history(context: ApiRouteContext) -> JSONResponse:
     try:
         runs = ListRunsUseCase(context.history_ports_factory()).execute(ListRunsRequest())
@@ -335,6 +375,29 @@ def _settings_save_error(errors: tuple[str, ...]) -> JSONResponse:
     return JSONResponse({"saved": False, "errors": list(errors), "changes": []}, status_code=ERROR_STATUS_CODE)
 
 
+def _artist_ids_error(errors: tuple[str, ...]) -> JSONResponse:
+    return JSONResponse(
+        {"generated": False, "errors": list(errors), "entries": []},
+        status_code=ERROR_STATUS_CODE,
+    )
+
+
+def _artist_ids_request(payload: object) -> tuple[GenerateArtistIdsRequest, tuple[str, ...]]:
+    if not isinstance(payload, Mapping):
+        return GenerateArtistIdsRequest(()), (REQUEST_BODY_ERROR,)
+    payload_mapping = cast("Mapping[str, object]", payload)
+    artist_names = payload_mapping.get("artist_names")
+    if not isinstance(artist_names, list):
+        return GenerateArtistIdsRequest(()), (ARTIST_IDS_FIELD_ERROR,)
+    artist_name_items = cast("list[object]", artist_names)
+    if not all(isinstance(item, str) for item in artist_name_items):
+        return GenerateArtistIdsRequest(()), (ARTIST_IDS_FIELD_ERROR,)
+    overwrite = payload_mapping.get("overwrite", False)
+    if not isinstance(overwrite, bool):
+        return GenerateArtistIdsRequest(()), ("Request body overwrite must be a boolean.",)
+    return GenerateArtistIdsRequest(tuple(cast("list[str]", artist_name_items)), overwrite=overwrite), ()
+
+
 def _load_current_config(ports: SettingsPorts) -> tuple[AppConfig, tuple[str, ...]]:
     try:
         return LoadSettingsUseCase(ports).execute(), ()
@@ -360,6 +423,7 @@ def _preview_path_policy(
     return PreviewPathPolicyUseCase().execute(
         PathPolicyPreviewRequest(
             path_policy=config.path_policy,
+            artist_ids=config.artist_ids,
             metadata=_preview_metadata() if metadata is None else metadata,
             file_extension=PATH_POLICY_PREVIEW_FILE_EXTENSION if file_extension is None else file_extension,
         )
@@ -387,6 +451,24 @@ def _run_id_from_text(raw_value: str) -> RunId | None:
     try:
         return RunId(parse_uuid(raw_value))
     except ValueError:
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class _NonJapaneseLanguageDetector:
+    """Web generation avoids model I/O and generates directly from source names."""
+
+    def is_japanese(self, text: str) -> bool:
+        _ = text
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class _NoopArtistNameResolver:
+    """Web generation avoids MusicBrainz I/O during settings saves."""
+
+    def english_or_latin_name(self, source_artist: str) -> str | None:
+        _ = source_artist
         return None
 
 

@@ -21,7 +21,7 @@ from omym2.config import (
 )
 
 if TYPE_CHECKING:
-    from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
+    from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig
 
 JSON_SEPARATORS = (CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR, CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR)
 
@@ -38,6 +38,7 @@ def calculate_config_fingerprint(config: AppConfig, algorithm: str = CONFIG_FING
 
 def calculate_path_policy_fingerprint(
     path_policy_config: PathPolicyConfig,
+    artist_id_config: ArtistIdConfig | None = None,
     algorithm: str = CONFIG_FINGERPRINT_ALGORITHM,
 ) -> str:
     """Return a stable fingerprint for Library registration path policy."""
@@ -47,6 +48,8 @@ def calculate_path_policy_fingerprint(
         CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY: PATH_POLICY_BEHAVIOR_VERSION,
         CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY: asdict(path_policy_config),
     }
+    if artist_id_config is not None:
+        path_policy_payload["artist_ids"] = asdict(artist_id_config)
     payload = json.dumps(path_policy_payload, sort_keys=True, separators=JSON_SEPARATORS)
     return _fingerprint_payload(payload, algorithm)
 

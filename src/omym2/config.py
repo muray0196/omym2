@@ -28,6 +28,7 @@ WEB_TRACKS_ROUTE: Final = "/tracks"  # local Web UI Track listing SPA path
 WEB_NEXT_STATIC_ROUTE: Final = "/_next/static"  # Next static asset mount path
 WEB_API_PREFIX: Final = "/api"  # local Web UI JSON API path prefix
 WEB_API_SETTINGS_ROUTE: Final = "/api/settings"  # settings JSON API path
+WEB_API_ARTIST_IDS_GENERATE_ROUTE: Final = "/api/settings/artist-ids/generate"  # artist ID generation JSON API path
 WEB_API_SETTINGS_PREVIEW_ROUTE: Final = "/api/settings/preview"  # settings path preview JSON API path
 WEB_API_SETTINGS_VALIDATE_ROUTE: Final = "/api/settings/validate"  # settings validation JSON API path
 WEB_API_SETTINGS_SAVE_ROUTE: Final = "/api/settings/save"  # settings save JSON API path
@@ -76,6 +77,18 @@ DEFAULT_COLLISION_ON_DUPLICATE_HASH: Final = "skip"  # duplicate content policy 
 DEFAULT_COLLISION_ON_MISSING_METADATA: Final = "block"  # missing metadata policy name
 DEFAULT_UI_THEME: Final = "system"  # default UI color mode
 DEFAULT_UI_SHOW_ADVANCED_SETTINGS: Final = False  # default advanced settings visibility
+DEFAULT_ARTIST_ID_MAX_LENGTH: Final = 8  # maximum generated artist ID length, characters
+DEFAULT_ARTIST_ID_FALLBACK: Final = "NOART"  # artist ID used when source text has no usable characters
+ARTIST_ID_ALLOWED_PATTERN: Final = r"[A-Za-z0-9]+"  # characters kept while normalizing artist ID input
+ARTIST_ID_SPLIT_PATTERN: Final = r"[\s-]+"  # separators that divide artist names into allocation words
+ARTIST_ID_MULTI_ARTIST_SEPARATOR: Final = ","  # separator between source artist names in metadata text
+ARTIST_ID_VOWELS: Final = frozenset("AEIOU")  # vowels deprioritized after the first character in a word
+FASTTEXT_JAPANESE_LABEL: Final = "__label__ja"  # fastText label that means Japanese text
+MUSICBRAINZ_API_BASE_URL: Final = "https://musicbrainz.org/ws/2"  # MusicBrainz web service base URL
+MUSICBRAINZ_ARTIST_SEARCH_LIMIT: Final = 5  # artist search result cap per lookup
+MUSICBRAINZ_RATE_LIMIT_SECONDS: Final = 1.0  # minimum delay between MusicBrainz requests
+MUSICBRAINZ_TIMEOUT_SECONDS: Final = 5.0  # MusicBrainz HTTP timeout, seconds
+MUSICBRAINZ_USER_AGENT: Final = "OMYM2/0.1 (https://github.com/muray0196/omym2)"  # MusicBrainz client UA
 CONTENT_FINGERPRINT_ALGORITHM: Final = "sha256"  # content fingerprint hash algorithm
 CONTENT_HASH_READ_CHUNK_SIZE_BYTES: Final = 1_048_576  # file hash read chunk size, bytes, positive
 CONFIG_FINGERPRINT_ALGORITHM: Final = "sha256"  # config fingerprint hash algorithm
@@ -110,8 +123,9 @@ PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "title",
     "artist",
     "year",
+    "artist_id",
 )  # placeholders allowed in path policy stem templates
-PATH_POLICY_BEHAVIOR_VERSION: Final = 3  # version included in hashes when canonical path behavior changes
+PATH_POLICY_BEHAVIOR_VERSION: Final = 4  # version included in hashes when canonical path behavior changes
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
 PATH_POLICY_TRACK_NUMBER_WIDTH: Final = 2  # zero-padding width for generated track numbers
 PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in metadata path components

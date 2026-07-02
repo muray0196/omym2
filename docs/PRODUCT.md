@@ -89,6 +89,7 @@ The main roles of the GUI are:
 * Setting optional Library path shortcuts
 * Setting the Incoming path
 * Editing the path policy
+* Generating and editing artist ID path values
 * Setting required metadata fields
 * Setting behavior for duplicates
 * Setting behavior for conflicts

@@ -40,6 +40,7 @@ export const TEMPLATE_TOKENS = [
   "{title}",
   "{artist}",
   "{year}",
+  "{artist_id}",
 ] as const
 
 /** A tiny stable "hash" of the config object for display only. */
@@ -87,6 +88,12 @@ export function validateConfig(config: AppConfig): ValidationResult {
   }
   if (!config.path_policy.unknown_album.trim()) {
     errors.push("unknown_album fallback must not be empty.")
+  }
+  if (config.artist_ids.max_length < 1) {
+    errors.push("artist_ids.max_length must be positive.")
+  }
+  if (!config.artist_ids.fallback_id.trim()) {
+    errors.push("artist_ids.fallback_id must not be empty.")
   }
 
   return { valid: errors.length === 0, errors }

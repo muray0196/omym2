@@ -15,7 +15,7 @@ from omym2.config import (
     CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR,
     CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR,
 )
-from omym2.domain.models.app_config import AppConfig, UiConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, UiConfig
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 
 UI_THEME_DARK = "dark"
@@ -45,3 +45,14 @@ def test_path_policy_fingerprint_includes_behavior_version() -> None:
     legacy_digest.update(legacy_payload.encode(CONFIG_FINGERPRINT_ENCODING))
 
     assert calculate_path_policy_fingerprint(config.path_policy) != legacy_digest.hexdigest()
+
+
+def test_path_policy_fingerprint_changes_when_artist_ids_change() -> None:
+    """Artist ID settings affect Library registration when {artist_id} can render paths."""
+    default_hash = calculate_path_policy_fingerprint(AppConfig().path_policy, AppConfig().artist_ids)
+    changed_hash = calculate_path_policy_fingerprint(
+        AppConfig().path_policy,
+        ArtistIdConfig(entries={"Aimer": "AIMR"}),
+    )
+
+    assert changed_hash != default_hash

@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Tags,
+  WandSparkles,
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { useApp } from "../app-context"
@@ -33,6 +34,7 @@ type SaveState = "idle" | "saving" | "success" | "error"
 export function SettingsScreen() {
   const {
     draftConfig,
+    generateArtistIds,
     savedConfig,
     saveConfig,
     setDraftConfig,
@@ -45,6 +47,9 @@ export function SettingsScreen() {
     validateDraft,
   } = useApp()
   const [saveState, setSaveState] = useState<SaveState>("idle")
+  const [artistInput, setArtistInput] = useState("")
+  const [artistOverwrite, setArtistOverwrite] = useState(false)
+  const [artistGenerationState, setArtistGenerationState] = useState<SaveState>("idle")
   const [validated, setValidated] = useState(true)
   const [draftPreview, setDraftPreview] = useState(settingsPreview)
 
@@ -108,6 +113,34 @@ export function SettingsScreen() {
     })
   }
 
+  function updateArtistIds(value: Partial<AppConfig["artist_ids"]>) {
+    update("artist_ids", value)
+  }
+
+  function updateArtistIdEntry(sourceArtist: string, artistId: string) {
+    updateArtistIds({
+      entries: {
+        ...draftConfig.artist_ids.entries,
+        [sourceArtist]: artistId,
+      },
+    })
+  }
+
+  async function handleGenerateArtistIds() {
+    const artistNames = artistInput
+      .split(/\r?\n|,/)
+      .map((name) => name.trim())
+      .filter(Boolean)
+    if (artistNames.length === 0) return
+    setArtistGenerationState("saving")
+    const generated = await generateArtistIds(artistNames, artistOverwrite)
+    setArtistGenerationState(generated ? "success" : "error")
+    if (generated) {
+      setArtistInput("")
+      setValidated(false)
+    }
+  }
+
   async function handleValidate() {
     setSaveState("idle")
     await validateDraft()
@@ -123,6 +156,9 @@ export function SettingsScreen() {
   }
 
   const pp = draftConfig.path_policy
+  const artistEntries = Object.entries(draftConfig.artist_ids.entries).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )
   const modeOptions = toOptions(settingsChoices.command_modes, {
     plan_first: "plan_first (review first)",
   })
@@ -361,6 +397,105 @@ export function SettingsScreen() {
                 onChange={(v) => update("metadata", { require_album: v })}
                 label="Require album"
               />
+            </div>
+          </Panel>
+
+          <Panel
+            title="Artist IDs"
+            icon={WandSparkles}
+            description="Editable values for the {artist_id} path token."
+          >
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Max ID length">
+                  {(id) => (
+                    <TextInput
+                      id={id}
+                      type="number"
+                      min={1}
+                      value={draftConfig.artist_ids.max_length}
+                      onChange={(e) => updateArtistIds({ max_length: Number(e.target.value) || 0 })}
+                    />
+                  )}
+                </Field>
+                <Field label="Fallback ID">
+                  {(id) => (
+                    <TextInput
+                      id={id}
+                      mono
+                      value={draftConfig.artist_ids.fallback_id}
+                      onChange={(e) => updateArtistIds({ fallback_id: e.target.value })}
+                    />
+                  )}
+                </Field>
+              </div>
+              <Field label="Generate from artists" help="Separate names with commas or new lines.">
+                {(id) => (
+                  <TextArea
+                    id={id}
+                    rows={3}
+                    value={artistInput}
+                    onChange={(e) => setArtistInput(e.target.value)}
+                    placeholder={"Aimer\nJohn Smith"}
+                  />
+                )}
+              </Field>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <Toggle
+                  checked={artistOverwrite}
+                  onChange={setArtistOverwrite}
+                  label="Overwrite existing"
+                />
+                <Button
+                  variant="outline"
+                  onClick={handleGenerateArtistIds}
+                  disabled={artistGenerationState === "saving" || artistInput.trim() === ""}
+                  className="sm:w-44"
+                >
+                  <WandSparkles className="size-4" aria-hidden="true" />
+                  {artistGenerationState === "saving" ? "Generating…" : "Generate"}
+                </Button>
+              </div>
+              {artistGenerationState === "success" ? (
+                <Notice tone="success" title="Artist IDs generated">
+                  Saved generated entries to local config.
+                </Notice>
+              ) : null}
+              {artistGenerationState === "error" ? (
+                <Notice tone="danger" title="Artist ID generation failed">
+                  {settingsErrors.join(" ") || "The local API rejected the request."}
+                </Notice>
+              ) : null}
+              <div className="overflow-hidden rounded-md border border-border">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,11rem)] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <span>Artist</span>
+                  <span>ID</span>
+                </div>
+                {artistEntries.length > 0 ? (
+                  <div className="divide-y divide-border">
+                    {artistEntries.map(([sourceArtist, artistId]) => (
+                      <div
+                        key={sourceArtist}
+                        className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,11rem)] gap-2 px-3 py-2"
+                      >
+                        <Mono className="truncate text-foreground" title={sourceArtist}>
+                          {sourceArtist}
+                        </Mono>
+                        <TextInput
+                          mono
+                          value={artistId}
+                          onChange={(e) => updateArtistIdEntry(sourceArtist, e.target.value)}
+                          aria-label={`Artist ID for ${sourceArtist}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-3 py-4 text-sm text-muted-foreground">
+                    No artist IDs saved.
+                  </div>
+                )}
+              </div>
             </div>
           </Panel>
 

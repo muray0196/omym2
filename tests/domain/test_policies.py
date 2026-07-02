@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from omym2.domain.models.app_config import PathPolicyConfig
+from omym2.domain.models.app_config import ArtistIdConfig, PathPolicyConfig
 from omym2.domain.models.plan_action import PlanActionReason
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy
@@ -23,6 +23,7 @@ DIFFERENT_CONTENT = b"different content"
 DISC_NUMBER = 1
 EXPECTED_CANONICAL_PATH = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
 EXPECTED_STEM_TEMPLATE_PATH = "Aimer/Example-Album/1-03-Example-Song.flac"
+EXPECTED_ARTIST_ID_PATH = "AIMR/Example-Song.flac"
 FILE_EXTENSION = ".FLAC"
 GENRE = "J-Pop"
 OCCUPIED_PATH = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
@@ -38,6 +39,7 @@ UNSANITIZED_ARTIST = "Artist:Name"
 UNSANITIZED_PATH = "Artist:Name/2024_Example Album/1-03_Example Song.flac"
 YEAR = 2024
 STEM_TEMPLATE = "{album_artist}/{album}/{disc}-{track} - {title}"
+ARTIST_ID_TEMPLATE = "{artist_id}/{title}"
 
 
 def test_path_policy_generates_relative_path_without_hash_suffix() -> None:
@@ -58,6 +60,16 @@ def test_path_policy_appends_source_extension_to_rendered_stem() -> None:
     assert canonical_path == EXPECTED_STEM_TEMPLATE_PATH
     assert canonical_path.endswith(".flac")
     assert ".flac.flac" not in canonical_path
+
+
+def test_path_policy_renders_artist_id_from_saved_config() -> None:
+    """PathPolicy resolves artist_id from already-loaded config without I/O."""
+    canonical_path = PathPolicy(
+        PathPolicyConfig(template=ARTIST_ID_TEMPLATE),
+        ArtistIdConfig(entries={ALBUM_ARTIST: "AIMR"}),
+    ).canonical_path(_track_metadata(), FILE_EXTENSION)
+
+    assert canonical_path == EXPECTED_ARTIST_ID_PATH
 
 
 def test_path_policy_sanitizes_metadata_path_components() -> None:

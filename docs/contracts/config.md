@@ -35,6 +35,7 @@ add
 organize
 refresh
 path_policy
+artist_ids
 metadata
 collision
 ui
@@ -68,6 +69,14 @@ unknown_artist = "Unknown Artist"
 unknown_album = "Unknown Album"
 sanitize = true
 max_filename_length = 180
+
+[artist_ids]
+max_length = 8
+fallback_id = "NOART"
+
+[artist_ids.entries]
+"米津玄師" = "KENSHYNZ"
+"John Smith" = "JOHNSMTH"
 
 [metadata]
 prefer_album_artist = true
@@ -106,6 +115,7 @@ Allowed placeholders:
 * `{title}`
 * `{artist}`
 * `{year}`
+* `{artist_id}`
 
 Initial template:
 
@@ -118,6 +128,26 @@ The source music file suffix is appended after template rendering. Source suffix
 The initial template does not include hash-based suffixes. If the final target path already exists, the PlanAction is blocked with `target_exists`.
 
 PathPolicy is pure and does not perform I/O. Target existence is checked by usecases through ports.
+
+`{artist_id}` is a user-facing path/config value. It is resolved from the
+already-loaded `artist_ids.entries` mapping using the source artist name from
+metadata. When no saved entry exists, PathPolicy may use the pure deterministic
+artist ID generator with `artist_ids.max_length` and `artist_ids.fallback_id`.
+It must not load fastText models or call MusicBrainz during path rendering.
+
+## ArtistIdConfig
+
+Artist IDs are editable settings stored in TOML, not internal OMYM2 identities.
+They are not Track, Library, or Artist entity IDs.
+
+Representative fields:
+
+* `max_length`: positive maximum generated ID length
+* `fallback_id`: non-empty ID used when source text has no usable characters
+* `entries`: editable mapping from source artist name to saved artist ID
+
+Normal generation saves only missing entries. Existing entries are preserved
+unless the user explicitly requests regeneration/overwrite.
 
 ## Metadata And Collision Policy
 
