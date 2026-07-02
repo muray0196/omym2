@@ -21,7 +21,7 @@ workspace:
   root: ~/code/omym2-symphony-workspaces
 hooks:
   after_create: |
-    git clone --branch develop git@github.com:muray0196/omym2.git .
+    git clone --branch main git@github.com:muray0196/omym2.git .
     git config rerere.enabled true
     git config rerere.autoupdate true
     uv sync

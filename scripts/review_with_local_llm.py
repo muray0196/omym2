@@ -311,7 +311,7 @@ def _parse_args(argv: list[str] | None) -> ParsedArgs:
             Examples:
               python scripts/review_with_local_llm.py review --worktree --files tests/scripts/test_review_with_local_llm.py
               python scripts/review_with_local_llm.py review --staged --context tests/scripts/test_review_with_local_llm.py
-              python scripts/review_with_local_llm.py cases --base develop --files scripts/review_with_local_llm.py
+              python scripts/review_with_local_llm.py cases --base main --files scripts/review_with_local_llm.py
               git diff | python scripts/review_with_local_llm.py review --stdin --files tests/scripts/test_review_with_local_llm.py
             """
         ),
