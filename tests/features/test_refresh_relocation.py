@@ -474,7 +474,11 @@ def _single_action_plan(
 ) -> Plan:
     uow = InMemoryUnitOfWork()
     active_config = default_app_config() if config is None else config
-    uow.libraries.save(_library(path_policy_hash=calculate_path_policy_fingerprint(active_config.path_policy)))
+    uow.libraries.save(
+        _library(
+            path_policy_hash=calculate_path_policy_fingerprint(active_config.path_policy, active_config.artist_ids)
+        )
+    )
     uow.tracks.save(_track())
     ports, _ = _ports(
         uow,
@@ -503,7 +507,7 @@ def _library(
         library_id=library_id,
         root_path=root_path,
         path_policy_hash=(
-            calculate_path_policy_fingerprint(default_app_config().path_policy)
+            calculate_path_policy_fingerprint(default_app_config().path_policy, default_app_config().artist_ids)
             if path_policy_hash is None
             else path_policy_hash
         ),

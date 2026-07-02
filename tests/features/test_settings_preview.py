@@ -19,6 +19,7 @@ def test_path_policy_preview_renders_sample_path() -> None:
     result = PreviewPathPolicyUseCase().execute(
         PathPolicyPreviewRequest(
             path_policy=AppConfig().path_policy,
+            artist_ids=AppConfig().artist_ids,
             metadata=TrackMetadata(
                 title="Example Song",
                 artist="Aimer",

@@ -6,6 +6,7 @@ Why: Connects settings UI state to persisted TOML while preserving static previe
 import {
   mockCheckResponse,
   mockHistoryResponse,
+  mockGenerateArtistIds,
   mockRunDetailResponse,
   mockSaveSettings,
   mockSettingsState,
@@ -15,6 +16,7 @@ import {
 } from "./mock-data"
 import type {
   AppConfig,
+  ArtistIdGenerationResult,
   CheckResponse,
   HistoryResponse,
   RunDetailResponse,
@@ -97,6 +99,21 @@ export async function saveSettings(
   }
   return requestJson<SettingsSaveResult>("/api/settings/save", {
     body: JSON.stringify({ config }),
+    headers: { [CSRF_HEADER]: csrfToken },
+    method: "POST",
+  })
+}
+
+export async function generateArtistIds(
+  artistNames: string[],
+  overwrite: boolean,
+  csrfToken: string,
+): Promise<ArtistIdGenerationResult> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGenerateArtistIds(artistNames))
+  }
+  return requestJson<ArtistIdGenerationResult>("/api/settings/artist-ids/generate", {
+    body: JSON.stringify({ artist_names: artistNames, overwrite }),
     headers: { [CSRF_HEADER]: csrfToken },
     method: "POST",
   })

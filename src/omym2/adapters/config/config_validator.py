@@ -17,6 +17,8 @@ from omym2.config import (
     ALLOWED_UI_THEMES,
     CONFIG_VERSION,
     DEFAULT_ADD_AUTO_APPLY,
+    DEFAULT_ARTIST_ID_FALLBACK,
+    DEFAULT_ARTIST_ID_MAX_LENGTH,
     DEFAULT_COLLISION_ON_DUPLICATE_HASH,
     DEFAULT_COLLISION_ON_MISSING_METADATA,
     DEFAULT_COLLISION_ON_TARGET_EXISTS,
@@ -38,6 +40,7 @@ from omym2.config import (
 )
 from omym2.domain.models.app_config import (
     AppConfig,
+    ArtistIdConfig,
     CollisionConfig,
     CommandConfig,
     MetadataConfig,
@@ -62,11 +65,15 @@ class ChoiceRule:
 
 
 ADD_SECTION = "add"
+ARTIST_IDS_SECTION = "artist_ids"
 AUTO_APPLY_KEY = "auto_apply"
 COLLISION_SECTION = "collision"
 DEFAULT_MODE_KEY = "default_mode"
 INCOMING_KEY = "incoming"
+ENTRIES_KEY = "entries"
+FALLBACK_ID_KEY = "fallback_id"
 LIBRARY_KEY = "library"
+MAX_LENGTH_KEY = "max_length"
 MAX_FILENAME_LENGTH_KEY = "max_filename_length"
 METADATA_SECTION = "metadata"
 ON_DUPLICATE_HASH_KEY = "on_duplicate_hash"
@@ -98,12 +105,14 @@ ROOT_KEYS = frozenset(
         ORGANIZE_SECTION,
         REFRESH_SECTION,
         PATH_POLICY_SECTION,
+        ARTIST_IDS_SECTION,
         METADATA_SECTION,
         COLLISION_SECTION,
         UI_SECTION,
     }
 )
 PATHS_KEYS = frozenset({LIBRARY_KEY, INCOMING_KEY})
+ARTIST_IDS_KEYS = frozenset({MAX_LENGTH_KEY, FALLBACK_ID_KEY, ENTRIES_KEY})
 COMMAND_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY})
 ORGANIZE_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY, ONLY_MISPLACED_KEY})
 PATH_POLICY_KEYS = frozenset(
@@ -146,6 +155,11 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
         # adapter reports those through the ConfigStore validation contract.
         errors.append(str(exc))
         path_policy_config = PathPolicyConfig()
+    try:
+        artist_id_config = _artist_id_config(_section(raw_config, ARTIST_IDS_SECTION, errors), errors)
+    except ValueError as exc:
+        errors.append(str(exc))
+        artist_id_config = ArtistIdConfig()
     metadata_config = _metadata_config(_section(raw_config, METADATA_SECTION, errors), errors)
     collision_config = _collision_config(_section(raw_config, COLLISION_SECTION, errors), errors)
     ui_config = _ui_config(_section(raw_config, UI_SECTION, errors), errors)
@@ -161,6 +175,7 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
             organize=organize_config,
             refresh=refresh_config,
             path_policy=path_policy_config,
+            artist_ids=artist_id_config,
             metadata=metadata_config,
             collision=collision_config,
             ui=ui_config,
@@ -253,6 +268,21 @@ def _path_policy_config(table: ConfigTable, errors: list[str]) -> PathPolicyConf
     )
 
 
+def _artist_id_config(table: ConfigTable, errors: list[str]) -> ArtistIdConfig:
+    _reject_unknown_keys(table, ARTIST_IDS_KEYS, ARTIST_IDS_SECTION, errors)
+    return ArtistIdConfig(
+        max_length=_int(table, MAX_LENGTH_KEY, ARTIST_IDS_SECTION, DEFAULT_ARTIST_ID_MAX_LENGTH, errors),
+        fallback_id=_required_string(
+            table,
+            FALLBACK_ID_KEY,
+            ARTIST_IDS_SECTION,
+            DEFAULT_ARTIST_ID_FALLBACK,
+            errors,
+        ),
+        entries=_string_mapping(_section(table, ENTRIES_KEY, errors, parent_section=ARTIST_IDS_SECTION), errors),
+    )
+
+
 def _metadata_config(table: ConfigTable, errors: list[str]) -> MetadataConfig:
     _reject_unknown_keys(table, METADATA_KEYS, METADATA_SECTION, errors)
     return MetadataConfig(
@@ -333,14 +363,34 @@ def _ui_config(table: ConfigTable, errors: list[str]) -> UiConfig:
     )
 
 
-def _section(raw_config: ConfigTable, section: str, errors: list[str]) -> ConfigTable:
+def _section(
+    raw_config: ConfigTable,
+    section: str,
+    errors: list[str],
+    *,
+    parent_section: str = "",
+) -> ConfigTable:
     if section not in raw_config:
         return {}
     value = raw_config[section]
     if isinstance(value, Mapping):
         return cast("ConfigTable", value)
-    errors.append(_type_error(section, TABLE_TYPE_NAME))
+    errors.append(_type_error(_path(parent_section, section), TABLE_TYPE_NAME))
     return {}
+
+
+def _string_mapping(table: ConfigTable, errors: list[str]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for key, value in table.items():
+        path = _path(_path(ARTIST_IDS_SECTION, ENTRIES_KEY), key)
+        if not isinstance(value, str):
+            errors.append(_type_error(path, STRING_TYPE_NAME))
+            continue
+        if key.strip() == "" or value.strip() == "":
+            errors.append(f"Config key {path} must not be empty.")
+            continue
+        values[key] = value
+    return values
 
 
 def _required_int(table: ConfigTable, key: str, default: int, errors: list[str]) -> int:

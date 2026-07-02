@@ -12,12 +12,16 @@ from typing import TYPE_CHECKING
 
 from omym2.adapters.config.config_validator import (
     ADD_SECTION,
+    ARTIST_IDS_SECTION,
     AUTO_APPLY_KEY,
     COLLISION_SECTION,
     DEFAULT_MODE_KEY,
+    ENTRIES_KEY,
+    FALLBACK_ID_KEY,
     INCOMING_KEY,
     LIBRARY_KEY,
     MAX_FILENAME_LENGTH_KEY,
+    MAX_LENGTH_KEY,
     METADATA_SECTION,
     ON_DUPLICATE_HASH_KEY,
     ON_MISSING_METADATA_KEY,
@@ -130,6 +134,19 @@ def dump_config_toml(config: AppConfig) -> str:
     )
     _append_section(
         lines,
+        ARTIST_IDS_SECTION,
+        (
+            (MAX_LENGTH_KEY, config.artist_ids.max_length),
+            (FALLBACK_ID_KEY, config.artist_ids.fallback_id),
+        ),
+    )
+    _append_section(
+        lines,
+        f"{ARTIST_IDS_SECTION}.{ENTRIES_KEY}",
+        tuple((key, value) for key, value in sorted((config.artist_ids.entries or {}).items())),
+    )
+    _append_section(
+        lines,
         METADATA_SECTION,
         (
             (PREFER_ALBUM_ARTIST_KEY, config.metadata.prefer_album_artist),
@@ -163,8 +180,14 @@ def _append_section(lines: list[str], section: str, values: tuple[tuple[str, obj
     for key, value in values:
         if value is None:
             continue
-        lines.append(f"{key} = {_format_toml_value(value)}")
+        lines.append(f"{_format_toml_key(key)} = {_format_toml_value(value)}")
     lines.append("")
+
+
+def _format_toml_key(key: str) -> str:
+    if key != "" and key.isascii() and all(char.isalnum() or char in ("_", "-") for char in key):
+        return key
+    return json.dumps(key)
 
 
 def _format_toml_value(value: object) -> str:

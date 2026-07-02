@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.add import run_add_command
 from omym2.adapters.cli.commands.apply import run_apply_command
+from omym2.adapters.cli.commands.artist_ids import run_artist_ids_command
 from omym2.adapters.cli.commands.check import run_check_command
 from omym2.adapters.cli.commands.config import run_config_command
 from omym2.adapters.cli.commands.history import run_history_command
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from typing import TextIO
 
 ADD_COMMAND = "add"
+ARTIST_IDS_COMMAND = "artist-ids"
 APPLY_COMMAND = "apply"
 CHECK_COMMAND = "check"
 CONFIG_COMMAND = "config"
@@ -60,6 +62,7 @@ def main(
     command, *command_args = args
     command_runners: dict[str, CommandCallback] = {
         ADD_COMMAND: lambda: run_add_command(command_args, output, error_output, config_path, database_path),
+        ARTIST_IDS_COMMAND: lambda: run_artist_ids_command(command_args, output, error_output, config_path),
         APPLY_COMMAND: lambda: run_apply_command(command_args, output, error_output, database_path),
         CHECK_COMMAND: lambda: run_check_command(command_args, output, error_output, config_path, database_path),
         CONFIG_COMMAND: lambda: run_config_command(command_args, output, error_output, config_path),

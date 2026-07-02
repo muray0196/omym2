@@ -94,7 +94,10 @@ def test_organize_registers_clean_library_without_mutation_plan() -> None:
     assert result.track_count == 1
     assert result.library.status == LibraryStatus.REGISTERED
     assert result.library.registered_at == BASE_TIME
-    assert result.library.path_policy_hash == calculate_path_policy_fingerprint(default_app_config().path_policy)
+    assert result.library.path_policy_hash == calculate_path_policy_fingerprint(
+        default_app_config().path_policy,
+        default_app_config().artist_ids,
+    )
     assert uow.libraries.get(LIBRARY_ID) == result.library
     track = uow.tracks.get(TRACK_ID)
     assert track is not None

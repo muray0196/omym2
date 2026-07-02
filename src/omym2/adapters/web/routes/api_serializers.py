@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.run import Run
     from omym2.domain.models.track import Track
     from omym2.domain.models.track_metadata import TrackMetadata
+    from omym2.features.artist_ids.dto import GenerateArtistIdsResult
     from omym2.features.settings.dto import PathPolicyPreviewResult, ValidateSettingsResult
 
 
@@ -44,6 +45,11 @@ def serialize_app_config(config: AppConfig) -> dict[str, object]:
             "unknown_album": config.path_policy.unknown_album,
             "sanitize": config.path_policy.sanitize,
             "max_filename_length": config.path_policy.max_filename_length,
+        },
+        "artist_ids": {
+            "max_length": config.artist_ids.max_length,
+            "fallback_id": config.artist_ids.fallback_id,
+            "entries": dict(sorted((config.artist_ids.entries or {}).items())),
         },
         "metadata": {
             "prefer_album_artist": config.metadata.prefer_album_artist,
@@ -79,6 +85,22 @@ def serialize_validation_result(result: ValidateSettingsResult) -> dict[str, obj
 def serialize_path_preview(result: PathPolicyPreviewResult) -> dict[str, object]:
     """Return a JSON-safe path policy preview result."""
     return {"path": result.path, "errors": list(result.errors)}
+
+
+def serialize_artist_id_generation(result: GenerateArtistIdsResult) -> dict[str, object]:
+    """Return a JSON-safe artist ID generation result."""
+    return {
+        "entries": [
+            {
+                "source_artist": entry.source_artist,
+                "generation_artist": entry.generation_artist,
+                "artist_id": entry.artist_id,
+                "saved": entry.saved,
+                "overwritten": entry.overwritten,
+            }
+            for entry in result.entries
+        ]
+    }
 
 
 def serialize_settings_change(change: SettingsChange) -> dict[str, object]:
