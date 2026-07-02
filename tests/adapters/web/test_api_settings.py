@@ -29,6 +29,8 @@ EXPECTED_DEFAULT_PREVIEW = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
 EXPECTED_UPDATED_PREVIEW = "Aimer/03_Example-Song.flac"
 EXPECTED_UNICODE_PREVIEW = "こんにちは/2024_你好/1-03_Café-Song.flac"
 FORBIDDEN_STATUS_CODE = 403
+ARTIST_ID_SOURCE = "Aimer"
+ARTIST_ID_VALUE = "AMR"
 INCOMING_PATH = "/music/incoming"
 LIBRARY_PATH = "/music/library"
 SUCCESS_STATUS_CODE = 200
@@ -52,6 +54,7 @@ def test_get_settings_returns_config_choices_validation_preview_and_csrf(tmp_pat
         _object_payload(_object_payload(payload, "config"), "path_policy")["template"]
         == AppConfig().path_policy.template
     )
+    assert _object_payload(_object_payload(payload, "config"), "artist_ids")["fallback"] == "NOART"
     assert _object_payload(payload, "choices")["command_modes"] == ["plan_first"]
     assert _object_payload(payload, "validation")["valid"] is True
     assert _object_payload(payload, "preview")["path"] == EXPECTED_DEFAULT_PREVIEW
@@ -138,6 +141,21 @@ def test_save_settings_persists_valid_config_with_csrf(tmp_path: Path) -> None:
     assert saved_config.paths.incoming == INCOMING_PATH
 
 
+def test_save_settings_persists_artist_id_entries_with_csrf(tmp_path: Path) -> None:
+    """Settings save writes editable artist ID entries through the config store."""
+    config_path = tmp_path / "config.toml"
+    client = TestClient(create_web_app(config_path))
+    csrf_token = _csrf_token(client)
+    payload = _settings_payload(AppConfig())
+    _artist_ids_payload(payload)["entries"] = {ARTIST_ID_SOURCE: ARTIST_ID_VALUE}
+
+    response = client.post(WEB_API_SETTINGS_SAVE_ROUTE, json=payload, headers={WEB_CSRF_HEADER_NAME: csrf_token})
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    saved_config = TomlConfigStore(config_path).load()
+    assert saved_config.artist_ids.saved_value(ARTIST_ID_SOURCE) == ARTIST_ID_VALUE
+
+
 def test_save_settings_clears_existing_config_errors_after_successful_write(tmp_path: Path) -> None:
     """A successful save must not return stale errors from the replaced TOML file."""
     config_path = tmp_path / "config.toml"
@@ -219,6 +237,11 @@ def _settings_payload(config: AppConfig) -> dict[str, object]:
                 "sanitize": config.path_policy.sanitize,
                 "max_filename_length": config.path_policy.max_filename_length,
             },
+            "artist_ids": {
+                "max_length": config.artist_ids.max_length,
+                "fallback": config.artist_ids.fallback,
+                "entries": {entry.source_artist: entry.artist_id for entry in config.artist_ids.entries},
+            },
             "metadata": {
                 "prefer_album_artist": config.metadata.prefer_album_artist,
                 "require_title": config.metadata.require_title,
@@ -240,6 +263,10 @@ def _settings_payload(config: AppConfig) -> dict[str, object]:
 
 def _path_policy_payload(payload: dict[str, object]) -> dict[str, object]:
     return _object_payload(_object_payload(payload, "config"), "path_policy")
+
+
+def _artist_ids_payload(payload: dict[str, object]) -> dict[str, object]:
+    return _object_payload(_object_payload(payload, "config"), "artist_ids")
 
 
 def _json_payload(response: _JsonResponse) -> dict[str, object]:

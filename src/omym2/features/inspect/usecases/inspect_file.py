@@ -28,7 +28,10 @@ class InspectFileUseCase:
         snapshot = self.ports.file_snapshot_reader.capture(request.path)
 
         try:
-            canonical_path = PathPolicy(config.path_policy).canonical_path(snapshot.metadata, snapshot.file_extension)
+            canonical_path = PathPolicy(config.path_policy, config.artist_ids).canonical_path(
+                snapshot.metadata,
+                snapshot.file_extension,
+            )
         except ValueError as exc:
             # Missing title or bad suffix is inspection data, not a mutation-time
             # failure, so the caller receives the snapshot plus the path error.

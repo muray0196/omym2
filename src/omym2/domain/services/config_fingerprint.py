@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from omym2.config import (
     CONFIG_FINGERPRINT_ALGORITHM,
+    CONFIG_FINGERPRINT_ARTIST_ID_CONFIG_KEY,
     CONFIG_FINGERPRINT_ENCODING,
     CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR,
     CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR,
@@ -19,6 +20,7 @@ from omym2.config import (
     CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY,
     PATH_POLICY_BEHAVIOR_VERSION,
 )
+from omym2.domain.models.app_config import ArtistIdConfig
 
 if TYPE_CHECKING:
     from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
@@ -38,12 +40,15 @@ def calculate_config_fingerprint(config: AppConfig, algorithm: str = CONFIG_FING
 
 def calculate_path_policy_fingerprint(
     path_policy_config: PathPolicyConfig,
+    artist_id_config: ArtistIdConfig | None = None,
     algorithm: str = CONFIG_FINGERPRINT_ALGORITHM,
 ) -> str:
     """Return a stable fingerprint for Library registration path policy."""
     # Library registration depends on canonical path rules, not unrelated
     # settings such as UI display choices or command defaults.
+    resolved_artist_id_config = ArtistIdConfig() if artist_id_config is None else artist_id_config
     path_policy_payload = {
+        CONFIG_FINGERPRINT_ARTIST_ID_CONFIG_KEY: asdict(resolved_artist_id_config),
         CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY: PATH_POLICY_BEHAVIOR_VERSION,
         CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY: asdict(path_policy_config),
     }

@@ -12,8 +12,11 @@ import pytest
 from omym2.adapters.config.toml_config_store import TomlConfigStore, dump_config_toml, load_config_text
 from omym2.config import CONFIG_FILE_ENCODING
 from omym2.domain.models.app_config import (
+    INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE,
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     AppConfig,
+    ArtistIdConfig,
+    ArtistIdEntry,
     PathsConfig,
     UiConfig,
 )
@@ -25,6 +28,8 @@ if TYPE_CHECKING:
 CONFIG_FILE_NAME = "config.toml"
 INCOMING_PATH = "/music/incoming"
 INVALID_MAX_FILENAME_LENGTH = 0
+ARTIST_ID = "HTDRHKR"
+ARTIST_ID_SOURCE = "Hikaru Utada"
 LIBRARY_PATH = "/music/library"
 UI_THEME_DARK = "dark"
 
@@ -59,6 +64,38 @@ def test_toml_config_text_round_trips_default_config() -> None:
     config = AppConfig()
 
     assert load_config_text(dump_config_toml(config)) == config
+
+
+def test_toml_config_text_round_trips_artist_ids() -> None:
+    """Artist ID config and saved entries round-trip through TOML."""
+    config = AppConfig(
+        artist_ids=ArtistIdConfig(entries=(ArtistIdEntry(source_artist=ARTIST_ID_SOURCE, artist_id=ARTIST_ID),))
+    )
+    config_text = dump_config_toml(config)
+
+    assert "[artist_ids]" in config_text
+    assert "[artist_ids.entries]" in config_text
+    assert f'"{ARTIST_ID_SOURCE}" = "{ARTIST_ID}"' in config_text
+    assert load_config_text(config_text) == config
+
+
+def test_toml_config_store_validation_fails_invalid_artist_id_config(tmp_path: Path) -> None:
+    """Adapter validation reports artist ID config errors through ConfigStore."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        "\n".join(
+            (
+                "version = 1",
+                "",
+                "[artist_ids]",
+                f"max_length = {INVALID_MAX_FILENAME_LENGTH}",
+            )
+        ),
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError, match=INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE):
+        _ = TomlConfigStore(config_path).load()
 
 
 def test_toml_config_store_validation_fails_invalid_path_policy(tmp_path: Path) -> None:

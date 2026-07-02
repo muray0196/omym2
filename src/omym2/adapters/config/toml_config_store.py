@@ -12,6 +12,10 @@ from typing import TYPE_CHECKING
 
 from omym2.adapters.config.config_validator import (
     ADD_SECTION,
+    ARTIST_ID_ENTRIES_KEY,
+    ARTIST_ID_FALLBACK_KEY,
+    ARTIST_ID_MAX_LENGTH_KEY,
+    ARTIST_IDS_SECTION,
     AUTO_APPLY_KEY,
     COLLISION_SECTION,
     DEFAULT_MODE_KEY,
@@ -130,6 +134,15 @@ def dump_config_toml(config: AppConfig) -> str:
     )
     _append_section(
         lines,
+        ARTIST_IDS_SECTION,
+        (
+            (ARTIST_ID_MAX_LENGTH_KEY, config.artist_ids.max_length),
+            (ARTIST_ID_FALLBACK_KEY, config.artist_ids.fallback),
+        ),
+    )
+    _append_artist_id_entries(lines, config)
+    _append_section(
+        lines,
         METADATA_SECTION,
         (
             (PREFER_ALBUM_ARTIST_KEY, config.metadata.prefer_album_artist),
@@ -164,6 +177,17 @@ def _append_section(lines: list[str], section: str, values: tuple[tuple[str, obj
         if value is None:
             continue
         lines.append(f"{key} = {_format_toml_value(value)}")
+    lines.append("")
+
+
+def _append_artist_id_entries(lines: list[str], config: AppConfig) -> None:
+    if len(config.artist_ids.entries) == 0:
+        return
+    lines.append(f"[{ARTIST_IDS_SECTION}.{ARTIST_ID_ENTRIES_KEY}]")
+    lines.extend(
+        f"{_format_toml_value(entry.source_artist)} = {_format_toml_value(entry.artist_id)}"
+        for entry in sorted(config.artist_ids.entries, key=lambda candidate: candidate.source_artist)
+    )
     lines.append("")
 
 

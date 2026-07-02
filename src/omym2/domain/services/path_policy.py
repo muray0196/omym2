@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from omym2.config import (
@@ -25,6 +25,8 @@ from omym2.config import (
     SANITIZER_UNSAFE_PATTERN,
     SANITIZER_UTF8_ENCODING,
 )
+from omym2.domain.models.app_config import ArtistIdConfig
+from omym2.domain.services.artist_id import generate_artist_id
 from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
@@ -44,6 +46,7 @@ class PathPolicy:
     """Pure service that generates canonical Library-root-relative paths."""
 
     config: PathPolicyConfig
+    artist_ids: ArtistIdConfig = field(default_factory=ArtistIdConfig)
 
     def canonical_path(self, metadata: TrackMetadata, file_extension: str) -> str:
         """Generate a normalized Library-root-relative canonical path."""
@@ -61,6 +64,7 @@ class PathPolicy:
             track=self._track_number(metadata),
             title=self._title(metadata),
             artist=self._artist(metadata),
+            artist_id=self._artist_id(metadata),
         )
 
     def _album_artist(self, metadata: TrackMetadata) -> str:
@@ -68,6 +72,13 @@ class PathPolicy:
 
     def _artist(self, metadata: TrackMetadata) -> str:
         return self._artist_component(metadata.artist or metadata.album_artist or self.config.unknown_artist)
+
+    def _artist_id(self, metadata: TrackMetadata) -> str:
+        source_artist = metadata.artist or metadata.album_artist or self.config.unknown_artist
+        saved_value = self.artist_ids.saved_value(source_artist)
+        if saved_value is not None:
+            return saved_value
+        return generate_artist_id(source_artist, self.artist_ids)
 
     def _album(self, metadata: TrackMetadata) -> str:
         value = metadata.album or self.config.unknown_album

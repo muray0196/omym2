@@ -54,7 +54,7 @@ class CreateOrganizePlanUseCase:
         """Create an organize Plan, or register a clean Library without a Plan."""
         config = self.ports.config_store.load()
         config_hash = calculate_config_fingerprint(config)
-        path_policy_hash = calculate_path_policy_fingerprint(config.path_policy)
+        path_policy_hash = calculate_path_policy_fingerprint(config.path_policy, config.artist_ids)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
@@ -124,7 +124,10 @@ class CreateOrganizePlanUseCase:
             )
 
         try:
-            target_path = PathPolicy(config.path_policy).canonical_path(snapshot.metadata, snapshot.file_extension)
+            target_path = PathPolicy(config.path_policy, config.artist_ids).canonical_path(
+                snapshot.metadata,
+                snapshot.file_extension,
+            )
         except ValueError as exc:
             return _blocked_candidate(
                 source_path=source_path,

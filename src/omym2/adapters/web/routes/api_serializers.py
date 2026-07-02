@@ -45,6 +45,11 @@ def serialize_app_config(config: AppConfig) -> dict[str, object]:
             "sanitize": config.path_policy.sanitize,
             "max_filename_length": config.path_policy.max_filename_length,
         },
+        "artist_ids": {
+            "max_length": config.artist_ids.max_length,
+            "fallback": config.artist_ids.fallback,
+            "entries": {entry.source_artist: entry.artist_id for entry in config.artist_ids.entries},
+        },
         "metadata": {
             "prefer_album_artist": config.metadata.prefer_album_artist,
             "require_title": config.metadata.require_title,

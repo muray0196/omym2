@@ -49,6 +49,11 @@ export interface AppConfig {
     sanitize: boolean
     max_filename_length: number
   }
+  artist_ids: {
+    max_length: number
+    fallback: string
+    entries: Record<string, string>
+  }
   metadata: {
     prefer_album_artist: boolean
     require_title: boolean

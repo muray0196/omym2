@@ -39,6 +39,7 @@ export const TEMPLATE_TOKENS = [
   "{track}",
   "{title}",
   "{artist}",
+  "{artist_id}",
   "{year}",
 ] as const
 
@@ -87,6 +88,18 @@ export function validateConfig(config: AppConfig): ValidationResult {
   }
   if (!config.path_policy.unknown_album.trim()) {
     errors.push("unknown_album fallback must not be empty.")
+  }
+  if (config.artist_ids.max_length < 1) {
+    errors.push("artist_ids.max_length must be positive.")
+  }
+  if (!config.artist_ids.fallback.trim()) {
+    errors.push("artist_ids.fallback must not be empty.")
+  }
+  for (const [sourceArtist, artistId] of Object.entries(config.artist_ids.entries)) {
+    if (!sourceArtist.trim() || !artistId.trim()) {
+      errors.push("Artist ID entries must have non-empty source artists and values.")
+      break
+    }
   }
 
   return { valid: errors.length === 0, errors }

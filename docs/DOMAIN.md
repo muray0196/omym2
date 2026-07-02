@@ -101,6 +101,10 @@ without recalculating it.
 
 Allowed placeholders, initial template, preview behavior, and config validation rules are authoritative in [contracts/config.md](contracts/config.md#pathpolicyconfig).
 
+`{artist_id}` is a user-facing path/config value. It is not an internal identity like `track_id` or `library_id`.
+PathPolicy resolves it only from already-loaded `ArtistIdConfig` and `TrackMetadata`; language detection,
+MusicBrainz lookup, TOML reads/writes, and other I/O do not occur during path rendering.
+
 If the final generated target path already exists, the PlanAction becomes blocked as a conflict. PathPolicy does not solve collisions by itself.
 
 ## Library

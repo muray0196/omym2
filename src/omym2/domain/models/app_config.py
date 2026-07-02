@@ -11,6 +11,8 @@ from string import Formatter
 from omym2.config import (
     CONFIG_VERSION,
     DEFAULT_ADD_AUTO_APPLY,
+    DEFAULT_ARTIST_ID_FALLBACK,
+    DEFAULT_ARTIST_ID_MAX_LENGTH,
     DEFAULT_COLLISION_ON_DUPLICATE_HASH,
     DEFAULT_COLLISION_ON_MISSING_METADATA,
     DEFAULT_COLLISION_ON_TARGET_EXISTS,
@@ -35,6 +37,10 @@ from omym2.config import (
 )
 
 INVALID_CONFIG_VERSION_MESSAGE = "Unsupported config version."
+INVALID_ARTIST_ID_ENTRY_MESSAGE = "Artist ID entries must have non-empty source artists and values."
+INVALID_ARTIST_ID_FALLBACK_MESSAGE = "Artist ID fallback must not be empty."
+INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE = "Artist ID max_length must be positive."
+INVALID_ARTIST_ID_SOURCE_MESSAGE = "Artist ID entries must not repeat a source artist."
 INVALID_MAX_FILENAME_LENGTH_MESSAGE = "PathPolicy max_filename_length must be positive."
 INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE = "PathPolicy template must not include a file extension."
 INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE = "PathPolicy template contains unsupported placeholder."
@@ -84,6 +90,45 @@ class PathPolicyConfig:
         # treated as an extension-like suffix and is rejected before planning.
         if _final_component_contains_literal_extension(self.template):
             raise ValueError(INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE)
+
+
+@dataclass(frozen=True, slots=True)
+class ArtistIdEntry:
+    """One editable artist ID saved by source artist text."""
+
+    source_artist: str
+    artist_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ArtistIdConfig:
+    """Settings and saved values for user-facing artist IDs."""
+
+    max_length: int = DEFAULT_ARTIST_ID_MAX_LENGTH
+    fallback: str = DEFAULT_ARTIST_ID_FALLBACK
+    entries: tuple[ArtistIdEntry, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Validate saved artist ID settings before they affect paths."""
+        if self.max_length <= 0:
+            raise ValueError(INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE)
+        if self.fallback.strip() == "":
+            raise ValueError(INVALID_ARTIST_ID_FALLBACK_MESSAGE)
+
+        seen_sources: set[str] = set()
+        for entry in self.entries:
+            if entry.source_artist.strip() == "" or entry.artist_id.strip() == "":
+                raise ValueError(INVALID_ARTIST_ID_ENTRY_MESSAGE)
+            if entry.source_artist in seen_sources:
+                raise ValueError(INVALID_ARTIST_ID_SOURCE_MESSAGE)
+            seen_sources.add(entry.source_artist)
+
+    def saved_value(self, source_artist: str) -> str | None:
+        """Return a saved artist ID for the exact source artist key."""
+        for entry in self.entries:
+            if entry.source_artist == source_artist:
+                return entry.artist_id
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +185,7 @@ class AppConfig:
     organize: OrganizeConfig = OrganizeConfig()
     refresh: CommandConfig = CommandConfig(auto_apply=DEFAULT_REFRESH_AUTO_APPLY)
     path_policy: PathPolicyConfig = PathPolicyConfig()
+    artist_ids: ArtistIdConfig = ArtistIdConfig()
     metadata: MetadataConfig = MetadataConfig()
     collision: CollisionConfig = CollisionConfig()
     ui: UiConfig = UiConfig()

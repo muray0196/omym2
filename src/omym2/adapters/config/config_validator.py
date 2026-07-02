@@ -17,6 +17,8 @@ from omym2.config import (
     ALLOWED_UI_THEMES,
     CONFIG_VERSION,
     DEFAULT_ADD_AUTO_APPLY,
+    DEFAULT_ARTIST_ID_FALLBACK,
+    DEFAULT_ARTIST_ID_MAX_LENGTH,
     DEFAULT_COLLISION_ON_DUPLICATE_HASH,
     DEFAULT_COLLISION_ON_MISSING_METADATA,
     DEFAULT_COLLISION_ON_TARGET_EXISTS,
@@ -38,6 +40,8 @@ from omym2.config import (
 )
 from omym2.domain.models.app_config import (
     AppConfig,
+    ArtistIdConfig,
+    ArtistIdEntry,
     CollisionConfig,
     CommandConfig,
     MetadataConfig,
@@ -62,6 +66,10 @@ class ChoiceRule:
 
 
 ADD_SECTION = "add"
+ARTIST_IDS_SECTION = "artist_ids"
+ARTIST_ID_ENTRIES_KEY = "entries"
+ARTIST_ID_FALLBACK_KEY = "fallback"
+ARTIST_ID_MAX_LENGTH_KEY = "max_length"
 AUTO_APPLY_KEY = "auto_apply"
 COLLISION_SECTION = "collision"
 DEFAULT_MODE_KEY = "default_mode"
@@ -98,6 +106,7 @@ ROOT_KEYS = frozenset(
         ORGANIZE_SECTION,
         REFRESH_SECTION,
         PATH_POLICY_SECTION,
+        ARTIST_IDS_SECTION,
         METADATA_SECTION,
         COLLISION_SECTION,
         UI_SECTION,
@@ -109,6 +118,7 @@ ORGANIZE_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY, ONLY_MISPLACED_KEY}
 PATH_POLICY_KEYS = frozenset(
     {TEMPLATE_KEY, UNKNOWN_ARTIST_KEY, UNKNOWN_ALBUM_KEY, SANITIZE_KEY, MAX_FILENAME_LENGTH_KEY}
 )
+ARTIST_ID_KEYS = frozenset({ARTIST_ID_MAX_LENGTH_KEY, ARTIST_ID_FALLBACK_KEY, ARTIST_ID_ENTRIES_KEY})
 METADATA_KEYS = frozenset({PREFER_ALBUM_ARTIST_KEY, REQUIRE_TITLE_KEY, REQUIRE_ARTIST_KEY, REQUIRE_ALBUM_KEY})
 COLLISION_KEYS = frozenset({ON_TARGET_EXISTS_KEY, ON_DUPLICATE_HASH_KEY, ON_MISSING_METADATA_KEY})
 UI_KEYS = frozenset({THEME_KEY, SHOW_ADVANCED_SETTINGS_KEY})
@@ -146,6 +156,11 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
         # adapter reports those through the ConfigStore validation contract.
         errors.append(str(exc))
         path_policy_config = PathPolicyConfig()
+    try:
+        artist_id_config = _artist_id_config(_section(raw_config, ARTIST_IDS_SECTION, errors), errors)
+    except ValueError as exc:
+        errors.append(str(exc))
+        artist_id_config = ArtistIdConfig()
     metadata_config = _metadata_config(_section(raw_config, METADATA_SECTION, errors), errors)
     collision_config = _collision_config(_section(raw_config, COLLISION_SECTION, errors), errors)
     ui_config = _ui_config(_section(raw_config, UI_SECTION, errors), errors)
@@ -161,6 +176,7 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
             organize=organize_config,
             refresh=refresh_config,
             path_policy=path_policy_config,
+            artist_ids=artist_id_config,
             metadata=metadata_config,
             collision=collision_config,
             ui=ui_config,
@@ -253,6 +269,34 @@ def _path_policy_config(table: ConfigTable, errors: list[str]) -> PathPolicyConf
     )
 
 
+def _artist_id_config(table: ConfigTable, errors: list[str]) -> ArtistIdConfig:
+    _reject_unknown_keys(table, ARTIST_ID_KEYS, ARTIST_IDS_SECTION, errors)
+    entries_table = _optional_table(table, ARTIST_ID_ENTRIES_KEY, ARTIST_IDS_SECTION, errors)
+    return ArtistIdConfig(
+        max_length=_int(table, ARTIST_ID_MAX_LENGTH_KEY, ARTIST_IDS_SECTION, DEFAULT_ARTIST_ID_MAX_LENGTH, errors),
+        fallback=_required_string(
+            table,
+            ARTIST_ID_FALLBACK_KEY,
+            ARTIST_IDS_SECTION,
+            DEFAULT_ARTIST_ID_FALLBACK,
+            errors,
+        ),
+        entries=_artist_id_entries(entries_table, errors),
+    )
+
+
+def _artist_id_entries(table: ConfigTable, errors: list[str]) -> tuple[ArtistIdEntry, ...]:
+    entries: list[ArtistIdEntry] = []
+    for source_artist, artist_id in sorted(table.items()):
+        if not isinstance(artist_id, str):
+            errors.append(
+                _type_error(_path(f"{ARTIST_IDS_SECTION}.{ARTIST_ID_ENTRIES_KEY}", source_artist), STRING_TYPE_NAME)
+            )
+            continue
+        entries.append(ArtistIdEntry(source_artist=source_artist, artist_id=artist_id))
+    return tuple(entries)
+
+
 def _metadata_config(table: ConfigTable, errors: list[str]) -> MetadataConfig:
     _reject_unknown_keys(table, METADATA_KEYS, METADATA_SECTION, errors)
     return MetadataConfig(
@@ -340,6 +384,16 @@ def _section(raw_config: ConfigTable, section: str, errors: list[str]) -> Config
     if isinstance(value, Mapping):
         return cast("ConfigTable", value)
     errors.append(_type_error(section, TABLE_TYPE_NAME))
+    return {}
+
+
+def _optional_table(table: ConfigTable, key: str, section: str, errors: list[str]) -> ConfigTable:
+    if key not in table:
+        return {}
+    value = table[key]
+    if isinstance(value, Mapping):
+        return cast("ConfigTable", value)
+    errors.append(_type_error(_path(section, key), TABLE_TYPE_NAME))
     return {}
 
 

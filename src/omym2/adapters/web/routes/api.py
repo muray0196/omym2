@@ -360,6 +360,7 @@ def _preview_path_policy(
     return PreviewPathPolicyUseCase().execute(
         PathPolicyPreviewRequest(
             path_policy=config.path_policy,
+            artist_ids=config.artist_ids,
             metadata=_preview_metadata() if metadata is None else metadata,
             file_extension=PATH_POLICY_PREVIEW_FILE_EXTENSION if file_extension is None else file_extension,
         )

@@ -22,7 +22,10 @@ class PreviewPathPolicyUseCase:
     def execute(self, request: PathPolicyPreviewRequest) -> PathPolicyPreviewResult:
         """Return the rendered preview path or validation errors."""
         try:
-            preview_path = PathPolicy(request.path_policy).canonical_path(request.metadata, request.file_extension)
+            preview_path = PathPolicy(request.path_policy, request.artist_ids).canonical_path(
+                request.metadata,
+                request.file_extension,
+            )
         except ValueError as exc:
             return PathPolicyPreviewResult(path=None, errors=(str(exc),))
         return PathPolicyPreviewResult(path=preview_path, errors=())

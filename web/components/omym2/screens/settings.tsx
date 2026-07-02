@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Tags,
+  UserRound,
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { useApp } from "../app-context"
@@ -123,6 +124,7 @@ export function SettingsScreen() {
   }
 
   const pp = draftConfig.path_policy
+  const artistIds = draftConfig.artist_ids
   const modeOptions = toOptions(settingsChoices.command_modes, {
     plan_first: "plan_first (review first)",
   })
@@ -339,6 +341,57 @@ export function SettingsScreen() {
             </div>
           </Panel>
 
+          <Panel
+            title="Artist IDs"
+            icon={UserRound}
+            description="Editable source-artist keys and generated path IDs."
+          >
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Max ID length">
+                  {(id) => (
+                    <TextInput
+                      id={id}
+                      type="number"
+                      min={1}
+                      value={artistIds.max_length}
+                      onChange={(e) =>
+                        update("artist_ids", { max_length: Number(e.target.value) || 0 })
+                      }
+                    />
+                  )}
+                </Field>
+                <Field label="Fallback ID">
+                  {(id) => (
+                    <TextInput
+                      id={id}
+                      mono
+                      value={artistIds.fallback}
+                      onChange={(e) => update("artist_ids", { fallback: e.target.value })}
+                    />
+                  )}
+                </Field>
+              </div>
+              <Field
+                label="Saved entries"
+                help="One entry per line as source artist = artist ID. Existing entries are preserved unless changed here or regenerated explicitly."
+              >
+                {(id) => (
+                  <TextArea
+                    id={id}
+                    mono
+                    rows={6}
+                    placeholder={"宇多田ヒカル = HTDRHKR\nAimer = AMR"}
+                    value={formatArtistIdEntries(artistIds.entries)}
+                    onChange={(e) =>
+                      update("artist_ids", { entries: parseArtistIdEntries(e.target.value) })
+                    }
+                  />
+                )}
+              </Field>
+            </div>
+          </Panel>
+
           <Panel title="Metadata rules" icon={Tags}>
             <div className="grid gap-3 sm:grid-cols-2">
               <Toggle
@@ -524,4 +577,30 @@ function toOptions(values: string[], labels: Record<string, string> = {}) {
 
 function uniqueMessages(messages: string[]): string[] {
   return Array.from(new Set(messages))
+}
+
+function formatArtistIdEntries(entries: Record<string, string>): string {
+  return Object.entries(entries)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([sourceArtist, artistId]) => `${sourceArtist} = ${artistId}`)
+    .join("\n")
+}
+
+function parseArtistIdEntries(value: string): Record<string, string> {
+  const entries: Record<string, string> = {}
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const separatorIndex = line.indexOf("=")
+    if (separatorIndex < 0) {
+      entries[line] = ""
+      continue
+    }
+    const sourceArtist = line.slice(0, separatorIndex).trim()
+    const artistId = line.slice(separatorIndex + 1).trim()
+    if (sourceArtist) {
+      entries[sourceArtist] = artistId
+    }
+  }
+  return entries
 }

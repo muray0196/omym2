@@ -9,16 +9,20 @@ import pytest
 
 from omym2.config import (
     CONFIG_VERSION,
+    DEFAULT_ARTIST_ID_FALLBACK,
+    DEFAULT_ARTIST_ID_MAX_LENGTH,
     DEFAULT_PATH_POLICY_TEMPLATE,
     DEFAULT_UNKNOWN_ALBUM,
     DEFAULT_UNKNOWN_ARTIST,
 )
 from omym2.domain.models.app_config import (
+    INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE,
     INVALID_CONFIG_VERSION_MESSAGE,
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE,
     INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE,
     AppConfig,
+    ArtistIdConfig,
     PathPolicyConfig,
 )
 
@@ -29,6 +33,7 @@ PATH_POLICY_TEMPLATE_WITH_EXTENSION_PLACEHOLDER = "{album_artist}/{album}/{title
 PATH_POLICY_TEMPLATE_WITH_SPLIT_DISC_TRACK = "{album_artist}/{album}/{disc}-{track}_{title}"
 PATH_POLICY_TEMPLATE_WITH_LITERAL_EXTENSION = "{album_artist}/{title}.mp3"
 PATH_POLICY_TEMPLATE_WITH_UNKNOWN_PLACEHOLDER = "{album_artist}/{bitrate}/{title}"
+PATH_POLICY_TEMPLATE_WITH_ARTIST_ID = "{artist_id}/{title}"
 
 
 def test_config_loads_default() -> None:
@@ -40,6 +45,9 @@ def test_config_loads_default() -> None:
     assert "{ext}" not in config.path_policy.template
     assert config.path_policy.unknown_artist == DEFAULT_UNKNOWN_ARTIST
     assert config.path_policy.unknown_album == DEFAULT_UNKNOWN_ALBUM
+    assert config.artist_ids.max_length == DEFAULT_ARTIST_ID_MAX_LENGTH
+    assert config.artist_ids.fallback == DEFAULT_ARTIST_ID_FALLBACK
+    assert config.artist_ids.entries == ()
 
 
 def test_config_validation_fails_invalid_version() -> None:
@@ -54,11 +62,24 @@ def test_config_validation_fails_invalid_path_policy() -> None:
         _ = PathPolicyConfig(max_filename_length=INVALID_MAX_FILENAME_LENGTH)
 
 
+def test_config_validation_fails_invalid_artist_id_max_length() -> None:
+    """ArtistIdConfig rejects max lengths that cannot produce IDs."""
+    with pytest.raises(ValueError, match=INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE):
+        _ = ArtistIdConfig(max_length=INVALID_MAX_FILENAME_LENGTH)
+
+
 def test_path_policy_config_accepts_extensionless_stem_template() -> None:
     """PathPolicyConfig accepts templates that render only a destination stem."""
     config = PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITH_SPLIT_DISC_TRACK)
 
     assert config.template == PATH_POLICY_TEMPLATE_WITH_SPLIT_DISC_TRACK
+
+
+def test_path_policy_config_accepts_artist_id_placeholder() -> None:
+    """PathPolicyConfig accepts the documented editable artist ID field."""
+    config = PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITH_ARTIST_ID)
+
+    assert config.template == PATH_POLICY_TEMPLATE_WITH_ARTIST_ID
 
 
 def test_path_policy_config_rejects_extension_placeholder() -> None:

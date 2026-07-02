@@ -15,10 +15,11 @@ from omym2.config import (
     CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR,
     CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR,
 )
-from omym2.domain.models.app_config import AppConfig, UiConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, ArtistIdEntry, UiConfig
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 
 UI_THEME_DARK = "dark"
+ARTIST_ID_SOURCE = "Aimer"
 JSON_SEPARATORS = (CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR, CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR)
 
 
@@ -45,3 +46,16 @@ def test_path_policy_fingerprint_includes_behavior_version() -> None:
     legacy_digest.update(legacy_payload.encode(CONFIG_FINGERPRINT_ENCODING))
 
     assert calculate_path_policy_fingerprint(config.path_policy) != legacy_digest.hexdigest()
+
+
+def test_path_policy_fingerprint_changes_when_artist_ids_change() -> None:
+    """Artist ID settings affect canonical paths and Library freshness."""
+    config = AppConfig()
+    changed_artist_ids = ArtistIdConfig(entries=(ArtistIdEntry(source_artist=ARTIST_ID_SOURCE, artist_id="AMR"),))
+
+    assert calculate_path_policy_fingerprint(
+        config.path_policy, config.artist_ids
+    ) != calculate_path_policy_fingerprint(
+        config.path_policy,
+        changed_artist_ids,
+    )

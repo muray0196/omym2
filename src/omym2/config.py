@@ -76,6 +76,17 @@ DEFAULT_COLLISION_ON_DUPLICATE_HASH: Final = "skip"  # duplicate content policy 
 DEFAULT_COLLISION_ON_MISSING_METADATA: Final = "block"  # missing metadata policy name
 DEFAULT_UI_THEME: Final = "system"  # default UI color mode
 DEFAULT_UI_SHOW_ADVANCED_SETTINGS: Final = False  # default advanced settings visibility
+DEFAULT_ARTIST_ID_MAX_LENGTH: Final = 8  # maximum generated artist ID length, characters
+DEFAULT_ARTIST_ID_FALLBACK: Final = "NOART"  # artist ID used when no usable artist text remains
+ARTIST_ID_VOWELS: Final = "AEIOUaeiou"  # vowels removed after each word's first character
+ARTIST_ID_NON_TOKEN_PATTERN: Final = r"[^A-Za-z0-9-]+"  # noqa: S105 - regex pattern, not a secret.
+ARTIST_ID_SEPARATOR_PATTERN: Final = r"-+"  # repeated generated artist ID separators
+ARTIST_ID_ASCII_ALNUM_PATTERN: Final = r"[A-Za-z0-9]+"  # usable artist ID word characters
+MUSICBRAINZ_ARTIST_SEARCH_ENDPOINT: Final = "https://musicbrainz.org/ws/2/artist/"  # artist search API
+MUSICBRAINZ_DEFAULT_USER_AGENT: Final = "OMYM2/0.1.0 (local settings artist-id lookup)"  # HTTP user agent
+MUSICBRAINZ_DEFAULT_TIMEOUT_SECONDS: Final = 5.0  # MusicBrainz request timeout, seconds
+MUSICBRAINZ_MIN_REQUEST_INTERVAL_SECONDS: Final = 1.0  # MusicBrainz polite request spacing, seconds
+MUSICBRAINZ_DEFAULT_RESULT_LIMIT: Final = 5  # maximum candidate artists requested from MusicBrainz
 CONTENT_FINGERPRINT_ALGORITHM: Final = "sha256"  # content fingerprint hash algorithm
 CONTENT_HASH_READ_CHUNK_SIZE_BYTES: Final = 1_048_576  # file hash read chunk size, bytes, positive
 CONFIG_FINGERPRINT_ALGORITHM: Final = "sha256"  # config fingerprint hash algorithm
@@ -85,6 +96,7 @@ CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR: Final = ":"  # canonical JSON key separat
 CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY: Final = (
     "path_policy_behavior_version"  # canonical JSON key for path policy behavior identity
 )
+CONFIG_FINGERPRINT_ARTIST_ID_CONFIG_KEY: Final = "artist_ids"  # canonical JSON key for path artist ID settings
 CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY: Final = "path_policy"  # canonical JSON key for path policy settings
 METADATA_FINGERPRINT_ALGORITHM: Final = "sha256"  # metadata fingerprint hash algorithm
 METADATA_FINGERPRINT_ENCODING: Final = "utf-8"  # metadata fingerprint payload encoding
@@ -109,9 +121,10 @@ PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "track",
     "title",
     "artist",
+    "artist_id",
     "year",
 )  # placeholders allowed in path policy stem templates
-PATH_POLICY_BEHAVIOR_VERSION: Final = 3  # version included in hashes when canonical path behavior changes
+PATH_POLICY_BEHAVIOR_VERSION: Final = 4  # version included in hashes when canonical path behavior changes
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
 PATH_POLICY_TRACK_NUMBER_WIDTH: Final = 2  # zero-padding width for generated track numbers
 PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in metadata path components

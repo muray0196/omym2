@@ -38,6 +38,9 @@ def describe_config_changes(before: AppConfig, after: AppConfig) -> tuple[Settin
         ("Unknown album", before.path_policy.unknown_album, after.path_policy.unknown_album),
         ("Sanitize path text", before.path_policy.sanitize, after.path_policy.sanitize),
         ("Max filename length", before.path_policy.max_filename_length, after.path_policy.max_filename_length),
+        ("Artist ID max length", before.artist_ids.max_length, after.artist_ids.max_length),
+        ("Artist ID fallback", before.artist_ids.fallback, after.artist_ids.fallback),
+        ("Artist ID entries", _artist_id_entries(before), _artist_id_entries(after)),
         ("Prefer album artist", before.metadata.prefer_album_artist, after.metadata.prefer_album_artist),
         ("Require title", before.metadata.require_title, after.metadata.require_title),
         ("Require artist", before.metadata.require_artist, after.metadata.require_artist),
@@ -61,3 +64,9 @@ def _display_value(value: object) -> str:
     if isinstance(value, bool):
         return "On" if value else "Off"
     return str(value)
+
+
+def _artist_id_entries(config: AppConfig) -> str:
+    if len(config.artist_ids.entries) == 0:
+        return "None"
+    return ", ".join(f"{entry.source_artist}={entry.artist_id}" for entry in config.artist_ids.entries)

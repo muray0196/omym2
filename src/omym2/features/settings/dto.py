@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
+    from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig
     from omym2.domain.models.track_metadata import TrackMetadata
 
 
@@ -34,6 +34,7 @@ class PathPolicyPreviewRequest:
     """Request to render a sample path policy result."""
 
     path_policy: PathPolicyConfig
+    artist_ids: ArtistIdConfig
     metadata: TrackMetadata
     file_extension: str
 

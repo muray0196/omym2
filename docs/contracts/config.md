@@ -35,6 +35,7 @@ add
 organize
 refresh
 path_policy
+artist_ids
 metadata
 collision
 ui
@@ -68,6 +69,13 @@ unknown_artist = "Unknown Artist"
 unknown_album = "Unknown Album"
 sanitize = true
 max_filename_length = 180
+
+[artist_ids]
+max_length = 8
+fallback = "NOART"
+
+[artist_ids.entries]
+"Aimer" = "AMR"
 
 [metadata]
 prefer_album_artist = true
@@ -105,6 +113,7 @@ Allowed placeholders:
 * `{track}`
 * `{title}`
 * `{artist}`
+* `{artist_id}`
 * `{year}`
 
 Initial template:
@@ -118,6 +127,43 @@ The source music file suffix is appended after template rendering. Source suffix
 The initial template does not include hash-based suffixes. If the final target path already exists, the PlanAction is blocked with `target_exists`.
 
 PathPolicy is pure and does not perform I/O. Target existence is checked by usecases through ports.
+
+`{artist_id}` resolves from the already-loaded `artist_ids` config and track metadata. PathPolicy never
+loads a language model, calls MusicBrainz, reads TOML, or writes generated entries while rendering paths.
+When no saved entry exists for the source artist text, PathPolicy uses the pure deterministic artist ID
+generator and the configured fallback.
+
+## ArtistIdConfig
+
+Artist IDs are editable user-facing path/config values. They are not internal identities and are not stored
+in SQLite.
+
+TOML shape:
+
+```toml
+[artist_ids]
+max_length = 8
+fallback = "NOART"
+
+[artist_ids.entries]
+"宇多田ヒカル" = "HTDRHKR"
+```
+
+`artist_ids.entries` is keyed by the source artist name used for generation. Normal generation preserves
+existing saved entries; users may edit them through the local settings surface. Explicit regenerate flows may
+overwrite saved entries.
+
+Generation behavior:
+
+* split multiple artists by comma
+* split normalized artist text by hyphen
+* remove vowels after the first character per word
+* allocate characters round-robin across words/artists up to `max_length`
+* use `fallback` when no usable Latin artist text remains
+
+Japanese handling is a feature/adapters concern before config is saved. fastText detects whether Japanese
+lookup should be attempted. MusicBrainz may supply a preferred English/Latin artist name. Neither call occurs
+during `add`, `organize`, `refresh`, apply, or PathPolicy rendering.
 
 ## Metadata And Collision Policy
 

@@ -18,6 +18,7 @@ OMYM2 uses TOML for editable application settings and SQLite for managed state, 
 | Concern | Store |
 | --- | --- |
 | Editable settings | TOML |
+| Editable artist ID entries | TOML |
 | Config defaults and validation results | Config adapter / AppConfig |
 | Managed Library and Track state | SQLite |
 | Plans and PlanActions | SQLite |
@@ -43,6 +44,9 @@ OMYM2 uses a single application database.
 The DB records OMYM2's last known managed state, scheduled plans, execution attempts, and durable Library music file operation logs.
 
 The DB is not used as the editable settings store. It is not the source of truth for the actual filesystem. The filesystem can diverge from the DB because users or external tools may move, delete, rename, or modify files. Such divergence is detected by `check`.
+
+Editable generated artist IDs are stored in TOML config under `artist_ids`, not SQLite. They may affect
+canonical paths through `{artist_id}`, but they do not define Library, Track, Plan, Run, or FileEvent identity.
 
 The DB stores Library identity and registration state. Registration is distinct from Track rows and is not defined by whether the `tracks` table has rows.
 

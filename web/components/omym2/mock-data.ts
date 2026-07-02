@@ -42,6 +42,11 @@ export const defaultConfig: AppConfig = {
     sanitize: true,
     max_filename_length: 180,
   },
+  artist_ids: {
+    max_length: 8,
+    fallback: "NOART",
+    entries: {},
+  },
   metadata: {
     prefer_album_artist: true,
     require_title: true,
