@@ -94,6 +94,13 @@ export function PathPolicyScreen() {
   const [presetId, setPresetId] = useState(SAMPLE_PRESETS[0].id)
   const [meta, setMeta] = useState<SampleMetadata>(SAMPLE_PRESETS[0].meta)
   const [preview, setPreview] = useState<PathPreviewResult>({ path: null, errors: [] })
+  const [workingTemplate, setWorkingTemplate] = useState(policy.template)
+  const templateModified = workingTemplate !== policy.template
+
+  // Follow the saved template when it changes and no local edit is active.
+  useEffect(() => {
+    setWorkingTemplate(policy.template)
+  }, [policy.template])
 
   function selectPreset(id: string) {
     setPresetId(id)
@@ -108,8 +115,12 @@ export function PathPolicyScreen() {
 
   useEffect(() => {
     let cancelled = false
+    const previewConfig = {
+      ...savedConfig,
+      path_policy: { ...savedConfig.path_policy, template: workingTemplate },
+    }
     const timeout = window.setTimeout(() => {
-      previewSettings(savedConfig, meta)
+      previewSettings(previewConfig, meta)
         .then((result) => {
           if (!cancelled) setPreview(result)
         })
@@ -127,7 +138,7 @@ export function PathPolicyScreen() {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [savedConfig, meta])
+  }, [savedConfig, meta, workingTemplate])
 
   return (
     <>
@@ -242,16 +253,41 @@ export function PathPolicyScreen() {
             title="Template"
             icon={Braces}
             description="Tweak the template here to preview without saving. Save in Settings to persist."
+            actions={
+              templateModified ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setWorkingTemplate(policy.template)}
+                >
+                  <RotateCcw className="size-3.5" aria-hidden="true" />
+                  Revert to saved
+                </Button>
+              ) : null
+            }
           >
             <Field
               label="Working template"
               help="Templates must not include a file extension; the source extension is appended automatically."
             >
-              {(id) => <TextArea id={id} mono rows={2} value={policy.template} readOnly />}
+              {(id) => (
+                <TextArea
+                  id={id}
+                  mono
+                  rows={2}
+                  value={workingTemplate}
+                  onChange={(e) => setWorkingTemplate(e.target.value)}
+                />
+              )}
             </Field>
             <p className="mt-2 text-xs text-muted-foreground">
-              This mirrors the saved Settings template. The preview below reflects exactly what the
-              CLI would produce.
+              {templateModified ? (
+                <span className="font-medium text-warning">
+                  Edited locally — not saved. The preview reflects this working template.
+                </span>
+              ) : (
+                "This mirrors the saved Settings template. The preview below reflects exactly what the CLI would produce."
+              )}
             </p>
           </Panel>
 

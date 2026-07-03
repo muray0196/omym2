@@ -31,6 +31,16 @@ const THEME_LABELS: Record<string, string> = {
 
 type SaveState = "idle" | "saving" | "success" | "error"
 
+type SectionKey = "paths" | "behavior" | "path-policy" | "metadata" | "rules"
+
+const SECTIONS: { key: SectionKey; label: string }[] = [
+  { key: "paths", label: "Paths" },
+  { key: "behavior", label: "Behavior" },
+  { key: "path-policy", label: "Path policy" },
+  { key: "metadata", label: "Metadata & IDs" },
+  { key: "rules", label: "Rules & UI" },
+]
+
 export function SettingsScreen() {
   const {
     draftConfig,
@@ -52,6 +62,7 @@ export function SettingsScreen() {
   const [artistGenerationState, setArtistGenerationState] = useState<SaveState>("idle")
   const [validated, setValidated] = useState(true)
   const [draftPreview, setDraftPreview] = useState(settingsPreview)
+  const [section, setSection] = useState<SectionKey>("paths")
 
   const localValidation = useMemo(() => validateConfig(draftConfig), [draftConfig])
   const validation = validated
@@ -180,8 +191,30 @@ export function SettingsScreen() {
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        {/* Left: grouped editor */}
-        <div className="flex flex-col gap-6">
+        {/* Left: grouped editor with section tabs */}
+        <div className="flex min-w-0 flex-col gap-6">
+          <nav
+            aria-label="Settings sections"
+            className="sticky top-0 z-10 -mx-1 flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1"
+          >
+            {SECTIONS.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setSection(s.key)}
+                aria-current={section === s.key ? "true" : undefined}
+                className={
+                  section === s.key
+                    ? "whitespace-nowrap rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground"
+                    : "whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                }
+              >
+                {s.label}
+              </button>
+            ))}
+          </nav>
+
+          {section === "paths" ? (
           <Panel title="Paths" icon={Database} description="Local filesystem paths used by OMYM2.">
             <div className="flex flex-col gap-4">
               <Field
@@ -214,7 +247,10 @@ export function SettingsScreen() {
               </Field>
             </div>
           </Panel>
+          ) : null}
 
+          {section === "behavior" ? (
+          <>
           <Panel title="Add behavior" icon={Plus} description="Defaults for `omym2 add`.">
             <div className="flex flex-col gap-4">
               <Field
@@ -292,7 +328,10 @@ export function SettingsScreen() {
               />
             </div>
           </Panel>
+          </>
+          ) : null}
 
+          {section === "path-policy" ? (
           <Panel
             title="Path policy"
             icon={Braces}
@@ -374,7 +413,10 @@ export function SettingsScreen() {
               />
             </div>
           </Panel>
+          ) : null}
 
+          {section === "metadata" ? (
+          <>
           <Panel title="Metadata rules" icon={Tags}>
             <div className="grid gap-3 sm:grid-cols-2">
               <Toggle
@@ -498,7 +540,11 @@ export function SettingsScreen() {
               </div>
             </div>
           </Panel>
+          </>
+          ) : null}
 
+          {section === "rules" ? (
+          <>
           <Panel
             title="Collision rules"
             icon={FileCheck2}
@@ -563,6 +609,8 @@ export function SettingsScreen() {
               />
             </div>
           </Panel>
+          </>
+          ) : null}
         </div>
 
         {/* Right: sticky review sidebar */}

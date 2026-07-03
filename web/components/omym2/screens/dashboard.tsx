@@ -70,7 +70,12 @@ export function DashboardScreen() {
         </Mono>
       ),
     },
-    { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      cell: (r) => <StatusBadge status={r.status} iconOnly />,
+      className: "w-16 text-center",
+    },
     {
       key: "started",
       header: "Started",

@@ -71,11 +71,14 @@ export function StatusBadge({
   tone,
   label,
   className,
+  iconOnly = false,
 }: {
   status: string
   tone?: Tone
   label?: string
   className?: string
+  /** Render only the status icon; the label is exposed to assistive tech and a tooltip. */
+  iconOnly?: boolean
 }) {
   const resolved = tone ?? toneForStatus(status)
   const Icon =
@@ -91,6 +94,22 @@ export function StatusBadge({
               : Info
             : Info
   const spin = status === "running" || status === "applying"
+  const text = label ?? status.replace(/_/g, " ")
+  if (iconOnly) {
+    return (
+      <span
+        className={cn(
+          "inline-flex size-6 items-center justify-center rounded-md border",
+          TONE_CLASSES[resolved],
+          className,
+        )}
+        title={text}
+      >
+        <Icon className={cn("size-3.5 shrink-0", spin && "animate-spin")} aria-hidden="true" />
+        <span className="sr-only">{text}</span>
+      </span>
+    )
+  }
   return (
     <span
       className={cn(
@@ -100,7 +119,7 @@ export function StatusBadge({
       )}
     >
       <Icon className={cn("size-3.5 shrink-0", spin && "animate-spin")} aria-hidden="true" />
-      <span>{label ?? status.replace(/_/g, " ")}</span>
+      <span>{text}</span>
     </span>
   )
 }
@@ -438,30 +457,65 @@ export function DataTable<T>({
   caption?: string
 }) {
   const [colWidths, setColWidths] = useState<Record<string, number>>({})
-  const draggingCol = useRef<string | null>(null)
+  const drag = useRef<{
+    leftKey: string
+    rightKey: string
+    startX: number
+    leftStart: number
+    rightStart: number
+  } | null>(null)
 
-  const onHandlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>, key: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    draggingCol.current = key
-    ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
-  }, [])
+  const onHandlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>, key: string, nextKey: string) => {
+      e.preventDefault()
+      e.stopPropagation()
+      try {
+        ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
+      } catch {
+        // Ignore: pointer capture can fail for non-active pointers (e.g. tests).
+      }
+      // Measure the two adjacent columns so we can redistribute width between
+      // them only, leaving all other columns untouched.
+      const headerRow = (e.currentTarget as HTMLDivElement).closest("tr")
+      let leftStart = 120
+      let rightStart = 120
+      const measured: Record<string, number> = {}
+      if (headerRow) {
+        headerRow.querySelectorAll<HTMLTableCellElement>("th[data-col-key]").forEach((th) => {
+          const k = th.dataset.colKey
+          if (!k) return
+          const w = th.getBoundingClientRect().width
+          measured[k] = w
+          if (k === key) leftStart = w
+          if (k === nextKey) rightStart = w
+        })
+      }
+      drag.current = { leftKey: key, rightKey: nextKey, startX: e.clientX, leftStart, rightStart }
+      // Lock all columns to their current widths so table-layout: fixed has
+      // explicit values to work with before the first move event arrives.
+      setColWidths((prev) => ({ ...measured, ...prev }))
+    },
+    [],
+  )
 
-  const onHandlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>, key: string) => {
-    if (draggingCol.current !== key) return
-    // Read from the event before the state updater runs — React nullifies
-    // currentTarget asynchronously, causing "cannot read closest of null".
-    const th = (e.currentTarget as HTMLDivElement).closest("th")
-    const thWidth = th ? th.getBoundingClientRect().width : null
-    const dx = e.movementX
+  const onHandlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (!d) return
+    const delta = e.clientX - d.startX
+    // Clamp each side independently, then use only the effective delta that
+    // was actually applied so that when one column bottoms out at COL_MIN the
+    // other side stops moving too instead of continuing to grow.
+    const unclamped = d.leftStart + delta
+    const newLeft = Math.max(COL_MIN, Math.min(unclamped, d.leftStart + d.rightStart - COL_MIN))
+    const newRight = d.leftStart + d.rightStart - newLeft
     setColWidths((prev) => {
-      const current = thWidth ?? prev[key] ?? 120
-      return { ...prev, [key]: Math.max(COL_MIN, current + dx) }
+      if (prev[d.leftKey] === newLeft && prev[d.rightKey] === newRight) return prev
+      return { ...prev, [d.leftKey]: newLeft, [d.rightKey]: newRight }
     })
   }, [])
 
   const onHandlePointerUp = useCallback(() => {
-    draggingCol.current = null
+    drag.current = null
   }, [])
 
   if (rows.length === 0 && empty) {
@@ -469,7 +523,10 @@ export function DataTable<T>({
   }
   return (
     <div className="overflow-x-auto rounded-md border border-border">
-      <table className="border-collapse text-sm" style={{ tableLayout: "fixed", width: "100%" }}>
+      <table
+        className="border-collapse text-sm"
+        style={{ tableLayout: "fixed", width: "100%" }}
+      >
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         <colgroup>
           {columns.map((col) =>
@@ -486,6 +543,7 @@ export function DataTable<T>({
               <th
                 key={col.key}
                 scope="col"
+                data-col-key={col.key}
                 className={cn(
                   "relative whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground overflow-hidden",
                   col.headerClassName,
@@ -497,9 +555,10 @@ export function DataTable<T>({
                 {i < columns.length - 1 && (
                   <div
                     aria-hidden="true"
-                    onPointerDown={(e) => onHandlePointerDown(e, col.key)}
-                    onPointerMove={(e) => onHandlePointerMove(e, col.key)}
+                    onPointerDown={(e) => onHandlePointerDown(e, col.key, columns[i + 1].key)}
+                    onPointerMove={onHandlePointerMove}
                     onPointerUp={onHandlePointerUp}
+                    onPointerCancel={onHandlePointerUp}
                     className="absolute inset-y-0 right-0 w-3 cursor-col-resize select-none flex items-center justify-center group"
                   >
                     <div className="h-4 w-px bg-border group-hover:bg-primary/60 group-active:bg-primary transition-colors" />
