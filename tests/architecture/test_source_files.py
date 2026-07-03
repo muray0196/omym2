@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 ALLOWED_DUNDER_MODULES = {"__init__.py", "__main__.py"}
-AMBIGUOUS_MODULE_STEMS = {"helper", "helpers", "manager", "service", "utils"}
+AMBIGUOUS_MODULE_STEMS = {"common", "helpers", "manager", "service", "utils"}
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
 PYTHON_FILE_PATTERN = "*.py"
 SNAKE_CASE_MODULE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\.py$")

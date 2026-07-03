@@ -31,9 +31,7 @@ class _WordPlan:
 class ArtistIdGenerator:
     """Generate compact deterministic IDs from already-resolved artist text."""
 
-    ID_LENGTH: ClassVar[int] = DEFAULT_ARTIST_ID_MAX_LENGTH
     ID_LENGT: ClassVar[int] = DEFAULT_ARTIST_ID_MAX_LENGTH
-    DEFAULT_ID: ClassVar[str] = DEFAULT_ARTIST_ID_FALLBACK
     FALLBACK_ID: ClassVar[str] = DEFAULT_ARTIST_ID_FALLBACK
 
     @classmethod
