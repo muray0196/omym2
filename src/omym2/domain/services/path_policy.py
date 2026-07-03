@@ -282,7 +282,16 @@ def _split_preserved_extension(value: str, *, preserve_extension: bool) -> tuple
 
 def _limit_sanitized_with_extension(base: str, extension_suffix: str, max_length: int | None) -> str:
     if extension_suffix != "":
-        limited_base = _limit_utf8(base, max_length).strip(SANITIZER_REPLACEMENT)
+        # max_length budgets the TOTAL component (stem + extension), matching
+        # the sanitize=False branch. Extension preservation dominates the
+        # budget: the suffix is never truncated or dropped, and a non-empty
+        # stem keeps at least its first character even when the budget is
+        # smaller than the extension bytes, so a degenerate max_length can
+        # exceed the configured budget by necessity.
+        stem_budget = None if max_length is None else max_length - _utf8_length(extension_suffix)
+        limited_base = _limit_utf8(base, stem_budget).strip(SANITIZER_REPLACEMENT)
+        if limited_base == "" and base != "":
+            limited_base = base[:1]
         if limited_base == "" or _is_reserved_windows_device_name(limited_base):
             return f"{PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT}{extension_suffix}"
         return f"{limited_base}{extension_suffix}"

@@ -65,9 +65,14 @@ def test_sanitize_string_limits_utf8_bytes_after_sanitizing() -> None:
 
 
 def test_sanitize_string_preserves_only_allowed_final_extension() -> None:
-    """Only a final alphanumeric suffix is preserved outside base sanitization."""
-    assert sanitize_string("My Song.FLAC", max_length=FULL_STEM_LIMIT, preserve_extension=True) == "My-Song.FLAC"
-    assert sanitize_string("Aimer.flac", max_length=EXTENSION_STEM_LIMIT, preserve_extension=True) == "Aim.flac"
+    """Only a final alphanumeric suffix is preserved outside base sanitization.
+
+    max_length budgets the TOTAL output (stem + preserved extension); the
+    extension is never truncated and a non-empty stem keeps at least its
+    first character even when the budget is smaller than the extension.
+    """
+    assert sanitize_string("My Song.FLAC", max_length=FULL_STEM_LIMIT, preserve_extension=True) == "My.FLAC"
+    assert sanitize_string("Aimer.flac", max_length=EXTENSION_STEM_LIMIT, preserve_extension=True) == "A.flac"
     assert sanitize_string("v1.track.mp3", preserve_extension=True) == "v1-track.mp3"
     assert sanitize_string("Track.bad-ext", preserve_extension=True) == "Track-bad-ext"
     assert sanitize_string("Track.", preserve_extension=True) == "Track"

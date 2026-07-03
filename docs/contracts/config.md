@@ -123,7 +123,7 @@ Initial template:
 {album_artist}/{year}_{album}/{disc}-{track}_{title}
 ```
 
-The source music file suffix is appended after template rendering. Source suffixes are normalized to lowercase in the generated path.
+The source music file suffix is appended after template rendering. Source suffixes are normalized to lowercase in the generated path. `max_filename_length` budgets the total generated file name including the extension; the extension is always preserved.
 
 The initial template does not include hash-based suffixes. If the final target path already exists, the PlanAction is blocked with `target_exists`.
 

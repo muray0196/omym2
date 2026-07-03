@@ -36,14 +36,14 @@ SANITIZED_ARTIST = "Artist-Name"
 SANITIZED_UNICODE_PATH = "こんにちは/2024_你好/1-03_Café-Song.flac"
 SANITIZED_PATH = "Artist-Name/2024_Example-Album/1-03_Example-Song.flac"
 SHORT_BUDGET_FILENAME_LENGTH = 5
-SHORT_BUDGET_FINAL_COMPONENT = "SomeT.flac"
+SHORT_BUDGET_FINAL_COMPONENT = "S.flac"
 SHORT_BUDGET_TITLE = "SomeTitle"
 SHORT_FILENAME_LENGTH = 3
 TITLE = "Example Song"
 TITLE_ONLY_TEMPLATE = "{title}"
 TRACK_NUMBER = 3
 TRUNCATED_FILENAME_LENGTH = 12
-TRUNCATED_FINAL_COMPONENT = "1-03_AAAAAAA.flac"
+TRUNCATED_FINAL_COMPONENT = "1-03_AA.flac"
 UNSANITIZED_ARTIST = "Artist:Name"
 UNSANITIZED_PATH = "Artist:Name/2024_Example Album/1-03_Example Song.flac"
 YEAR = 2024
@@ -218,11 +218,17 @@ def test_path_policy_preserves_extension_when_limiting_long_filename() -> None:
 
     final_component = canonical_path.rsplit("/", maxsplit=1)[-1]
     assert final_component == TRUNCATED_FINAL_COMPONENT
-    assert len(final_component.removesuffix(".flac")) == TRUNCATED_FILENAME_LENGTH
+    assert len(final_component) == TRUNCATED_FILENAME_LENGTH
 
 
 def test_path_policy_preserves_extension_when_stem_budget_is_shorter_than_extension() -> None:
-    """PathPolicy applies max_filename_length to the stem before appending the suffix."""
+    """PathPolicy budgets max_filename_length against the total component, extension included.
+
+    Extension preservation dominates the budget: the suffix is never truncated
+    or dropped, and the stem keeps at least its first character even when
+    max_filename_length is smaller than the extension bytes, so the total then
+    necessarily exceeds max_filename_length.
+    """
     metadata = _track_metadata()
 
     canonical_path = PathPolicy(PathPolicyConfig(max_filename_length=SHORT_FILENAME_LENGTH)).canonical_path(
@@ -231,7 +237,7 @@ def test_path_policy_preserves_extension_when_stem_budget_is_shorter_than_extens
     )
 
     final_component = canonical_path.rsplit("/", maxsplit=1)[-1]
-    assert final_component == "1-0.flac"
+    assert final_component == "1.flac"
     assert final_component.endswith(".flac")
     assert final_component.removesuffix(".flac") != ""
 
@@ -271,11 +277,11 @@ def test_unsanitized_final_component_keeps_stem_when_budget_equals_extension_byt
     assert canonical_path == EDGE_BUDGET_FINAL_COMPONENT
 
 
-def test_canonical_path_currently_budgets_max_length_against_stem_only_when_sanitized() -> None:
-    """Characterizes current behavior: max_filename_length is applied to the
-    sanitized stem before the extension suffix is appended back on, so the
-    final component's total length can exceed max_filename_length. This is
-    the current contract; it is not validated against the full byte budget.
+def test_canonical_path_budgets_max_length_including_extension() -> None:
+    """max_filename_length budgets the sanitized final component's TOTAL length,
+    stem and extension together, matching the sanitize=False branch. With a
+    budget of 5 and a 5-byte extension the stem keeps its 1-char floor, so the
+    result is "S.flac" rather than the old stem-only-budget "SomeT.flac".
     """
     metadata = TrackMetadata(title=SHORT_BUDGET_TITLE)
 
@@ -284,7 +290,22 @@ def test_canonical_path_currently_budgets_max_length_against_stem_only_when_sani
     ).canonical_path(metadata, FILE_EXTENSION)
 
     assert canonical_path == SHORT_BUDGET_FINAL_COMPONENT
-    assert len(SHORT_BUDGET_FINAL_COMPONENT) > SHORT_BUDGET_FILENAME_LENGTH
+
+
+def test_sanitized_final_component_keeps_extension_and_stem_when_budget_is_below_extension() -> None:
+    """sanitize=True: a max_filename_length smaller than the extension keeps both intact.
+
+    Mirrors the sanitize=False edge: the suffix is never truncated or dropped
+    and the stem keeps at least its first character, so the total necessarily
+    exceeds max_filename_length for such degenerate budgets.
+    """
+    metadata = TrackMetadata(title=SHORT_BUDGET_TITLE)
+
+    canonical_path = PathPolicy(
+        PathPolicyConfig(template=TITLE_ONLY_TEMPLATE, max_filename_length=SHORT_FILENAME_LENGTH)
+    ).canonical_path(metadata, FILE_EXTENSION)
+
+    assert canonical_path == EDGE_BUDGET_FINAL_COMPONENT
 
 
 def test_path_policy_falls_back_when_metadata_component_sanitizes_empty() -> None:
