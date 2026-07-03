@@ -7,14 +7,17 @@ from __future__ import annotations
 
 import pytest
 
+from omym2.config import DEFAULT_ARTIST_ID_FALLBACK, DEFAULT_ARTIST_ID_MAX_LENGTH
 from omym2.domain.models.app_config import ArtistIdConfig, PathPolicyConfig
 from omym2.domain.models.plan_action import PlanActionReason
 from omym2.domain.models.track_metadata import TrackMetadata
+from omym2.domain.services.artist_id import generate_artist_id
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.duplicate_policy import DuplicateDecisionKind, DuplicatePolicy
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
+from omym2.shared.paths import ESCAPING_LIBRARY_PATH_MESSAGE
 
 ALBUM = "Example Album"
 ALBUM_ARTIST = "Aimer"
@@ -44,6 +47,9 @@ UNSANITIZED_PATH = "Artist:Name/2024_Example Album/1-03_Example Song.flac"
 YEAR = 2024
 STEM_TEMPLATE = "{album_artist}/{album}/{disc}-{track} - {title}"
 ARTIST_ID_TEMPLATE = "{artist_id}/{title}"
+ALBUM_ARTIST_ID_TEMPLATE = "{album}/{artist_id}/{title}"
+ALBUM_ARTIST_ID_TEMPLATE_PART_COUNT = 3
+UNSAFE_ARTIST_ID_ENTRY = "../../../etc/passwd"
 
 
 def test_path_policy_generates_relative_path_without_hash_suffix() -> None:
@@ -74,6 +80,74 @@ def test_path_policy_renders_artist_id_from_saved_config() -> None:
     ).canonical_path(_track_metadata(), FILE_EXTENSION)
 
     assert canonical_path == EXPECTED_ARTIST_ID_PATH
+
+
+def test_path_policy_generates_artist_id_when_no_saved_entry_exists() -> None:
+    """PathPolicy uses the deterministic generator when no artist_id entry is saved."""
+    canonical_path = PathPolicy(
+        PathPolicyConfig(template=ARTIST_ID_TEMPLATE),
+        ArtistIdConfig(entries={}),
+    ).canonical_path(_track_metadata(), FILE_EXTENSION)
+
+    expected_artist_id = generate_artist_id(
+        ALBUM_ARTIST,
+        max_length=DEFAULT_ARTIST_ID_MAX_LENGTH,
+        fallback_id=DEFAULT_ARTIST_ID_FALLBACK,
+    )
+    assert canonical_path == f"{expected_artist_id}/Example-Song.flac"
+
+
+def test_canonical_path_artist_id_entry_cannot_escape_library_root() -> None:
+    """A saved artist_id entry cannot introduce parent-directory path components.
+
+    ArtistIdConfig normally rejects unsafe entry values at construction, so
+    this bypasses validation with object.__setattr__ to simulate a future code
+    path handing PathPolicy unvalidated config (e.g. a legacy persisted value
+    written before entry validation existed).
+    """
+    metadata = _track_metadata()
+
+    sanitized_artist_ids = ArtistIdConfig(entries={ALBUM_ARTIST: "SAFE"})
+    object.__setattr__(sanitized_artist_ids, "entries", {ALBUM_ARTIST: UNSAFE_ARTIST_ID_ENTRY})
+    canonical_path = PathPolicy(
+        PathPolicyConfig(template=ARTIST_ID_TEMPLATE),
+        sanitized_artist_ids,
+    ).canonical_path(metadata, FILE_EXTENSION)
+    assert ".." not in canonical_path.split("/")
+
+    unsanitized_artist_ids = ArtistIdConfig(entries={ALBUM_ARTIST: "SAFE"})
+    object.__setattr__(unsanitized_artist_ids, "entries", {ALBUM_ARTIST: UNSAFE_ARTIST_ID_ENTRY})
+    with pytest.raises(ValueError, match=ESCAPING_LIBRARY_PATH_MESSAGE):
+        _ = PathPolicy(
+            PathPolicyConfig(template=ARTIST_ID_TEMPLATE, sanitize=False),
+            unsanitized_artist_ids,
+        ).canonical_path(metadata, FILE_EXTENSION)
+
+
+def test_canonical_path_empty_artist_id_entry_does_not_silently_drop_directory_level() -> None:
+    """An empty saved artist_id entry falls back to the generated ID instead of
+    collapsing a path directory level.
+
+    Bypasses ArtistIdConfig validation with object.__setattr__ to simulate a
+    future code path handing PathPolicy unvalidated config.
+    """
+    metadata = _track_metadata()
+    bypassed_artist_ids = ArtistIdConfig(entries={ALBUM_ARTIST: "SAFE"})
+    object.__setattr__(bypassed_artist_ids, "entries", {ALBUM_ARTIST: ""})
+
+    canonical_path = PathPolicy(
+        PathPolicyConfig(template=ALBUM_ARTIST_ID_TEMPLATE),
+        bypassed_artist_ids,
+    ).canonical_path(metadata, FILE_EXTENSION)
+
+    parts = canonical_path.split("/")
+    assert len(parts) == ALBUM_ARTIST_ID_TEMPLATE_PART_COUNT
+    expected_artist_id = generate_artist_id(
+        ALBUM_ARTIST,
+        max_length=DEFAULT_ARTIST_ID_MAX_LENGTH,
+        fallback_id=DEFAULT_ARTIST_ID_FALLBACK,
+    )
+    assert parts[1] == expected_artist_id
 
 
 def test_path_policy_sanitizes_metadata_path_components() -> None:

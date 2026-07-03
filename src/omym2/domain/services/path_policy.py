@@ -78,12 +78,29 @@ class PathPolicy:
         source_artist = metadata.artist or metadata.album_artist or self.config.unknown_artist
         saved_artist_id = self.artist_ids.entries.get(source_artist) if self.artist_ids.entries is not None else None
         if saved_artist_id is not None:
-            return saved_artist_id
-        return generate_artist_id(
+            sanitized_saved_artist_id = self._artist_id_component(saved_artist_id)
+            # A saved entry is normally validated as sanitizer-stable at config
+            # construction (ArtistIdConfig.__post_init__), so sanitizing here is
+            # defense-in-depth. If sanitizing still collapses it to nothing,
+            # fall through to the generated ID instead of returning an empty
+            # component, which would otherwise silently drop a path directory
+            # level.
+            if sanitized_saved_artist_id != "":
+                return sanitized_saved_artist_id
+        generated_artist_id = generate_artist_id(
             source_artist,
             max_length=self.artist_ids.max_length,
             fallback_id=self.artist_ids.fallback_id,
         )
+        # The generated ID is already [A-Za-z0-9]+, so sanitizing it is a
+        # harmless no-op; routing both branches through the same helper keeps
+        # {artist_id} rendering consistent regardless of which branch is used.
+        return self._artist_id_component(generated_artist_id)
+
+    def _artist_id_component(self, value: str) -> str:
+        if not self.config.sanitize:
+            return value
+        return sanitize_path_component(value)
 
     def _album(self, metadata: TrackMetadata) -> str:
         value = metadata.album or self.config.unknown_album
