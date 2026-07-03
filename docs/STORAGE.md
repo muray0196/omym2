@@ -1,3 +1,11 @@
+---
+type: Storage Design
+title: Storage
+description: Defines the TOML-vs-SQLite storage boundary, repository responsibilities, DB consistency and reproducibility principles, and the high-level Library-root-relative stored path policy.
+tags: [storage, sqlite, toml, persistence]
+timestamp: 2026-07-03T02:00:23+09:00
+---
+
 # Storage
 
 This document is authoritative for OMYM2 storage responsibilities, the TOML-vs-SQLite boundary, DB consistency principles, reproducibility principles, and high-level stored path policy.

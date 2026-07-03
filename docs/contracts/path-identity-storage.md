@@ -1,3 +1,11 @@
+---
+type: Contract
+title: Path Identity And Storage Contract
+description: Defines the authoritative rules for Library and Track identity stability, stored path representation, PathResolver boundaries, absolute-path exceptions, and path escape prevention.
+tags: [paths, identity, storage, library]
+timestamp: 2026-07-03T23:00:59+09:00
+---
+
 # Path Identity And Storage Contract
 
 This document is authoritative for Library identity, Track identity, relink behavior, stored path representation, PathResolver boundaries, absolute-path exceptions, and path escape prevention.

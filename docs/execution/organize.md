@@ -1,3 +1,11 @@
+---
+type: Execution Spec
+title: Organize Execution
+description: Defines organize --library PATH behavior for first Library registration, existing Library rescan, unregistered-path refusal, and registration timing relative to plan creation and apply.
+tags: [organize, library-registration, plan-creation, path-policy]
+timestamp: 2026-06-30T23:47:13+09:00
+---
+
 # Organize Execution
 
 This document is authoritative for `organize --library PATH`, first Library registration, existing Library rescan, unregistered path refusal, clean Library registration without mutation plan, organize Plan creation, and registration after successful apply.

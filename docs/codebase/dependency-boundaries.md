@@ -1,3 +1,11 @@
+---
+type: Codebase Reference
+title: Dependency Boundaries
+description: Defines OMYM2's dependency direction between adapters, features, domain, and shared layers, the forbidden dependencies, and where business rules must live.
+tags: [architecture, dependency-boundaries, hexagonal-architecture, business-rules]
+timestamp: 2026-07-02T21:19:36+09:00
+---
+
 # Dependency Boundaries
 
 This document is authoritative for OMYM2 dependency direction, forbidden dependencies, direct feature-to-feature import rules, adapter rules, and business rule placement.

@@ -1,3 +1,11 @@
+---
+type: Codebase Reference
+title: Web Frontend
+description: Authoritative reference for the Next.js web/ frontend layout, its static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
+tags: [web-frontend, nextjs, static-export, api-boundary]
+timestamp: 2026-07-02T21:19:36+09:00
+---
+
 # Web Frontend
 
 This document is authoritative for the `web/` frontend layout, the static export build and packaging pipeline, and the boundary between the frontend and the Python backend.

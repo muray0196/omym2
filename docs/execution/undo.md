@@ -1,3 +1,11 @@
+---
+type: Execution Spec
+title: Undo Execution
+description: Defines per-Run undo, tracing succeeded FileEvents in reverse to build an undo Plan, restore-destination conflict handling, and Track removal behavior when restoring imported files to external paths.
+tags: [undo, file-event, plan-creation, restore]
+timestamp: 2026-06-28T19:25:33+09:00
+---
+
 # Undo Execution
 
 This document is authoritative for undo per Run, reverse FileEvent tracing, undo Plan creation, external restore target path handling, conflict behavior at restore destination, and Track removal behavior for restored imported files.

@@ -25,8 +25,12 @@ When the user allows subagents, route them automatically:
 
 ## Knowledge Navigation
 
-`docs/okf/index.md` is an optional, non-authoritative navigation aid for
-investigation and design.
+`docs/` is a single OKF v0.1 knowledge bundle: every doc carries YAML
+frontmatter (`type`, `title`, `description`, `tags`, `timestamp`), and each
+directory has an `index.md` for progressive disclosure. Start at
+`docs/index.md`. When you edit a doc, update its frontmatter `description`
+and `timestamp` and the matching `index.md` entry; CI enforces conformance
+via the docs bundle test under `tests/docs/`.
 
 ## Docs Router
 

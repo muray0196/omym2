@@ -1,3 +1,11 @@
+---
+type: Execution Spec
+title: Refresh Execution
+description: Defines the refresh command for re-evaluating file/directory/all targets after external tag correction, including metadata reload, canonical path recalculation, move vs refresh_metadata plan action selection, and stable track_id preservation.
+tags: [refresh, metadata, plan-creation, track-id]
+timestamp: 2026-07-02T21:19:36+09:00
+---
+
 # Refresh Execution
 
 This document is authoritative for refresh after external tag correction, file / directory / all targets, metadata reload, canonical path recalculation, relocation plan creation, metadata-only refresh action selection, and stable `track_id` preservation.

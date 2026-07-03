@@ -1,3 +1,11 @@
+---
+type: Testing Guide
+title: Testing
+description: Defines OMYM2's test policy across architecture, unit, and integration test categories, fixture policy, and which contract changes require which test focus.
+tags: [testing, pytest, architecture-tests, fixtures]
+timestamp: 2026-06-30T23:47:13+09:00
+---
+
 # Testing
 
 This document is authoritative for test policy, test categories, fixture policy, and when contract changes require tests.

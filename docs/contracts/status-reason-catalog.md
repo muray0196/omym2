@@ -1,3 +1,11 @@
+---
+type: Contract
+title: Status And Reason Catalog
+description: Defines the authoritative catalog of allowed status, reason, action type, event type, error code, and check issue values used across Library, Track, Plan, PlanAction, Run, and FileEvent entities.
+tags: [status, reason-codes, catalog, execution]
+timestamp: 2026-07-02T21:19:36+09:00
+---
+
 # Status And Reason Catalog
 
 This document is authoritative for allowed status, reason, action type, event type, error code, and check issue values.

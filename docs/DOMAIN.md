@@ -1,3 +1,11 @@
+---
+type: Domain Model
+title: Domain
+description: Defines OMYM2's core domain entities (AppConfig, FileScanEntry, FileSnapshot, TrackMetadata, PathPolicy, Library, Track, Plan, PlanAction, Run, FileEvent, CheckIssue), their invariants, and the UUIDv7-based ID design policy.
+tags: [domain-model, entities, invariants, id-design]
+timestamp: 2026-07-03T02:00:23+09:00
+---
+
 # Domain
 
 This document is authoritative for OMYM2 domain concepts, domain invariants, and ID design policy. Execution semantics are in [execution/](execution/), and persistence/path storage details are in [STORAGE.md](STORAGE.md) and [contracts/path-identity-storage.md](contracts/path-identity-storage.md). Any storage representation mentioned here is a domain-facing summary only.

@@ -1,11 +1,9 @@
-# Codebase Docs
+# Codebase
 
 This folder contains detailed source layout, dependency, port, and naming rules.
 
-| Path | Use |
-| --- | --- |
-| [source-layout.md](source-layout.md) | Source layout, package placement, and new directories. |
-| [dependency-boundaries.md](dependency-boundaries.md) | Dependency direction, import boundaries, and business-rule placement. |
-| [ports-uow.md](ports-uow.md) | Ports, UnitOfWork, Clock, IdGenerator, transactions, and operation-log architecture. |
-| [naming.md](naming.md) | Python module naming, symbols, and banned vague names. |
-| [web-frontend.md](web-frontend.md) | Web frontend layout, static export build, packaging into the Python package, and the JSON API boundary. |
+* [Source Layout](source-layout.md) - Authoritative description of OMYM2's src/ layout and Feature-oriented Hexagonal Architecture, covering the domain, features, adapters, platform, and shared packages and rules for adding new directories.
+* [Dependency Boundaries](dependency-boundaries.md) - Defines OMYM2's dependency direction between adapters, features, domain, and shared layers, the forbidden dependencies, and where business rules must live.
+* [Ports And UnitOfWork](ports-uow.md) - Defines OMYM2's port protocols (UnitOfWork, FileScanner, Clock, IdGenerator, etc.), the 1-usecase-1-UnitOfWork policy, transaction boundaries, and the FileEvents durable operation log exception for apply/undo.
+* [Source Naming](naming.md) - Authoritative Python naming conventions for OMYM2 modules, classes, functions, and constants, including banned vague names and per-layer naming rules for domain, features, and adapters.
+* [Web Frontend](web-frontend.md) - Authoritative reference for the Next.js web/ frontend layout, its static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.

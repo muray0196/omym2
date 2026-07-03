@@ -1,3 +1,11 @@
+---
+type: Codebase Reference
+title: Source Naming
+description: Authoritative Python naming conventions for OMYM2 modules, classes, functions, and constants, including banned vague names and per-layer naming rules for domain, features, and adapters.
+tags: [naming-conventions, python, code-style, architecture]
+timestamp: 2026-07-02T21:19:36+09:00
+---
+
 # Source Naming
 
 This document is authoritative for Python module naming, class/function/constant naming, banned vague names, domain naming, feature naming, adapter naming, and names not adopted.

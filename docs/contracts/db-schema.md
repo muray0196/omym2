@@ -1,3 +1,11 @@
+---
+type: Contract
+title: DB Schema Contract
+description: Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events), migrations, stored JSON fields, and timestamp policy.
+tags: [database, sqlite, schema, migrations]
+timestamp: 2026-06-30T23:47:13+09:00
+---
+
 # DB Schema Contract
 
 This document is authoritative for the OMYM2 SQLite schema contract, table responsibilities, migrations, stored JSON fields, timestamp policy, and repository persistence boundaries.

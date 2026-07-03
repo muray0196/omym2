@@ -1,3 +1,11 @@
+---
+type: Execution Spec
+title: Apply Execution
+description: Defines the apply flow and the Plan, PlanAction, Run, and FileEvent state transitions, including library_root_at_plan checks and apply-time precondition failures.
+tags: [apply, plan-state, run, file-event]
+timestamp: 2026-07-02T21:19:36+09:00
+---
+
 # Apply Execution
 
 This document is authoritative for apply flow, Plan state transitions, PlanAction state transitions, Run state transitions, FileEvent state transitions, apply-time precondition failures, `library_root_at_plan` handling, and the rule that apply uses recorded PlanActions.

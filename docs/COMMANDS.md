@@ -1,3 +1,11 @@
+---
+type: Command Reference
+title: Commands
+description: Lists and summarizes the OMYM2 CLI command surface, including add, plans, apply, refresh, organize, history, undo, check, inspect, config, artist-ids, and settings.
+tags: [cli, commands, reference]
+timestamp: 2026-07-03T02:00:23+09:00
+---
+
 # Commands
 
 This document is authoritative for the CLI command surface. Per-command descriptions are summaries only. Detailed Plan, Run, FileEvent, and failure semantics live in [execution/](execution/), and storage details live in [STORAGE.md](STORAGE.md).

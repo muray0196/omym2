@@ -1,3 +1,11 @@
+---
+type: Execution Spec
+title: Execution Model
+description: Defines the common Plan-centered execution model shared by all commands, covering Plan/PlanAction/Run/FileEvent behavior, single-use Plan policy, the blocked-vs-failed distinction, and the durable operation log principle.
+tags: [execution-model, plan, run, file-event]
+timestamp: 2026-07-02T21:19:36+09:00
+---
+
 # Execution Model
 
 This document is authoritative for the common Plan-centered execution model, Plan / PlanAction / Run / FileEvent behavior, single-use Plan policy, blocked-vs-failed distinction, durable operation log principle, and FileEvent creation scope.

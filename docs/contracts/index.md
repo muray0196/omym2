@@ -1,11 +1,9 @@
-# Contract Docs
+# Contracts
 
 This folder contains concrete contracts for persisted state and externally
 observable values.
 
-| Path | Use |
-| --- | --- |
-| [config.md](config.md) | Application configuration file behavior. |
-| [db-schema.md](db-schema.md) | SQLite schema and repository persistence. |
-| [path-identity-storage.md](path-identity-storage.md) | Stored paths, path identity, Library identity, registration, and relink. |
-| [status-reason-catalog.md](status-reason-catalog.md) | Status and reason values. |
+* [Config Contract](config.md) - Defines the authoritative contract for OMYM2's TOML-based application config, including its file location, AppConfig shape, path-policy templates, artist ID rules, and metadata/collision policy.
+* [DB Schema Contract](db-schema.md) - Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events), migrations, stored JSON fields, and timestamp policy.
+* [Path Identity And Storage Contract](path-identity-storage.md) - Defines the authoritative rules for Library and Track identity stability, stored path representation, PathResolver boundaries, absolute-path exceptions, and path escape prevention.
+* [Status And Reason Catalog](status-reason-catalog.md) - Defines the authoritative catalog of allowed status, reason, action type, event type, error code, and check issue values used across Library, Track, Plan, PlanAction, Run, and FileEvent entities.

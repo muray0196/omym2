@@ -1,3 +1,11 @@
+---
+type: Development Guide
+title: Development Harness
+description: Specifies developer quality commands for edit-loop and final validation gates (ruff, basedpyright, npm lint/build, pytest), suppression rules, and Python runtime configuration policy.
+tags: [development, tooling, quality-gates, validation]
+timestamp: 2026-07-02T21:19:36+09:00
+---
+
 # Development Harness
 
 This document is authoritative for developer quality commands, validation gates, suppressions, and Python runtime configuration policy.
