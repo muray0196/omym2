@@ -7,6 +7,28 @@ export function truncateMiddle(value: string, max = 42): string {
   return `${value.slice(0, keep)}…${value.slice(value.length - keep)}`
 }
 
+/**
+ * Truncate a filesystem path by dropping leading segments, keeping as many
+ * trailing segments as fit. The tail (artist/album/filename) carries the
+ * most information; the head (library root) is usually shared and redundant.
+ * Falls back to middle-truncating the filename if it alone exceeds max.
+ */
+export function truncatePathTail(path: string, max = 44): string {
+  if (path.length <= max) return path
+  const segments = path.split("/").filter(Boolean)
+  const file = segments[segments.length - 1] ?? path
+  let result = file
+  for (let i = segments.length - 2; i >= 0; i--) {
+    const candidate = `${segments[i]}/${result}`
+    if (candidate.length + 2 > max) break
+    result = candidate
+  }
+  if (result === file && file.length + 2 > max) {
+    return `…/${truncateMiddle(file, max - 2)}`
+  }
+  return `…/${result}`
+}
+
 /** Format an ISO timestamp into a compact, locale-stable display string. */
 export function formatTimestamp(iso: string | null): string {
   if (!iso) return "—"

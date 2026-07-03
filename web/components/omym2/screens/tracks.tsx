@@ -3,7 +3,7 @@
 import { Music, Search, TriangleAlert } from "lucide-react"
 import { useMemo, useState } from "react"
 import { useApp } from "../app-context"
-import { truncateMiddle } from "../lib"
+import { cn, truncateMiddle, truncatePathTail } from "../lib"
 import type { TrackSummary } from "../types"
 import {
   CopyButton,
@@ -68,21 +68,18 @@ function TrackDetail({ track }: { track: TrackSummary }) {
 
       <dl className="rounded-md border border-border px-3">
         <DetailRow label="Current path">
-          <span className="flex items-center gap-1">
+          <span className="flex items-start gap-1">
             <Mono
-              className={mismatch ? "text-warning" : "text-foreground"}
-              title={track.current_path}
+              className={cn("break-all", mismatch ? "text-warning" : "text-foreground")}
             >
-              {truncateMiddle(track.current_path, 30)}
+              {track.current_path}
             </Mono>
             <CopyButton value={track.current_path} label="Copy current path" />
           </span>
         </DetailRow>
         <DetailRow label="Canonical path">
-          <span className="flex items-center gap-1">
-            <Mono className="text-foreground" title={track.canonical_path}>
-              {truncateMiddle(track.canonical_path, 30)}
-            </Mono>
+          <span className="flex items-start gap-1">
+            <Mono className="break-all text-foreground">{track.canonical_path}</Mono>
             <CopyButton value={track.canonical_path} label="Copy canonical path" />
           </span>
         </DetailRow>
@@ -187,32 +184,35 @@ export function TracksScreen() {
     },
     { key: "status", header: "Status", cell: (t) => <StatusBadge status={t.status} /> },
     {
-      key: "current_path",
-      header: "Current path",
+      key: "path",
+      header: "Path",
       cell: (t) => {
         const mismatch = t.current_path !== t.canonical_path
         return (
-          <span className="flex items-center gap-1.5">
-            <Mono className={mismatch ? "text-warning" : "text-foreground"} title={t.current_path}>
-              {truncateMiddle(t.current_path, 28)}
-            </Mono>
+          <span className="flex flex-col gap-0.5">
+            <span className="flex items-center gap-1.5">
+              <Mono
+                className={mismatch ? "text-warning" : "text-foreground"}
+                title={t.current_path}
+              >
+                {truncatePathTail(t.current_path, 56)}
+              </Mono>
+              {mismatch ? (
+                <TriangleAlert
+                  className="size-3.5 shrink-0 text-warning"
+                  aria-label="Path mismatch"
+                />
+              ) : null}
+            </span>
             {mismatch ? (
-              <TriangleAlert className="size-3.5 text-warning" aria-label="Path mismatch" />
+              <Mono className="text-xs text-muted-foreground" title={t.canonical_path}>
+                → {truncatePathTail(t.canonical_path, 54)}
+              </Mono>
             ) : null}
           </span>
         )
       },
-      className: "min-w-[16rem]",
-    },
-    {
-      key: "canonical_path",
-      header: "Canonical path",
-      cell: (t) => (
-        <Mono className="text-muted-foreground" title={t.canonical_path}>
-          {truncateMiddle(t.canonical_path, 28)}
-        </Mono>
-      ),
-      className: "min-w-[16rem]",
+      className: "min-w-[20rem]",
     },
     {
       key: "updated_at",
