@@ -168,6 +168,30 @@ def test_file_mover_moves_file_when_filesystem_refuses_hardlinks(
     assert target_path.read_bytes() == AUDIO_CONTENT
 
 
+def test_file_mover_removes_claimed_target_when_source_removal_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FileMover does not leave a Library duplicate when final source removal fails."""
+    source_path = tmp_path / AUDIO_FILE_NAME
+    target_path = tmp_path / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    real_unlink = Path.unlink
+
+    def fail_source_unlink(path: Path, *, missing_ok: bool = False) -> None:
+        if path == source_path:
+            raise PermissionError(errno.EACCES, "Permission denied", path)
+        real_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", fail_source_unlink)
+
+    with pytest.raises(PermissionError):
+        FilesystemFileMover().move(source_path, target_path)
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert not target_path.exists()
+
+
 def test_file_mover_refuses_to_overwrite_existing_target(tmp_path: Path) -> None:
     """FileMover leaves both files untouched when the target already exists."""
     source_path = tmp_path / AUDIO_FILE_NAME

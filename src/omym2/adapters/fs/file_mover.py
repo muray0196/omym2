@@ -45,7 +45,11 @@ class FilesystemFileMover:
             # before copying content stays overwrite-safe in all of them.
             _claim_and_copy(source_path, target_path)
 
-        source_path.unlink()
+        try:
+            source_path.unlink()
+        except BaseException:
+            target_path.unlink(missing_ok=True)
+            raise
 
 
 def _claim_and_copy(source_path: Path, target_path: Path) -> None:
