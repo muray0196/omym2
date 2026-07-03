@@ -14,6 +14,7 @@ from omym2.config import (
     LOGICAL_PATH_SEPARATOR,
     PATH_EXTENSION_PREFIX,
     PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT,
+    PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES,
     PATH_POLICY_TRACK_NUMBER_WIDTH,
     SANITIZER_ALBUM_MAX_BYTES,
     SANITIZER_ALLOWED_EXTENSION_PATTERN,
@@ -282,16 +283,27 @@ def _split_preserved_extension(value: str, *, preserve_extension: bool) -> tuple
 def _limit_sanitized_with_extension(base: str, extension_suffix: str, max_length: int | None) -> str:
     if extension_suffix != "":
         limited_base = _limit_utf8(base, max_length).strip(SANITIZER_REPLACEMENT)
-        if limited_base == "":
+        if limited_base == "" or _is_reserved_windows_device_name(limited_base):
             return f"{PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT}{extension_suffix}"
         return f"{limited_base}{extension_suffix}"
 
     if max_length is None:
-        return base
-    if max_length <= 0:
+        limited_base = base
+    elif max_length <= 0:
         return ""
+    else:
+        limited_base = _limit_utf8(base, max_length).strip(SANITIZER_REPLACEMENT)
 
-    return _limit_utf8(base, max_length).strip(SANITIZER_REPLACEMENT)
+    # Treat a stem that is a reserved Windows device name (case-insensitive)
+    # the same as a sanitized-to-empty stem, so callers apply the same "_"
+    # fallback machinery they already use for empty components.
+    if _is_reserved_windows_device_name(limited_base):
+        return ""
+    return limited_base
+
+
+def _is_reserved_windows_device_name(value: str) -> bool:
+    return value.upper() in PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES
 
 
 def _limit_component_with_suffix(value: str, extension_suffix: str, max_length: int) -> str:

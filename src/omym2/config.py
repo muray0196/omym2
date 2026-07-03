@@ -129,8 +129,11 @@ PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "year",
     PATH_POLICY_ARTIST_ID_PLACEHOLDER,
 )  # placeholders allowed in path policy stem templates
-PATH_POLICY_BEHAVIOR_VERSION: Final = 4  # version included in hashes when canonical path behavior changes
+PATH_POLICY_BEHAVIOR_VERSION: Final = 5  # version included in hashes when canonical path behavior changes
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
+PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES: Final[frozenset[str]] = frozenset(
+    {"CON", "PRN", "AUX", "NUL"} | {f"COM{digit}" for digit in range(1, 10)} | {f"LPT{digit}" for digit in range(1, 10)}
+)  # Windows reserved device names treated as sanitized-to-empty stems, case-insensitive
 PATH_POLICY_TRACK_NUMBER_WIDTH: Final = 2  # zero-padding width for generated track numbers
 PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in metadata path components
 PATH_POLICY_PREVIEW_TITLE: Final = "Example Song"  # sample title shown in settings preview
