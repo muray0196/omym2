@@ -66,4 +66,4 @@ class TestArtistIdGenerator:
         abc_id = ArtistIdGenerator.generate("A-B-C")
         assert abc_id == "ABC"
         assert all(char in abc_id for char in "ABC")
-        assert len(abc_id) <= ArtistIdGenerator.ID_LENGT
+        assert len(abc_id) <= ArtistIdGenerator.ID_LENGTH
