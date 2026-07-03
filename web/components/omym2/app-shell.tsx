@@ -34,7 +34,7 @@ function activeKey(route: Route): NavKey {
   return route.name
 }
 
-function Sidebar({ collapsed }: { collapsed: boolean }) {
+function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { route, navigate } = useApp()
   const current = activeKey(route)
   return (
@@ -46,18 +46,28 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
     >
       <div
         className={cn(
-          "flex items-center gap-2.5 border-b border-sidebar-border py-4",
-          collapsed ? "justify-center px-2" : "px-5",
+          "flex items-center gap-2 border-b border-sidebar-border py-4",
+          collapsed ? "justify-center px-2" : "px-3",
         )}
       >
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Music className="size-4" aria-hidden="true" />
-        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring"
+        >
+          <Menu className="size-5" aria-hidden="true" />
+        </button>
         {!collapsed ? (
-          <div className="leading-tight">
-            <p className="text-sm font-semibold text-sidebar-foreground">OMYM2</p>
-            <p className="text-xs text-muted-foreground">Local console</p>
-          </div>
+          <>
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <Music className="size-4" aria-hidden="true" />
+            </div>
+            <div className="leading-tight">
+              <p className="text-sm font-semibold text-sidebar-foreground">OMYM2</p>
+              <p className="text-xs text-muted-foreground">Local console</p>
+            </div>
+          </>
         ) : null}
       </div>
       <nav aria-label="Primary" className="flex flex-1 flex-col gap-0.5 p-3">
@@ -154,26 +164,16 @@ function PathSummary({
   )
 }
 
-function Header({ onToggleSidebar }: { onToggleSidebar: () => void }) {
+function Header() {
   const { savedConfig } = useApp()
   const validation = validateConfig(savedConfig)
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur lg:px-6">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onToggleSidebar}
-          aria-label="Toggle sidebar"
-          className="hidden items-center justify-center rounded-md border border-border bg-card p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring lg:inline-flex"
-        >
-          <Menu className="size-4" aria-hidden="true" />
-        </button>
-        <div className="flex items-center gap-2 lg:hidden">
-          <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Music className="size-4" aria-hidden="true" />
-          </div>
-          <span className="text-sm font-semibold">OMYM2</span>
+      <div className="flex items-center gap-2 lg:hidden">
+        <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <Music className="size-4" aria-hidden="true" />
         </div>
+        <span className="text-sm font-semibold">OMYM2</span>
       </div>
       <div className="flex flex-1 flex-wrap items-center justify-end gap-2 lg:gap-3">
         <CommandPaletteTrigger />
@@ -193,9 +193,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <CommandPalette />
-      <Sidebar collapsed={collapsed} />
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Header onToggleSidebar={() => setCollapsed((v) => !v)} />
+        <Header />
         <MobileNav />
         <main className="flex-1 overflow-y-auto px-4 py-6 lg:px-6 lg:py-8">
           <div className="w-full">{children}</div>
