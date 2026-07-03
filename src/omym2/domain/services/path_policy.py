@@ -307,10 +307,16 @@ def _is_reserved_windows_device_name(value: str) -> bool:
 
 
 def _limit_component_with_suffix(value: str, extension_suffix: str, max_length: int) -> str:
+    # Extension preservation dominates the length budget: the suffix is never
+    # truncated or dropped, and a non-empty stem keeps at least its first
+    # character even when max_length <= extension bytes. With such degenerate
+    # budgets the total necessarily exceeds max_length; filesystem-level limit
+    # failures surface fail-closed at apply time.
     extension_bytes = _utf8_length(extension_suffix)
-    if max_length <= extension_bytes:
-        return "" if extension_bytes > max_length else extension_suffix
-    return f"{_limit_component(value, max_length - extension_bytes)}{extension_suffix}"
+    limited_stem = _limit_component(value, max_length - extension_bytes)
+    if limited_stem == "" and value != "":
+        limited_stem = value[:1]
+    return f"{limited_stem}{extension_suffix}"
 
 
 def _limit_component(value: str, max_length: int) -> str:
