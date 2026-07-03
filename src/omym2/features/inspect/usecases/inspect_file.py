@@ -28,7 +28,7 @@ class InspectFileUseCase:
         snapshot = self.ports.file_snapshot_reader.capture(request.path)
 
         try:
-            canonical_path = PathPolicy(config.path_policy, config.artist_ids).canonical_path(
+            canonical_path = PathPolicy.from_app_config(config).canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
             )

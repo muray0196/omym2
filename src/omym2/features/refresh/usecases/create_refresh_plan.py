@@ -14,7 +14,15 @@ from omym2.domain.models.library import LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import TrackStatus
-from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
+from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy
+from omym2.domain.services.config_fingerprint import (
+    STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
+)
+from omym2.domain.services.config_fingerprint import (
+    calculate_config_fingerprint,
+    calculate_path_policy_fingerprint,
+    is_path_policy_stale,
+)
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 from omym2.shared.paths import normalize_library_relative_path
 
@@ -38,7 +46,6 @@ NO_REGISTERED_LIBRARY_MESSAGE = "No registered Library can be selected. Run orga
 REFRESH_TARGET_NOT_FOUND_MESSAGE = "Refresh target does not match any managed active Track."
 SELECTED_LIBRARY_NOT_FOUND_MESSAGE = "Selected Library was not found."
 SELECTED_LIBRARY_NOT_REGISTERED_MESSAGE = "Selected Library is not registered. Run organize --library PATH."
-STALE_LIBRARY_MESSAGE = "Registered Library uses a stale PathPolicy. Run organize --library PATH."
 TARGET_OUTSIDE_LIBRARY_MESSAGE = "Refresh target must be inside the selected Library."
 TARGET_SELECTOR_COUNT_MESSAGE = "Refresh requires exactly one target: track_id, target_path, or include_all."
 SUMMARY_ACTION_COUNT_KEY = "action_count"
@@ -116,7 +123,7 @@ class CreateRefreshPlanUseCase:
             return _blocked_candidate(track, PlanActionReason.MISSING_REQUIRED_METADATA, snapshot=snapshot)
 
         try:
-            target_path = PathPolicy(config.path_policy, config.artist_ids).canonical_path(
+            target_path = PathPolicy.from_app_config(config).canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
             )
@@ -165,9 +172,13 @@ class CreateRefreshPlanUseCase:
             return False
         if target_path == candidate.track.current_path:
             return False
-        if target_path in occupied_paths:
-            return True
-        if len(target_sources[target_path]) > 1:
+
+        decision = CollisionPolicy().decide(
+            target_path,
+            occupied_paths,
+            batch_target_count=len(target_sources[target_path]),
+        )
+        if decision.kind is CollisionDecisionKind.BLOCKED:
             return True
 
         target_filesystem_path = self.ports.path_resolver.resolve_library_path(library.root_path, target_path)
@@ -264,7 +275,7 @@ def _select_registered_library(
 def _require_registered_current_library(library: Library, path_policy_hash: str) -> Library:
     if library.status != LibraryStatus.REGISTERED:
         raise RefreshLibrarySelectionError(SELECTED_LIBRARY_NOT_REGISTERED_MESSAGE)
-    if library.path_policy_hash != path_policy_hash:
+    if is_path_policy_stale(library.path_policy_hash, path_policy_hash):
         raise RefreshLibrarySelectionError(STALE_LIBRARY_MESSAGE)
     return library
 

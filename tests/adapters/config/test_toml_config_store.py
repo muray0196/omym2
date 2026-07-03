@@ -12,6 +12,9 @@ import pytest
 from omym2.adapters.config.toml_config_store import TomlConfigStore, dump_config_toml, load_config_text
 from omym2.config import CONFIG_FILE_ENCODING
 from omym2.domain.models.app_config import (
+    INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE,
+    INVALID_ARTIST_ID_FALLBACK_MESSAGE,
+    INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE,
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     AppConfig,
     ArtistIdConfig,
@@ -82,6 +85,49 @@ def test_toml_config_store_validation_fails_invalid_path_policy(tmp_path: Path) 
     )
 
     with pytest.raises(ConfigStoreValidationError, match=INVALID_MAX_FILENAME_LENGTH_MESSAGE):
+        _ = TomlConfigStore(config_path).load()
+
+
+def test_toml_config_store_validation_fails_invalid_artist_id_max_length(tmp_path: Path) -> None:
+    """Adapter validation reports domain artist ID max_length errors through ConfigStore."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        "version = 1\n\n[artist_ids]\nmax_length = 0\n",
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError, match=INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE):
+        _ = TomlConfigStore(config_path).load()
+
+
+def test_toml_config_store_validation_fails_invalid_artist_id_fallback_id(tmp_path: Path) -> None:
+    """Adapter validation reports a non-sanitizer-stable configured fallback_id."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        'version = 1\n\n[artist_ids]\nfallback_id = "N/A"\n',
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError, match=INVALID_ARTIST_ID_FALLBACK_MESSAGE):
+        _ = TomlConfigStore(config_path).load()
+
+
+def test_toml_config_store_validation_fails_invalid_artist_id_entry_value(tmp_path: Path) -> None:
+    """Adapter validation reports non-sanitizer-stable artist ID entry values."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        "\n".join(
+            (
+                "version = 1",
+                "",
+                "[artist_ids.entries]",
+                f'"{ARTIST_NAME}" = "../escape"',
+            )
+        ),
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError, match=INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE):
         _ = TomlConfigStore(config_path).load()
 
 

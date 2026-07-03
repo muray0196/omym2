@@ -14,6 +14,7 @@ from omym2.config import (
     LOGICAL_PATH_SEPARATOR,
     PATH_EXTENSION_PREFIX,
     PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT,
+    PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES,
     PATH_POLICY_TRACK_NUMBER_WIDTH,
     SANITIZER_ALBUM_MAX_BYTES,
     SANITIZER_ALLOWED_EXTENSION_PATTERN,
@@ -28,7 +29,7 @@ from omym2.config import (
 from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
-    from omym2.domain.models.app_config import ArtistIdConfig, PathPolicyConfig
+    from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig
     from omym2.domain.models.track_metadata import TrackMetadata
 
 from omym2.domain.models.app_config import ArtistIdConfig
@@ -48,6 +49,20 @@ class PathPolicy:
 
     config: PathPolicyConfig
     artist_ids: ArtistIdConfig = field(default_factory=ArtistIdConfig)
+
+    @classmethod
+    def from_path_policy_config(cls, config: PathPolicyConfig, artist_ids: ArtistIdConfig) -> PathPolicy:
+        """Build a PathPolicy from its path-policy and artist-id configs.
+
+        This is the single assembly point for PathPolicy construction so a
+        future constructor parameter only needs updating here.
+        """
+        return cls(config, artist_ids)
+
+    @classmethod
+    def from_app_config(cls, config: AppConfig) -> PathPolicy:
+        """Build a PathPolicy from the AppConfig fields it depends on."""
+        return cls.from_path_policy_config(config.path_policy, config.artist_ids)
 
     def canonical_path(self, metadata: TrackMetadata, file_extension: str) -> str:
         """Generate a normalized Library-root-relative canonical path."""
@@ -78,12 +93,29 @@ class PathPolicy:
         source_artist = metadata.artist or metadata.album_artist or self.config.unknown_artist
         saved_artist_id = self.artist_ids.entries.get(source_artist) if self.artist_ids.entries is not None else None
         if saved_artist_id is not None:
-            return saved_artist_id
-        return generate_artist_id(
+            sanitized_saved_artist_id = self._artist_id_component(saved_artist_id)
+            # A saved entry is normally validated as sanitizer-stable at config
+            # construction (ArtistIdConfig.__post_init__), so sanitizing here is
+            # defense-in-depth. If sanitizing still collapses it to nothing,
+            # fall through to the generated ID instead of returning an empty
+            # component, which would otherwise silently drop a path directory
+            # level.
+            if sanitized_saved_artist_id != "":
+                return sanitized_saved_artist_id
+        generated_artist_id = generate_artist_id(
             source_artist,
             max_length=self.artist_ids.max_length,
             fallback_id=self.artist_ids.fallback_id,
         )
+        # The generated ID is already [A-Za-z0-9]+, so sanitizing it is a
+        # harmless no-op; routing both branches through the same helper keeps
+        # {artist_id} rendering consistent regardless of which branch is used.
+        return self._artist_id_component(generated_artist_id)
+
+    def _artist_id_component(self, value: str) -> str:
+        if not self.config.sanitize:
+            return value
+        return sanitize_path_component(value)
 
     def _album(self, metadata: TrackMetadata) -> str:
         value = metadata.album or self.config.unknown_album
@@ -250,24 +282,50 @@ def _split_preserved_extension(value: str, *, preserve_extension: bool) -> tuple
 
 def _limit_sanitized_with_extension(base: str, extension_suffix: str, max_length: int | None) -> str:
     if extension_suffix != "":
-        limited_base = _limit_utf8(base, max_length).strip(SANITIZER_REPLACEMENT)
-        if limited_base == "":
+        # max_length budgets the TOTAL component (stem + extension), matching
+        # the sanitize=False branch. Extension preservation dominates the
+        # budget: the suffix is never truncated or dropped, and a non-empty
+        # stem keeps at least its first character even when the budget is
+        # smaller than the extension bytes, so a degenerate max_length can
+        # exceed the configured budget by necessity.
+        stem_budget = None if max_length is None else max_length - _utf8_length(extension_suffix)
+        limited_base = _limit_utf8(base, stem_budget).strip(SANITIZER_REPLACEMENT)
+        if limited_base == "" and base != "":
+            limited_base = base[:1]
+        if limited_base == "" or _is_reserved_windows_device_name(limited_base):
             return f"{PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT}{extension_suffix}"
         return f"{limited_base}{extension_suffix}"
 
     if max_length is None:
-        return base
-    if max_length <= 0:
+        limited_base = base
+    elif max_length <= 0:
         return ""
+    else:
+        limited_base = _limit_utf8(base, max_length).strip(SANITIZER_REPLACEMENT)
 
-    return _limit_utf8(base, max_length).strip(SANITIZER_REPLACEMENT)
+    # Treat a stem that is a reserved Windows device name (case-insensitive)
+    # the same as a sanitized-to-empty stem, so callers apply the same "_"
+    # fallback machinery they already use for empty components.
+    if _is_reserved_windows_device_name(limited_base):
+        return ""
+    return limited_base
+
+
+def _is_reserved_windows_device_name(value: str) -> bool:
+    return value.upper() in PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES
 
 
 def _limit_component_with_suffix(value: str, extension_suffix: str, max_length: int) -> str:
+    # Extension preservation dominates the length budget: the suffix is never
+    # truncated or dropped, and a non-empty stem keeps at least its first
+    # character even when max_length <= extension bytes. With such degenerate
+    # budgets the total necessarily exceeds max_length; filesystem-level limit
+    # failures surface fail-closed at apply time.
     extension_bytes = _utf8_length(extension_suffix)
-    if max_length <= extension_bytes:
-        return "" if extension_bytes > max_length else extension_suffix
-    return f"{_limit_component(value, max_length - extension_bytes)}{extension_suffix}"
+    limited_stem = _limit_component(value, max_length - extension_bytes)
+    if limited_stem == "" and value != "":
+        limited_stem = value[:1]
+    return f"{limited_stem}{extension_suffix}"
 
 
 def _limit_component(value: str, max_length: int) -> str:

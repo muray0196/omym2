@@ -7,14 +7,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
 from omym2.domain.models.app_config import AppConfig, ArtistIdConfig
 from omym2.features.artist_ids.dto import GenerateArtistIdsRequest
 from omym2.features.artist_ids.usecases.generate_artist_ids import GenerateArtistIdsUseCase
+from omym2.features.common_ports import ConfigStoreValidationError
 
 JAPANESE_ARTIST = "米津玄師"
 RESOLVED_ARTIST = "Kenshi Yonezu"
 ENGLISH_ARTIST = "John Smith"
 SAVED_ARTIST_ID = "MANUAL"
+NO_USABLE_CHARS_ARTIST = "!!!"
+# Sanitizer-stable on its own (passes ArtistIdConfig.__post_init__), but its
+# max_length-3 truncation "AB-CD"[:3] == "AB-" ends with a hyphen, which is
+# not a valid saved entry value. This keeps the truncation edge reachable
+# through the usecase's own ArtistIdConfig(...) construction after fallback_id
+# gained the same entries-value pattern check at construction time.
+TRUNCATION_UNSAFE_FALLBACK_ID = "AB-CD"
+TRUNCATION_MAX_LENGTH = 3
 
 
 @dataclass(slots=True)
@@ -103,6 +114,23 @@ def test_generate_artist_ids_overwrites_when_requested() -> None:
     assert result.entries[0].artist_id == "JOHNSMTH"
     assert result.entries[0].overwritten is True
     assert store.config.artist_ids.entries == {ENGLISH_ARTIST: "JOHNSMTH"}
+
+
+def test_generate_artist_ids_reports_unsafe_fallback_id_truncation_as_config_error() -> None:
+    """A fallback_id that is only unsafe once truncated still surfaces as a config error, not a traceback."""
+    store = _MemoryConfigStore(
+        AppConfig(
+            artist_ids=ArtistIdConfig(
+                max_length=TRUNCATION_MAX_LENGTH,
+                fallback_id=TRUNCATION_UNSAFE_FALLBACK_ID,
+            )
+        )
+    )
+
+    with pytest.raises(ConfigStoreValidationError):
+        _ = _usecase(store, frozenset(), {}).execute(GenerateArtistIdsRequest((NO_USABLE_CHARS_ARTIST,)))
+
+    assert store.saves == 0
 
 
 def _usecase(

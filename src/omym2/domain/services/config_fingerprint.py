@@ -27,6 +27,12 @@ if TYPE_CHECKING:
 
 JSON_SEPARATORS = (CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR, CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR)
 
+# Shared by add and refresh, which both refuse to operate on a registered
+# Library whose stored PathPolicy fingerprint no longer matches current
+# config. Organize does not use this message because it re-registers the
+# Library under the current PathPolicy instead of rejecting it.
+STALE_LIBRARY_MESSAGE = "Registered Library uses a stale PathPolicy. Run organize --library PATH."
+
 
 def calculate_config_fingerprint(config: AppConfig, algorithm: str = CONFIG_FINGERPRINT_ALGORITHM) -> str:
     """Return a stable fingerprint for the complete AppConfig value."""
@@ -57,6 +63,11 @@ def calculate_path_policy_fingerprint(
         path_policy_payload["artist_ids"] = asdict(artist_id_config)
     payload = json.dumps(path_policy_payload, sort_keys=True, separators=JSON_SEPARATORS)
     return _fingerprint_payload(payload, algorithm)
+
+
+def is_path_policy_stale(library_path_policy_hash: str, current_path_policy_hash: str) -> bool:
+    """Return whether a Library's stored PathPolicy hash no longer matches current config."""
+    return library_path_policy_hash != current_path_policy_hash
 
 
 def _template_uses_placeholder(template: str, placeholder: str) -> bool:

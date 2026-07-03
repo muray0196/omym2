@@ -14,10 +14,14 @@ from omym2.config import (
     DEFAULT_UNKNOWN_ARTIST,
 )
 from omym2.domain.models.app_config import (
+    INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE,
+    INVALID_ARTIST_ID_FALLBACK_MESSAGE,
     INVALID_CONFIG_VERSION_MESSAGE,
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE,
     INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE,
+    INVALID_PATH_POLICY_UNKNOWN_ALBUM_MESSAGE,
+    INVALID_PATH_POLICY_UNKNOWN_ARTIST_MESSAGE,
     AppConfig,
     ArtistIdConfig,
     PathPolicyConfig,
@@ -30,6 +34,9 @@ PATH_POLICY_TEMPLATE_WITH_EXTENSION_PLACEHOLDER = "{album_artist}/{album}/{title
 PATH_POLICY_TEMPLATE_WITH_SPLIT_DISC_TRACK = "{album_artist}/{album}/{disc}-{track}_{title}"
 PATH_POLICY_TEMPLATE_WITH_LITERAL_EXTENSION = "{album_artist}/{title}.mp3"
 PATH_POLICY_TEMPLATE_WITH_UNKNOWN_PLACEHOLDER = "{album_artist}/{bitrate}/{title}"
+UNSAFE_ARTIST_ID_ENTRY_VALUES = ("a/b", "..", "", "../escape", "a\\b")
+GENERATED_STYLE_ARTIST_ID_ENTRY_VALUES = ("SOMEID", "NOART", "artist_id-1")
+UNSAFE_ARTIST_ID_FALLBACK_IDS = ("N/A", "..", "", "-LEAD", "TRAIL-", "a b")
 
 
 def test_config_loads_default() -> None:
@@ -97,3 +104,45 @@ def test_path_policy_config_rejects_template_with_literal_extension() -> None:
     """PathPolicyConfig blocks templates that would replace the source extension."""
     with pytest.raises(ValueError, match=INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE):
         _ = PathPolicyConfig(template=PATH_POLICY_TEMPLATE_WITH_LITERAL_EXTENSION)
+
+
+def test_path_policy_config_rejects_empty_unknown_artist_or_album() -> None:
+    """PathPolicyConfig rejects blank unknown_artist and unknown_album fallbacks."""
+    with pytest.raises(ValueError, match=INVALID_PATH_POLICY_UNKNOWN_ARTIST_MESSAGE):
+        _ = PathPolicyConfig(unknown_artist="   ")
+    with pytest.raises(ValueError, match=INVALID_PATH_POLICY_UNKNOWN_ALBUM_MESSAGE):
+        _ = PathPolicyConfig(unknown_album="")
+
+
+@pytest.mark.parametrize("entry_value", UNSAFE_ARTIST_ID_ENTRY_VALUES)
+def test_artist_id_config_rejects_unsafe_entry_values(entry_value: str) -> None:
+    """ArtistIdConfig rejects saved entry values that are not sanitizer-stable."""
+    with pytest.raises(ValueError, match=INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE):
+        _ = ArtistIdConfig(entries={"X": entry_value})
+
+
+@pytest.mark.parametrize("entry_value", GENERATED_STYLE_ARTIST_ID_ENTRY_VALUES)
+def test_artist_id_config_accepts_generated_style_values(entry_value: str) -> None:
+    """ArtistIdConfig accepts saved entry values matching generator/config style output."""
+    config = ArtistIdConfig(entries={"X": entry_value})
+
+    assert config.entries == {"X": entry_value}
+
+
+@pytest.mark.parametrize("fallback_id", UNSAFE_ARTIST_ID_FALLBACK_IDS)
+def test_artist_id_config_rejects_unsafe_fallback_id(fallback_id: str) -> None:
+    """ArtistIdConfig rejects fallback_id values that are not sanitizer-stable.
+
+    fallback_id can flow into generated IDs and saved entries (see
+    generate_artist_id's no-usable-characters branch), so it must satisfy the
+    same pattern as entries values rather than only non-emptiness.
+    """
+    with pytest.raises(ValueError, match=INVALID_ARTIST_ID_FALLBACK_MESSAGE):
+        _ = ArtistIdConfig(fallback_id=fallback_id)
+
+
+def test_artist_id_config_accepts_default_fallback_id() -> None:
+    """The documented default fallback_id (NOART) satisfies the entries value pattern."""
+    config = ArtistIdConfig()
+
+    assert config.fallback_id == "NOART"

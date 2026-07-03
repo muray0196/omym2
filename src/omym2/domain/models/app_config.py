@@ -5,10 +5,12 @@ Why: Gives usecases typed settings without depending on TOML adapters.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from string import Formatter
 
 from omym2.config import (
+    ARTIST_ID_ENTRY_VALUE_PATTERN,
     CONFIG_VERSION,
     DEFAULT_ADD_AUTO_APPLY,
     DEFAULT_ARTIST_ID_FALLBACK,
@@ -37,12 +39,23 @@ from omym2.config import (
 )
 
 INVALID_CONFIG_VERSION_MESSAGE = "Unsupported config version."
-INVALID_ARTIST_ID_FALLBACK_MESSAGE = "ArtistIdConfig fallback_id must not be empty."
+INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE = (
+    "ArtistIdConfig entries values must be non-empty ASCII letters, digits, or underscores "
+    "with optional single internal hyphens."
+)
+INVALID_ARTIST_ID_FALLBACK_MESSAGE = (
+    "ArtistIdConfig fallback_id must be non-empty ASCII letters, digits, or underscores "
+    "with optional single internal hyphens."
+)
 INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE = "ArtistIdConfig max_length must be positive."
 INVALID_MAX_FILENAME_LENGTH_MESSAGE = "PathPolicy max_filename_length must be positive."
 INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE = "PathPolicy template must not include a file extension."
 INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE = "PathPolicy template contains unsupported placeholder."
 INVALID_PATH_POLICY_TEMPLATE_SYNTAX_MESSAGE = "PathPolicy template contains unsupported placeholder syntax."
+INVALID_PATH_POLICY_UNKNOWN_ALBUM_MESSAGE = "PathPolicy unknown_album must not be empty."
+INVALID_PATH_POLICY_UNKNOWN_ARTIST_MESSAGE = "PathPolicy unknown_artist must not be empty."
+
+_ARTIST_ID_ENTRY_VALUE_PATTERN = re.compile(ARTIST_ID_ENTRY_VALUE_PATTERN)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +96,10 @@ class PathPolicyConfig:
         """Validate path policy tunables that affect generated paths."""
         if self.max_filename_length <= 0:
             raise ValueError(INVALID_MAX_FILENAME_LENGTH_MESSAGE)
+        if self.unknown_artist.strip() == "":
+            raise ValueError(INVALID_PATH_POLICY_UNKNOWN_ARTIST_MESSAGE)
+        if self.unknown_album.strip() == "":
+            raise ValueError(INVALID_PATH_POLICY_UNKNOWN_ALBUM_MESSAGE)
         _validate_template_placeholders(self.template)
         # Templates are path stems. A literal dot in the final component is
         # treated as an extension-like suffix and is rejected before planning.
@@ -102,9 +119,15 @@ class ArtistIdConfig:
         """Validate artist ID tunables and freeze user-editable entries."""
         if self.max_length <= 0:
             raise ValueError(INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE)
-        if self.fallback_id.strip() == "":
+        # fallback_id can flow into generated IDs and saved entries (see
+        # generate_artist_id's no-usable-characters branch), so it must be
+        # sanitizer-stable by the same rule as entries values, not merely
+        # non-empty.
+        if _ARTIST_ID_ENTRY_VALUE_PATTERN.fullmatch(self.fallback_id) is None:
             raise ValueError(INVALID_ARTIST_ID_FALLBACK_MESSAGE)
-        object.__setattr__(self, "entries", dict(self.entries or {}))
+        normalized_entries = dict(self.entries or {})
+        _validate_artist_id_entries(normalized_entries)
+        object.__setattr__(self, "entries", normalized_entries)
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +155,14 @@ class UiConfig:
 
     theme: str = DEFAULT_UI_THEME
     show_advanced_settings: bool = DEFAULT_UI_SHOW_ADVANCED_SETTINGS
+
+
+def _validate_artist_id_entries(entries: dict[str, str]) -> None:
+    # Entry keys are free-form source artist text; only saved ID values feed
+    # PathPolicy path rendering, so only values must be sanitizer-stable.
+    for value in entries.values():
+        if _ARTIST_ID_ENTRY_VALUE_PATTERN.fullmatch(value) is None:
+            raise ValueError(INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE)
 
 
 def _validate_template_placeholders(template: str) -> None:

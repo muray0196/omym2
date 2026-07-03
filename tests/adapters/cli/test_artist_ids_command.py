@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.artist_ids import ArtistIdsCommandDependencies, run_artist_ids_command
 from omym2.adapters.config.toml_config_store import TomlConfigStore
+from omym2.config import CONFIG_FILE_ENCODING
 from omym2.domain.models.app_config import AppConfig, ArtistIdConfig
 
 if TYPE_CHECKING:
@@ -84,6 +85,23 @@ def test_artist_ids_generate_command_preserves_existing_without_overwrite(tmp_pa
     assert exit_code == 0
     assert "preserved" in stdout.getvalue()
     assert TomlConfigStore(config_path).load().artist_ids.entries == {ENGLISH_ARTIST: "MANUAL"}
+
+
+def test_artist_ids_generate_command_reports_invalid_persisted_config(tmp_path: Path) -> None:
+    """The CLI reports invalid persisted TOML config as a controlled error, not a traceback."""
+    config_path = tmp_path / "config.toml"
+    _ = config_path.write_text(
+        'version = 1\n[artist_ids]\nmax_length = 0\nfallback_id = "NOART"\n',
+        encoding=CONFIG_FILE_ENCODING,
+    )
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = run_artist_ids_command(["generate", ENGLISH_ARTIST], stdout, stderr, config_path)
+
+    assert exit_code == 1
+    assert stdout.getvalue() == ""
+    assert "ArtistIdConfig max_length must be positive." in stderr.getvalue()
 
 
 def test_artist_ids_generate_command_reports_missing_fasttext_dependency(

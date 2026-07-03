@@ -123,7 +123,7 @@ Initial template:
 {album_artist}/{year}_{album}/{disc}-{track}_{title}
 ```
 
-The source music file suffix is appended after template rendering. Source suffixes are normalized to lowercase in the generated path.
+The source music file suffix is appended after template rendering. Source suffixes are normalized to lowercase in the generated path. `max_filename_length` budgets the total generated file name including the extension; the extension is always preserved.
 
 The initial template does not include hash-based suffixes. If the final target path already exists, the PlanAction is blocked with `target_exists`.
 
@@ -151,6 +151,11 @@ Representative fields:
 
 Normal generation saves only missing entries. Existing entries are preserved
 unless the user explicitly requests regeneration/overwrite.
+
+Entry values must be non-empty ASCII letters, digits, or underscores with
+optional single internal hyphens (no leading/trailing hyphen, no repeated
+hyphens); invalid values are rejected at load/save time. `fallback_id` shares
+this same rule, since it can flow into generated IDs and saved entries.
 
 ## Metadata And Collision Policy
 
