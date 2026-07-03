@@ -229,7 +229,6 @@ export function CheckScreen() {
         <Panel
           title="Triage"
           icon={ShieldCheck}
-          className="lg:col-span-2"
           bodyClassName="flex flex-col gap-4"
         >
           <div className="grid gap-3 sm:grid-cols-2">
@@ -317,8 +316,6 @@ export function CheckScreen() {
             </div>
           )}
         </Panel>
-
-
       </div>
     </>
   )
