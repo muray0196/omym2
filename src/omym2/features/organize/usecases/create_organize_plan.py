@@ -14,6 +14,7 @@ from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import Track, TrackStatus
+from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 from omym2.features.organize.dto import OrganizeLibraryResult
@@ -404,10 +405,18 @@ def _collision_reason(
     if target_path is None:
         return None
 
-    if target_path in occupied_paths and target_path != candidate.source_path:
-        return PlanActionReason.TARGET_EXISTS
+    decision = CollisionPolicy().decide(
+        target_path,
+        occupied_paths,
+        batch_target_count=len(target_sources[target_path]),
+    )
+    if decision.kind is CollisionDecisionKind.AVAILABLE:
+        return None
 
-    if len(target_sources[target_path]) > 1 and target_path not in occupied_paths:
-        return PlanActionReason.TARGET_EXISTS
+    # A no-op rename onto the candidate's own current Library-relative path is
+    # never a conflict, even though that path is itself always present in
+    # occupied_paths (every candidate's own source_path is a member).
+    if target_path == candidate.source_path:
+        return None
 
-    return None
+    return decision.reason

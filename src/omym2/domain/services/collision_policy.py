@@ -35,10 +35,22 @@ class CollisionDecision:
 class CollisionPolicy:
     """Pure policy for target path conflicts."""
 
-    def decide(self, target_path: str, occupied_paths: Iterable[str]) -> CollisionDecision:
-        """Return whether a target path is available or blocked."""
+    def decide(
+        self,
+        target_path: str,
+        occupied_paths: Iterable[str],
+        *,
+        batch_target_count: int = 1,
+    ) -> CollisionDecision:
+        """Return whether a target path is available or blocked.
+
+        `batch_target_count` is the number of distinct sources in the current
+        plan batch that resolve to `target_path`. A value greater than one
+        means the batch itself claims `target_path` more than once, which
+        blocks independently of `occupied_paths` membership.
+        """
         normalized_target = normalize_library_relative_path(target_path)
         normalized_occupied = {normalize_library_relative_path(path) for path in occupied_paths}
-        if normalized_target in normalized_occupied:
+        if normalized_target in normalized_occupied or batch_target_count > 1:
             return CollisionDecision(CollisionDecisionKind.BLOCKED, PlanActionReason.TARGET_EXISTS)
         return CollisionDecision(CollisionDecisionKind.AVAILABLE)

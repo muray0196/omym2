@@ -14,6 +14,7 @@ from omym2.domain.models.library import LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import TrackStatus
+from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
 )
@@ -171,9 +172,13 @@ class CreateRefreshPlanUseCase:
             return False
         if target_path == candidate.track.current_path:
             return False
-        if target_path in occupied_paths:
-            return True
-        if len(target_sources[target_path]) > 1:
+
+        decision = CollisionPolicy().decide(
+            target_path,
+            occupied_paths,
+            batch_target_count=len(target_sources[target_path]),
+        )
+        if decision.kind is CollisionDecisionKind.BLOCKED:
             return True
 
         target_filesystem_path = self.ports.path_resolver.resolve_library_path(library.root_path, target_path)

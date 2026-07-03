@@ -42,6 +42,8 @@ Domain models and repositories do not resolve absolute paths.
 
 PathPolicy generates Library-root-relative canonical paths. It does not join paths with the Library root and does not check filesystem existence.
 
+Target-path collision comparison is an exact string match on the normalized Library-root-relative path — intentionally platform-independent, so it is case- and Unicode-form-sensitive rather than folding for case-insensitive or Unicode-normalization-insensitive filesystems. Filesystem-level differences that this comparison cannot see, such as a case-insensitive filesystem treating two distinct normalized paths as the same file, are caught fail-closed at apply time by the exclusive-create FileMover.
+
 ## Absolute External Path Exceptions
 
 Absolute paths are allowed only where the path points outside Library-managed storage:

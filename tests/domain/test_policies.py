@@ -299,6 +299,27 @@ def test_collision_policy_blocks_existing_target() -> None:
     assert decision.reason == PlanActionReason.TARGET_EXISTS
 
 
+def test_collision_policy_blocks_intra_batch_duplicate_target() -> None:
+    """CollisionPolicy blocks a target claimed by more than one batch source,
+    even when no occupied path matches it yet."""
+    target_path = PathPolicy(PathPolicyConfig()).canonical_path(_track_metadata(), FILE_EXTENSION)
+
+    decision = CollisionPolicy().decide(target_path, [], batch_target_count=2)
+
+    assert decision.kind == CollisionDecisionKind.BLOCKED
+    assert decision.reason == PlanActionReason.TARGET_EXISTS
+
+
+def test_collision_policy_allows_single_batch_source_target() -> None:
+    """CollisionPolicy does not block a target with exactly one batch source
+    that is not otherwise occupied."""
+    target_path = PathPolicy(PathPolicyConfig()).canonical_path(_track_metadata(), FILE_EXTENSION)
+
+    decision = CollisionPolicy().decide(target_path, [], batch_target_count=1)
+
+    assert decision.kind == CollisionDecisionKind.AVAILABLE
+
+
 def test_duplicate_policy_skips_duplicate_hash() -> None:
     """DuplicatePolicy returns a skip decision for an already known content hash."""
     content_hash = calculate_content_fingerprint(CONTENT)
