@@ -14,7 +14,7 @@ from uuid import UUID
 import pytest
 
 from omym2.adapters.config.default_config import default_app_config
-from omym2.domain.models.app_config import AppConfig, PathsConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig, PathsConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
@@ -126,6 +126,59 @@ def test_add_refuses_stale_path_policy_registration() -> None:
         _ = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
 
     assert uow.plans.records == {}
+
+
+def test_add_refuses_registration_stale_after_artist_id_entries_change() -> None:
+    """A real artist_ids.entries change makes the registered fingerprint stale.
+
+    Unlike test_add_refuses_stale_path_policy_registration (which injects a
+    fake literal hash), this proves the real fingerprint wiring: a Library
+    registered under one ArtistIdConfig is rejected once artist_ids.entries
+    changes, because the template renders {artist_id}.
+    """
+    path_policy = PathPolicyConfig(template="{artist_id}/{title}")
+    registered_artist_ids = ArtistIdConfig(entries={"Artist": "ART1"})
+    registered_hash = calculate_path_policy_fingerprint(path_policy, registered_artist_ids)
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=registered_hash))
+    changed_artist_ids = ArtistIdConfig(entries={"Artist": "ART2"})
+    config = AppConfig(path_policy=path_policy, artist_ids=changed_artist_ids)
+    ports, _, _ = _ports(uow, (), {}, SequenceIdGenerator(), options=PortOptions(config=config))
+
+    with pytest.raises(AddLibrarySelectionError, match=STALE_LIBRARY_MESSAGE):
+        _ = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert uow.plans.records == {}
+
+
+def test_add_registration_survives_artist_id_change_when_template_unused() -> None:
+    """artist_ids.entries changes do not stale a Library whose template ignores {artist_id}.
+
+    Positive control for test_add_refuses_registration_stale_after_artist_id_entries_change:
+    the path policy fingerprint intentionally omits artist_ids when the
+    template never renders {artist_id}, so registration must still succeed.
+    """
+    path_policy = PathPolicyConfig(template="{artist}/{title}")
+    registered_artist_ids = ArtistIdConfig(entries={"Artist": "ART1"})
+    registered_hash = calculate_path_policy_fingerprint(path_policy, registered_artist_ids)
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=registered_hash))
+    changed_artist_ids = ArtistIdConfig(entries={"Artist": "ART2"})
+    config = AppConfig(path_policy=path_policy, artist_ids=changed_artist_ids)
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(config=config),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert plan.status == PlanStatus.READY
+    assert plan.library_id == LIBRARY_ID
+    assert plan.actions[0].action_type == ActionType.MOVE
+    assert plan.actions[0].reason is None
 
 
 def test_add_uses_configured_incoming_and_persists_move_action() -> None:
