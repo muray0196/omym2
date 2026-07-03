@@ -124,7 +124,7 @@ class CreateOrganizePlanUseCase:
             )
 
         try:
-            target_path = PathPolicy(config.path_policy, config.artist_ids).canonical_path(
+            target_path = PathPolicy.from_app_config(config).canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
             )

@@ -13,7 +13,14 @@ from omym2.config import PLAN_ACTION_SORT_ORDER_START, PLAN_ACTION_SORT_ORDER_ST
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
-from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
+from omym2.domain.services.config_fingerprint import (
+    STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
+)
+from omym2.domain.services.config_fingerprint import (
+    calculate_config_fingerprint,
+    calculate_path_policy_fingerprint,
+    is_path_policy_stale,
+)
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 
 if TYPE_CHECKING:
@@ -34,7 +41,6 @@ AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE = (
 )
 NO_INCOMING_SOURCE_MESSAGE = "No Incoming path is configured. Use add SOURCE_DIR."
 NO_REGISTERED_LIBRARY_MESSAGE = "No registered Library can be selected. Run organize --library PATH."
-STALE_LIBRARY_MESSAGE = "Registered Library uses a stale PathPolicy. Run organize --library PATH."
 SUMMARY_ACTION_COUNT_KEY = "action_count"
 SUMMARY_BLOCKED_ACTIONS_KEY = "blocked_actions"
 SUMMARY_MOVE_ACTIONS_KEY = "move_actions"
@@ -131,7 +137,7 @@ class CreateAddPlanUseCase:
             return _blocked_candidate(source_path, PlanActionReason.MISSING_REQUIRED_METADATA, snapshot=snapshot)
 
         try:
-            target_path = PathPolicy(config.path_policy, config.artist_ids).canonical_path(
+            target_path = PathPolicy.from_app_config(config).canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
             )
@@ -232,7 +238,7 @@ def _select_registered_library(uow: UnitOfWork, path_policy_hash: str) -> Librar
         raise AddLibrarySelectionError(AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE)
 
     library = registered_libraries[0]
-    if library.path_policy_hash != path_policy_hash:
+    if is_path_policy_stale(library.path_policy_hash, path_policy_hash):
         raise AddLibrarySelectionError(STALE_LIBRARY_MESSAGE)
     return library
 

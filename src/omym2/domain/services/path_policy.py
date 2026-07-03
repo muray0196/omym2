@@ -28,7 +28,7 @@ from omym2.config import (
 from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
-    from omym2.domain.models.app_config import ArtistIdConfig, PathPolicyConfig
+    from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig
     from omym2.domain.models.track_metadata import TrackMetadata
 
 from omym2.domain.models.app_config import ArtistIdConfig
@@ -48,6 +48,20 @@ class PathPolicy:
 
     config: PathPolicyConfig
     artist_ids: ArtistIdConfig = field(default_factory=ArtistIdConfig)
+
+    @classmethod
+    def from_path_policy_config(cls, config: PathPolicyConfig, artist_ids: ArtistIdConfig) -> PathPolicy:
+        """Build a PathPolicy from its path-policy and artist-id configs.
+
+        This is the single assembly point for PathPolicy construction so a
+        future constructor parameter only needs updating here.
+        """
+        return cls(config, artist_ids)
+
+    @classmethod
+    def from_app_config(cls, config: AppConfig) -> PathPolicy:
+        """Build a PathPolicy from the AppConfig fields it depends on."""
+        return cls.from_path_policy_config(config.path_policy, config.artist_ids)
 
     def canonical_path(self, metadata: TrackMetadata, file_extension: str) -> str:
         """Generate a normalized Library-root-relative canonical path."""
