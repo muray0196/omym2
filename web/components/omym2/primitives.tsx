@@ -457,49 +457,62 @@ export function DataTable<T>({
   caption?: string
 }) {
   const [colWidths, setColWidths] = useState<Record<string, number>>({})
-  const drag = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
+  const drag = useRef<{
+    leftKey: string
+    rightKey: string
+    startX: number
+    leftStart: number
+    rightStart: number
+  } | null>(null)
 
-  const onHandlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>, key: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    try {
-      ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
-    } catch {
-      // Ignore: pointer capture can fail for non-active pointers (e.g. tests).
-    }
-    // Lock every column to its current rendered width so that resizing one
-    // column does not redistribute space among the others. Once all widths
-    // are explicit, the table grows/shrinks by only the dragged amount.
-    const headerRow = (e.currentTarget as HTMLDivElement).closest("tr")
-    const measured: Record<string, number> = {}
-    let startWidth = 120
-    if (headerRow) {
-      headerRow.querySelectorAll<HTMLTableCellElement>("th[data-col-key]").forEach((th) => {
-        const k = th.dataset.colKey
-        if (!k) return
-        const w = th.getBoundingClientRect().width
-        measured[k] = w
-        if (k === key) startWidth = w
-      })
-    }
-    drag.current = { key, startX: e.clientX, startWidth }
-    setColWidths((prev) => ({ ...measured, ...prev }))
-  }, [])
+  const onHandlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>, key: string, nextKey: string) => {
+      e.preventDefault()
+      e.stopPropagation()
+      try {
+        ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
+      } catch {
+        // Ignore: pointer capture can fail for non-active pointers (e.g. tests).
+      }
+      // Measure the two adjacent columns so we can redistribute width between
+      // them only, leaving all other columns untouched.
+      const headerRow = (e.currentTarget as HTMLDivElement).closest("tr")
+      let leftStart = 120
+      let rightStart = 120
+      const measured: Record<string, number> = {}
+      if (headerRow) {
+        headerRow.querySelectorAll<HTMLTableCellElement>("th[data-col-key]").forEach((th) => {
+          const k = th.dataset.colKey
+          if (!k) return
+          const w = th.getBoundingClientRect().width
+          measured[k] = w
+          if (k === key) leftStart = w
+          if (k === nextKey) rightStart = w
+        })
+      }
+      drag.current = { leftKey: key, rightKey: nextKey, startX: e.clientX, leftStart, rightStart }
+      // Lock all columns to their current widths so table-layout: fixed has
+      // explicit values to work with before the first move event arrives.
+      setColWidths((prev) => ({ ...measured, ...prev }))
+    },
+    [],
+  )
 
   const onHandlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current
     if (!d) return
-    // Absolute tracking: width is derived from total pointer travel, not from
-    // per-event deltas, so dropped/coalesced move events cannot cause drift.
-    const next = Math.max(COL_MIN, d.startWidth + (e.clientX - d.startX))
-    setColWidths((prev) => (prev[d.key] === next ? prev : { ...prev, [d.key]: next }))
+    const delta = e.clientX - d.startX
+    const newLeft = Math.max(COL_MIN, d.leftStart + delta)
+    const newRight = Math.max(COL_MIN, d.rightStart - delta)
+    setColWidths((prev) => {
+      if (prev[d.leftKey] === newLeft && prev[d.rightKey] === newRight) return prev
+      return { ...prev, [d.leftKey]: newLeft, [d.rightKey]: newRight }
+    })
   }, [])
 
   const onHandlePointerUp = useCallback(() => {
     drag.current = null
   }, [])
-
-  const hasCustomWidths = Object.keys(colWidths).length > 0
 
   if (rows.length === 0 && empty) {
     return <>{empty}</>
@@ -508,11 +521,7 @@ export function DataTable<T>({
     <div className="overflow-x-auto rounded-md border border-border">
       <table
         className="border-collapse text-sm"
-        style={
-          hasCustomWidths
-            ? { tableLayout: "fixed", width: "auto", minWidth: "100%" }
-            : { tableLayout: "fixed", width: "100%" }
-        }
+        style={{ tableLayout: "fixed", width: "100%" }}
       >
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         <colgroup>
@@ -542,7 +551,7 @@ export function DataTable<T>({
                 {i < columns.length - 1 && (
                   <div
                     aria-hidden="true"
-                    onPointerDown={(e) => onHandlePointerDown(e, col.key)}
+                    onPointerDown={(e) => onHandlePointerDown(e, col.key, columns[i + 1].key)}
                     onPointerMove={onHandlePointerMove}
                     onPointerUp={onHandlePointerUp}
                     onPointerCancel={onHandlePointerUp}
