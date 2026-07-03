@@ -16,7 +16,7 @@ import {
   truncateLabel,
 } from "../primitives"
 import { Field, Select } from "../forms"
-import { CliCommand } from "../widgets"
+
 import { PageHeading } from "./page-heading"
 
 const ISSUE_TYPE_OPTIONS: { value: string; label: string }[] = [
@@ -318,25 +318,7 @@ export function CheckScreen() {
           )}
         </Panel>
 
-        <Panel
-          title="Remediation hints"
-          description="Suggested CLI commands. Not executed from this console."
-        >
-          <div className="flex flex-col gap-2">
-            <CliCommand command="omym2 check" description="Re-run diagnostics." />
-            <CliCommand
-              command="omym2 refresh <library-file>"
-              description="Refresh DB state for a file."
-            />
-            <CliCommand command="omym2 organize" description="Re-plan canonical placement." />
-            <CliCommand command="omym2 history" description="Review related runs and events." />
-            {checkIssues.length === 0 && checkLoaded ? (
-              <Notice tone="success" title="Consistent" className="mt-1">
-                No remediation needed for the selected scan.
-              </Notice>
-            ) : null}
-          </div>
-        </Panel>
+
       </div>
     </>
   )
