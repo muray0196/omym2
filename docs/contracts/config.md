@@ -152,6 +152,10 @@ Representative fields:
 Normal generation saves only missing entries. Existing entries are preserved
 unless the user explicitly requests regeneration/overwrite.
 
+Entry values must be non-empty ASCII letters, digits, or underscores with
+optional single internal hyphens (no leading/trailing hyphen, no repeated
+hyphens); invalid values are rejected at load/save time.
+
 ## Metadata And Collision Policy
 
 Metadata policy controls which tag fields are required for plan creation.

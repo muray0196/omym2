@@ -80,6 +80,9 @@ DEFAULT_UI_SHOW_ADVANCED_SETTINGS: Final = False  # default advanced settings vi
 DEFAULT_ARTIST_ID_MAX_LENGTH: Final = 8  # maximum generated artist ID length, characters
 DEFAULT_ARTIST_ID_FALLBACK: Final = "NOART"  # artist ID used when source text has no usable characters
 ARTIST_ID_ALLOWED_PATTERN: Final = r"[A-Za-z0-9]+"  # characters kept while normalizing artist ID input
+ARTIST_ID_ENTRY_VALUE_PATTERN: Final = (
+    r"^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*$"  # saved artist ID entry values accepted as sanitizer-stable
+)
 ARTIST_ID_SPLIT_PATTERN: Final = r"[\s-]+"  # separators that divide artist names into allocation words
 ARTIST_ID_MULTI_ARTIST_SEPARATOR: Final = ","  # separator between source artist names in metadata text
 ARTIST_ID_VOWELS: Final = frozenset("AEIOU")  # vowels deprioritized after the first character in a word

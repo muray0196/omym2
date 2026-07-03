@@ -7,14 +7,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
 from omym2.domain.models.app_config import AppConfig, ArtistIdConfig
 from omym2.features.artist_ids.dto import GenerateArtistIdsRequest
 from omym2.features.artist_ids.usecases.generate_artist_ids import GenerateArtistIdsUseCase
+from omym2.features.common_ports import ConfigStoreValidationError
 
 JAPANESE_ARTIST = "米津玄師"
 RESOLVED_ARTIST = "Kenshi Yonezu"
 ENGLISH_ARTIST = "John Smith"
 SAVED_ARTIST_ID = "MANUAL"
+NO_USABLE_CHARS_ARTIST = "!!!"
+UNSAFE_FALLBACK_ID = "N/A"
 
 
 @dataclass(slots=True)
@@ -103,6 +108,16 @@ def test_generate_artist_ids_overwrites_when_requested() -> None:
     assert result.entries[0].artist_id == "JOHNSMTH"
     assert result.entries[0].overwritten is True
     assert store.config.artist_ids.entries == {ENGLISH_ARTIST: "JOHNSMTH"}
+
+
+def test_generate_artist_ids_reports_unsafe_fallback_id_as_config_error() -> None:
+    """An unsafe configured fallback_id surfaces as a controlled config error, not a raw ValueError."""
+    store = _MemoryConfigStore(AppConfig(artist_ids=ArtistIdConfig(fallback_id=UNSAFE_FALLBACK_ID)))
+
+    with pytest.raises(ConfigStoreValidationError):
+        _ = _usecase(store, frozenset(), {}).execute(GenerateArtistIdsRequest((NO_USABLE_CHARS_ARTIST,)))
+
+    assert store.saves == 0
 
 
 def _usecase(
