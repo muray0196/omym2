@@ -457,37 +457,46 @@ export function DataTable<T>({
   caption?: string
 }) {
   const [colWidths, setColWidths] = useState<Record<string, number>>({})
-  const draggingCol = useRef<string | null>(null)
+  const drag = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
 
   const onHandlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>, key: string) => {
     e.preventDefault()
     e.stopPropagation()
-    draggingCol.current = key
-    ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
+    try {
+      ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
+    } catch {
+      // Ignore: pointer capture can fail for non-active pointers (e.g. tests).
+    }
     // Lock every column to its current rendered width so that resizing one
     // column does not redistribute space among the others. Once all widths
     // are explicit, the table grows/shrinks by only the dragged amount.
     const headerRow = (e.currentTarget as HTMLDivElement).closest("tr")
-    if (!headerRow) return
     const measured: Record<string, number> = {}
-    headerRow.querySelectorAll<HTMLTableCellElement>("th[data-col-key]").forEach((th) => {
-      const k = th.dataset.colKey
-      if (k) measured[k] = th.getBoundingClientRect().width
-    })
+    let startWidth = 120
+    if (headerRow) {
+      headerRow.querySelectorAll<HTMLTableCellElement>("th[data-col-key]").forEach((th) => {
+        const k = th.dataset.colKey
+        if (!k) return
+        const w = th.getBoundingClientRect().width
+        measured[k] = w
+        if (k === key) startWidth = w
+      })
+    }
+    drag.current = { key, startX: e.clientX, startWidth }
     setColWidths((prev) => ({ ...measured, ...prev }))
   }, [])
 
-  const onHandlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>, key: string) => {
-    if (draggingCol.current !== key) return
-    const dx = e.movementX
-    setColWidths((prev) => {
-      const current = prev[key] ?? 120
-      return { ...prev, [key]: Math.max(COL_MIN, current + dx) }
-    })
+  const onHandlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (!d) return
+    // Absolute tracking: width is derived from total pointer travel, not from
+    // per-event deltas, so dropped/coalesced move events cannot cause drift.
+    const next = Math.max(COL_MIN, d.startWidth + (e.clientX - d.startX))
+    setColWidths((prev) => (prev[d.key] === next ? prev : { ...prev, [d.key]: next }))
   }, [])
 
   const onHandlePointerUp = useCallback(() => {
-    draggingCol.current = null
+    drag.current = null
   }, [])
 
   const hasCustomWidths = Object.keys(colWidths).length > 0
@@ -534,8 +543,9 @@ export function DataTable<T>({
                   <div
                     aria-hidden="true"
                     onPointerDown={(e) => onHandlePointerDown(e, col.key)}
-                    onPointerMove={(e) => onHandlePointerMove(e, col.key)}
+                    onPointerMove={onHandlePointerMove}
                     onPointerUp={onHandlePointerUp}
+                    onPointerCancel={onHandlePointerUp}
                     className="absolute inset-y-0 right-0 w-3 cursor-col-resize select-none flex items-center justify-center group"
                   >
                     <div className="h-4 w-px bg-border group-hover:bg-primary/60 group-active:bg-primary transition-colors" />
