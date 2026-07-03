@@ -502,8 +502,12 @@ export function DataTable<T>({
     const d = drag.current
     if (!d) return
     const delta = e.clientX - d.startX
-    const newLeft = Math.max(COL_MIN, d.leftStart + delta)
-    const newRight = Math.max(COL_MIN, d.rightStart - delta)
+    // Clamp each side independently, then use only the effective delta that
+    // was actually applied so that when one column bottoms out at COL_MIN the
+    // other side stops moving too instead of continuing to grow.
+    const unclamped = d.leftStart + delta
+    const newLeft = Math.max(COL_MIN, Math.min(unclamped, d.leftStart + d.rightStart - COL_MIN))
+    const newRight = d.leftStart + d.rightStart - newLeft
     setColWidths((prev) => {
       if (prev[d.leftKey] === newLeft && prev[d.rightKey] === newRight) return prev
       return { ...prev, [d.leftKey]: newLeft, [d.rightKey]: newRight }
