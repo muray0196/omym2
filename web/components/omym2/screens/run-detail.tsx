@@ -96,7 +96,12 @@ export function RunDetailScreen({ runId }: { runId: string }) {
       header: "Event",
       cell: (e) => <span>{e.event_type.replace(/_/g, " ")}</span>,
     },
-    { key: "status", header: "Status", cell: (e) => <StatusBadge status={e.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      cell: (e) => <StatusBadge status={e.status} iconOnly />,
+      className: "w-16 text-center",
+    },
     {
       key: "paths",
       header: "Source → Target",

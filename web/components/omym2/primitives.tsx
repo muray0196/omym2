@@ -71,11 +71,14 @@ export function StatusBadge({
   tone,
   label,
   className,
+  iconOnly = false,
 }: {
   status: string
   tone?: Tone
   label?: string
   className?: string
+  /** Render only the status icon; the label is exposed to assistive tech and a tooltip. */
+  iconOnly?: boolean
 }) {
   const resolved = tone ?? toneForStatus(status)
   const Icon =
@@ -91,6 +94,22 @@ export function StatusBadge({
               : Info
             : Info
   const spin = status === "running" || status === "applying"
+  const text = label ?? status.replace(/_/g, " ")
+  if (iconOnly) {
+    return (
+      <span
+        className={cn(
+          "inline-flex size-6 items-center justify-center rounded-md border",
+          TONE_CLASSES[resolved],
+          className,
+        )}
+        title={text}
+      >
+        <Icon className={cn("size-3.5 shrink-0", spin && "animate-spin")} aria-hidden="true" />
+        <span className="sr-only">{text}</span>
+      </span>
+    )
+  }
   return (
     <span
       className={cn(
@@ -100,7 +119,7 @@ export function StatusBadge({
       )}
     >
       <Icon className={cn("size-3.5 shrink-0", spin && "animate-spin")} aria-hidden="true" />
-      <span>{label ?? status.replace(/_/g, " ")}</span>
+      <span>{text}</span>
     </span>
   )
 }

@@ -186,7 +186,12 @@ export function RunsScreen() {
         </Mono>
       ),
     },
-    { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      cell: (r) => <StatusBadge status={r.status} iconOnly />,
+      className: "w-16 text-center",
+    },
     {
       key: "started_at",
       header: "Started",

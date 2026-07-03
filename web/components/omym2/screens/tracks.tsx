@@ -182,7 +182,12 @@ export function TracksScreen() {
       header: "Album",
       cell: (t) => <span className="text-muted-foreground">{metadataText(t.metadata.album)}</span>,
     },
-    { key: "status", header: "Status", cell: (t) => <StatusBadge status={t.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      cell: (t) => <StatusBadge status={t.status} iconOnly />,
+      className: "w-16 text-center",
+    },
     {
       key: "path",
       header: "Path",
