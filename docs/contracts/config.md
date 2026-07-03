@@ -154,7 +154,8 @@ unless the user explicitly requests regeneration/overwrite.
 
 Entry values must be non-empty ASCII letters, digits, or underscores with
 optional single internal hyphens (no leading/trailing hyphen, no repeated
-hyphens); invalid values are rejected at load/save time.
+hyphens); invalid values are rejected at load/save time. `fallback_id` shares
+this same rule, since it can flow into generated IDs and saved entries.
 
 ## Metadata And Collision Policy
 

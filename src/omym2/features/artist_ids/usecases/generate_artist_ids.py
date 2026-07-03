@@ -68,9 +68,13 @@ class GenerateArtistIdsUseCase:
 
         if changed:
             try:
-                # A configured fallback_id is only checked for non-emptiness by
-                # ArtistIdConfig, so an unsafe fallback_id can still reach this
-                # construction through the generated-ID fallback path. Translate
+                # A configured fallback_id is validated against the entries
+                # value pattern by ArtistIdConfig, but that check runs on the
+                # full fallback_id, not on the max_length-truncated text saved
+                # into entries by generate_artist_id's no-usable-characters
+                # branch. A fallback_id that is safe on its own can still
+                # truncate into an unsafe saved entry value (e.g. a trailing
+                # hyphen), so this construction can still reject it. Translate
                 # that domain rejection into the same controlled config error
                 # CLI/Web callers already handle, matching config_validator.py's
                 # AppConfig(...) construction error translation.
