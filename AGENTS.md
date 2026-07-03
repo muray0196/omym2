@@ -11,6 +11,18 @@ Read `ARCHITECTURE.md` before starting any task:
 Read `docs/DEVELOPMENT.md` for implementation, validation, quality gates,
 suppressions, or runtime configuration work.
 
+## Subagents
+
+When the user allows subagents, route them automatically:
+
+* Skip subagents for trivial one-file or command-only work.
+* Use `explorer` before implementation when files, patterns, or dependencies are
+  not clear.
+* Use `coder` only after scope, target files, and approach are settled.
+* Use `reviewer` after non-trivial implementation or before PR/commit review.
+* The main agent owns orchestration, final judgment, repo-policy checks, and
+  high-risk architecture, storage, path, or Plan decisions.
+
 ## Knowledge Navigation
 
 `docs/okf/index.md` is an optional, non-authoritative navigation aid for
