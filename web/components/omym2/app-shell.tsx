@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { type ReactNode } from "react"
 import { useApp, type NavKey, type Route } from "./app-context"
+import { CommandPalette, CommandPaletteTrigger } from "./command-palette"
 import { cn } from "./lib"
 import { validateConfig } from "./lib"
 import { Mono, StatusBadge } from "./primitives"
@@ -148,6 +149,7 @@ function Header() {
         <span className="text-sm font-semibold">OMYM2</span>
       </div>
       <div className="flex flex-1 flex-wrap items-center justify-end gap-2 lg:gap-3">
+        <CommandPaletteTrigger />
         <PathSummary label="Library" icon={Database} value={savedConfig.paths.library} />
         <PathSummary label="Incoming" icon={FolderTree} value={savedConfig.paths.incoming} />
         <StatusBadge
@@ -162,6 +164,7 @@ function Header() {
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <CommandPalette />
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header />

@@ -1,12 +1,12 @@
 "use client"
 
-import { ShieldCheck } from "lucide-react"
+import { CircleAlert, CircleX, Info, ShieldCheck } from "lucide-react"
 import { useMemo, useState } from "react"
 import { useApp } from "../app-context"
-import { severityForIssue, truncateMiddle } from "../lib"
-import type { CheckIssue, CheckIssueType } from "../types"
+import { cn, severityForIssue, truncateMiddle } from "../lib"
+import type { CheckIssue, CheckIssueType, IssueSeverity } from "../types"
 import {
-  DataTable,
+  CopyButton,
   EmptyState,
   MetricCard,
   Mono,
@@ -14,7 +14,6 @@ import {
   Panel,
   StatusBadge,
   truncateLabel,
-  type Column,
 } from "../primitives"
 import { Field, Select } from "../forms"
 import { CliCommand } from "../widgets"
@@ -41,6 +40,110 @@ const HASH_TYPES: CheckIssueType[] = ["content_hash_changed", "metadata_hash_cha
 const PATH_TYPES: CheckIssueType[] = ["current_path_differs_from_canonical_path"]
 const LIBRARY_TYPES: CheckIssueType[] = ["library_unregistered", "library_stale", "library_blocked"]
 
+/** Suggested remediation command per issue type (guidance only, never executed). */
+function remediationFor(issue: CheckIssue): string {
+  switch (issue.issue_type) {
+    case "db_file_missing":
+    case "content_hash_changed":
+    case "metadata_hash_changed":
+      return issue.path ? `omym2 refresh "${issue.path}"` : "omym2 refresh <library-file>"
+    case "unmanaged_file_exists":
+      return issue.path ? `omym2 add "${issue.path}"` : "omym2 add <path>"
+    case "current_path_differs_from_canonical_path":
+    case "duplicate_candidate":
+      return "omym2 organize"
+    case "plan_source_changed":
+      return "omym2 organize"
+    case "pending_file_event_exists":
+      return "omym2 history"
+    case "library_unregistered":
+    case "library_stale":
+    case "library_blocked":
+      return "omym2 check"
+    default:
+      return "omym2 check"
+  }
+}
+
+const SEVERITY_ORDER: IssueSeverity[] = ["error", "warning", "info"]
+
+const SEVERITY_META: Record<
+  IssueSeverity,
+  { label: string; icon: typeof Info; accentBorder: string; accentText: string }
+> = {
+  error: {
+    label: "Errors — act first",
+    icon: CircleX,
+    accentBorder: "border-l-danger",
+    accentText: "text-danger",
+  },
+  warning: {
+    label: "Warnings — review soon",
+    icon: CircleAlert,
+    accentBorder: "border-l-warning",
+    accentText: "text-warning",
+  },
+  info: {
+    label: "Info — awareness only",
+    icon: Info,
+    accentBorder: "border-l-info",
+    accentText: "text-info",
+  },
+}
+
+function issueSeverity(issue: CheckIssue): IssueSeverity {
+  return issue.severity ?? severityForIssue(issue.issue_type)
+}
+
+function IssueCard({ issue }: { issue: CheckIssue }) {
+  const severity = issueSeverity(issue)
+  const command = remediationFor(issue)
+  return (
+    <li
+      className={cn(
+        "rounded-md border border-border border-l-2 bg-card px-3 py-2.5",
+        SEVERITY_META[severity].accentBorder,
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">{truncateLabel(issue.issue_type)}</span>
+        <StatusBadge status={severity} />
+        <Mono className="text-xs text-muted-foreground" title={issue.library_id}>
+          {truncateMiddle(issue.library_id, 14)}
+        </Mono>
+      </div>
+      {issue.path ? (
+        <div className="mt-1.5 flex items-center gap-1">
+          <Mono className="min-w-0 truncate text-[0.8125rem] text-foreground" title={issue.path}>
+            {truncateMiddle(issue.path, 64)}
+          </Mono>
+          <CopyButton value={issue.path} label="Copy path" />
+        </div>
+      ) : null}
+      {issue.detail ? <p className="mt-1 text-xs text-muted-foreground">{issue.detail}</p> : null}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex min-w-0 items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1">
+          <span className="select-none font-mono text-xs text-muted-foreground">$</span>
+          <Mono className="min-w-0 truncate text-xs text-foreground" title={command}>
+            {command}
+          </Mono>
+          <CopyButton value={command} label="Copy remediation command" />
+        </span>
+        {issue.track_id ? (
+          <Mono className="text-xs text-muted-foreground" title={issue.track_id}>
+            track: {truncateMiddle(issue.track_id, 14)}
+          </Mono>
+        ) : null}
+        {issue.plan_id ? (
+          <Mono className="text-xs text-muted-foreground" title={issue.plan_id}>
+            plan: {truncateMiddle(issue.plan_id, 14)}
+          </Mono>
+        ) : null}
+      </div>
+    </li>
+  )
+}
+
 export function CheckScreen() {
   const { checkErrors, checkIssues, checkLoaded } = useApp()
   const [typeFilter, setTypeFilter] = useState("all")
@@ -63,6 +166,12 @@ export function CheckScreen() {
     [checkIssues, typeFilter],
   )
 
+  const grouped = useMemo(() => {
+    const buckets: Record<IssueSeverity, CheckIssue[]> = { error: [], warning: [], info: [] }
+    for (const issue of filtered) buckets[issueSeverity(issue)].push(issue)
+    return buckets
+  }, [filtered])
+
   const libraryOptions = useMemo(
     () =>
       Array.from(new Set(checkIssues.map((issue) => issue.library_id))).map((libraryId) => ({
@@ -73,73 +182,11 @@ export function CheckScreen() {
   )
   const libraryValue = libraryOptions[0]?.value ?? "all"
 
-  const columns: Column<CheckIssue>[] = [
-    {
-      key: "issue_type",
-      header: "Issue type",
-      cell: (i) => <span className="font-medium">{truncateLabel(i.issue_type)}</span>,
-    },
-    {
-      key: "severity",
-      header: "Severity",
-      cell: (i) => <StatusBadge status={i.severity ?? severityForIssue(i.issue_type)} />,
-    },
-    {
-      key: "library_id",
-      header: "Library",
-      cell: (i) => (
-        <Mono className="text-muted-foreground" title={i.library_id}>
-          {truncateMiddle(i.library_id, 14)}
-        </Mono>
-      ),
-    },
-    {
-      key: "path",
-      header: "Path",
-      cell: (i) => (
-        <Mono className="text-foreground" title={i.path ?? undefined}>
-          {i.path ? truncateMiddle(i.path, 32) : "—"}
-        </Mono>
-      ),
-      className: "min-w-[14rem]",
-    },
-    {
-      key: "track_id",
-      header: "Track",
-      cell: (i) =>
-        i.track_id ? (
-          <Mono className="text-muted-foreground" title={i.track_id}>
-            {truncateMiddle(i.track_id, 14)}
-          </Mono>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      key: "plan_id",
-      header: "Plan",
-      cell: (i) =>
-        i.plan_id ? (
-          <Mono className="text-muted-foreground" title={i.plan_id}>
-            {truncateMiddle(i.plan_id, 14)}
-          </Mono>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      key: "detail",
-      header: "Detail",
-      cell: (i) => <span className="text-muted-foreground">{i.detail ?? "—"}</span>,
-      className: "max-w-sm",
-    },
-  ]
-
   return (
     <>
       <PageHeading
         title="Check"
-        description="Read-only DB and filesystem consistency diagnostics. Remediation is performed through the CLI."
+        description="Read-only DB and filesystem consistency diagnostics. Issues are triaged by severity; each carries a suggested CLI remediation."
       />
 
       <section
@@ -180,7 +227,7 @@ export function CheckScreen() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Panel
-          title="Issues"
+          title="Triage"
           icon={ShieldCheck}
           className="lg:col-span-2"
           bodyClassName="flex flex-col gap-4"
@@ -218,30 +265,57 @@ export function CheckScreen() {
             </Notice>
           ) : null}
 
-          <DataTable
-            columns={columns}
-            rows={filtered}
-            getRowKey={(i, index) =>
-              i.issue_id ??
-              `${i.issue_type}-${i.library_id}-${i.path ?? i.track_id ?? i.plan_id ?? "none"}-${index}`
-            }
-            caption="Consistency issues"
-            empty={
-              checkIssues.length === 0 ? (
-                <EmptyState
-                  icon={ShieldCheck}
-                  title={checkLoaded ? "No issues found." : "Loading issues..."}
-                  description={
-                    checkLoaded
-                      ? "DB and filesystem state appear consistent."
-                      : "Current diagnostics will appear here once they are loaded."
-                  }
-                />
-              ) : (
-                <EmptyState icon={ShieldCheck} title="No issues match this filter." />
-              )
-            }
-          />
+          {filtered.length === 0 ? (
+            checkIssues.length === 0 ? (
+              <EmptyState
+                icon={ShieldCheck}
+                title={checkLoaded ? "No issues found." : "Loading issues..."}
+                description={
+                  checkLoaded
+                    ? "DB and filesystem state appear consistent."
+                    : "Current diagnostics will appear here once they are loaded."
+                }
+              />
+            ) : (
+              <EmptyState icon={ShieldCheck} title="No issues match this filter." />
+            )
+          ) : (
+            <div className="flex flex-col gap-5">
+              {SEVERITY_ORDER.map((severity) => {
+                const issues = grouped[severity]
+                if (issues.length === 0) return null
+                const meta = SEVERITY_META[severity]
+                const Icon = meta.icon
+                return (
+                  <section key={severity} aria-label={meta.label}>
+                    <div className="mb-2 flex items-center gap-2">
+                      <Icon className={cn("size-4", meta.accentText)} aria-hidden="true" />
+                      <h3 className="text-sm font-semibold">{meta.label}</h3>
+                      <span
+                        className={cn(
+                          "rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums",
+                          meta.accentText,
+                        )}
+                      >
+                        {issues.length}
+                      </span>
+                    </div>
+                    <ul className="flex flex-col gap-2">
+                      {issues.map((issue, index) => (
+                        <IssueCard
+                          key={
+                            issue.issue_id ??
+                            `${issue.issue_type}-${issue.library_id}-${issue.path ?? issue.track_id ?? issue.plan_id ?? "none"}-${index}`
+                          }
+                          issue={issue}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                )
+              })}
+            </div>
+          )}
         </Panel>
 
         <Panel

@@ -1,9 +1,9 @@
 "use client"
 
-import { ListChecks, Search } from "lucide-react"
+import { ChevronRight, GanttChart, ListChecks, Search, Table2 } from "lucide-react"
 import { useMemo, useState } from "react"
 import { useApp } from "../app-context"
-import { formatDuration, formatTimestamp, truncateMiddle } from "../lib"
+import { cn, formatDuration, formatTimestamp, truncateMiddle } from "../lib"
 import type { RunStatus, RunSummary } from "../types"
 import {
   DataTable,
@@ -26,12 +26,105 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "failed", label: "Failed" },
 ]
 
+const STATUS_MARKER: Record<RunStatus, string> = {
+  succeeded: "border-success bg-success",
+  running: "border-info bg-info",
+  partial_failed: "border-warning bg-warning",
+  failed: "border-danger bg-danger",
+}
+
+/** Group runs by started date (UTC), newest first. */
+function groupRunsByDay(runs: RunSummary[]): { day: string; runs: RunSummary[] }[] {
+  const groups = new Map<string, RunSummary[]>()
+  for (const run of runs) {
+    const day = run.started_at.slice(0, 10)
+    const bucket = groups.get(day)
+    if (bucket) bucket.push(run)
+    else groups.set(day, [run])
+  }
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([day, dayRuns]) => ({ day, runs: dayRuns }))
+}
+
+function RunsTimeline({
+  runs,
+  onSelect,
+}: {
+  runs: RunSummary[]
+  onSelect: (run: RunSummary) => void
+}) {
+  const groups = useMemo(() => groupRunsByDay(runs), [runs])
+  return (
+    <div className="flex flex-col gap-6">
+      {groups.map((group) => (
+        <section key={group.day} aria-label={group.day}>
+          <div className="mb-2 flex items-center gap-2.5">
+            <h3 className="font-mono text-xs font-semibold tabular-nums text-foreground">
+              {group.day}
+            </h3>
+            <span className="h-px flex-1 bg-border" aria-hidden="true" />
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {group.runs.length} {group.runs.length === 1 ? "run" : "runs"}
+            </span>
+          </div>
+          <ol className="flex flex-col">
+            {group.runs.map((run, index) => {
+              const isLast = index === group.runs.length - 1
+              return (
+                <li key={run.run_id} className="flex gap-3">
+                  <div className="flex w-3.5 flex-col items-center">
+                    <span
+                      className={cn(
+                        "mt-2.5 size-3 shrink-0 rounded-full border-2",
+                        STATUS_MARKER[run.status],
+                      )}
+                      aria-hidden="true"
+                    />
+                    {!isLast ? <span className="w-px flex-1 bg-border" aria-hidden="true" /> : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(run)}
+                    className="group mb-2 flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      {formatTimestamp(run.started_at).slice(11)}
+                    </span>
+                    <StatusBadge status={run.status} />
+                    <Mono className="min-w-0 flex-1 truncate text-foreground" title={run.run_id}>
+                      {truncateMiddle(run.run_id, 28)}
+                    </Mono>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {run.completed_at ? formatDuration(run.started_at, run.completed_at) : "running"}
+                    </span>
+                    {run.error_summary ? (
+                      <span className="w-full truncate text-xs text-danger sm:w-auto sm:max-w-[16rem]">
+                        {run.error_summary}
+                      </span>
+                    ) : null}
+                    <ChevronRight
+                      className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+      ))}
+    </div>
+  )
+}
+
 export function RunsScreen() {
   const { historyErrors, historyLoaded, navigate, runs } = useApp()
   const [status, setStatus] = useState("all")
   const [query, setQuery] = useState("")
   const [from, setFrom] = useState("")
   const [to, setTo] = useState("")
+  const [view, setView] = useState<"timeline" | "table">("timeline")
 
   const counts = useMemo(() => {
     const base: Record<RunStatus | "total", number> = {
@@ -148,6 +241,42 @@ export function RunsScreen() {
         icon={ListChecks}
         className="mb-2"
         bodyClassName="flex flex-col gap-4"
+        actions={
+          <div
+            role="group"
+            aria-label="View mode"
+            className="flex rounded-md border border-border bg-muted p-0.5"
+          >
+            <button
+              type="button"
+              onClick={() => setView("timeline")}
+              aria-pressed={view === "timeline"}
+              className={cn(
+                "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                view === "timeline"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <GanttChart className="size-3.5" aria-hidden="true" />
+              Timeline
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("table")}
+              aria-pressed={view === "table"}
+              className={cn(
+                "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                view === "table"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Table2 className="size-3.5" aria-hidden="true" />
+              Table
+            </button>
+          </div>
+        }
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Search" help="Match run_id, plan_id, or library_id.">
@@ -200,24 +329,30 @@ export function RunsScreen() {
           </Notice>
         ) : null}
 
-        <DataTable
-          columns={columns}
-          rows={filtered}
-          getRowKey={(r) => r.run_id}
-          onRowClick={(r) => navigate({ name: "run-detail", runId: r.run_id })}
-          caption="Run history"
-          empty={
-            <EmptyState
-              icon={ListChecks}
-              title={historyLoaded ? "No runs match your filters." : "Loading runs..."}
-              description={
-                historyLoaded
-                  ? "Adjust the status, date range, or search query to see more results."
-                  : "Run history will appear here once it is loaded."
-              }
-            />
-          }
-        />
+        {filtered.length === 0 ? (
+          <EmptyState
+            icon={ListChecks}
+            title={historyLoaded ? "No runs match your filters." : "Loading runs..."}
+            description={
+              historyLoaded
+                ? "Adjust the status, date range, or search query to see more results."
+                : "Run history will appear here once it is loaded."
+            }
+          />
+        ) : view === "timeline" ? (
+          <RunsTimeline
+            runs={filtered}
+            onSelect={(r) => navigate({ name: "run-detail", runId: r.run_id })}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            rows={filtered}
+            getRowKey={(r) => r.run_id}
+            onRowClick={(r) => navigate({ name: "run-detail", runId: r.run_id })}
+            caption="Run history"
+          />
+        )}
       </Panel>
     </>
   )

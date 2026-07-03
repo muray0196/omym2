@@ -52,6 +52,41 @@ export function ChangeDiff({ rows }: { rows: ConfigDiffRow[] }) {
   )
 }
 
+/* PathTree: visualize a relative path as an indented folder tree. */
+export function PathTree({ path, libraryRoot }: { path: string; libraryRoot: string | null }) {
+  const segments = path.split("/").filter(Boolean)
+  return (
+    <ol className="flex flex-col font-mono text-[0.8125rem] leading-6" aria-label="Path segments">
+      {libraryRoot ? (
+        <li className="text-muted-foreground">
+          <span title={libraryRoot}>{libraryRoot}</span>
+        </li>
+      ) : null}
+      {segments.map((segment, index) => {
+        const isFile = index === segments.length - 1
+        const indentUnits = index + (libraryRoot ? 1 : 0)
+        return (
+          <li key={`${index}-${segment}`} className="flex items-center whitespace-nowrap">
+            <span className="select-none text-muted-foreground/60" aria-hidden="true">
+              {"\u00A0\u00A0".repeat(indentUnits)}
+              {"└─ "}
+            </span>
+            <span
+              className={cn(
+                "min-w-0 truncate",
+                isFile ? "font-medium text-foreground" : "text-foreground/80",
+              )}
+              title={segment}
+            >
+              {segment}
+            </span>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 /* PathPreview: render a generated canonical relative path with errors. */
 export function PathPreview({
   path,
@@ -79,12 +114,9 @@ export function PathPreview({
             />
             <Mono className="break-all text-foreground">{path}</Mono>
           </div>
-          {libraryRoot ? (
-            <p className="mt-2 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-              Resolves under library root
-              <Mono className="text-muted-foreground">{libraryRoot}</Mono>
-            </p>
-          ) : null}
+          <div className="mt-3 overflow-x-auto rounded border border-border bg-background/60 px-3 py-2">
+            <PathTree path={path} libraryRoot={libraryRoot} />
+          </div>
         </div>
       ) : null}
 
