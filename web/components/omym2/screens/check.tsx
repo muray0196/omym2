@@ -225,12 +225,7 @@ export function CheckScreen() {
         />
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Panel
-          title="Triage"
-          icon={ShieldCheck}
-          bodyClassName="flex flex-col gap-4"
-        >
+      <Panel title="Triage" icon={ShieldCheck} bodyClassName="flex flex-col gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Issue type">
               {(id) => (
@@ -299,7 +294,7 @@ export function CheckScreen() {
                         {issues.length}
                       </span>
                     </div>
-                    <ul className="flex flex-col gap-2">
+                    <ul className="grid gap-2 xl:grid-cols-2">
                       {issues.map((issue, index) => (
                         <IssueCard
                           key={
@@ -315,8 +310,7 @@ export function CheckScreen() {
               })}
             </div>
           )}
-        </Panel>
-      </div>
+      </Panel>
     </>
   )
 }
