@@ -6,13 +6,14 @@ import {
   HardDrive,
   LayoutDashboard,
   ListChecks,
+  Menu,
   Music,
   Route as RouteIcon,
   Settings,
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react"
-import { type ReactNode } from "react"
+import { type ReactNode, useState } from "react"
 import { useApp, type NavKey, type Route } from "./app-context"
 import { CommandPalette, CommandPaletteTrigger } from "./command-palette"
 import { cn } from "./lib"
@@ -33,19 +34,31 @@ function activeKey(route: Route): NavKey {
   return route.name
 }
 
-function Sidebar() {
+function Sidebar({ collapsed }: { collapsed: boolean }) {
   const { route, navigate } = useApp()
   const current = activeKey(route)
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex overflow-y-auto">
-      <div className="flex items-center gap-2.5 border-b border-sidebar-border px-5 py-4">
-        <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+    <aside
+      className={cn(
+        "hidden shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar transition-[width] duration-200 lg:flex",
+        collapsed ? "w-16" : "w-60",
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-center gap-2.5 border-b border-sidebar-border py-4",
+          collapsed ? "justify-center px-2" : "px-5",
+        )}
+      >
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
           <Music className="size-4" aria-hidden="true" />
         </div>
-        <div className="leading-tight">
-          <p className="text-sm font-semibold text-sidebar-foreground">OMYM2</p>
-          <p className="text-xs text-muted-foreground">Local console</p>
-        </div>
+        {!collapsed ? (
+          <div className="leading-tight">
+            <p className="text-sm font-semibold text-sidebar-foreground">OMYM2</p>
+            <p className="text-xs text-muted-foreground">Local console</p>
+          </div>
+        ) : null}
       </div>
       <nav aria-label="Primary" className="flex flex-1 flex-col gap-0.5 p-3">
         {NAV_ITEMS.map((item) => {
@@ -57,25 +70,29 @@ function Sidebar() {
               type="button"
               onClick={() => navigate(item.route)}
               aria-current={isActive ? "page" : undefined}
+              title={collapsed ? item.label : undefined}
               className={cn(
-                "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring",
+                "flex items-center gap-2.5 rounded-md py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring",
+                collapsed ? "justify-center px-0" : "px-3",
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
                   : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
               )}
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
-              {item.label}
+              {collapsed ? <span className="sr-only">{item.label}</span> : item.label}
             </button>
           )
         })}
       </nav>
-      <div className="border-t border-sidebar-border p-4 text-xs text-muted-foreground">
-        <p className="flex items-center gap-1.5">
-          <HardDrive className="size-3.5" aria-hidden="true" />
-          Execution runs through the CLI.
-        </p>
-      </div>
+      {!collapsed ? (
+        <div className="border-t border-sidebar-border p-4 text-xs text-muted-foreground">
+          <p className="flex items-center gap-1.5">
+            <HardDrive className="size-3.5" aria-hidden="true" />
+            Execution runs through the CLI.
+          </p>
+        </div>
+      ) : null}
     </aside>
   )
 }
@@ -137,16 +154,26 @@ function PathSummary({
   )
 }
 
-function Header() {
+function Header({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const { savedConfig } = useApp()
   const validation = validateConfig(savedConfig)
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur lg:px-6">
-      <div className="flex items-center gap-2 lg:hidden">
-        <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Music className="size-4" aria-hidden="true" />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          aria-label="Toggle sidebar"
+          className="hidden items-center justify-center rounded-md border border-border bg-card p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring lg:inline-flex"
+        >
+          <Menu className="size-4" aria-hidden="true" />
+        </button>
+        <div className="flex items-center gap-2 lg:hidden">
+          <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Music className="size-4" aria-hidden="true" />
+          </div>
+          <span className="text-sm font-semibold">OMYM2</span>
         </div>
-        <span className="text-sm font-semibold">OMYM2</span>
       </div>
       <div className="flex flex-1 flex-wrap items-center justify-end gap-2 lg:gap-3">
         <CommandPaletteTrigger />
@@ -162,12 +189,13 @@ function Header() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const [collapsed, setCollapsed] = useState(false)
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <CommandPalette />
-      <Sidebar />
+      <Sidebar collapsed={collapsed} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Header />
+        <Header onToggleSidebar={() => setCollapsed((v) => !v)} />
         <MobileNav />
         <main className="flex-1 overflow-y-auto px-4 py-6 lg:px-6 lg:py-8">
           <div className="w-full">{children}</div>
