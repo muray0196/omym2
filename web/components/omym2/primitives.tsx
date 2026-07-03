@@ -464,17 +464,24 @@ export function DataTable<T>({
     e.stopPropagation()
     draggingCol.current = key
     ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
+    // Lock every column to its current rendered width so that resizing one
+    // column does not redistribute space among the others. Once all widths
+    // are explicit, the table grows/shrinks by only the dragged amount.
+    const headerRow = (e.currentTarget as HTMLDivElement).closest("tr")
+    if (!headerRow) return
+    const measured: Record<string, number> = {}
+    headerRow.querySelectorAll<HTMLTableCellElement>("th[data-col-key]").forEach((th) => {
+      const k = th.dataset.colKey
+      if (k) measured[k] = th.getBoundingClientRect().width
+    })
+    setColWidths((prev) => ({ ...measured, ...prev }))
   }, [])
 
   const onHandlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>, key: string) => {
     if (draggingCol.current !== key) return
-    // Read from the event before the state updater runs — React nullifies
-    // currentTarget asynchronously, causing "cannot read closest of null".
-    const th = (e.currentTarget as HTMLDivElement).closest("th")
-    const thWidth = th ? th.getBoundingClientRect().width : null
     const dx = e.movementX
     setColWidths((prev) => {
-      const current = thWidth ?? prev[key] ?? 120
+      const current = prev[key] ?? 120
       return { ...prev, [key]: Math.max(COL_MIN, current + dx) }
     })
   }, [])
@@ -483,12 +490,21 @@ export function DataTable<T>({
     draggingCol.current = null
   }, [])
 
+  const hasCustomWidths = Object.keys(colWidths).length > 0
+
   if (rows.length === 0 && empty) {
     return <>{empty}</>
   }
   return (
     <div className="overflow-x-auto rounded-md border border-border">
-      <table className="border-collapse text-sm" style={{ tableLayout: "fixed", width: "100%" }}>
+      <table
+        className="border-collapse text-sm"
+        style={
+          hasCustomWidths
+            ? { tableLayout: "fixed", width: "auto", minWidth: "100%" }
+            : { tableLayout: "fixed", width: "100%" }
+        }
+      >
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         <colgroup>
           {columns.map((col) =>
@@ -505,6 +521,7 @@ export function DataTable<T>({
               <th
                 key={col.key}
                 scope="col"
+                data-col-key={col.key}
                 className={cn(
                   "relative whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground overflow-hidden",
                   col.headerClassName,
