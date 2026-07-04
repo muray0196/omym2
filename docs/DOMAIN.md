@@ -3,7 +3,7 @@ type: Domain Model
 title: Domain
 description: Defines OMYM2's core domain entities (AppConfig, FileScanEntry, FileSnapshot, TrackMetadata, PathPolicy, Library, Track, Plan, PlanAction, Run, FileEvent, CheckIssue), their invariants, and the UUIDv7-based ID design policy.
 tags: [domain-model, entities, invariants, id-design]
-timestamp: 2026-07-03T02:00:23+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Domain

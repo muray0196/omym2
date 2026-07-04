@@ -3,7 +3,7 @@ type: Execution Spec
 title: Organize Execution
 description: Defines organize --library PATH behavior for first Library registration, existing Library rescan, unregistered-path refusal, and registration timing relative to plan creation and apply.
 tags: [organize, library-registration, plan-creation, path-policy]
-timestamp: 2026-06-30T23:47:13+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Organize Execution

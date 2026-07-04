@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Ports And UnitOfWork
 description: Defines OMYM2's port protocols (UnitOfWork, FileScanner, Clock, IdGenerator, etc.), the 1-usecase-1-UnitOfWork policy, transaction boundaries, and the FileEvents durable operation log exception for apply/undo.
 tags: [ports, unit-of-work, transactions, architecture]
-timestamp: 2026-06-30T23:47:13+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Ports And UnitOfWork

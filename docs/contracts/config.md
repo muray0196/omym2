@@ -3,7 +3,7 @@ type: Contract
 title: Config Contract
 description: Defines the authoritative contract for OMYM2's TOML-based application config, including its file location, AppConfig shape, path-policy templates, artist ID rules, and metadata/collision policy.
 tags: [config, toml, path-policy, artist-ids]
-timestamp: 2026-07-03T23:00:59+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Config Contract

@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Layout
 description: Authoritative description of OMYM2's src/ layout and Feature-oriented Hexagonal Architecture, covering the domain, features, adapters, platform, and shared packages and rules for adding new directories.
 tags: [source-layout, architecture, hexagonal-architecture, python]
-timestamp: 2026-07-02T21:19:36+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Source Layout

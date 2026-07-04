@@ -33,3 +33,6 @@ web/dist/
 
 # OS/editor
 .DS_Store
+
+# Generated OKF bundle visualization (regenerate via official visualizer)
+docs/viz.html

@@ -3,7 +3,7 @@ type: Execution Spec
 title: Add Execution
 description: Defines add plan creation from an Incoming/source scan against the sole registered Library, including duplicate-hash skips, missing-metadata and target-conflict blocks, and add --apply orchestration.
 tags: [add, plan-creation, library-registration, apply]
-timestamp: 2026-06-30T23:47:13+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Add Execution

@@ -3,7 +3,7 @@ type: Execution Spec
 title: Apply Execution
 description: Defines the apply flow and the Plan, PlanAction, Run, and FileEvent state transitions, including library_root_at_plan checks and apply-time precondition failures.
 tags: [apply, plan-state, run, file-event]
-timestamp: 2026-07-02T21:19:36+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Apply Execution

@@ -3,7 +3,7 @@ type: Product Overview
 title: Product
 description: Describes OMYM2's product shape as a headless domain core with a CLI runner and a local Web settings console, and defines its primary safe-import use case and technology stack.
 tags: [product, overview, cli, web-ui]
-timestamp: 2026-07-03T02:00:23+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Product

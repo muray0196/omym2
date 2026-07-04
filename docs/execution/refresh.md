@@ -3,7 +3,7 @@ type: Execution Spec
 title: Refresh Execution
 description: Defines the refresh command for re-evaluating file/directory/all targets after external tag correction, including metadata reload, canonical path recalculation, move vs refresh_metadata plan action selection, and stable track_id preservation.
 tags: [refresh, metadata, plan-creation, track-id]
-timestamp: 2026-07-02T21:19:36+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Refresh Execution
