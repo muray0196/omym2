@@ -35,6 +35,8 @@ DISALLOWED_STATIC_EXPORT_TEXT = (
     "/_vercel/insights",
     "va.vercel-scripts.com",
     "BEGIN PRIVATE KEY",
+    'omym2 add "',
+    'omym2 refresh "',
 )
 STATIC_EXPORT_TEXT_SUFFIXES = (".css", ".html", ".js", ".json", ".svg", ".txt", ".webmanifest", ".xml")
 
