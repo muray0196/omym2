@@ -8,6 +8,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from string import Formatter
+from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from omym2.config import (
     ARTIST_ID_ENTRY_VALUE_PATTERN,
@@ -37,6 +39,9 @@ from omym2.config import (
     PATH_EXTENSION_PREFIX,
     PATH_POLICY_ALLOWED_PLACEHOLDERS,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 INVALID_CONFIG_VERSION_MESSAGE = "Unsupported config version."
 INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE = (
@@ -113,7 +118,7 @@ class ArtistIdConfig:
 
     max_length: int = DEFAULT_ARTIST_ID_MAX_LENGTH
     fallback_id: str = DEFAULT_ARTIST_ID_FALLBACK
-    entries: dict[str, str] | None = None
+    entries: Mapping[str, str] | None = None
 
     def __post_init__(self) -> None:
         """Validate artist ID tunables and freeze user-editable entries."""
@@ -127,7 +132,8 @@ class ArtistIdConfig:
             raise ValueError(INVALID_ARTIST_ID_FALLBACK_MESSAGE)
         normalized_entries = dict(self.entries or {})
         _validate_artist_id_entries(normalized_entries)
-        object.__setattr__(self, "entries", normalized_entries)
+        # Read-only entries keep cached AppConfig instances safe to reuse.
+        object.__setattr__(self, "entries", MappingProxyType(normalized_entries))
 
 
 @dataclass(frozen=True, slots=True)

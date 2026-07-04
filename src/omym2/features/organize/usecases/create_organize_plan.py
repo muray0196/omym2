@@ -14,7 +14,7 @@ from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import Track, TrackStatus
-from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy
+from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 from omym2.features.organize.dto import OrganizeLibraryResult
@@ -56,12 +56,13 @@ class CreateOrganizePlanUseCase:
         config = self.ports.config_store.load()
         config_hash = calculate_config_fingerprint(config)
         path_policy_hash = calculate_path_policy_fingerprint(config.path_policy, config.artist_ids)
+        path_policy = PathPolicy.from_app_config(config)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
             library = self._select_library(uow, request.library_root, path_policy_hash, timestamp)
             scan_entries = self.ports.file_scanner.scan(library.root_path)
-            candidates = tuple(self._candidate(library.root_path, entry, config) for entry in scan_entries)
+            candidates = tuple(self._candidate(library.root_path, entry, config, path_policy) for entry in scan_entries)
             result = self._persist_result(uow, library, candidates, config_hash, timestamp)
             uow.commit()
             return result
@@ -98,7 +99,13 @@ class CreateOrganizePlanUseCase:
             raise OrganizeLibrarySelectionError(AMBIGUOUS_LIBRARY_SELECTION_MESSAGE)
         return _with_path_policy_hash(libraries[0], path_policy_hash, timestamp)
 
-    def _candidate(self, library_root: str, entry: FileScanEntry, config: AppConfig) -> _OrganizeCandidate:
+    def _candidate(
+        self,
+        library_root: str,
+        entry: FileScanEntry,
+        config: AppConfig,
+        path_policy: PathPolicy,
+    ) -> _OrganizeCandidate:
         try:
             source_path = self.ports.path_resolver.relative_to_library(library_root, entry.path)
         except ValueError:
@@ -125,7 +132,7 @@ class CreateOrganizePlanUseCase:
             )
 
         try:
-            target_path = PathPolicy.from_app_config(config).canonical_path(
+            target_path = path_policy.canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
             )
@@ -152,7 +159,9 @@ class CreateOrganizePlanUseCase:
         timestamp: datetime,
     ) -> OrganizeLibraryResult:
         existing_tracks = {track.current_path: track for track in uow.tracks.list_by_library(library.library_id)}
-        occupied_paths = {candidate.source_path for candidate in candidates if candidate.snapshot is not None}
+        occupied_paths = OccupiedPaths.from_paths(
+            candidate.source_path for candidate in candidates if candidate.snapshot is not None
+        )
         target_sources = _target_sources(candidates)
         action_records: list[_ActionRecord] = []
         tracks: list[Track] = []
@@ -398,7 +407,7 @@ def _target_sources(candidates: Sequence[_OrganizeCandidate]) -> dict[str, tuple
 
 def _collision_reason(
     candidate: _OrganizeCandidate,
-    occupied_paths: set[str],
+    occupied_paths: OccupiedPaths,
     target_sources: dict[str, tuple[str, ...]],
 ) -> PlanActionReason | None:
     target_path = candidate.target_path

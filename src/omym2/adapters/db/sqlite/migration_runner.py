@@ -6,6 +6,7 @@ Why: Creates and upgrades the internal database lazily under OMYM2 data storage.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
@@ -39,6 +40,9 @@ INSERT INTO schema_migrations (migration_name, applied_at)
 VALUES (?, ?)
 """
 
+_MIGRATED_DATABASE_KEYS: Final[set[str]] = set()
+_MIGRATION_CACHE_LOCK: Final = threading.Lock()
+
 
 @dataclass(frozen=True, slots=True)
 class SQLiteMigration:
@@ -46,6 +50,24 @@ class SQLiteMigration:
 
     name: str
     sql: str
+
+
+def ensure_database_migrated(database_path: str | PathLike[str]) -> None:
+    """Apply migrations at most once per process for one database path.
+
+    Args:
+        database_path: Filesystem path to the SQLite database file.
+    """
+    resolved_path = Path(database_path).resolve()
+    cache_key = str(resolved_path)
+    # Holding the lock across migration is intentional: sync web handlers run
+    # in a threadpool, so the lock serializes concurrent first-time migration.
+    # A cached key whose database file disappeared must re-migrate.
+    with _MIGRATION_CACHE_LOCK:
+        if cache_key in _MIGRATED_DATABASE_KEYS and resolved_path.exists():
+            return
+        migrate_database(database_path)
+        _MIGRATED_DATABASE_KEYS.add(cache_key)
 
 
 def migrate_database(database_path: str | PathLike[str]) -> None:

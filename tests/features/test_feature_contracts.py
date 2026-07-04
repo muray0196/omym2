@@ -47,6 +47,8 @@ CONTENT_HASH = "content-hash"
 ERROR_MESSAGE = "expected transaction failure"
 EVENT_SEQUENCE_EARLY = 1
 EVENT_SEQUENCE_LATE = 2
+EVENT_SEQUENCE_THIRD = 3
+EVENT_SEQUENCE_FOURTH = 4
 EXPECTED_ONE_CALL = 1
 FILE_EXTENSION = ".flac"
 LIBRARY_ROOT = "/music/library"
@@ -68,6 +70,12 @@ LATE_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
 EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
 LATE_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567f"))
+SECOND_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
+SECOND_RUN_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
+SUCCEEDED_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345682"))
+OTHER_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345683"))
+OTHER_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345684"))
+OTHER_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345685"))
 
 
 def test_uuid7_id_generator_returns_documented_id_versions() -> None:
@@ -123,6 +131,13 @@ def test_in_memory_repositories_store_models_by_usecase_query_shape() -> None:
     run = _run()
     event_late = _file_event(LATE_EVENT_ID, EVENT_SEQUENCE_LATE)
     event_early = _file_event(EVENT_ID, EVENT_SEQUENCE_EARLY)
+    event_succeeded = _file_event(SUCCEEDED_EVENT_ID, EVENT_SEQUENCE_THIRD, run_id=SECOND_RUN_ID).mark_succeeded(
+        BASE_TIME
+    )
+    event_second_run = _file_event(SECOND_RUN_EVENT_ID, EVENT_SEQUENCE_FOURTH, run_id=SECOND_RUN_ID)
+    event_other_library = _file_event(
+        OTHER_EVENT_ID, EVENT_SEQUENCE_EARLY, library_id=OTHER_LIBRARY_ID, run_id=OTHER_RUN_ID
+    )
 
     uow.libraries.save(library)
     uow.tracks.save(track)
@@ -132,6 +147,9 @@ def test_in_memory_repositories_store_models_by_usecase_query_shape() -> None:
     uow.runs.save(run)
     uow.file_events.save(event_late)
     uow.file_events.save(event_early)
+    uow.file_events.save(event_succeeded)
+    uow.file_events.save(event_second_run)
+    uow.file_events.save(event_other_library)
 
     assert uow.libraries.get(LIBRARY_ID) == library
     assert uow.libraries.find_by_root_path(LIBRARY_ROOT) == library
@@ -142,6 +160,8 @@ def test_in_memory_repositories_store_models_by_usecase_query_shape() -> None:
     assert uow.runs.list_by_plan(PLAN_ID) == (run,)
     assert uow.runs.list_by_library(LIBRARY_ID) == (run,)
     assert uow.file_events.list_by_run(RUN_ID) == (event_early, event_late)
+    assert uow.file_events.list_pending_by_library(LIBRARY_ID) == (event_early, event_late, event_second_run)
+    assert uow.file_events.list_pending_by_library(OTHER_LIBRARY_ID) == (event_other_library,)
 
 
 def test_in_memory_unit_of_work_records_commit_and_rollback_intent() -> None:
@@ -308,11 +328,17 @@ def _run() -> Run:
     )
 
 
-def _file_event(event_id: EventId, sequence_no: int) -> FileEvent:
+def _file_event(
+    event_id: EventId,
+    sequence_no: int,
+    *,
+    library_id: LibraryId = LIBRARY_ID,
+    run_id: RunId = RUN_ID,
+) -> FileEvent:
     return FileEvent(
         event_id=event_id,
-        library_id=LIBRARY_ID,
-        run_id=RUN_ID,
+        library_id=library_id,
+        run_id=run_id,
         plan_action_id=ACTION_ID,
         event_type=FileEventType.MOVE_FILE,
         source_path=SOURCE_PATH,

@@ -19,10 +19,11 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.library import Library
+    from omym2.domain.models.track import Track
     from omym2.features.common_ports import FileSystemPath, PathResolver, UnitOfWork
     from omym2.features.undo.dto import CreateUndoPlanRequest
     from omym2.features.undo.ports import CreateUndoPlanPorts
-    from omym2.shared.ids import PlanId, TrackId
+    from omym2.shared.ids import LibraryId, PlanId, TrackId
 
 RUN_LIBRARY_NOT_FOUND_MESSAGE = "Run Library was not found."
 RUN_NOT_FOUND_MESSAGE = "Run was not found."
@@ -94,9 +95,10 @@ class CreateUndoPlanUseCase:
     ) -> tuple[PlanAction, ...]:
         actions: list[PlanAction] = []
         sort_order = PLAN_ACTION_SORT_ORDER_START
+        tracks_by_library: dict[LibraryId, tuple[Track, ...]] = {}
 
         for event in events:
-            candidate = self._candidate(uow, library, event)
+            candidate = self._candidate(uow, library, event, tracks_by_library)
             actions.append(
                 PlanAction(
                     action_id=self.ports.id_generator.new_action_id(),
@@ -117,8 +119,14 @@ class CreateUndoPlanUseCase:
 
         return tuple(actions)
 
-    def _candidate(self, uow: UnitOfWork, library: Library, event: FileEvent) -> _UndoCandidate:
-        track_id = _track_id_for_event(uow, event)
+    def _candidate(
+        self,
+        uow: UnitOfWork,
+        library: Library,
+        event: FileEvent,
+        tracks_by_library: dict[LibraryId, tuple[Track, ...]],
+    ) -> _UndoCandidate:
+        track_id = _track_id_for_event(uow, event, tracks_by_library)
         track = None if track_id is None else uow.tracks.get(track_id)
         source_path = event.target_path if track is None else track.current_path
         snapshot = None
@@ -167,7 +175,11 @@ class _UndoCandidate:
     reason: PlanActionReason | None
 
 
-def _track_id_for_event(uow: UnitOfWork, event: FileEvent) -> TrackId | None:
+def _track_id_for_event(
+    uow: UnitOfWork,
+    event: FileEvent,
+    tracks_by_library: dict[LibraryId, tuple[Track, ...]],
+) -> TrackId | None:
     source_action = uow.plan_actions.get(event.plan_action_id)
     if source_action is not None and source_action.track_id is not None:
         return source_action.track_id
@@ -175,9 +187,14 @@ def _track_id_for_event(uow: UnitOfWork, event: FileEvent) -> TrackId | None:
     if PurePath(event.target_path).is_absolute():
         return None
 
+    library_tracks = tracks_by_library.get(event.library_id)
+    if library_tracks is None:
+        library_tracks = tuple(uow.tracks.list_by_library(event.library_id))
+        tracks_by_library[event.library_id] = library_tracks
+
     matches = tuple(
         track
-        for track in uow.tracks.list_by_library(event.library_id)
+        for track in library_tracks
         if track.status == TrackStatus.ACTIVE and track.current_path == event.target_path
     )
     if len(matches) != 1:

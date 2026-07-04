@@ -32,13 +32,25 @@ class CollisionDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class OccupiedPaths:
+    """Occupied paths normalized once for repeated collision checks."""
+
+    normalized_paths: frozenset[str]
+
+    @classmethod
+    def from_paths(cls, paths: Iterable[str]) -> OccupiedPaths:
+        """Normalize occupied paths once so per-candidate decisions stay cheap."""
+        return cls(frozenset(normalize_library_relative_path(path) for path in paths))
+
+
+@dataclass(frozen=True, slots=True)
 class CollisionPolicy:
     """Pure policy for target path conflicts."""
 
     def decide(
         self,
         target_path: str,
-        occupied_paths: Iterable[str],
+        occupied_paths: Iterable[str] | OccupiedPaths,
         *,
         batch_target_count: int = 1,
     ) -> CollisionDecision:
@@ -50,7 +62,10 @@ class CollisionPolicy:
         blocks independently of `occupied_paths` membership.
         """
         normalized_target = normalize_library_relative_path(target_path)
-        normalized_occupied = {normalize_library_relative_path(path) for path in occupied_paths}
+        if isinstance(occupied_paths, OccupiedPaths):
+            normalized_occupied: frozenset[str] | set[str] = occupied_paths.normalized_paths
+        else:
+            normalized_occupied = {normalize_library_relative_path(path) for path in occupied_paths}
         if normalized_target in normalized_occupied or batch_target_count > 1:
             return CollisionDecision(CollisionDecisionKind.BLOCKED, PlanActionReason.TARGET_EXISTS)
         return CollisionDecision(CollisionDecisionKind.AVAILABLE)

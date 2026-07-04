@@ -38,7 +38,7 @@ def calculate_config_fingerprint(config: AppConfig, algorithm: str = CONFIG_FING
     """Return a stable fingerprint for the complete AppConfig value."""
     # Canonical JSON keeps the hash independent from TOML formatting, comments,
     # and table ordering while still reflecting every AppConfig field.
-    config_payload = asdict(config)
+    config_payload = _app_config_payload(config)
     config_payload[CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY] = PATH_POLICY_BEHAVIOR_VERSION
     payload = json.dumps(config_payload, sort_keys=True, separators=JSON_SEPARATORS)
     return _fingerprint_payload(payload, algorithm)
@@ -60,7 +60,7 @@ def calculate_path_policy_fingerprint(
         path_policy_config.template,
         PATH_POLICY_ARTIST_ID_PLACEHOLDER,
     ):
-        path_policy_payload["artist_ids"] = asdict(artist_id_config)
+        path_policy_payload["artist_ids"] = _artist_id_payload(artist_id_config)
     payload = json.dumps(path_policy_payload, sort_keys=True, separators=JSON_SEPARATORS)
     return _fingerprint_payload(payload, algorithm)
 
@@ -73,6 +73,31 @@ def is_path_policy_stale(library_path_policy_hash: str, current_path_policy_hash
 def _template_uses_placeholder(template: str, placeholder: str) -> bool:
     """Return whether a format template contains a renderable field."""
     return any(field_name == placeholder for _, field_name, _, _ in Formatter().parse(template))
+
+
+def _app_config_payload(config: AppConfig) -> dict[str, object]:
+    """Return a JSON-safe config payload without copying immutable mappings through asdict."""
+    return {
+        "version": config.version,
+        "paths": asdict(config.paths),
+        "add": asdict(config.add),
+        "organize": asdict(config.organize),
+        "refresh": asdict(config.refresh),
+        "path_policy": asdict(config.path_policy),
+        "artist_ids": _artist_id_payload(config.artist_ids),
+        "metadata": asdict(config.metadata),
+        "collision": asdict(config.collision),
+        "ui": asdict(config.ui),
+    }
+
+
+def _artist_id_payload(config: ArtistIdConfig) -> dict[str, object]:
+    """Return artist ID settings as plain JSON data for stable hashing."""
+    return {
+        "max_length": config.max_length,
+        "fallback_id": config.fallback_id,
+        "entries": dict(config.entries or {}),
+    }
 
 
 def _fingerprint_payload(payload: str, algorithm: str) -> str:

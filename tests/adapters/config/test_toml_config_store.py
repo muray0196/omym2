@@ -5,10 +5,12 @@ Why: Verifies settings storage without touching the user home.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import os
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from omym2.adapters.config import toml_config_store
 from omym2.adapters.config.toml_config_store import TomlConfigStore, dump_config_toml, load_config_text
 from omym2.config import CONFIG_FILE_ENCODING
 from omym2.domain.models.app_config import (
@@ -33,6 +35,10 @@ LIBRARY_PATH = "/music/library"
 UI_THEME_DARK = "dark"
 ARTIST_NAME = "Jane Doe"
 ARTIST_ID = "JAND"
+INJECTED_ARTIST_NAME = "Injected"
+INJECTED_ARTIST_ID = "INJECTED"
+FIRST_SAME_SIZE_LIBRARY_PATH = "/music/a"
+SECOND_SAME_SIZE_LIBRARY_PATH = "/music/b"
 
 
 def test_toml_config_store_loads_default_when_config_missing(tmp_path: Path) -> None:
@@ -60,6 +66,90 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
     assert config_path.is_file()
     assert store.load() == config
     assert f'"{ARTIST_NAME}" = "{ARTIST_ID}"' in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
+
+
+def test_toml_config_store_load_caches_parsed_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A second load of an unchanged file reuses the parsed AppConfig."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    store.save(AppConfig(ui=UiConfig(theme=UI_THEME_DARK)))
+    parse_calls = 0
+    real_load_config_text = toml_config_store.load_config_text
+
+    def _counting_load(config_text: str) -> AppConfig:
+        nonlocal parse_calls
+        parse_calls += 1
+        return real_load_config_text(config_text)
+
+    monkeypatch.setattr(toml_config_store, "load_config_text", _counting_load)
+
+    first_config = store.load()
+    second_config = store.load()
+
+    assert parse_calls == 1
+    assert second_config is first_config
+
+
+def test_toml_config_store_cached_artist_id_entries_are_immutable(tmp_path: Path) -> None:
+    """Cached loads cannot be poisoned by unsaved artist ID entry mutations."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    store.save(AppConfig(artist_ids=ArtistIdConfig(entries={ARTIST_NAME: ARTIST_ID})))
+
+    first_config = store.load()
+    assert first_config.artist_ids.entries is not None
+    with pytest.raises(TypeError):
+        cast("dict[str, str]", first_config.artist_ids.entries)[INJECTED_ARTIST_NAME] = INJECTED_ARTIST_ID
+
+    second_config = store.load()
+
+    assert second_config is first_config
+    assert second_config.artist_ids.entries == {ARTIST_NAME: ARTIST_ID}
+
+
+def test_toml_config_store_load_reparses_after_external_rewrite(tmp_path: Path) -> None:
+    """Rewriting the config file with new content invalidates the cache."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    store.save(AppConfig())
+
+    assert store.load() == AppConfig()
+
+    updated_config = AppConfig(ui=UiConfig(theme=UI_THEME_DARK))
+    _ = config_path.write_text(dump_config_toml(updated_config), encoding=CONFIG_FILE_ENCODING)
+
+    assert store.load() == updated_config
+
+
+def test_toml_config_store_load_reparses_same_size_rewrite_with_preserved_mtime(tmp_path: Path) -> None:
+    """A metadata-preserving external rewrite still invalidates the cache."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    first_text = f'version = 1\n\n[paths]\nlibrary = "{FIRST_SAME_SIZE_LIBRARY_PATH}"\n'
+    second_text = f'version = 1\n\n[paths]\nlibrary = "{SECOND_SAME_SIZE_LIBRARY_PATH}"\n'
+    assert len(first_text.encode(CONFIG_FILE_ENCODING)) == len(second_text.encode(CONFIG_FILE_ENCODING))
+    _ = config_path.write_text(first_text, encoding=CONFIG_FILE_ENCODING)
+    store = TomlConfigStore(config_path)
+
+    assert store.load().paths.library == FIRST_SAME_SIZE_LIBRARY_PATH
+    original_stat = config_path.stat()
+    _ = config_path.write_text(second_text, encoding=CONFIG_FILE_ENCODING)
+    os.utime(config_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    assert store.load().paths.library == SECOND_SAME_SIZE_LIBRARY_PATH
+
+
+def test_toml_config_store_save_invalidates_cached_load(tmp_path: Path) -> None:
+    """Saving after a cached load returns the newly saved config."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    store.save(AppConfig())
+
+    assert store.load() == AppConfig()
+
+    updated_config = AppConfig(ui=UiConfig(theme=UI_THEME_DARK))
+    store.save(updated_config)
+
+    assert store.load() == updated_config
 
 
 def test_toml_config_text_round_trips_default_config() -> None:

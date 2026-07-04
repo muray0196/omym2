@@ -302,7 +302,7 @@ def _settings_payload(config: AppConfig) -> dict[str, object]:
             "artist_ids": {
                 "max_length": config.artist_ids.max_length,
                 "fallback_id": config.artist_ids.fallback_id,
-                "entries": config.artist_ids.entries or {},
+                "entries": dict(config.artist_ids.entries or {}),
             },
             "metadata": {
                 "prefer_album_artist": config.metadata.prefer_album_artist,

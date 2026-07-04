@@ -5,6 +5,8 @@ Why: Ensures defaults match the documented initial configuration shape.
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from omym2.config import (
@@ -50,16 +52,17 @@ def test_config_loads_default() -> None:
     assert config.path_policy.unknown_album == DEFAULT_UNKNOWN_ALBUM
 
 
-def test_config_default_artist_id_entries_are_per_instance() -> None:
-    """Default AppConfig instances must not share editable artist ID entries."""
+def test_config_default_artist_id_entries_are_immutable_and_per_instance() -> None:
+    """Default AppConfig entries cannot be mutated or shared across instances."""
     first_config = AppConfig()
     second_config = AppConfig()
 
     first_entries = first_config.artist_ids.entries
     assert first_entries is not None
-    first_entries["Aimer"] = "AIMR"
+    with pytest.raises(TypeError):
+        cast("dict[str, str]", first_entries)["Aimer"] = "AIMR"
 
-    assert first_config.artist_ids == ArtistIdConfig(entries={"Aimer": "AIMR"})
+    assert first_config.artist_ids == ArtistIdConfig()
     assert second_config.artist_ids == ArtistIdConfig()
 
 

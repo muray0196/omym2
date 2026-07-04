@@ -14,7 +14,7 @@ from omym2.domain.models.library import LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import TrackStatus
-from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy
+from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
 )
@@ -66,6 +66,7 @@ class CreateRefreshPlanUseCase:
         config = self.ports.config_store.load()
         config_hash = calculate_config_fingerprint(config)
         path_policy_hash = calculate_path_policy_fingerprint(config.path_policy, config.artist_ids)
+        path_policy = PathPolicy.from_app_config(config)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
@@ -74,7 +75,7 @@ class CreateRefreshPlanUseCase:
                 track for track in uow.tracks.list_by_library(library.library_id) if track.status == TrackStatus.ACTIVE
             )
             selected_tracks = self._selected_tracks(request, library, active_tracks)
-            candidates = tuple(self._candidate(library, track, config) for track in selected_tracks)
+            candidates = tuple(self._candidate(library, track, config, path_policy) for track in selected_tracks)
             candidates = self._with_target_conflicts(library, candidates, active_tracks)
             plan_id = self.ports.id_generator.new_plan_id()
             actions = self._actions(plan_id, library, candidates)
@@ -111,7 +112,13 @@ class CreateRefreshPlanUseCase:
         prefix = f"{relative_target}/"
         return _require_matches(tuple(track for track in active_tracks if track.current_path.startswith(prefix)))
 
-    def _candidate(self, library: Library, track: Track, config: AppConfig) -> _RefreshCandidate:
+    def _candidate(
+        self,
+        library: Library,
+        track: Track,
+        config: AppConfig,
+        path_policy: PathPolicy,
+    ) -> _RefreshCandidate:
         source_filesystem_path = self.ports.path_resolver.resolve_library_path(library.root_path, track.current_path)
 
         try:
@@ -123,7 +130,7 @@ class CreateRefreshPlanUseCase:
             return _blocked_candidate(track, PlanActionReason.MISSING_REQUIRED_METADATA, snapshot=snapshot)
 
         try:
-            target_path = PathPolicy.from_app_config(config).canonical_path(
+            target_path = path_policy.canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
             )
@@ -148,7 +155,7 @@ class CreateRefreshPlanUseCase:
         candidates: Sequence[_RefreshCandidate],
         active_tracks: Sequence[Track],
     ) -> tuple[_RefreshCandidate, ...]:
-        occupied_paths = {track.current_path for track in active_tracks}
+        occupied_paths = OccupiedPaths.from_paths(track.current_path for track in active_tracks)
         target_sources = _move_target_sources(candidates)
         judged_candidates: list[_RefreshCandidate] = []
 
@@ -164,7 +171,7 @@ class CreateRefreshPlanUseCase:
         self,
         library: Library,
         candidate: _RefreshCandidate,
-        occupied_paths: set[str],
+        occupied_paths: OccupiedPaths,
         target_sources: dict[str, tuple[str, ...]],
     ) -> bool:
         target_path = candidate.target_path
