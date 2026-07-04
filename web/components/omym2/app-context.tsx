@@ -212,6 +212,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const apply = (dark: boolean) => {
       root.classList.toggle("dark", dark)
       root.classList.toggle("light", !dark)
+      // OLED layers pure-black surfaces on top of the dark palette.
+      root.classList.toggle("oled", theme === "oled")
     }
     if (theme === "system") {
       const mq = window.matchMedia("(prefers-color-scheme: dark)")
@@ -220,7 +222,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mq.addEventListener("change", onChange)
       return () => mq.removeEventListener("change", onChange)
     }
-    apply(theme === "dark")
+    apply(theme === "dark" || theme === "oled")
   }, [draftConfig.ui.theme])
 
   const value = useMemo<AppContextValue>(

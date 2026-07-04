@@ -26,6 +26,7 @@ import { PageHeading } from "./page-heading"
 const THEME_LABELS: Record<string, string> = {
   dark: "Dark",
   light: "Light",
+  oled: "OLED (Black)",
   system: "System",
 }
 
