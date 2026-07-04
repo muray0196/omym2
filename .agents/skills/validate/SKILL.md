@@ -34,7 +34,7 @@ Fix the first failing gate before looking at later ones.
 | `basedpyright` errors | typing issue | Fix types; narrow with `isinstance`, avoid `Any` |
 | `pytest` failure in a test you touched | your change | Reproduce focused: `scripts/checks.sh test <node-id>` |
 | `pytest` failure in a test you did not touch | regression from your change | Read the test's intent first; fix the code, not the test, unless the contract itself changed |
-| `git diff --exit-code` fails in CI | generated files drifted | Re-run `cd web && npm run build` and commit `static_dist/` |
+| `git diff --exit-code` fails in CI | generated files drifted | Re-run the relevant generator and commit only tracked generated outputs |
 
 ## Rules
 

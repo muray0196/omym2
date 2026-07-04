@@ -25,7 +25,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "omym2.adapters.db.sqlite.migrations" = ["*.sql"]
-"omym2.adapters.web" = ["static_dist/index.html", "static_dist/assets/*"]
+"omym2.adapters.web" = ["static_dist/*", "static_dist/**/*"]
 
 [dependency-groups]
 dev = [

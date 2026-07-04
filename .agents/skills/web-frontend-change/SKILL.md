@@ -12,7 +12,7 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
 - `web/` is a Next.js App Router static export (`output: "export"`); no Node server in production.
 - Single-page console: `web/app/page.tsx` renders `Console`; screens live in `web/components/omym2/screens/`.
 - The frontend talks to the backend **only** through the JSON API in `web/components/omym2/api-client.ts`. Off-localhost (or `NEXT_PUBLIC_OMYM2_API_MODE=mock`) it serves mock data from `mock-data.ts`.
-- `web/out/` and `src/omym2/adapters/web/static_dist/` are generated. Never hand-edit either.
+- `web/out/` and `src/omym2/adapters/web/static_dist/` are generated and ignored. Never hand-edit or commit either.
 
 ## Procedure
 
@@ -22,7 +22,7 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
    - frontend: `api-client.ts` method + matching entry in `mock-data.ts` so static preview keeps working.
    Backend edits also follow `implement-change`.
 3. Validate: `scripts/checks.sh web` (runs `npm ci`, `format:check`, `lint`, `build`).
-4. `npm run build` also regenerates `src/omym2/adapters/web/static_dist/` via `scripts/sync-static-export.mjs`. Include the regenerated `static_dist/` in the same commit — CI fails on generated-file drift (`git diff --exit-code`).
+4. `npm run build` also regenerates `src/omym2/adapters/web/static_dist/` via `scripts/sync-static-export.mjs`. Keep the generated copy local; do not stage or commit `static_dist/`.
 5. Manual check when UI behavior changed: `cd web && npm run dev`, or serve the packaged UI with `uv run omym2 settings`.
 
 ## Rules
@@ -34,5 +34,5 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
 
 ## Done means
 
-- `scripts/checks.sh web` passes and `static_dist/` is in sync.
+- `scripts/checks.sh web` passes and the ignored local `static_dist/` is in sync.
 - Mock mode still renders every screen you touched (no crash on mock data shape).

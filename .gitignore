@@ -30,6 +30,8 @@ build/
 dist/
 web/node_modules/
 web/dist/
+web/out/
+src/omym2/adapters/web/static_dist/
 
 # OS/editor
 .DS_Store

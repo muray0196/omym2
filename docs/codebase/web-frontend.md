@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Authoritative reference for the Next.js web/ frontend layout, its audited static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
 tags: [web-frontend, nextjs, static-export, api-boundary]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-05T00:15:47+09:00
 ---
 
 # Web Frontend
@@ -35,12 +35,14 @@ web/
 ```
 
 `web/out/` is the generated Next export output and is not hand-edited.
+`src/omym2/adapters/web/static_dist/` is the generated Python-package copy of
+that export and is not hand-edited or committed.
 
 ## Build And Packaging Pipeline
 
 `npm run build` in `web/` runs these steps (`web/package.json`):
 
-1. `next build` produces the static export in `web/out/`. `web/next.config.mjs` pins the build id to `omym2-static` so the committed export stays reproducible, and disables image optimization.
+1. `next build` produces the static export in `web/out/`. `web/next.config.mjs` pins the build id to `omym2-static` so generated exports stay reproducible, and disables image optimization.
 2. `node scripts/sync-static-export.mjs` audits `web/out/`, replaces `src/omym2/adapters/web/static_dist/` with a copy of `web/out/`, then audits the packaged copy.
 
 The audit rejects common secret, debug, server-only, and analytics artifacts such as source maps, environment files, key material, database files, logs, Next server manifests, build traces, and Vercel Analytics code. The Web UI is a local console and must not include third-party analytics.
@@ -50,7 +52,9 @@ The export is packaged inside the Python package so `omym2 settings` can serve t
 * `omym2 settings` (`src/omym2/adapters/cli/commands/settings.py`) creates the FastAPI app and serves it locally with uvicorn.
 * `src/omym2/adapters/web/app.py` mounts `_next/static` assets, returns `index.html` for the known UI routes (`/`, `/settings`, `/path-policy`, `/history`, `/history/{run_id}`, `/check`, `/tracks`), serves remaining root-level export files, and answers 503 when the export is missing.
 
-After changing the frontend, run the build so `static_dist/` matches the source.
+After changing the frontend, run the build so the ignored local `static_dist/`
+copy matches the source before runtime or package verification. Do not commit
+`static_dist/`; package builds include it from the generated local copy.
 
 ## Frontend / Backend Boundary
 
