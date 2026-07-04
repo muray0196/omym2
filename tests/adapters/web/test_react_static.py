@@ -5,7 +5,7 @@ Why: Verifies browser routes are React entrypoints and APIs stay JSON-only.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -24,13 +24,18 @@ from omym2.config import (
     WEB_TRACKS_ROUTE,
 )
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 MISSING_BUILD_STATUS_CODE = 503
 NOT_FOUND_STATUS_CODE = 404
 POST_REMOVED_STATUS_CODE = 405
 SUCCESS_STATUS_CODE = 200
+DISALLOWED_STATIC_EXPORT_SUFFIXES = (".db", ".key", ".log", ".map", ".pem", ".sqlite", ".sqlite3")
+DISALLOWED_STATIC_EXPORT_TEXT = (
+    "@vercel/analytics",
+    "/_vercel/insights",
+    "va.vercel-scripts.com",
+    "BEGIN PRIVATE KEY",
+)
+STATIC_EXPORT_TEXT_SUFFIXES = (".css", ".html", ".js", ".json", ".svg", ".txt", ".webmanifest", ".xml")
 
 
 def test_spa_routes_return_react_index(tmp_path: Path) -> None:
@@ -61,6 +66,21 @@ def test_default_packaged_web_build_is_served() -> None:
 
     assert response.status_code == SUCCESS_STATUS_CODE
     assert "OMYM2 Console" in response.text
+
+
+def test_default_packaged_web_build_excludes_risky_static_artifacts() -> None:
+    """Packaged static assets exclude common secret, debug, and analytics artifacts."""
+    static_dist = Path(__file__).parents[3] / "src" / "omym2" / "adapters" / "web" / "static_dist"
+
+    for static_file in static_dist.rglob("*"):
+        if not static_file.is_file():
+            continue
+        assert static_file.suffix.lower() not in DISALLOWED_STATIC_EXPORT_SUFFIXES
+        if static_file.suffix.lower() not in STATIC_EXPORT_TEXT_SUFFIXES:
+            continue
+        content = static_file.read_text(encoding=CONFIG_FILE_ENCODING)
+        for disallowed_text in DISALLOWED_STATIC_EXPORT_TEXT:
+            assert disallowed_text not in content
 
 
 def test_next_static_assets_are_served_from_web_build(tmp_path: Path) -> None:

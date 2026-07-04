@@ -7,12 +7,16 @@ import { cp, mkdir, rm } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { auditStaticExport } from "./audit-static-export.mjs"
+
 const scriptPath = fileURLToPath(import.meta.url)
 const webRoot = path.resolve(path.dirname(scriptPath), "..")
 const repoRoot = path.resolve(webRoot, "..")
 const exportDir = path.join(webRoot, "out")
 const packageStaticDir = path.join(repoRoot, "src", "omym2", "adapters", "web", "static_dist")
 
+await auditStaticExport(exportDir)
 await rm(packageStaticDir, { force: true, recursive: true })
 await mkdir(path.dirname(packageStaticDir), { recursive: true })
 await cp(exportDir, packageStaticDir, { recursive: true })
+await auditStaticExport(packageStaticDir)

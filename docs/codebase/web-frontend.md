@@ -1,14 +1,14 @@
 ---
 type: Codebase Reference
 title: Web Frontend
-description: Authoritative reference for the Next.js web/ frontend layout, its static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
+description: Authoritative reference for the Next.js web/ frontend layout, its audited static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
 tags: [web-frontend, nextjs, static-export, api-boundary]
-timestamp: 2026-07-02T21:19:36+09:00
+timestamp: 2026-07-04T11:43:40+09:00
 ---
 
 # Web Frontend
 
-This document is authoritative for the `web/` frontend layout, the static export build and packaging pipeline, and the boundary between the frontend and the Python backend.
+This document is authoritative for the `web/` frontend layout, the audited static export build and packaging pipeline, and the boundary between the frontend and the Python backend.
 
 Backend adapter rules are in [dependency-boundaries.md](dependency-boundaries.md). Frontend quality commands are in [../DEVELOPMENT.md](../DEVELOPMENT.md).
 
@@ -29,7 +29,7 @@ web/
     ui/                 # shared UI primitives
   lib/                  # utils.ts helpers
   public/               # icons and static assets copied into the export
-  scripts/              # sync-static-export.mjs
+  scripts/              # audit-static-export.mjs, sync-static-export.mjs
   next.config.mjs       # static export configuration
   package.json
 ```
@@ -38,10 +38,12 @@ web/
 
 ## Build And Packaging Pipeline
 
-`npm run build` in `web/` runs two steps (`web/package.json`):
+`npm run build` in `web/` runs these steps (`web/package.json`):
 
 1. `next build` produces the static export in `web/out/`. `web/next.config.mjs` pins the build id to `omym2-static` so the committed export stays reproducible, and disables image optimization.
-2. `node scripts/sync-static-export.mjs` replaces `src/omym2/adapters/web/static_dist/` with a copy of `web/out/`.
+2. `node scripts/sync-static-export.mjs` audits `web/out/`, replaces `src/omym2/adapters/web/static_dist/` with a copy of `web/out/`, then audits the packaged copy.
+
+The audit rejects common secret, debug, server-only, and analytics artifacts such as source maps, environment files, key material, database files, logs, Next server manifests, build traces, and Vercel Analytics code. The Web UI is a local console and must not include third-party analytics.
 
 The export is packaged inside the Python package so `omym2 settings` can serve the current Web UI without a Node runtime:
 

@@ -4,18 +4,32 @@
 .logs/
 .reviews/
 !tests/.config/
-!src/omym/config/
 
 # Local secrets
 .env
 .env.*
 !.env.example
 !.env.sample
+.claude/settings.local.json
 
 # Python
 __pycache__/
+*.py[cod]
 *.egg-info/
+.venv/
+.pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.pyright/
 .coverage
+.coverage.*
+coverage.xml
+coverage/
+htmlcov/
+build/
+dist/
 web/node_modules/
 web/dist/
+
+# OS/editor
+.DS_Store

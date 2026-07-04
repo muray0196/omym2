@@ -1,4 +1,3 @@
-import { Analytics } from "@vercel/analytics/next"
 import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
@@ -13,7 +12,6 @@ export const metadata: Metadata = {
   title: "OMYM2 Console",
   description:
     "Local control console for OMYM2 — review configuration, runs, consistency checks, and managed tracks. File operations run through the CLI.",
-  generator: "v0.app",
   icons: {
     icon: [
       {
@@ -52,10 +50,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} bg-background`}
       style={{ scrollbarGutter: "stable" }}
     >
-      <body className="font-sans antialiased">
-        {children}
-        {process.env.NODE_ENV === "production" && <Analytics />}
-      </body>
+      <body className="font-sans antialiased">{children}</body>
     </html>
   )
 }
