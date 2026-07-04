@@ -40,15 +40,25 @@ const HASH_TYPES: CheckIssueType[] = ["content_hash_changed", "metadata_hash_cha
 const PATH_TYPES: CheckIssueType[] = ["current_path_differs_from_canonical_path"]
 const LIBRARY_TYPES: CheckIssueType[] = ["library_unregistered", "library_stale", "library_blocked"]
 
+/** Quote one shell argument for copyable POSIX-style CLI guidance. */
+function quoteShellArg(value: string): string {
+  if (value.length === 0) return "''"
+
+  // Single quotes prevent command substitution; embedded single quotes need the standard close-escape-reopen sequence.
+  return `'${value.replaceAll("'", `'"'"'`)}'`
+}
+
 /** Suggested remediation command per issue type (guidance only, never executed). */
 function remediationFor(issue: CheckIssue): string {
   switch (issue.issue_type) {
     case "db_file_missing":
     case "content_hash_changed":
     case "metadata_hash_changed":
-      return issue.path ? `omym2 refresh "${issue.path}"` : "omym2 refresh <library-file>"
+      return issue.path
+        ? `omym2 refresh ${quoteShellArg(issue.path)}`
+        : "omym2 refresh <library-file>"
     case "unmanaged_file_exists":
-      return issue.path ? `omym2 add "${issue.path}"` : "omym2 add <path>"
+      return issue.path ? `omym2 add ${quoteShellArg(issue.path)}` : "omym2 add <path>"
     case "current_path_differs_from_canonical_path":
     case "duplicate_candidate":
       return "omym2 organize"
