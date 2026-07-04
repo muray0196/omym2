@@ -10,7 +10,6 @@ from pathlib import PurePath
 from typing import TYPE_CHECKING
 
 from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
-from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.library import LibraryStatus
 from omym2.domain.models.plan import PlanStatus
 from omym2.domain.models.plan_action import ActionStatus
@@ -20,6 +19,7 @@ from omym2.domain.services.config_fingerprint import calculate_path_policy_finge
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.library import Library
     from omym2.domain.models.plan import Plan
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from omym2.features.check.dto import CheckLibraryRequest
     from omym2.features.check.ports import CheckLibraryPorts
     from omym2.features.common_ports import FileSystemPath, PathResolver, UnitOfWork
+    from omym2.shared.ids import RunId
 
 LIBRARY_NOT_FOUND_MESSAGE = "Library was not found."
 
@@ -247,6 +248,10 @@ def _duplicate_track_issues(library: Library, tracks: Sequence[Track]) -> tuple[
 
 
 def _pending_event_issues(uow: UnitOfWork, library: Library) -> tuple[CheckIssue, ...]:
+    pending_events_by_run: dict[RunId, list[FileEvent]] = {}
+    for event in uow.file_events.list_pending_by_library(library.library_id):
+        pending_events_by_run.setdefault(event.run_id, []).append(event)
+
     issues: list[CheckIssue] = []
     for run in uow.runs.list_by_library(library.library_id):
         issues.extend(
@@ -256,8 +261,7 @@ def _pending_event_issues(uow: UnitOfWork, library: Library) -> tuple[CheckIssue
                 path=event.target_path,
                 plan_id=run.plan_id,
             )
-            for event in uow.file_events.list_by_run(run.run_id)
-            if event.status == FileEventStatus.PENDING
+            for event in pending_events_by_run.get(run.run_id, ())
         )
     return tuple(issues)
 

@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
+from omym2.domain.models.file_event import FileEventStatus
+
 if TYPE_CHECKING:
     from types import TracebackType
 
@@ -154,6 +156,19 @@ class InMemoryFileEventRepository:
         return tuple(
             sorted(
                 (event for event in self.records.values() if event.run_id == run_id),
+                key=lambda event: event.sequence_no,
+            )
+        )
+
+    def list_pending_by_library(self, library_id: LibraryId) -> tuple[FileEvent, ...]:
+        """Return PENDING FileEvents for a Library in durable sequence order."""
+        return tuple(
+            sorted(
+                (
+                    event
+                    for event in self.records.values()
+                    if event.library_id == library_id and event.status == FileEventStatus.PENDING
+                ),
                 key=lambda event: event.sequence_no,
             )
         )

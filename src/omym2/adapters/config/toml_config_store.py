@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from omym2.adapters.config.config_validator import (
@@ -63,17 +63,33 @@ class TomlConfigStore:
     """ConfigStore implementation backed by one TOML file."""
 
     config_path: Path
+    # Single-entry parse cache keyed by (st_mtime_ns, st_size); only the dict
+    # contents mutate, so the frozen dataclass contract holds.
+    _load_cache: dict[tuple[int, int], AppConfig] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     def load(self) -> AppConfig:
         """Load settings, returning defaults when the file is not created yet."""
         if not self.config_path.exists():
             return default_app_config()
-        return load_config_text(self.config_path.read_text(encoding=CONFIG_FILE_ENCODING))
+        try:
+            stat_result = self.config_path.stat()
+        except OSError:
+            return load_config_text(self.config_path.read_text(encoding=CONFIG_FILE_ENCODING))
+        cache_key = (stat_result.st_mtime_ns, stat_result.st_size)
+        cached_config = self._load_cache.get(cache_key)
+        if cached_config is not None:
+            return cached_config
+        config = load_config_text(self.config_path.read_text(encoding=CONFIG_FILE_ENCODING))
+        self._load_cache.clear()
+        self._load_cache[cache_key] = config
+        return config
 
     def save(self, config: AppConfig) -> None:
         """Persist settings, creating the config directory lazily."""
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         _ = self.config_path.write_text(dump_config_toml(config), encoding=CONFIG_FILE_ENCODING)
+        # Guards same-nanosecond, same-size rewrites that a stat key misses.
+        self._load_cache.clear()
 
 
 def load_config_text(config_text: str) -> AppConfig:

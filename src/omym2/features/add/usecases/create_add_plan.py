@@ -13,7 +13,7 @@ from omym2.config import PLAN_ACTION_SORT_ORDER_START, PLAN_ACTION_SORT_ORDER_ST
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
-from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy
+from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
 )
@@ -60,17 +60,18 @@ class CreateAddPlanUseCase:
         source_root = _source_root(request, config)
         config_hash = calculate_config_fingerprint(config)
         path_policy_hash = calculate_path_policy_fingerprint(config.path_policy, config.artist_ids)
+        path_policy = PathPolicy.from_app_config(config)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
             library = _select_registered_library(uow, path_policy_hash)
+            library_tracks = tuple(uow.tracks.list_by_library(library.library_id))
+            duplicate_track_by_hash = _duplicate_track_by_hash(library_tracks)
             scan_entries = self.ports.file_scanner.scan(source_root)
-            candidates = tuple(self._candidate(entry, config, uow, library) for entry in scan_entries)
-            candidates = self._with_target_conflicts(
-                library,
-                candidates,
-                uow.tracks.list_by_library(library.library_id),
+            candidates = tuple(
+                self._candidate(entry, config, path_policy, duplicate_track_by_hash) for entry in scan_entries
             )
+            candidates = self._with_target_conflicts(library, candidates, library_tracks)
             plan_id = self.ports.id_generator.new_plan_id()
             actions = self._actions(plan_id, library, candidates)
             plan = _plan(plan_id, library, actions, config_hash, timestamp)
@@ -88,7 +89,7 @@ class CreateAddPlanUseCase:
         candidates: Sequence[_AddCandidate],
         tracks: Sequence[Track],
     ) -> tuple[_AddCandidate, ...]:
-        occupied_paths = {track.current_path for track in tracks}
+        occupied_paths = OccupiedPaths.from_paths(track.current_path for track in tracks)
         target_sources = _move_target_sources(candidates)
         judged_candidates: list[_AddCandidate] = []
 
@@ -104,7 +105,7 @@ class CreateAddPlanUseCase:
         self,
         library: Library,
         candidate: _AddCandidate,
-        occupied_paths: set[str],
+        occupied_paths: OccupiedPaths,
         target_sources: dict[str, tuple[str, ...]],
     ) -> bool:
         target_path = candidate.target_path
@@ -126,8 +127,8 @@ class CreateAddPlanUseCase:
         self,
         entry: FileScanEntry,
         config: AppConfig,
-        uow: UnitOfWork,
-        library: Library,
+        path_policy: PathPolicy,
+        duplicate_track_by_hash: dict[str, Track],
     ) -> _AddCandidate:
         source_path = _normalize_external_source_path(entry.path)
         try:
@@ -142,14 +143,14 @@ class CreateAddPlanUseCase:
             return _blocked_candidate(source_path, PlanActionReason.MISSING_REQUIRED_METADATA, snapshot=snapshot)
 
         try:
-            target_path = PathPolicy.from_app_config(config).canonical_path(
+            target_path = path_policy.canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
             )
         except ValueError as exc:
             return _blocked_candidate(source_path, _path_generation_failure_reason(exc), snapshot=snapshot)
 
-        duplicate_track = _first_duplicate_track(uow, library, snapshot.content_hash)
+        duplicate_track = duplicate_track_by_hash.get(snapshot.content_hash)
         if duplicate_track is not None:
             return _AddCandidate(
                 source_path=source_path,
@@ -264,11 +265,12 @@ def _blocked_candidate(
     )
 
 
-def _first_duplicate_track(uow: UnitOfWork, library: Library, content_hash: str) -> Track | None:
-    duplicates = uow.tracks.find_by_content_hash(library.library_id, content_hash)
-    if len(duplicates) == 0:
-        return None
-    return duplicates[0]
+def _duplicate_track_by_hash(tracks: Sequence[Track]) -> dict[str, Track]:
+    """Map each content hash to its first Track in repository list order."""
+    duplicate_track_by_hash: dict[str, Track] = {}
+    for track in tracks:
+        _ = duplicate_track_by_hash.setdefault(track.content_hash, track)
+    return duplicate_track_by_hash
 
 
 def _move_target_sources(candidates: Sequence[_AddCandidate]) -> dict[str, tuple[str, ...]]:

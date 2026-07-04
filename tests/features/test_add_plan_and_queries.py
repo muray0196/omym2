@@ -85,9 +85,11 @@ MISSING_ARTIST_METADATA = TrackMetadata(
 OTHER_CONTENT_HASH = calculate_content_fingerprint(b"other audio")
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
+SECOND_DUPLICATE_TRACK_PATH = "Artist/2026_Album/1-05_Title-Copy.flac"
 SECOND_INCOMING_FILE = "/music/incoming/Title2.flac"
 SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 SECOND_LIBRARY_ROOT = "/music/second"
+SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 
 
@@ -263,6 +265,28 @@ def test_add_plan_skips_duplicate_hash() -> None:
     assert action.track_id == TRACK_ID
     assert action.target_path == EXPECTED_CANONICAL_PATH
     assert plan.summary["skip_actions"] == "1"
+
+
+def test_add_plan_duplicate_skip_references_first_track_in_list_order() -> None:
+    """A duplicate skip references the first matching Track in repository list
+    order (current_path, then track_id)."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track(CONTENT_HASH, EXPECTED_CANONICAL_PATH))
+    uow.tracks.save(_track(CONTENT_HASH, SECOND_DUPLICATE_TRACK_PATH, track_id=SECOND_TRACK_ID))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    action = plan.actions[0]
+    assert action.action_type == ActionType.SKIP
+    assert action.reason == PlanActionReason.DUPLICATE_HASH
+    assert action.track_id == TRACK_ID
 
 
 def test_add_plan_blocks_missing_required_metadata() -> None:
@@ -551,9 +575,9 @@ def _library(library_id: LibraryId, root_path: str, path_policy_hash: str | None
     )
 
 
-def _track(content_hash: str, current_path: str) -> Track:
+def _track(content_hash: str, current_path: str, *, track_id: TrackId = TRACK_ID) -> Track:
     return Track(
-        track_id=TRACK_ID,
+        track_id=track_id,
         library_id=LIBRARY_ID,
         current_path=current_path,
         canonical_path=current_path,

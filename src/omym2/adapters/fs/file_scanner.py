@@ -5,6 +5,7 @@ Why: Provides FileScanner entries before planning or file mutation exists.
 
 from __future__ import annotations
 
+import stat
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,21 +32,27 @@ class FilesystemFileScanner:
         if not root_path.is_dir():
             raise NotADirectoryError(root_path)
 
+        candidates = (
+            candidate for candidate in root_path.rglob("*") if candidate.suffix.lower() in self.supported_extensions
+        )
         entries: list[FileScanEntry] = []
-        for candidate in sorted(root_path.rglob("*"), key=lambda path: path.as_posix()):
-            if not candidate.is_file():
+        for candidate in sorted(candidates, key=lambda path: path.as_posix()):
+            try:
+                stat_result = candidate.stat()
+            except OSError, ValueError:
+                # Skip entries that vanish or become unreadable between the
+                # directory listing and this stat, mirroring what
+                # Path.is_file() swallowed before.
                 continue
-            file_extension = candidate.suffix.lower()
-            if file_extension not in self.supported_extensions:
+            if not stat.S_ISREG(stat_result.st_mode):
                 continue
 
-            stat_result = candidate.stat()
             entries.append(
                 FileScanEntry(
                     path=str(candidate),
                     size=stat_result.st_size,
                     mtime=datetime.fromtimestamp(stat_result.st_mtime, UTC),
-                    file_extension=file_extension,
+                    file_extension=candidate.suffix.lower(),
                 )
             )
         return tuple(entries)

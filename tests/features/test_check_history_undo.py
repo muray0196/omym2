@@ -64,9 +64,11 @@ SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 SECOND_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
 SECOND_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345682"))
 SECOND_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345683"))
+SECOND_SOURCE_PATH = "Original/Title2.flac"
 SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345684"))
 SOURCE_PATH = "Original/Title.flac"
 TARGET_PATH = "Artist/2026_Album/1-02_Title.flac"
+THIRD_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568a"))
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 UNDO_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345685"))
 UNDO_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345686"))
@@ -126,6 +128,28 @@ def test_check_reports_missing_file_and_library_state() -> None:
     assert CheckIssueType.DB_FILE_MISSING in {issue.issue_type for issue in issues}
     assert CheckIssueType.LIBRARY_BLOCKED in {issue.issue_type for issue in issues}
     assert CheckIssueType.LIBRARY_STALE in {issue.issue_type for issue in issues}
+
+
+def test_check_orders_pending_event_issues_by_run_start_then_sequence() -> None:
+    """check emits pending-event issues per Run in start order and per event in sequence order."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.runs.save(_run())
+    uow.runs.save(_run(run_id=SECOND_RUN_ID, plan_id=SECOND_PLAN_ID, started_at=BASE_TIME + timedelta(minutes=1)))
+    uow.file_events.save(_pending_event(event_id=SECOND_EVENT_ID, target_path=RESTORE_PATH, sequence_no=2))
+    uow.file_events.save(_pending_event(event_id=THIRD_EVENT_ID, run_id=SECOND_RUN_ID, target_path=SECOND_SOURCE_PATH))
+    uow.file_events.save(_pending_event())
+
+    issues = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), MappingSnapshotReader({}))).execute(
+        CheckLibraryRequest()
+    )
+
+    pending_issues = tuple(issue for issue in issues if issue.issue_type == CheckIssueType.PENDING_FILE_EVENT_EXISTS)
+    assert tuple((issue.plan_id, issue.path) for issue in pending_issues) == (
+        (PLAN_ID, TARGET_PATH),
+        (PLAN_ID, RESTORE_PATH),
+        (SECOND_PLAN_ID, SECOND_SOURCE_PATH),
+    )
 
 
 def test_history_lists_runs_newest_first_and_loads_detail() -> None:
@@ -213,6 +237,43 @@ def test_undo_uses_current_track_path_for_import_after_track_moved() -> None:
     assert plan.actions[0].target_path == EXTERNAL_SOURCE_PATH
     assert plan.actions[0].track_id == TRACK_ID
     assert plan.actions[0].status == ActionStatus.PLANNED
+
+
+def test_undo_resolves_tracks_by_path_when_no_source_action_has_track_id() -> None:
+    """Undo resolves Track identity from Library paths for every event of a Run
+    whose recorded plan actions all lack track_id."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.tracks.save(_track(track_id=SECOND_TRACK_ID, current_path=RESTORE_PATH))
+    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plan_actions.save(_source_action(track_id=None))
+    uow.plan_actions.save(_source_action(action_id=SECOND_ACTION_ID, track_id=None))
+    uow.runs.save(_run(status=RunStatus.SUCCEEDED))
+    uow.file_events.save(_event(source_path=SOURCE_PATH, target_path=RESTORE_PATH, plan_action_id=ACTION_ID))
+    uow.file_events.save(
+        _event(
+            event_id=SECOND_EVENT_ID,
+            source_path=SECOND_SOURCE_PATH,
+            target_path=TARGET_PATH,
+            plan_action_id=SECOND_ACTION_ID,
+            sequence_no=2,
+        )
+    )
+    ports = _undo_ports(
+        uow,
+        id_generator=SequenceIdGenerator(
+            plan_ids=deque((UNDO_PLAN_ID,)),
+            action_ids=deque((UNDO_ACTION_ID, UNDO_SECOND_ACTION_ID)),
+        ),
+    )
+
+    plan = CreateUndoPlanUseCase(ports).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert tuple(action.track_id for action in plan.actions) == (TRACK_ID, SECOND_TRACK_ID)
+    assert tuple(action.source_path for action in plan.actions) == (TARGET_PATH, RESTORE_PATH)
+    assert tuple(action.target_path for action in plan.actions) == (SECOND_SOURCE_PATH, SOURCE_PATH)
+    assert all(action.status == ActionStatus.PLANNED for action in plan.actions)
 
 
 def test_undo_blocks_occupied_restore_destination() -> None:
@@ -501,12 +562,13 @@ def _source_action(
 def _run(
     *,
     run_id: RunId = RUN_ID,
+    plan_id: PlanId = PLAN_ID,
     status: RunStatus = RunStatus.RUNNING,
     started_at: datetime = BASE_TIME,
 ) -> Run:
     return Run(
         run_id=run_id,
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         library_id=LIBRARY_ID,
         status=status,
         started_at=started_at,
@@ -538,21 +600,27 @@ def _event(
     )
 
 
-def _pending_event() -> FileEvent:
+def _pending_event(
+    *,
+    event_id: EventId = EVENT_ID,
+    run_id: RunId = RUN_ID,
+    target_path: str = TARGET_PATH,
+    sequence_no: int = 1,
+) -> FileEvent:
     return FileEvent(
-        event_id=EVENT_ID,
+        event_id=event_id,
         library_id=LIBRARY_ID,
-        run_id=RUN_ID,
+        run_id=run_id,
         plan_action_id=ACTION_ID,
         event_type=FileEventType.MOVE_FILE,
         source_path=SOURCE_PATH,
-        target_path=TARGET_PATH,
+        target_path=target_path,
         status=FileEventStatus.PENDING,
         started_at=BASE_TIME,
         completed_at=None,
         error_code=None,
         error_message=None,
-        sequence_no=1,
+        sequence_no=sequence_no,
     )
 
 

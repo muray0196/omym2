@@ -12,7 +12,7 @@ from omym2.domain.models.app_config import ArtistIdConfig, PathPolicyConfig
 from omym2.domain.models.plan_action import PlanActionReason
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.artist_id import generate_artist_id
-from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy
+from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.duplicate_policy import DuplicateDecisionKind, DuplicatePolicy
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
@@ -31,6 +31,7 @@ EXPECTED_STEM_TEMPLATE_PATH = "Aimer/Example-Album/1-03-Example-Song.flac"
 EXPECTED_ARTIST_ID_PATH = "AIMR/Example-Song.flac"
 FILE_EXTENSION = ".FLAC"
 GENRE = "J-Pop"
+NON_CANONICAL_OCCUPIED_PATH = "./Aimer/2024_Example-Album/1-03_Example-Song.flac"
 OCCUPIED_PATH = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
 SANITIZED_ARTIST = "Artist-Name"
 SANITIZED_UNICODE_PATH = "こんにちは/2024_你好/1-03_Café-Song.flac"
@@ -44,6 +45,7 @@ TITLE_ONLY_TEMPLATE = "{title}"
 TRACK_NUMBER = 3
 TRUNCATED_FILENAME_LENGTH = 12
 TRUNCATED_FINAL_COMPONENT = "1-03_AA.flac"
+UNOCCUPIED_TARGET_PATH = "Other/2024_Other-Album/1-01_Other-Song.flac"
 UNSANITIZED_ARTIST = "Artist:Name"
 UNSANITIZED_PATH = "Artist:Name/2024_Example Album/1-03_Example Song.flac"
 YEAR = 2024
@@ -376,6 +378,24 @@ def test_collision_policy_allows_single_batch_source_target() -> None:
     decision = CollisionPolicy().decide(target_path, [], batch_target_count=1)
 
     assert decision.kind == CollisionDecisionKind.AVAILABLE
+
+
+def test_collision_policy_occupied_paths_matches_raw_iterable_decisions() -> None:
+    """OccupiedPaths.from_paths normalizes non-canonical inputs at construction
+    and yields the same block and allow decisions as the raw iterable."""
+    target_path = PathPolicy(PathPolicyConfig()).canonical_path(_track_metadata(), FILE_EXTENSION)
+    raw_occupied = [NON_CANONICAL_OCCUPIED_PATH]
+    occupied_paths = OccupiedPaths.from_paths(raw_occupied)
+
+    blocked_decision = CollisionPolicy().decide(target_path, occupied_paths)
+    available_decision = CollisionPolicy().decide(UNOCCUPIED_TARGET_PATH, occupied_paths)
+
+    assert occupied_paths.normalized_paths == frozenset({OCCUPIED_PATH})
+    assert blocked_decision == CollisionPolicy().decide(target_path, raw_occupied)
+    assert blocked_decision.kind == CollisionDecisionKind.BLOCKED
+    assert blocked_decision.reason == PlanActionReason.TARGET_EXISTS
+    assert available_decision == CollisionPolicy().decide(UNOCCUPIED_TARGET_PATH, raw_occupied)
+    assert available_decision.kind == CollisionDecisionKind.AVAILABLE
 
 
 def test_duplicate_policy_skips_duplicate_hash() -> None:

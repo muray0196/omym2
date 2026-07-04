@@ -14,7 +14,11 @@ import pytest
 
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.db.sqlite import migration_runner
-from omym2.adapters.db.sqlite.migration_runner import SQLiteMigration, migrate_database
+from omym2.adapters.db.sqlite.migration_runner import (
+    SQLiteMigration,
+    ensure_database_migrated,
+    migrate_database,
+)
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
@@ -35,19 +39,24 @@ CONTENT_HASH = "content-hash"
 EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
 EVENT_SEQUENCE_EARLY = 1
 EVENT_SEQUENCE_LATE = 2
+EVENT_SEQUENCE_THIRD = 3
 FINISHED_TIME = BASE_TIME + timedelta(minutes=5)
 LATE_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 LATE_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567f"))
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 LIBRARY_ROOT = "/music/library"
 METADATA_HASH = "metadata-hash"
+OTHER_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345683"))
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 PLAN_SUMMARY = {"moves": "1"}
 ROLLBACK_ERROR = "force rollback"
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
+SECOND_RUN_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
+SECOND_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
 SORT_ORDER_EARLY = 1
 SORT_ORDER_LATE = 2
 SOURCE_PATH = "/incoming/song.flac"
+SUCCEEDED_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345682"))
 TARGET_PATH = "Artist/Album/01_Title.flac"
 TRACK_ARTIST = "Artist"
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
@@ -94,6 +103,53 @@ def test_sqlite_migration_script_rolls_back_with_marker_on_failure(
 
     assert "partially_applied" not in _table_names(database_file)
     assert _applied_migrations(database_file) == set()
+
+
+def test_ensure_database_migrated_loads_packaged_migrations_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second ensure call for one path reuses the process-wide cache."""
+    database_file = default_application_paths(tmp_path).database_file
+    load_calls = 0
+    real_load_packaged_migrations = migration_runner.load_packaged_migrations
+
+    def _counting_load() -> tuple[SQLiteMigration, ...]:
+        nonlocal load_calls
+        load_calls += 1
+        return real_load_packaged_migrations()
+
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", _counting_load)
+
+    ensure_database_migrated(database_file)
+    ensure_database_migrated(database_file)
+
+    assert load_calls == 1
+    assert _table_names(database_file) >= REQUIRED_TABLES
+
+
+def test_ensure_database_migrated_recreates_deleted_database(tmp_path: Path) -> None:
+    """Deleting the database file forces re-migration despite the cache."""
+    database_file = default_application_paths(tmp_path).database_file
+
+    ensure_database_migrated(database_file)
+    database_file.unlink()
+    ensure_database_migrated(database_file)
+
+    assert _table_names(database_file) >= REQUIRED_TABLES
+
+
+def test_sqlite_unit_of_work_reenters_sequentially(tmp_path: Path) -> None:
+    """One UnitOfWork instance re-enters after exit and still round-trips data."""
+    database_file = default_application_paths(tmp_path).database_file
+    library = _library()
+    uow = SQLiteUnitOfWork(database_file)
+
+    with uow:
+        uow.libraries.save(library)
+        uow.commit()
+
+    with uow:
+        assert uow.libraries.get(LIBRARY_ID) == library
 
 
 def test_internal_storage_is_created_lazily_when_needed(tmp_path: Path) -> None:
@@ -148,6 +204,33 @@ def test_sqlite_repositories_round_trip_domain_models(tmp_path: Path) -> None:
         assert uow.runs.list_by_plan(PLAN_ID) == (run,)
         assert uow.file_events.get(EVENT_ID) == event_early
         assert uow.file_events.list_by_run(RUN_ID) == (event_early, event_late)
+
+
+def test_sqlite_file_events_list_pending_by_library_filters_status_and_orders_by_sequence(tmp_path: Path) -> None:
+    """list_pending_by_library returns PENDING events in (sequence_no, event_id) order for one Library."""
+    database_file = default_application_paths(tmp_path).database_file
+    event_late = _file_event(LATE_EVENT_ID, LATE_ACTION_ID, EVENT_SEQUENCE_LATE)
+    event_early = _file_event(EVENT_ID, ACTION_ID, EVENT_SEQUENCE_EARLY)
+    event_second_run = _file_event(SECOND_RUN_EVENT_ID, ACTION_ID, EVENT_SEQUENCE_EARLY, run_id=SECOND_RUN_ID)
+    event_succeeded = _file_event(SUCCEEDED_EVENT_ID, ACTION_ID, EVENT_SEQUENCE_THIRD).mark_succeeded(FINISHED_TIME)
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.plans.save(_plan())
+        uow.plan_actions.save(_plan_action(ACTION_ID, SORT_ORDER_EARLY))
+        uow.plan_actions.save(_plan_action(LATE_ACTION_ID, SORT_ORDER_LATE))
+        uow.runs.save(_run())
+        uow.runs.save(_run(run_id=SECOND_RUN_ID))
+        uow.file_events.save(event_late)
+        uow.file_events.save(event_early)
+        uow.file_events.save(event_second_run)
+        uow.file_events.save(event_succeeded)
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.file_events.list_pending_by_library(LIBRARY_ID) == (event_early, event_second_run, event_late)
+        assert uow.file_events.list_pending_by_library(OTHER_LIBRARY_ID) == ()
 
 
 def test_sqlite_unit_of_work_rolls_back_when_not_committed(tmp_path: Path) -> None:
@@ -254,9 +337,9 @@ def _plan_action(action_id: ActionId, sort_order: int) -> PlanAction:
     )
 
 
-def _run() -> Run:
+def _run(*, run_id: RunId = RUN_ID) -> Run:
     return Run(
-        run_id=RUN_ID,
+        run_id=run_id,
         plan_id=PLAN_ID,
         library_id=LIBRARY_ID,
         status=RunStatus.RUNNING,
@@ -264,11 +347,11 @@ def _run() -> Run:
     )
 
 
-def _file_event(event_id: EventId, action_id: ActionId, sequence_no: int) -> FileEvent:
+def _file_event(event_id: EventId, action_id: ActionId, sequence_no: int, *, run_id: RunId = RUN_ID) -> FileEvent:
     return FileEvent(
         event_id=event_id,
         library_id=LIBRARY_ID,
-        run_id=RUN_ID,
+        run_id=run_id,
         plan_action_id=action_id,
         event_type=FileEventType.MOVE_FILE,
         source_path=SOURCE_PATH,

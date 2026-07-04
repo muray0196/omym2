@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
 from omym2.adapters.db.sqlite.connection import open_sqlite_connection
-from omym2.adapters.db.sqlite.migration_runner import migrate_database
+from omym2.adapters.db.sqlite.migration_runner import ensure_database_migrated
 from omym2.adapters.db.sqlite.repositories import (
     SQLiteFileEventRepository,
     SQLiteLibraryRepository,
@@ -89,7 +89,7 @@ class SQLiteUnitOfWork:
         if self._connection is not None:
             raise RuntimeError(UNIT_OF_WORK_ALREADY_OPEN_MESSAGE)
 
-        migrate_database(self.database_path)
+        ensure_database_migrated(self.database_path)
         connection = open_sqlite_connection(self.database_path)
         _ = connection.execute("BEGIN")
 

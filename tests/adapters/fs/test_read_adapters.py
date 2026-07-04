@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 AUDIO_CONTENT = b"fake audio bytes"
 AUDIO_FILE_NAME = "Track.FLAC"
+DIRECTORY_NAMED_LIKE_MUSIC_FILE = "fake.flac"
 IGNORED_FILE_NAME = "cover.jpg"
 EXPECTED_CANONICAL_PATH = "Artist/Album/Track.flac"
 EXPECTED_RESOLVED_PARTS = ("Artist", "Album", "Track.flac")
@@ -59,6 +60,36 @@ def test_file_scanner_returns_file_scan_entries_not_snapshots(tmp_path: Path) ->
     assert entry.file_extension == ".flac"
     assert entry.mtime.tzinfo is UTC
     assert not hasattr(entry, "content_hash")
+
+
+def test_file_scanner_excludes_directories_named_like_music_files(tmp_path: Path) -> None:
+    """FileScanner never lists a directory whose name carries a music extension."""
+    disguised_dir = tmp_path / DIRECTORY_NAMED_LIKE_MUSIC_FILE
+    disguised_dir.mkdir()
+    audio_path = disguised_dir / AUDIO_FILE_NAME
+    _ = audio_path.write_bytes(AUDIO_CONTENT)
+
+    entries = FilesystemFileScanner().scan(tmp_path)
+
+    assert [entry.path for entry in entries] == [str(audio_path)]
+
+
+def test_file_scanner_sorts_entries_by_posix_path_across_directories(tmp_path: Path) -> None:
+    """FileScanner returns nested-tree entries ordered by their posix paths."""
+    relative_paths = ("track0.flac", "b/track1.flac", "a/track2.flac", "a/z/track3.mp3")
+    for relative_path in relative_paths:
+        file_path = tmp_path.joinpath(*relative_path.split("/"))
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        _ = file_path.write_bytes(AUDIO_CONTENT)
+
+    entries = FilesystemFileScanner().scan(tmp_path)
+
+    assert [entry.path for entry in entries] == [
+        str(tmp_path / "a" / "track2.flac"),
+        str(tmp_path / "a" / "z" / "track3.mp3"),
+        str(tmp_path / "b" / "track1.flac"),
+        str(tmp_path / "track0.flac"),
+    ]
 
 
 def test_file_snapshot_reader_captures_metadata_and_hash(tmp_path: Path) -> None:
