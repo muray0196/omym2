@@ -75,7 +75,7 @@ export const mockSettingsState: SettingsState = {
     duplicate_hash_policies: ["skip"],
     missing_metadata_policies: ["block"],
     target_exists_policies: ["conflict"],
-    ui_themes: ["dark", "light", "system"],
+    ui_themes: ["dark", "light", "oled", "system"],
   },
   validation: {
     valid: true,
