@@ -7,10 +7,10 @@
             "command": "/usr/bin/zsh",
             "args": [
                 "-lc",
-                "/home/muray/repos/omym2/.vscode/run-symphony.zsh"
+                "'${workspaceFolder}/.vscode/run-symphony.zsh'"
             ],
             "options": {
-                "cwd": "/home/muray/repos/omym2"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "reveal": "always",

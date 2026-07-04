@@ -3,13 +3,20 @@
 # Why: Keep startup logic out of fragile nested task JSON shell quoting.
 set -euo pipefail
 
-env_file="/home/muray/.config/omym2/symphony.env"
-state_root="/home/muray/.local/state/omym2/symphony"
-workspace_root="/home/muray/code/omym2-symphony-workspaces"
-symphony_root="/home/muray/repos/symphony/elixir"
-workflow_file="/home/muray/repos/omym2/WORKFLOW.md"
-mise_bin="/home/linuxbrew/.linuxbrew/bin/mise"
-flock_bin="/home/linuxbrew/.linuxbrew/bin/flock"
+# Resolve repo-local paths from this script so the VS Code task can move with the checkout.
+script_dir="${0:A:h}"
+repo_root="${script_dir:h}"
+
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
+
+env_file="$config_home/omym2/symphony.env"
+state_root="$state_home/omym2/symphony"
+workspace_root="$HOME/code/omym2-symphony-workspaces"
+symphony_root="$HOME/repos/symphony/elixir"
+workflow_file="$repo_root/WORKFLOW.md"
+mise_bin="${commands[mise]:-}"
+flock_bin="${commands[flock]:-}"
 
 if [[ ! -r "$env_file" ]]; then
     print -u2 -- "Missing Symphony env file: $env_file"
@@ -24,6 +31,16 @@ set +a
 
 if [[ -z "${LINEAR_API_KEY:-}" ]]; then
     print -u2 -- "Missing LINEAR_API_KEY in $env_file"
+    exit 1
+fi
+
+if [[ -z "$mise_bin" ]]; then
+    print -u2 -- "Missing mise executable. Add it to PATH before VS Code starts."
+    exit 1
+fi
+
+if [[ -z "$flock_bin" ]]; then
+    print -u2 -- "Missing flock executable. Add it to PATH before VS Code starts."
     exit 1
 fi
 
