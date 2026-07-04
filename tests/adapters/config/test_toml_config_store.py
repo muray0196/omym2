@@ -5,6 +5,7 @@ Why: Verifies settings storage without touching the user home.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -36,6 +37,8 @@ ARTIST_NAME = "Jane Doe"
 ARTIST_ID = "JAND"
 INJECTED_ARTIST_NAME = "Injected"
 INJECTED_ARTIST_ID = "INJECTED"
+FIRST_SAME_SIZE_LIBRARY_PATH = "/music/a"
+SECOND_SAME_SIZE_LIBRARY_PATH = "/music/b"
 
 
 def test_toml_config_store_loads_default_when_config_missing(tmp_path: Path) -> None:
@@ -116,6 +119,23 @@ def test_toml_config_store_load_reparses_after_external_rewrite(tmp_path: Path) 
     _ = config_path.write_text(dump_config_toml(updated_config), encoding=CONFIG_FILE_ENCODING)
 
     assert store.load() == updated_config
+
+
+def test_toml_config_store_load_reparses_same_size_rewrite_with_preserved_mtime(tmp_path: Path) -> None:
+    """A metadata-preserving external rewrite still invalidates the cache."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    first_text = f'version = 1\n\n[paths]\nlibrary = "{FIRST_SAME_SIZE_LIBRARY_PATH}"\n'
+    second_text = f'version = 1\n\n[paths]\nlibrary = "{SECOND_SAME_SIZE_LIBRARY_PATH}"\n'
+    assert len(first_text.encode(CONFIG_FILE_ENCODING)) == len(second_text.encode(CONFIG_FILE_ENCODING))
+    _ = config_path.write_text(first_text, encoding=CONFIG_FILE_ENCODING)
+    store = TomlConfigStore(config_path)
+
+    assert store.load().paths.library == FIRST_SAME_SIZE_LIBRARY_PATH
+    original_stat = config_path.stat()
+    _ = config_path.write_text(second_text, encoding=CONFIG_FILE_ENCODING)
+    os.utime(config_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    assert store.load().paths.library == SECOND_SAME_SIZE_LIBRARY_PATH
 
 
 def test_toml_config_store_save_invalidates_cached_load(tmp_path: Path) -> None:
