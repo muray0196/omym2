@@ -3,7 +3,7 @@ type: Execution Spec
 title: Check Execution
 description: Defines the read-only check command that reports DB/filesystem inconsistencies, Library state, and CheckIssue scope without mutating anything.
 tags: [check, read-only, consistency, library-state]
-timestamp: 2026-06-30T23:47:13+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Check Execution

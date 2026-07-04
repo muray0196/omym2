@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Authoritative reference for the Next.js web/ frontend layout, its audited static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
 tags: [web-frontend, nextjs, static-export, api-boundary]
-timestamp: 2026-07-04T11:43:40+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Web Frontend

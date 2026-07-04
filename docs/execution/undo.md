@@ -3,7 +3,7 @@ type: Execution Spec
 title: Undo Execution
 description: Defines per-Run undo, tracing succeeded FileEvents in reverse to build an undo Plan, restore-destination conflict handling, and Track removal behavior when restoring imported files to external paths.
 tags: [undo, file-event, plan-creation, restore]
-timestamp: 2026-06-28T19:25:33+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Undo Execution

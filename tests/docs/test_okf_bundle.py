@@ -6,8 +6,12 @@ Why: Keeps generated documentation frontmatter, indexes, and links from drifting
 from __future__ import annotations
 
 import re
-from datetime import datetime
+import shutil
+import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 FrontmatterValue = str | list[str]
 FrontmatterFields = dict[str, FrontmatterValue]
@@ -31,6 +35,8 @@ EXTERNAL_LINK_PREFIXES = ("http://", "https://", "mailto:")
 DELETED_BUNDLE_SEGMENT = "okf"
 MIN_QUOTED_LENGTH = 2
 QUOTE_CHARACTERS = frozenset({'"', "'"})
+TYPE_FIELD = "type"
+FRESHNESS_TOLERANCE = timedelta(hours=72)
 
 
 def test_frontmatter_required_fields() -> None:
@@ -80,6 +86,42 @@ def test_no_okf_lite_links() -> None:
         failures.extend(_okf_link_failures(path))
 
     assert not failures, "Links into deleted docs/okf/:\n" + "\n".join(failures)
+
+
+def test_directories_listed_in_parent_index() -> None:
+    """Every docs/ subdirectory is linked and described in its parent directory's index.md."""
+    failures: list[str] = []
+    for directory in _all_docs_directories():
+        if directory == _docs_root():
+            continue
+        failures.extend(_directory_listing_failures(directory))
+
+    assert not failures, "Directory listing violations:\n" + "\n".join(failures)
+
+
+def test_directory_type_homogeneity() -> None:
+    """Within each docs/ subdirectory, all concept files share one frontmatter 'type' value."""
+    failures: list[str] = []
+    for directory in _all_docs_directories():
+        if directory == _docs_root():
+            continue
+        failures.extend(_directory_type_homogeneity_failures(directory))
+
+    assert not failures, "Directory type homogeneity violations:\n" + "\n".join(failures)
+
+
+def test_timestamps_fresh() -> None:
+    """A concept file's frontmatter timestamp must not lag its last commit date by more than 72h."""
+    if _is_shallow_repository():
+        pytest.skip("Repository is shallow; last-commit dates are not reliable.")
+
+    failures: list[str] = []
+    for path in _all_markdown_files():
+        if path.name in INDEX_AND_LOG_FILE_NAMES:
+            continue
+        failures.extend(_timestamp_freshness_failures(path))
+
+    assert not failures, "Stale timestamp violations:\n" + "\n".join(failures)
 
 
 # --- Frontmatter parsing -----------------------------------------------------------------------
@@ -351,6 +393,119 @@ def _okf_link_failures(path: Path) -> list[str]:
 def _markdown_link_targets(text: str) -> list[str]:
     targets: list[str] = MARKDOWN_LINK_PATTERN.findall(text)
     return targets
+
+
+# --- test_directories_listed_in_parent_index ----------------------------------------------------
+
+
+def _directory_listing_failures(directory: Path) -> list[str]:
+    relative_parent = _relative_to_docs(directory.parent)
+    dir_name = directory.name
+    parent_index = directory.parent / INDEX_FILE_NAME
+    if not parent_index.is_file():
+        return [f"{relative_parent}/index.md: missing, cannot list subdirectory {dir_name}/"]
+
+    entries_by_target = _index_entries_by_target(parent_index)
+    expected_targets = (f"{dir_name}/", f"{dir_name}/{INDEX_FILE_NAME}")
+    matched_targets = [target for target in expected_targets if target in entries_by_target]
+
+    if not matched_targets:
+        return [f"{relative_parent}/index.md: missing link entry for subdirectory {dir_name}/"]
+
+    _, description = entries_by_target[matched_targets[0]]
+    if not description.strip():
+        return [f"{relative_parent}/index.md: link entry for subdirectory {dir_name}/ has an empty description"]
+
+    return []
+
+
+# --- test_directory_type_homogeneity ------------------------------------------------------------
+
+
+def _directory_type_homogeneity_failures(directory: Path) -> list[str]:
+    relative_dir = _relative_to_docs(directory)
+    types_by_file: dict[str, str] = {}
+    for concept_file in _concept_files_in(directory):
+        fields = _read_frontmatter_fields(concept_file) or {}
+        type_value = fields.get(TYPE_FIELD)
+        if isinstance(type_value, str) and type_value.strip():
+            types_by_file[concept_file.name] = type_value
+
+    distinct_types = set(types_by_file.values())
+    if len(distinct_types) <= 1:
+        return []
+
+    details = ", ".join(f"{name}={type_value!r}" for name, type_value in sorted(types_by_file.items()))
+    return [f"{relative_dir}: mixed frontmatter 'type' values across concept files: {details}"]
+
+
+# --- test_timestamps_fresh -----------------------------------------------------------------------
+
+GIT_EXECUTABLE: str = shutil.which("git") or "git"
+
+
+def _run_git(*args: str) -> str:
+    # Trusted, hardcoded git subcommands over a resolved executable path; no untrusted input.
+    result = subprocess.run(  # noqa: S603
+        [GIT_EXECUTABLE, *args],
+        cwd=_project_root(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def _is_shallow_repository() -> bool:
+    return _run_git("rev-parse", "--is-shallow-repository") == "true"
+
+
+def _has_uncommitted_changes(path: Path) -> bool:
+    return bool(_run_git("status", "--porcelain", "--", str(path)))
+
+
+def _last_commit_date(path: Path) -> str:
+    return _run_git("log", "-1", "--format=%cI", "--", str(path))
+
+
+def _frontmatter_timestamp(path: Path) -> str | None:
+    fields = _read_frontmatter_fields(path)
+    if fields is None:
+        return None
+    timestamp = fields.get(TIMESTAMP_FIELD)
+    if isinstance(timestamp, str) and timestamp.strip():
+        return timestamp
+    return None
+
+
+def _parse_freshness_dates(timestamp: str, commit_date_raw: str) -> tuple[datetime, datetime] | None:
+    try:
+        return datetime.fromisoformat(timestamp), datetime.fromisoformat(commit_date_raw)
+    except ValueError:
+        return None
+
+
+def _timestamp_freshness_failures(path: Path) -> list[str]:
+    relative = _relative_to_docs(path)
+    if _has_uncommitted_changes(path):
+        return []
+
+    commit_date_raw = _last_commit_date(path)
+    if not commit_date_raw:
+        return []
+
+    timestamp = _frontmatter_timestamp(path)
+    if timestamp is None:
+        return []
+
+    parsed = _parse_freshness_dates(timestamp, commit_date_raw)
+    if parsed is None:
+        return []
+
+    timestamp_value, commit_date = parsed
+    if timestamp_value >= commit_date - FRESHNESS_TOLERANCE:
+        return []
+    return [f"{relative}: frontmatter timestamp {timestamp!r} is stale relative to last commit {commit_date_raw!r}"]
 
 
 # --- shared path helpers -----------------------------------------------------------------------

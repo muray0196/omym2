@@ -168,6 +168,30 @@
   --neutral-muted: oklch(0.22 0.01 250);
 }
 
+/* OLED — pure-black surfaces layered on top of the dark terminal palette.
+   Applied together with `.dark`, so all dark: utilities and the phosphor-green
+   accent carry over; only the surface/border tokens drop to true black. */
+.oled {
+  --background: oklch(0 0 0);
+  --card: oklch(0 0 0);
+  --popover: oklch(0.12 0.008 250);
+  --secondary: oklch(0.16 0.01 250);
+  --muted: oklch(0.14 0.01 250);
+  --accent: oklch(0.2 0.03 160);
+  --border: oklch(0.24 0.012 250);
+  --input: oklch(0.24 0.012 250);
+
+  --sidebar: oklch(0 0 0);
+  --sidebar-accent: oklch(0.2 0.03 160);
+  --sidebar-border: oklch(0.22 0.012 250);
+
+  --success-muted: oklch(0.2 0.05 155);
+  --info-muted: oklch(0.2 0.04 210);
+  --warning-muted: oklch(0.22 0.05 85);
+  --danger-muted: oklch(0.22 0.06 25);
+  --neutral-muted: oklch(0.16 0.01 250);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -3,7 +3,7 @@ type: Storage Design
 title: Storage
 description: Defines the TOML-vs-SQLite storage boundary, repository responsibilities, DB consistency and reproducibility principles, and the high-level Library-root-relative stored path policy.
 tags: [storage, sqlite, toml, persistence]
-timestamp: 2026-07-03T02:00:23+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Storage

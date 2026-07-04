@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Dependency Boundaries
 description: Defines OMYM2's dependency direction between adapters, features, domain, and shared layers, the forbidden dependencies, and where business rules must live.
 tags: [architecture, dependency-boundaries, hexagonal-architecture, business-rules]
-timestamp: 2026-07-02T21:19:36+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Dependency Boundaries

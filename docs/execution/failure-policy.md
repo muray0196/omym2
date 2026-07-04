@@ -3,7 +3,7 @@ type: Execution Spec
 title: Failure Policy
 description: Catalogs cross-cutting execution failure cases, such as target conflicts, missing metadata, duplicate hashes, and stale Library roots, and the policy applied to each.
 tags: [failure-policy, blocked-vs-failed, conflicts, error-handling]
-timestamp: 2026-06-28T19:25:33+09:00
+timestamp: 2026-07-04T12:54:48+09:00
 ---
 
 # Failure Policy
