@@ -215,401 +215,412 @@ export function SettingsScreen() {
           </nav>
 
           {section === "paths" ? (
-          <Panel title="Paths" icon={Database} description="Local filesystem paths used by OMYM2.">
-            <div className="flex flex-col gap-4">
-              <Field
-                label="Library path"
-                help="Absolute path to the managed music library root. Canonical paths resolve under this directory."
-              >
-                {(id) => (
-                  <TextInput
-                    id={id}
-                    mono
-                    placeholder="/music/library"
-                    value={draftConfig.paths.library ?? ""}
-                    onChange={(e) => update("paths", { library: e.target.value || null })}
-                  />
-                )}
-              </Field>
-              <Field
-                label="Incoming path"
-                help="Absolute path to the folder scanned for new files to import."
-              >
-                {(id) => (
-                  <TextInput
-                    id={id}
-                    mono
-                    placeholder="/music/incoming"
-                    value={draftConfig.paths.incoming ?? ""}
-                    onChange={(e) => update("paths", { incoming: e.target.value || null })}
-                  />
-                )}
-              </Field>
-            </div>
-          </Panel>
-          ) : null}
-
-          {section === "behavior" ? (
-          <>
-          <Panel title="Add behavior" icon={Plus} description="Defaults for `omym2 add`.">
-            <div className="flex flex-col gap-4">
-              <Field
-                label="Default mode"
-                help="Plan-first behavior is safer: it builds a reviewable Plan before any files move."
-              >
-                {(id) => (
-                  <Select
-                    id={id}
-                    options={modeOptions}
-                    value={draftConfig.add.default_mode}
-                    onChange={(e) => update("add", { default_mode: e.target.value })}
-                  />
-                )}
-              </Field>
-              <Toggle
-                checked={draftConfig.add.auto_apply}
-                onChange={(v) => update("add", { auto_apply: v })}
-                label="Auto-apply"
-                help="When enabled, plans are applied without a manual review step. Leave off for safety."
-              />
-            </div>
-          </Panel>
-
-          <Panel
-            title="Organize behavior"
-            icon={FolderTree}
-            description="Defaults for `omym2 organize`."
-          >
-            <div className="flex flex-col gap-4">
-              <Field label="Default mode">
-                {(id) => (
-                  <Select
-                    id={id}
-                    options={modeOptions}
-                    value={draftConfig.organize.default_mode}
-                    onChange={(e) => update("organize", { default_mode: e.target.value })}
-                  />
-                )}
-              </Field>
-              <Toggle
-                checked={draftConfig.organize.auto_apply}
-                onChange={(v) => update("organize", { auto_apply: v })}
-                label="Auto-apply"
-              />
-              <Toggle
-                checked={draftConfig.organize.only_misplaced}
-                onChange={(v) => update("organize", { only_misplaced: v })}
-                label="Only misplaced"
-                help="Restrict organize to files whose current path differs from the canonical path."
-              />
-            </div>
-          </Panel>
-
-          <Panel
-            title="Refresh behavior"
-            icon={RotateCcw}
-            description="Defaults for `omym2 refresh`."
-          >
-            <div className="flex flex-col gap-4">
-              <Field label="Default mode">
-                {(id) => (
-                  <Select
-                    id={id}
-                    options={modeOptions}
-                    value={draftConfig.refresh.default_mode}
-                    onChange={(e) => update("refresh", { default_mode: e.target.value })}
-                  />
-                )}
-              </Field>
-              <Toggle
-                checked={draftConfig.refresh.auto_apply}
-                onChange={(v) => update("refresh", { auto_apply: v })}
-                label="Auto-apply"
-              />
-            </div>
-          </Panel>
-          </>
-          ) : null}
-
-          {section === "path-policy" ? (
-          <Panel
-            title="Path policy"
-            icon={Braces}
-            description="How canonical relative paths are generated."
-          >
-            <div className="flex flex-col gap-4">
-              <Field
-                label="Template"
-                help="Templates must NOT include a file extension. The source file extension is appended automatically after rendering."
-              >
-                {(id) => (
-                  <TextArea
-                    id={id}
-                    mono
-                    rows={2}
-                    value={pp.template}
-                    onChange={(e) => update("path_policy", { template: e.target.value })}
-                  />
-                )}
-              </Field>
-              <div>
-                <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                  Allowed tokens (click to insert)
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {TEMPLATE_TOKENS.map((token) => (
-                    <button
-                      key={token}
-                      type="button"
-                      onClick={() => appendToken(token)}
-                      className="rounded-md border border-border bg-muted px-2 py-1 font-mono text-xs text-foreground transition-colors hover:border-primary hover:bg-accent"
-                    >
-                      {token}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Unknown artist fallback">
-                  {(id) => (
-                    <TextInput
-                      id={id}
-                      value={pp.unknown_artist}
-                      onChange={(e) => update("path_policy", { unknown_artist: e.target.value })}
-                    />
-                  )}
-                </Field>
-                <Field label="Unknown album fallback">
-                  {(id) => (
-                    <TextInput
-                      id={id}
-                      value={pp.unknown_album}
-                      onChange={(e) => update("path_policy", { unknown_album: e.target.value })}
-                    />
-                  )}
-                </Field>
+            <Panel
+              title="Paths"
+              icon={Database}
+              description="Local filesystem paths used by OMYM2."
+            >
+              <div className="flex flex-col gap-4">
                 <Field
-                  label="Max filename length"
-                  help="Applies to the final filename incl. extension."
+                  label="Library path"
+                  help="Absolute path to the managed music library root. Canonical paths resolve under this directory."
                 >
-                  {(id) => (
-                    <TextInput
-                      id={id}
-                      type="number"
-                      min={16}
-                      value={pp.max_filename_length}
-                      onChange={(e) =>
-                        update("path_policy", { max_filename_length: Number(e.target.value) || 0 })
-                      }
-                    />
-                  )}
-                </Field>
-              </div>
-              <Toggle
-                checked={pp.sanitize}
-                onChange={(v) => update("path_policy", { sanitize: v })}
-                label="Sanitize segments"
-                help="Replace filesystem-unsafe characters in each path segment."
-              />
-            </div>
-          </Panel>
-          ) : null}
-
-          {section === "metadata" ? (
-          <>
-          <Panel title="Metadata rules" icon={Tags}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Toggle
-                checked={draftConfig.metadata.prefer_album_artist}
-                onChange={(v) => update("metadata", { prefer_album_artist: v })}
-                label="Prefer album artist"
-              />
-              <Toggle
-                checked={draftConfig.metadata.require_title}
-                onChange={(v) => update("metadata", { require_title: v })}
-                label="Require title"
-              />
-              <Toggle
-                checked={draftConfig.metadata.require_artist}
-                onChange={(v) => update("metadata", { require_artist: v })}
-                label="Require artist"
-              />
-              <Toggle
-                checked={draftConfig.metadata.require_album}
-                onChange={(v) => update("metadata", { require_album: v })}
-                label="Require album"
-              />
-            </div>
-          </Panel>
-
-          <Panel
-            title="Artist IDs"
-            icon={WandSparkles}
-            description="Editable values for the {artist_id} path token."
-          >
-            <div className="flex flex-col gap-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Max ID length">
-                  {(id) => (
-                    <TextInput
-                      id={id}
-                      type="number"
-                      min={1}
-                      value={draftConfig.artist_ids.max_length}
-                      onChange={(e) => updateArtistIds({ max_length: Number(e.target.value) || 0 })}
-                    />
-                  )}
-                </Field>
-                <Field label="Fallback ID">
                   {(id) => (
                     <TextInput
                       id={id}
                       mono
-                      value={draftConfig.artist_ids.fallback_id}
-                      onChange={(e) => updateArtistIds({ fallback_id: e.target.value })}
+                      placeholder="/music/library"
+                      value={draftConfig.paths.library ?? ""}
+                      onChange={(e) => update("paths", { library: e.target.value || null })}
+                    />
+                  )}
+                </Field>
+                <Field
+                  label="Incoming path"
+                  help="Absolute path to the folder scanned for new files to import."
+                >
+                  {(id) => (
+                    <TextInput
+                      id={id}
+                      mono
+                      placeholder="/music/incoming"
+                      value={draftConfig.paths.incoming ?? ""}
+                      onChange={(e) => update("paths", { incoming: e.target.value || null })}
                     />
                   )}
                 </Field>
               </div>
-              <Field label="Generate from artists" help="Separate names with commas or new lines.">
-                {(id) => (
-                  <TextArea
-                    id={id}
-                    rows={3}
-                    value={artistInput}
-                    onChange={(e) => setArtistInput(e.target.value)}
-                    placeholder={"Aimer\nJohn Smith"}
+            </Panel>
+          ) : null}
+
+          {section === "behavior" ? (
+            <>
+              <Panel title="Add behavior" icon={Plus} description="Defaults for `omym2 add`.">
+                <div className="flex flex-col gap-4">
+                  <Field
+                    label="Default mode"
+                    help="Plan-first behavior is safer: it builds a reviewable Plan before any files move."
+                  >
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={modeOptions}
+                        value={draftConfig.add.default_mode}
+                        onChange={(e) => update("add", { default_mode: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <Toggle
+                    checked={draftConfig.add.auto_apply}
+                    onChange={(v) => update("add", { auto_apply: v })}
+                    label="Auto-apply"
+                    help="When enabled, plans are applied without a manual review step. Leave off for safety."
                   />
-                )}
-              </Field>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Toggle
-                  checked={artistOverwrite}
-                  onChange={setArtistOverwrite}
-                  label="Overwrite existing"
-                />
-                <Button
-                  variant="outline"
-                  onClick={handleGenerateArtistIds}
-                  disabled={artistGenerationState === "saving" || artistInput.trim() === ""}
-                  className="sm:w-44"
-                >
-                  <WandSparkles className="size-4" aria-hidden="true" />
-                  {artistGenerationState === "saving" ? "Generating…" : "Generate"}
-                </Button>
-              </div>
-              {artistGenerationState === "success" ? (
-                <Notice tone="success" title="Artist IDs generated">
-                  Saved generated entries to local config.
-                </Notice>
-              ) : null}
-              {artistGenerationState === "error" ? (
-                <Notice tone="danger" title="Artist ID generation failed">
-                  {settingsErrors.join(" ") || "The local API rejected the request."}
-                </Notice>
-              ) : null}
-              <div className="overflow-hidden rounded-md border border-border">
-                <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,11rem)] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  <span>Artist</span>
-                  <span>ID</span>
                 </div>
-                {artistEntries.length > 0 ? (
-                  <div className="divide-y divide-border">
-                    {artistEntries.map(([sourceArtist, artistId]) => (
-                      <div
-                        key={sourceArtist}
-                        className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,11rem)] gap-2 px-3 py-2"
+              </Panel>
+
+              <Panel
+                title="Organize behavior"
+                icon={FolderTree}
+                description="Defaults for `omym2 organize`."
+              >
+                <div className="flex flex-col gap-4">
+                  <Field label="Default mode">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={modeOptions}
+                        value={draftConfig.organize.default_mode}
+                        onChange={(e) => update("organize", { default_mode: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <Toggle
+                    checked={draftConfig.organize.auto_apply}
+                    onChange={(v) => update("organize", { auto_apply: v })}
+                    label="Auto-apply"
+                  />
+                  <Toggle
+                    checked={draftConfig.organize.only_misplaced}
+                    onChange={(v) => update("organize", { only_misplaced: v })}
+                    label="Only misplaced"
+                    help="Restrict organize to files whose current path differs from the canonical path."
+                  />
+                </div>
+              </Panel>
+
+              <Panel
+                title="Refresh behavior"
+                icon={RotateCcw}
+                description="Defaults for `omym2 refresh`."
+              >
+                <div className="flex flex-col gap-4">
+                  <Field label="Default mode">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={modeOptions}
+                        value={draftConfig.refresh.default_mode}
+                        onChange={(e) => update("refresh", { default_mode: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <Toggle
+                    checked={draftConfig.refresh.auto_apply}
+                    onChange={(v) => update("refresh", { auto_apply: v })}
+                    label="Auto-apply"
+                  />
+                </div>
+              </Panel>
+            </>
+          ) : null}
+
+          {section === "path-policy" ? (
+            <Panel
+              title="Path policy"
+              icon={Braces}
+              description="How canonical relative paths are generated."
+            >
+              <div className="flex flex-col gap-4">
+                <Field
+                  label="Template"
+                  help="Templates must NOT include a file extension. The source file extension is appended automatically after rendering."
+                >
+                  {(id) => (
+                    <TextArea
+                      id={id}
+                      mono
+                      rows={2}
+                      value={pp.template}
+                      onChange={(e) => update("path_policy", { template: e.target.value })}
+                    />
+                  )}
+                </Field>
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                    Allowed tokens (click to insert)
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TEMPLATE_TOKENS.map((token) => (
+                      <button
+                        key={token}
+                        type="button"
+                        onClick={() => appendToken(token)}
+                        className="rounded-md border border-border bg-muted px-2 py-1 font-mono text-xs text-foreground transition-colors hover:border-primary hover:bg-accent"
                       >
-                        <Mono className="truncate text-foreground" title={sourceArtist}>
-                          {sourceArtist}
-                        </Mono>
-                        <TextInput
-                          mono
-                          value={artistId}
-                          onChange={(e) => updateArtistIdEntry(sourceArtist, e.target.value)}
-                          aria-label={`Artist ID for ${sourceArtist}`}
-                        />
-                      </div>
+                        {token}
+                      </button>
                     ))}
                   </div>
-                ) : (
-                  <div className="px-3 py-4 text-sm text-muted-foreground">
-                    No artist IDs saved.
-                  </div>
-                )}
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Unknown artist fallback">
+                    {(id) => (
+                      <TextInput
+                        id={id}
+                        value={pp.unknown_artist}
+                        onChange={(e) => update("path_policy", { unknown_artist: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <Field label="Unknown album fallback">
+                    {(id) => (
+                      <TextInput
+                        id={id}
+                        value={pp.unknown_album}
+                        onChange={(e) => update("path_policy", { unknown_album: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <Field
+                    label="Max filename length"
+                    help="Applies to the final filename incl. extension."
+                  >
+                    {(id) => (
+                      <TextInput
+                        id={id}
+                        type="number"
+                        min={16}
+                        value={pp.max_filename_length}
+                        onChange={(e) =>
+                          update("path_policy", {
+                            max_filename_length: Number(e.target.value) || 0,
+                          })
+                        }
+                      />
+                    )}
+                  </Field>
+                </div>
+                <Toggle
+                  checked={pp.sanitize}
+                  onChange={(v) => update("path_policy", { sanitize: v })}
+                  label="Sanitize segments"
+                  help="Replace filesystem-unsafe characters in each path segment."
+                />
               </div>
-            </div>
-          </Panel>
-          </>
+            </Panel>
+          ) : null}
+
+          {section === "metadata" ? (
+            <>
+              <Panel title="Metadata rules" icon={Tags}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Toggle
+                    checked={draftConfig.metadata.prefer_album_artist}
+                    onChange={(v) => update("metadata", { prefer_album_artist: v })}
+                    label="Prefer album artist"
+                  />
+                  <Toggle
+                    checked={draftConfig.metadata.require_title}
+                    onChange={(v) => update("metadata", { require_title: v })}
+                    label="Require title"
+                  />
+                  <Toggle
+                    checked={draftConfig.metadata.require_artist}
+                    onChange={(v) => update("metadata", { require_artist: v })}
+                    label="Require artist"
+                  />
+                  <Toggle
+                    checked={draftConfig.metadata.require_album}
+                    onChange={(v) => update("metadata", { require_album: v })}
+                    label="Require album"
+                  />
+                </div>
+              </Panel>
+
+              <Panel
+                title="Artist IDs"
+                icon={WandSparkles}
+                description="Editable values for the {artist_id} path token."
+              >
+                <div className="flex flex-col gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Max ID length">
+                      {(id) => (
+                        <TextInput
+                          id={id}
+                          type="number"
+                          min={1}
+                          value={draftConfig.artist_ids.max_length}
+                          onChange={(e) =>
+                            updateArtistIds({ max_length: Number(e.target.value) || 0 })
+                          }
+                        />
+                      )}
+                    </Field>
+                    <Field label="Fallback ID">
+                      {(id) => (
+                        <TextInput
+                          id={id}
+                          mono
+                          value={draftConfig.artist_ids.fallback_id}
+                          onChange={(e) => updateArtistIds({ fallback_id: e.target.value })}
+                        />
+                      )}
+                    </Field>
+                  </div>
+                  <Field
+                    label="Generate from artists"
+                    help="Separate names with commas or new lines."
+                  >
+                    {(id) => (
+                      <TextArea
+                        id={id}
+                        rows={3}
+                        value={artistInput}
+                        onChange={(e) => setArtistInput(e.target.value)}
+                        placeholder={"Aimer\nJohn Smith"}
+                      />
+                    )}
+                  </Field>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <Toggle
+                      checked={artistOverwrite}
+                      onChange={setArtistOverwrite}
+                      label="Overwrite existing"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={handleGenerateArtistIds}
+                      disabled={artistGenerationState === "saving" || artistInput.trim() === ""}
+                      className="sm:w-44"
+                    >
+                      <WandSparkles className="size-4" aria-hidden="true" />
+                      {artistGenerationState === "saving" ? "Generating…" : "Generate"}
+                    </Button>
+                  </div>
+                  {artistGenerationState === "success" ? (
+                    <Notice tone="success" title="Artist IDs generated">
+                      Saved generated entries to local config.
+                    </Notice>
+                  ) : null}
+                  {artistGenerationState === "error" ? (
+                    <Notice tone="danger" title="Artist ID generation failed">
+                      {settingsErrors.join(" ") || "The local API rejected the request."}
+                    </Notice>
+                  ) : null}
+                  <div className="overflow-hidden rounded-md border border-border">
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,11rem)] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      <span>Artist</span>
+                      <span>ID</span>
+                    </div>
+                    {artistEntries.length > 0 ? (
+                      <div className="divide-y divide-border">
+                        {artistEntries.map(([sourceArtist, artistId]) => (
+                          <div
+                            key={sourceArtist}
+                            className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,11rem)] gap-2 px-3 py-2"
+                          >
+                            <Mono className="truncate text-foreground" title={sourceArtist}>
+                              {sourceArtist}
+                            </Mono>
+                            <TextInput
+                              mono
+                              value={artistId}
+                              onChange={(e) => updateArtistIdEntry(sourceArtist, e.target.value)}
+                              aria-label={`Artist ID for ${sourceArtist}`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="px-3 py-4 text-sm text-muted-foreground">
+                        No artist IDs saved.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Panel>
+            </>
           ) : null}
 
           {section === "rules" ? (
-          <>
-          <Panel
-            title="Collision rules"
-            icon={FileCheck2}
-            description="How conflicts are resolved during apply."
-          >
-            <div className="flex flex-col gap-4">
-              <Field label="On target exists">
-                {(id) => (
-                  <Select
-                    id={id}
-                    options={targetExistsOptions}
-                    value={draftConfig.collision.on_target_exists}
-                    onChange={(e) =>
-                      update("collision", { on_target_exists: e.target.value as never })
-                    }
-                  />
-                )}
-              </Field>
-              <Field label="On duplicate hash">
-                {(id) => (
-                  <Select
-                    id={id}
-                    options={duplicateHashOptions}
-                    value={draftConfig.collision.on_duplicate_hash}
-                    onChange={(e) =>
-                      update("collision", { on_duplicate_hash: e.target.value as never })
-                    }
-                  />
-                )}
-              </Field>
-              <Field label="On missing metadata">
-                {(id) => (
-                  <Select
-                    id={id}
-                    options={missingMetadataOptions}
-                    value={draftConfig.collision.on_missing_metadata}
-                    onChange={(e) =>
-                      update("collision", { on_missing_metadata: e.target.value as never })
-                    }
-                  />
-                )}
-              </Field>
-            </div>
-          </Panel>
+            <>
+              <Panel
+                title="Collision rules"
+                icon={FileCheck2}
+                description="How conflicts are resolved during apply."
+              >
+                <div className="flex flex-col gap-4">
+                  <Field label="On target exists">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={targetExistsOptions}
+                        value={draftConfig.collision.on_target_exists}
+                        onChange={(e) =>
+                          update("collision", { on_target_exists: e.target.value as never })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <Field label="On duplicate hash">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={duplicateHashOptions}
+                        value={draftConfig.collision.on_duplicate_hash}
+                        onChange={(e) =>
+                          update("collision", { on_duplicate_hash: e.target.value as never })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <Field label="On missing metadata">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={missingMetadataOptions}
+                        value={draftConfig.collision.on_missing_metadata}
+                        onChange={(e) =>
+                          update("collision", { on_missing_metadata: e.target.value as never })
+                        }
+                      />
+                    )}
+                  </Field>
+                </div>
+              </Panel>
 
-          <Panel title="UI" icon={SlidersHorizontal}>
-            <div className="flex flex-col gap-4">
-              <Field label="Theme">
-                {(id) => (
-                  <Select
-                    id={id}
-                    options={themeOptions}
-                    value={draftConfig.ui.theme}
-                    onChange={(e) => update("ui", { theme: e.target.value as never })}
+              <Panel title="UI" icon={SlidersHorizontal}>
+                <div className="flex flex-col gap-4">
+                  <Field label="Theme">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={themeOptions}
+                        value={draftConfig.ui.theme}
+                        onChange={(e) => update("ui", { theme: e.target.value as never })}
+                      />
+                    )}
+                  </Field>
+                  <Toggle
+                    checked={draftConfig.ui.show_advanced_settings}
+                    onChange={(v) => update("ui", { show_advanced_settings: v })}
+                    label="Show advanced settings"
                   />
-                )}
-              </Field>
-              <Toggle
-                checked={draftConfig.ui.show_advanced_settings}
-                onChange={(v) => update("ui", { show_advanced_settings: v })}
-                label="Show advanced settings"
-              />
-            </div>
-          </Panel>
-          </>
+                </div>
+              </Panel>
+            </>
           ) : null}
         </div>
 

@@ -69,9 +69,7 @@ function TrackDetail({ track }: { track: TrackSummary }) {
       <dl className="rounded-md border border-border px-3">
         <DetailRow label="Current path">
           <span className="flex items-start gap-1">
-            <Mono
-              className={cn("break-all", mismatch ? "text-warning" : "text-foreground")}
-            >
+            <Mono className={cn("break-all", mismatch ? "text-warning" : "text-foreground")}>
               {track.current_path}
             </Mono>
             <CopyButton value={track.current_path} label="Copy current path" />

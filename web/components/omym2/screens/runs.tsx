@@ -96,7 +96,9 @@ function RunsTimeline({
                       {truncateMiddle(run.run_id, 28)}
                     </Mono>
                     <span className="text-xs tabular-nums text-muted-foreground">
-                      {run.completed_at ? formatDuration(run.started_at, run.completed_at) : "running"}
+                      {run.completed_at
+                        ? formatDuration(run.started_at, run.completed_at)
+                        : "running"}
                     </span>
                     {run.error_summary ? (
                       <span className="w-full truncate text-xs text-danger sm:w-auto sm:max-w-[16rem]">

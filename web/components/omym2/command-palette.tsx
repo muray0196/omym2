@@ -29,11 +29,31 @@ interface PaletteItem {
 }
 
 const NAV_ENTRIES: { label: string; icon: LucideIcon; route: Route; keywords: string }[] = [
-  { label: "Dashboard", icon: LayoutDashboard, route: { name: "dashboard" }, keywords: "home overview" },
-  { label: "Settings", icon: Settings, route: { name: "settings" }, keywords: "config configuration" },
-  { label: "Path Policy", icon: RouteIcon, route: { name: "path-policy" }, keywords: "template preview canonical" },
+  {
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    route: { name: "dashboard" },
+    keywords: "home overview",
+  },
+  {
+    label: "Settings",
+    icon: Settings,
+    route: { name: "settings" },
+    keywords: "config configuration",
+  },
+  {
+    label: "Path Policy",
+    icon: RouteIcon,
+    route: { name: "path-policy" },
+    keywords: "template preview canonical",
+  },
   { label: "Runs", icon: ListChecks, route: { name: "runs" }, keywords: "history apply" },
-  { label: "Check", icon: ShieldCheck, route: { name: "check" }, keywords: "issues consistency diagnostics" },
+  {
+    label: "Check",
+    icon: ShieldCheck,
+    route: { name: "check" },
+    keywords: "issues consistency diagnostics",
+  },
   { label: "Tracks", icon: Music, route: { name: "tracks" }, keywords: "library files music" },
 ]
 

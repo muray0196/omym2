@@ -523,10 +523,7 @@ export function DataTable<T>({
   }
   return (
     <div className="overflow-x-auto rounded-md border border-border">
-      <table
-        className="border-collapse text-sm"
-        style={{ tableLayout: "fixed", width: "100%" }}
-      >
+      <table className="border-collapse text-sm" style={{ tableLayout: "fixed", width: "100%" }}>
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         <colgroup>
           {columns.map((col) =>

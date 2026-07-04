@@ -226,90 +226,90 @@ export function CheckScreen() {
       </section>
 
       <Panel title="Triage" icon={ShieldCheck} bodyClassName="flex flex-col gap-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Issue type">
-              {(id) => (
-                <Select
-                  id={id}
-                  options={ISSUE_TYPE_OPTIONS}
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Library">
-              {(id) => (
-                <Select
-                  id={id}
-                  options={
-                    libraryOptions.length > 0
-                      ? libraryOptions
-                      : [{ value: "all", label: "All libraries" }]
-                  }
-                  value={libraryValue}
-                  disabled
-                />
-              )}
-            </Field>
-          </div>
-
-          {checkErrors.length > 0 ? (
-            <Notice tone="warning" title="Check data is incomplete">
-              {checkErrors.join(" ")}
-            </Notice>
-          ) : null}
-
-          {filtered.length === 0 ? (
-            checkIssues.length === 0 ? (
-              <EmptyState
-                icon={ShieldCheck}
-                title={checkLoaded ? "No issues found." : "Loading issues..."}
-                description={
-                  checkLoaded
-                    ? "DB and filesystem state appear consistent."
-                    : "Current diagnostics will appear here once they are loaded."
-                }
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Issue type">
+            {(id) => (
+              <Select
+                id={id}
+                options={ISSUE_TYPE_OPTIONS}
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
               />
-            ) : (
-              <EmptyState icon={ShieldCheck} title="No issues match this filter." />
-            )
+            )}
+          </Field>
+          <Field label="Library">
+            {(id) => (
+              <Select
+                id={id}
+                options={
+                  libraryOptions.length > 0
+                    ? libraryOptions
+                    : [{ value: "all", label: "All libraries" }]
+                }
+                value={libraryValue}
+                disabled
+              />
+            )}
+          </Field>
+        </div>
+
+        {checkErrors.length > 0 ? (
+          <Notice tone="warning" title="Check data is incomplete">
+            {checkErrors.join(" ")}
+          </Notice>
+        ) : null}
+
+        {filtered.length === 0 ? (
+          checkIssues.length === 0 ? (
+            <EmptyState
+              icon={ShieldCheck}
+              title={checkLoaded ? "No issues found." : "Loading issues..."}
+              description={
+                checkLoaded
+                  ? "DB and filesystem state appear consistent."
+                  : "Current diagnostics will appear here once they are loaded."
+              }
+            />
           ) : (
-            <div className="flex flex-col gap-5">
-              {SEVERITY_ORDER.map((severity) => {
-                const issues = grouped[severity]
-                if (issues.length === 0) return null
-                const meta = SEVERITY_META[severity]
-                const Icon = meta.icon
-                return (
-                  <section key={severity} aria-label={meta.label}>
-                    <div className="mb-2 flex items-center gap-2">
-                      <Icon className={cn("size-4", meta.accentText)} aria-hidden="true" />
-                      <h3 className="text-sm font-semibold">{meta.label}</h3>
-                      <span
-                        className={cn(
-                          "rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums",
-                          meta.accentText,
-                        )}
-                      >
-                        {issues.length}
-                      </span>
-                    </div>
-                    <ul className="grid gap-2 xl:grid-cols-2">
-                      {issues.map((issue, index) => (
-                        <IssueCard
-                          key={
-                            issue.issue_id ??
-                            `${issue.issue_type}-${issue.library_id}-${issue.path ?? issue.track_id ?? issue.plan_id ?? "none"}-${index}`
-                          }
-                          issue={issue}
-                        />
-                      ))}
-                    </ul>
-                  </section>
-                )
-              })}
-            </div>
-          )}
+            <EmptyState icon={ShieldCheck} title="No issues match this filter." />
+          )
+        ) : (
+          <div className="flex flex-col gap-5">
+            {SEVERITY_ORDER.map((severity) => {
+              const issues = grouped[severity]
+              if (issues.length === 0) return null
+              const meta = SEVERITY_META[severity]
+              const Icon = meta.icon
+              return (
+                <section key={severity} aria-label={meta.label}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Icon className={cn("size-4", meta.accentText)} aria-hidden="true" />
+                    <h3 className="text-sm font-semibold">{meta.label}</h3>
+                    <span
+                      className={cn(
+                        "rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums",
+                        meta.accentText,
+                      )}
+                    >
+                      {issues.length}
+                    </span>
+                  </div>
+                  <ul className="grid gap-2 xl:grid-cols-2">
+                    {issues.map((issue, index) => (
+                      <IssueCard
+                        key={
+                          issue.issue_id ??
+                          `${issue.issue_type}-${issue.library_id}-${issue.path ?? issue.track_id ?? issue.plan_id ?? "none"}-${index}`
+                        }
+                        issue={issue}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              )
+            })}
+          </div>
+        )}
       </Panel>
     </>
   )
