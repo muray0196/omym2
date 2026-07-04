@@ -17,7 +17,7 @@ const nextConfig = {
   turbopack: {
     root: webRoot,
   },
-  // Next's default build ID is random, which makes committed static exports
+  // Next's default build ID is random, which makes generated static exports
   // change even when the UI did not.
   generateBuildId: async () => "omym2-static",
 }

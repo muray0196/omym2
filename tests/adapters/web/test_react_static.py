@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from omym2.adapters.web.app import create_web_app
@@ -58,19 +59,11 @@ def test_spa_routes_return_react_index(tmp_path: Path) -> None:
         assert "OMYM2 React Test Shell" in response.text
 
 
-def test_default_packaged_web_build_is_served() -> None:
-    """The committed Next static export is available through the default app factory."""
-    client = TestClient(create_web_app())
-
-    response = client.get(WEB_ROOT_ROUTE)
-
-    assert response.status_code == SUCCESS_STATUS_CODE
-    assert "OMYM2 Console" in response.text
-
-
 def test_default_packaged_web_build_excludes_risky_static_artifacts() -> None:
-    """Packaged static assets exclude common secret, debug, and analytics artifacts."""
+    """Generated packaged static assets exclude common secret, debug, and analytics artifacts."""
     static_dist = Path(__file__).parents[3] / "src" / "omym2" / "adapters" / "web" / "static_dist"
+    if not static_dist.exists():
+        pytest.skip("Generated Web static export is created by the Web build.")
 
     for static_file in static_dist.rglob("*"):
         if not static_file.is_file():
