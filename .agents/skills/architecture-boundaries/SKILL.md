@@ -1,0 +1,58 @@
+---
+name: architecture-boundaries
+description: Decide whether a new module, package, or import between layers is allowed in OMYM2. Use before adding files or imports, and when reviewing structural changes for dependency direction and naming.
+---
+
+# Architecture Boundaries
+
+Authoritative sources: `docs/codebase/dependency-boundaries.md`, `docs/codebase/source-layout.md`, `docs/codebase/naming.md`. This skill is the fast decision path.
+
+## Import decision table
+
+Row = the file you are editing; column = what it wants to import.
+
+| From \ imports | shared | domain | features | adapters | platform |
+| --- | --- | --- | --- | --- | --- |
+| `shared/` | yes | NO | NO | NO | NO |
+| `domain/` | yes | yes | NO | NO | NO |
+| `features/` | yes | yes | own feature + `common_ports` only | NO | NO |
+| `adapters/` | yes | yes | ports, dto, usecases | own subpackage | NO |
+| `platform/` | yes | yes | yes | yes | yes |
+
+Additional hard rules:
+
+- `domain/` performs no I/O: no sqlite3, no file reads/writes, no HTTP, no TOML, no mutagen, no FastAPI/Typer imports.
+- A feature never imports another feature's internals. Chaining usecases (e.g. `add --apply`) happens in CLI, Web, or platform.
+- CLI commands and Web routes never touch the filesystem directly; they translate input, call usecases, format output.
+- Outbound adapters (`db`, `fs`, `metadata`, `config`) implement ports from `features/*/ports.py` or `features/common_ports.py`.
+
+## Business rule placement
+
+Adapters persist, restore, read, write, scan, move, render, parse. Adapters must NOT decide:
+
+- conflicts or duplicates
+- canonical / target paths
+- metadata validity
+- PlanAction / Run / FileEvent status
+
+If an adapter needs an `if` that encodes domain meaning, that decision belongs in a domain service or usecase; the adapter returns raw facts.
+
+## New file checklist
+
+1. Placement matches the table in `implement-change` (or `docs/codebase/source-layout.md`).
+2. Module name is `snake_case.py` and concrete. Banned names: `utils.py`, `helpers.py`, `manager.py`, `service.py`, `common.py`; no `_service.py` or `_dao.py` suffixes.
+3. No `features/<feature>/domain/` or `features/<feature>/adapters/` directories.
+4. `domain/` names are nouns; usecase names are `{verb}_{object}.py`.
+
+## Verify
+
+```bash
+scripts/checks.sh arch
+```
+
+Architecture tests in `tests/architecture/` enforce the highest-risk rules; passing them is necessary but not sufficient — the tables above still apply.
+
+## Stop and report when
+
+- The requested change only works by crossing a NO cell above.
+- You are about to add a new top-level package under `src/omym2/` (needs explicit human approval).

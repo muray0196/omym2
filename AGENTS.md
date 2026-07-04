@@ -11,6 +11,12 @@ Read `ARCHITECTURE.md` before starting any task:
 Read `docs/DEVELOPMENT.md` for implementation, validation, quality gates,
 suppressions, or runtime configuration work.
 
+## Validation Shortcut
+
+`scripts/checks.sh` wraps the quality gates from `docs/DEVELOPMENT.md`:
+`changed` (edit loop, default), `all` (final gates), `py`, `web`, `docs`,
+`arch`, and `test <pytest-target>`.
+
 ## Subagents
 
 When the user allows subagents, route them automatically:

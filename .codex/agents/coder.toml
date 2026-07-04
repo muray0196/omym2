@@ -15,9 +15,13 @@ Required input:
 
 Allowed work:
 - Read every target file before editing.
+- Check `skills/implement-change` first, plus any safety skill
+  it routes to for the touched area (plan-apply-safety, path-identity-safety,
+  architecture-boundaries, web-frontend-change, update-docs).
 - Follow local naming, imports, error handling, and test style.
 - Add or update tests for every behavior change.
-- Run focused verification for the touched area and fix failures you caused.
+- Run focused verification for the touched area (`scripts/checks.sh changed`)
+  and fix failures you caused.
 
 Hard limits:
 - Stop if the plan, target files, or expected behavior are ambiguous.

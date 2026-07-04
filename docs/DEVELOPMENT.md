@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies developer quality commands for edit-loop and final validation gates (ruff, basedpyright, npm lint/build, pytest), suppression rules, and Python runtime configuration policy.
+description: Specifies developer quality commands for edit-loop and final validation gates (ruff, basedpyright, npm lint/build, pytest), the checks.sh wrapper, local LLM helper scripts, suppression rules, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation]
-timestamp: 2026-07-02T21:19:36+09:00
+timestamp: 2026-07-04T11:02:56+09:00
 ---
 
 # Development Harness
@@ -72,6 +72,29 @@ All gates must pass:
 * Tests fail if any test fails.
 
 If the Python project skeleton or tool configuration does not exist yet, report the commands as not runnable instead of inventing replacement commands.
+
+## Wrapper Script
+
+`scripts/checks.sh` wraps the command groups in this document so they can be run with one call:
+
+```bash
+scripts/checks.sh [changed|py|web|all|docs|arch]
+scripts/checks.sh test <pytest-target>
+```
+
+* `changed` (default): edit-loop checks on Python files changed vs `HEAD`
+* `py`: full Python gates
+* `web`: frontend gates
+* `all`: web + py, the final quality gates
+* `docs`: docs bundle conformance tests
+* `arch`: architecture tests
+* `test <pytest-target>`: focused failure inspection
+
+The command groups in this document remain authoritative; the script must stay in sync with them.
+
+## Local LLM Scripts
+
+`scripts/review_with_local_llm.py` runs a test-focused review or missing-test-case generation against a local OpenAI-compatible LLM endpoint. `scripts/ask_local_llm.py` delegates bounded summarize, question, and doc-description subtasks to the same endpoint. Both are standalone developer tools: they never edit files and their output is advisory.
 
 ## Test Commands
 
