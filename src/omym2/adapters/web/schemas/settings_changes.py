@@ -5,8 +5,9 @@ Why: Lets the Web API report settings changes without frontend policy logic.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from omym2.domain.models.app_config import AppConfig
@@ -63,4 +64,7 @@ def _display_value(value: object) -> str:
         return "Not set"
     if isinstance(value, bool):
         return "On" if value else "Off"
+    if isinstance(value, Mapping):
+        mapping_value = cast("Mapping[object, object]", value)
+        return str(dict(mapping_value))
     return str(value)
