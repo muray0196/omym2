@@ -47,7 +47,6 @@ Shared fakes live in `tests/fakes/`. Look there before writing a new fake.
 2. Copy the naming and fixture style of a neighboring test. Test functions: `test_<behavior>` stating the expected outcome.
 3. Cover the normal case, one error case, and the boundary the change introduces. Do not pad with redundant cases.
 4. Run focused first: `scripts/checks.sh test <file-or-node-id>`, then `scripts/checks.sh changed`.
-5. Optional: get missing-case ideas from the local LLM — see `delegate-local-llm` (`review_with_local_llm.py cases`). Treat output as hints, not requirements.
 
 ## Anti-patterns (reject these in your own work)
 

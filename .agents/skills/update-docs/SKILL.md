@@ -37,9 +37,6 @@ description: Edit anything under docs/ safely. Use for adding, changing, moving,
 5. If you added, deleted, moved, or renamed a doc: update its directory `index.md`, plus every router that links to it (`AGENTS.md`, `ARCHITECTURE.md`, other docs, `.agents/skills/*/SKILL.md`).
 6. Verify: `scripts/checks.sh docs` — must pass before you finish.
 
-Optional: draft a `description` and `tags` with the local LLM:
-`uv run python scripts/ask_local_llm.py doc-description --files docs/<file>.md` (see `delegate-local-llm`). Verify the draft yourself before using it.
-
 ## Content rules
 
 - Docs are for agents: state rules as testable statements, not narrative.
