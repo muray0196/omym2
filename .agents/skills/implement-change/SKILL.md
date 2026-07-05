@@ -13,6 +13,7 @@ Read `ARCHITECTURE.md` first if you have not read it this session. Then open eve
 | --- | --- |
 | Plan, PlanAction, Run, FileEvent, apply, undo, refresh, or any Library music file mutation | `plan-apply-safety` |
 | Stored paths, PathPolicy, Library identity, relink, or DB path columns | `path-identity-safety` |
+| DB tables, columns, indexes, migration files, or repository persistence | `db-schema-change` |
 | A new module or package, or a new import between layers | `architecture-boundaries` |
 | Anything under `web/` | `web-frontend-change` |
 | Anything under `docs/` | `update-docs` |

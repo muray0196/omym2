@@ -17,7 +17,7 @@ Test policy is authoritative in `docs/TESTING.md`. This skill is the operational
 | `features/*/usecases/` | `tests/features/` | unit tests through ports, using fakes |
 | `adapters/` (SQLite, fs, metadata, config, cli, web) | `tests/adapters/` | integration tests with real adapter |
 | `shared/` | `tests/shared/` | pure unit tests |
-| `scripts/*.py` | `tests/scripts/` | load module by file path (see existing tests) |
+| `scripts/*.py` | `tests/scripts/` (create on first use) | run the script via `subprocess`; anchor: `tests/docs/test_index_generation.py` |
 | Layer / naming rules | `tests/architecture/` | already exist; extend only for new rules |
 | `docs/` bundle shape | `tests/docs/` | already exist; do not duplicate |
 
