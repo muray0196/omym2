@@ -1,7 +1,3 @@
----
-docs_bundle_version: "0.1"
----
-
 # Core Documentation
 
 * [Product](PRODUCT.md) - Describes OMYM2's product shape as a headless domain core with a CLI runner and a local Web settings console, and defines its primary safe-import use case and technology stack.

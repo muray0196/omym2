@@ -21,7 +21,6 @@ TITLE_FIELD = "title"
 DESCRIPTION_FIELD = "description"
 MIN_QUOTED_LENGTH = 2
 QUOTE_CHARACTERS = frozenset({'"', "'"})
-ROOT_FRONTMATTER = '---\ndocs_bundle_version: "0.1"\n---'
 DEFAULT_DIRECTORIES_HEADING = "Directories"
 
 
@@ -166,10 +165,6 @@ def _render_index(directory: Path, docs_root: Path) -> str:
     metadata = _metadata_for(relative_key, directory)
 
     lines: list[str] = []
-    if directory == docs_root:
-        lines.extend(ROOT_FRONTMATTER.split("\n"))
-        lines.append("")
-
     lines.append(f"# {metadata.heading}")
     lines.append("")
     if metadata.intro:

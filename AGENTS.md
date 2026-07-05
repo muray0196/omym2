@@ -6,6 +6,10 @@ Use this routing before choosing task-specific docs.
 
 Read `ARCHITECTURE.md` before starting any task:
 
+## Prohibited Reading
+
+Never open or read `WORKFLOW.md` under any circumstances.
+
 ## Read As Needed
 
 Read `docs/DEVELOPMENT.md` for implementation, validation, quality gates,
@@ -31,12 +35,11 @@ When the user allows subagents, route them automatically:
 
 ## Knowledge Navigation
 
-`docs/` is a structured documentation bundle: every doc carries YAML
-frontmatter (`type`, `title`, `description`, `tags`, `timestamp`), and each
-directory has an `index.md` for progressive disclosure. Start at
-`docs/index.md`. When you edit a doc, update its frontmatter `description`
-and `timestamp` and the matching `index.md` entry; CI enforces conformance
-via the docs bundle test under `tests/docs/`.
+Use the docs router below for task-specific reading.
+When you edit a doc, update its frontmatter `description` and `timestamp`; do not edit
+`index.md` files by hand. Regenerate indexes with
+`uv run python scripts/generate_docs_indexes.py --write`. CI enforces
+conformance via the docs bundle test under `tests/docs/`.
 
 ## Docs Router
 

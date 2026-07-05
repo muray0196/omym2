@@ -22,7 +22,7 @@ description: Edit anything under docs/ safely. Use for adding, changing, moving,
    ```
 
    All five fields required; `tags` non-empty; `timestamp` ISO 8601.
-2. `index.md` files carry no frontmatter (only the root `docs/index.md` may have `docs_bundle_version`).
+2. `index.md` files carry no frontmatter.
 3. Every directory's `index.md` lists each sibling doc as:
    `* [Title](file.md) - description`
    where the description **exactly matches** that file's frontmatter `description`.

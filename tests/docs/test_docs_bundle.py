@@ -24,7 +24,6 @@ INDEX_AND_LOG_FILE_NAMES = frozenset({INDEX_FILE_NAME, LOG_FILE_NAME})
 REQUIRED_STRING_FIELDS = ("type", "title", "description")
 TAGS_FIELD = "tags"
 TIMESTAMP_FIELD = "timestamp"
-ROOT_INDEX_ALLOWED_FIELDS = frozenset({"docs_bundle_version"})
 MARKDOWN_FILE_PATTERN = "*.md"
 MARKDOWN_LINK_PATTERN = re.compile(r"\]\(([^)]+)\)")
 INDEX_ENTRY_PATTERN = re.compile(r"^\*\s+\[(?P<title>[^\]]+)\]\((?P<target>[^)]+)\)\s+-\s+(?P<description>.+)$")
@@ -51,7 +50,7 @@ def test_frontmatter_required_fields() -> None:
 
 
 def test_index_files_have_no_frontmatter() -> None:
-    """Index files stay frontmatter-free, except the bundle root which may carry docs_bundle_version only."""
+    """Index files stay frontmatter-free."""
     failures: list[str] = []
     for path in _all_markdown_files():
         if path.name != INDEX_FILE_NAME:
@@ -245,24 +244,8 @@ def _index_frontmatter_failures(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
     body = _frontmatter_body(text)
 
-    if path == _bundle_root_index():
-        return _root_index_frontmatter_failures(relative, body)
     if body is not None:
         return [f"{relative}: index files must not carry frontmatter"]
-    return []
-
-
-def _root_index_frontmatter_failures(relative: str, body: str | None) -> list[str]:
-    if body is None:
-        return []
-    try:
-        fields = _parse_frontmatter_fields(body)
-    except ValueError as error:
-        return [f"{relative}: {error}"]
-
-    extra_fields = sorted(set(fields) - ROOT_INDEX_ALLOWED_FIELDS)
-    if extra_fields:
-        return [f"{relative}: frontmatter has disallowed fields {extra_fields}"]
     return []
 
 
@@ -524,10 +507,6 @@ def _all_docs_directories() -> list[Path]:
 
 def _relative_to_docs(path: Path) -> str:
     return str(path.resolve().relative_to(_docs_root()))
-
-
-def _bundle_root_index() -> Path:
-    return _docs_root() / INDEX_FILE_NAME
 
 
 def _docs_root() -> Path:
