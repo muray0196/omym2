@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies developer quality commands, the checks.sh wrapper, docs search and routing scripts, local LLM helpers, suppression rules, and Python runtime configuration policy.
+description: Specifies developer quality commands, the checks.sh wrapper, docs search and model-assisted routing scripts, local model policy, suppression rules, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation]
-timestamp: 2026-07-05T13:21:07+09:00
+timestamp: 2026-07-05T23:38:08+09:00
 ---
 
 # Development Harness
@@ -99,14 +99,38 @@ The command groups in this document remain authoritative; the script must stay i
 time and returns file, line, and anchor targets for citation-ready docs navigation. There is no
 generated search artifact; results can never go stale.
 `scripts/route_docs.py` builds on the same parsed catalog and returns JSON reading guidance for a
-natural-language task, always including `ARCHITECTURE.md` as required context. It is deterministic
-and does not require a local model server.
-`scripts/eval_docs_router.py` measures lexical routing cases from
-`tests/fixtures/docs_routing_cases.jsonl`.
+natural-language task, always including `ARCHITECTURE.md` as required context. By default the
+`route` command uses the supported LM Studio local-model pipeline: lexical top 40 plus embedding
+top 80 recall, combined-score prompt ordering, then prompt-guided selector. If that pipeline is
+unavailable, routing falls back to deterministic lexical routing and reports a warning.
 
-## Local LLM Scripts
+Run deterministic lexical routing explicitly with `--lexical-only`:
 
-`scripts/review_with_local_llm.py` runs a test-focused review or missing-test-case generation against a local OpenAI-compatible LLM endpoint. `scripts/ask_local_llm.py` delegates bounded summarize, question, doc-description, and docs-search (docs reading-list selection with script-side path validation) subtasks to the same endpoint. Both are standalone developer tools: they never edit files and their output is advisory.
+```bash
+uv run python scripts/route_docs.py route "How does apply record FileEvents?"
+uv run python scripts/route_docs.py route "How does apply record FileEvents?" --lexical-only
+uv run python scripts/route_docs.py refresh
+```
+
+The default model identifiers are:
+
+* `OMYM2_DOC_EMBED_MODEL=text-embedding-qwen3-embedding-0.6b`
+* `OMYM2_LOCAL_LLM_MODEL=qwen/qwen3-4b-2507`
+
+Endpoint base URLs and API keys come from the corresponding `OMYM2_DOC_*`,
+`OMYM2_LMSTUDIO_BASE_URL`, `OMYM2_LOCAL_LLM_*`, or `LLM_*` environment variables. Without an
+override, the router probes reachable WSL host candidates before falling back to
+`http://localhost:1234/v1`. Model requests include an LM Studio `ttl` so JIT-loaded models remain
+available during routing. The embedding cache is local-only under `.doc-router/embeddings.sqlite`
+and is ignored by git.
+If a model endpoint is unavailable during routing, the script returns the deterministic fallback
+with a warning.
+
+`scripts/eval_docs_router.py` measures lexical routing cases from `tests/fixtures/docs_routing_cases.jsonl`.
+
+## Local Model Policy
+
+General-purpose local LLM delegation is intentionally unavailable. `scripts/ask_local_llm.py` and `scripts/review_with_local_llm.py` were removed; do not reintroduce local-model helpers for summaries, one-off Q&A, doc-description drafting, docs-search, test review, or missing-test-case generation. Use `scripts/route_docs.py` for docs routing and read files directly for other reasoning tasks.
 
 ## Test Commands
 

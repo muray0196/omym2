@@ -13,9 +13,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from docs_catalog import DocCard, Heading, build_doc_cards
+from docs_catalog import DocCard, Heading, build_doc_cards, project_root, tokens
 
-PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from script file."
 BODY_WEIGHT = 4
 PATH_WEIGHT = 8
 TYPE_WEIGHT = 10
@@ -26,7 +25,6 @@ TITLE_WEIGHT = 40
 EXACT_PHRASE_MULTIPLIER = 3
 DEFAULT_LIMIT = 8
 SNIPPET_LIMIT = 220
-TOKEN_PATTERN: re.Pattern[str] = re.compile(r"[a-z0-9_./-]+")
 MARKDOWN_DECORATION_PATTERN: re.Pattern[str] = re.compile(r"^[#*\-\s>|`]+")
 
 JsonObject = dict[str, object]
@@ -111,7 +109,7 @@ class QueryTerms:
 def main(argv: list[str] | None = None) -> int:
     """Search docs and print ranked section references."""
     args = _parse_args(argv)
-    docs_root = args.docs_root if args.docs_root is not None else _project_root() / "docs"
+    docs_root = args.docs_root if args.docs_root is not None else project_root() / "docs"
     try:
         hits = search_docs(
             query=" ".join(args.query),
@@ -137,7 +135,7 @@ def search_docs(query: str, limit: int, doc_type: str | None, docs_root: Path) -
         message = f"{docs_root} does not exist or is not a directory"
         raise SearchError(message)
 
-    terms = QueryTerms(phrase=query.lower(), tokens=_tokens(query))
+    terms = QueryTerms(phrase=query.lower(), tokens=tokens(query))
     if not terms.tokens:
         return []
 
@@ -173,7 +171,7 @@ def _documents(docs_root: Path) -> list[DocumentRecord]:
 
 def _document_record(card: DocCard) -> DocumentRecord:
     return DocumentRecord(
-        path=card.docs_path,
+        path=card.path,
         doc_type=card.doc_type,
         title=card.title,
         description=card.description,
@@ -281,10 +279,6 @@ def _score_field(
     return score
 
 
-def _tokens(text: str) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(TOKEN_PATTERN.findall(text.lower())))
-
-
 def _snippet(section_text: str, fallback: str, tokens: tuple[str, ...]) -> str:
     best_line = ""
     best_score = 0
@@ -321,14 +315,6 @@ def _print_text_results(hits: list[SearchHit]) -> None:
         _ = sys.stdout.write(f"  score={hit.score} match={','.join(hit.reasons)} type={hit.doc_type}\n")
         if hit.snippet:
             _ = sys.stdout.write(f"  {hit.snippet}\n")
-
-
-def _project_root() -> Path:
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if (parent / "pyproject.toml").is_file():
-            return parent
-    raise RuntimeError(PROJECT_ROOT_NOT_FOUND_MESSAGE)
 
 
 if __name__ == "__main__":

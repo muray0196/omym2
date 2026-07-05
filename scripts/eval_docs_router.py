@@ -13,9 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from route_docs import DEFAULT_ROUTE_LIMIT, route_query
+from docs_catalog import DocCard, project_root
+from route_docs import DEFAULT_ROUTE_LIMIT, RouteError, load_catalog, route_query
 
-PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from script file."
 DEFAULT_CASES_RELATIVE_PATH = Path("tests/fixtures/docs_routing_cases.jsonl")
 DEFAULT_DOCS_RELATIVE_PATH = Path("docs")
 REQUIRED_QUERY_FIELD = "query"
@@ -47,17 +47,18 @@ class RoutingCase:
     query: str
     expected: tuple[str, ...]
     forbidden: tuple[str, ...]
+    line_number: int
 
 
 def main(argv: list[str] | None = None) -> int:
     """Evaluate route_docs.py against checked-in routing cases."""
     args = _parse_args(argv)
-    repo_root = _project_root()
+    repo_root = project_root()
     cases_path = args.cases if args.cases is not None else repo_root / DEFAULT_CASES_RELATIVE_PATH
     docs_root = args.docs_root if args.docs_root is not None else repo_root / DEFAULT_DOCS_RELATIVE_PATH
     try:
         result = evaluate_cases(cases_path=cases_path, docs_root=docs_root, repo_root=repo_root, limit=args.limit)
-    except EvalError as error:
+    except (EvalError, RouteError) as error:
         _ = sys.stderr.write(f"docs router eval failed: {error}\n")
         return 2
     if args.json_output:
@@ -72,6 +73,9 @@ def evaluate_cases(cases_path: Path, docs_root: Path, repo_root: Path, limit: in
     cases = _read_cases(cases_path)
     if not cases:
         raise EvalError(f"{cases_path} did not contain any routing cases")
+
+    catalog = load_catalog(docs_root, repo_root)
+    _validate_case_paths(cases, catalog, cases_path)
 
     case_results = [_evaluate_case(case, docs_root, repo_root, limit) for case in cases]
     total_cases = len(case_results)
@@ -135,7 +139,12 @@ def _routing_case(payload: JsonObject, cases_path: Path, line_number: int) -> Ro
         raise EvalError(f"{cases_path}:{line_number} field {FORBIDDEN_FIELD!r} must be a list of strings")
     expected_items = cast("list[str]", expected)
     forbidden_items = cast("list[str]", forbidden)
-    return RoutingCase(query=query, expected=tuple(expected_items), forbidden=tuple(forbidden_items))
+    return RoutingCase(
+        query=query,
+        expected=tuple(expected_items),
+        forbidden=tuple(forbidden_items),
+        line_number=line_number,
+    )
 
 
 def _is_string_list(value: object) -> bool:
@@ -143,6 +152,15 @@ def _is_string_list(value: object) -> bool:
         return False
     items = cast("list[object]", value)
     return all(isinstance(item, str) for item in items)
+
+
+def _validate_case_paths(cases: list[RoutingCase], catalog: list[DocCard], cases_path: Path) -> None:
+    """Raise EvalError for any expected/forbidden path missing from the current docs catalog."""
+    known_paths = {card.path for card in catalog}
+    for case in cases:
+        for path in (*case.expected, *case.forbidden):
+            if path not in known_paths:
+                raise EvalError(f"{cases_path}:{case.line_number} references unknown docs path {path!r}")
 
 
 def _evaluate_case(case: RoutingCase, docs_root: Path, repo_root: Path, limit: int) -> JsonObject:
@@ -156,7 +174,8 @@ def _evaluate_case(case: RoutingCase, docs_root: Path, repo_root: Path, limit: i
         "returned": returned,
         "expected": list(case.expected),
         "forbidden": list(case.forbidden),
-        "recall": len(expected_hits) / len(case.expected),
+        # An empty expected list is a legitimate forbidden-only case; recall is vacuously 1.0.
+        "recall": len(expected_hits) / len(case.expected) if case.expected else 1.0,
         "precision": len(expected_hits) / len(returned) if returned else 0.0,
         "required_miss_count": len(required_misses),
         "forbidden_hit_count": len(forbidden_hits),
@@ -199,14 +218,6 @@ def _print_text_result(result: JsonObject) -> None:
 
 def _write_json(payload: JsonObject) -> None:
     _ = sys.stdout.write(f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n")
-
-
-def _project_root() -> Path:
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        if (parent / "pyproject.toml").is_file():
-            return parent
-    raise RuntimeError(PROJECT_ROOT_NOT_FOUND_MESSAGE)
 
 
 if __name__ == "__main__":

@@ -67,7 +67,7 @@ def test_search_prefers_matching_section_and_returns_citation_target(
     )
 
     assert results
-    assert results[0].path == "execution/apply.md"
+    assert results[0].path == "docs/execution/apply.md"
     assert results[0].line == _heading_line(docs_root, "execution/apply.md", "## FileEvent Status")
     assert results[0].anchor == "fileevent-status"
     assert results[0].section == "FileEvent Status"
@@ -80,9 +80,9 @@ def test_doc_metadata_boosts_only_the_best_section(search_module: SearchModule, 
 
     results = search_module.search_docs("FileEvent", limit=10, doc_type=None, docs_root=docs_root)
 
-    apply_hits = [result for result in results if result.path == "execution/apply.md"]
+    apply_hits = [result for result in results if result.path == "docs/execution/apply.md"]
     assert [hit.section for hit in apply_hits] == ["FileEvent Status"]
-    assert results[0].path == "execution/apply.md"
+    assert results[0].path == "docs/execution/apply.md"
     assert results[0].score > results[1].score
     assert all("index.md" not in result.path for result in results)
 
@@ -94,7 +94,7 @@ def test_doc_level_only_match_returns_single_doc_hit(search_module: SearchModule
     results = search_module.search_docs("reproducibility ledger", limit=10, doc_type=None, docs_root=docs_root)
 
     assert len(results) == 1
-    assert results[0].path == "STORAGE.md"
+    assert results[0].path == "docs/STORAGE.md"
     assert results[0].line == _heading_line(docs_root, "STORAGE.md", "# Storage")
     assert results[0].anchor == "storage"
 
@@ -105,7 +105,7 @@ def test_search_type_filter_limits_results(search_module: SearchModule, tmp_path
 
     results = search_module.search_docs("FileEvent", limit=10, doc_type="Contract", docs_root=docs_root)
 
-    assert [result.path for result in results] == ["contracts/status-reason-catalog.md"]
+    assert [result.path for result in results] == ["docs/contracts/status-reason-catalog.md"]
 
 
 def test_fenced_code_headings_are_not_sections(search_module: SearchModule, tmp_path: Path) -> None:
@@ -137,13 +137,13 @@ def test_main_prints_json_results(
 ) -> None:
     """--json output is compact machine-readable search evidence."""
     docs_root = _fixture_docs(tmp_path)
-    monkeypatch.setattr(search_module, "_project_root", lambda: tmp_path)
+    monkeypatch.setattr(search_module, "project_root", lambda: tmp_path)
 
     exit_code = search_module.main(["FileEvent", "--json", "--limit", "1"])
 
     assert exit_code == EXIT_SUCCESS
     payload = cast("list[dict[str, object]]", json.loads(capsys.readouterr().out))
-    assert payload[0]["path"] == "execution/apply.md"
+    assert payload[0]["path"] == "docs/execution/apply.md"
     assert payload[0]["line"] == _heading_line(docs_root, "execution/apply.md", "## FileEvent Status")
 
 
@@ -154,7 +154,7 @@ def test_missing_docs_root_fails_clearly(
     tmp_path: Path,
 ) -> None:
     """A missing docs directory should fail with an actionable error."""
-    monkeypatch.setattr(search_module, "_project_root", lambda: tmp_path)
+    monkeypatch.setattr(search_module, "project_root", lambda: tmp_path)
 
     exit_code = search_module.main(["FileEvent"])
 

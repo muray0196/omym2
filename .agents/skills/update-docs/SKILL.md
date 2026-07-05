@@ -39,8 +39,7 @@ description: Edit anything under docs/ safely. Use for adding, changing, moving,
    `uv run python scripts/generate_docs_indexes.py --write`
 7. Verify: `scripts/checks.sh docs` — must pass before you finish.
 
-Optional: draft a `description` and `tags` with the local LLM:
-`uv run python scripts/ask_local_llm.py doc-description --files docs/<file>.md` (see `delegate-local-llm`). Verify the draft yourself before using it.
+Draft `description` and `tags` directly from the edited doc content. Do not use a local-LLM helper for docs metadata; `scripts/ask_local_llm.py` has been removed.
 
 ## Content rules
 

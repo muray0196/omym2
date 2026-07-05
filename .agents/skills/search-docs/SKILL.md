@@ -17,7 +17,10 @@ Use this skill to find the smallest authoritative docs section before reading wh
 
    The router builds its catalog from `docs/**/*.md` OKF frontmatter and content at
    query time. It always includes `ARCHITECTURE.md` as required context and returns
-   repo-relative paths.
+   repo-relative paths. The default route uses the local-model routing pipeline
+   and falls back to lexical routing if the model path is unavailable. Do not
+   inspect `docs/index.md` or memorize the docs tree before routing; ask for the
+   docs you need in natural language.
 2. Search specific terms when you need citation targets inside docs:
 
    ```bash
@@ -39,18 +42,10 @@ Use this skill to find the smallest authoritative docs section before reading wh
 
 ## Vague Requests
 
-When you cannot name the domain terms yet (vague or Japanese information need), delegate section
-selection to the local LLM:
-
-```bash
-uv run python scripts/ask_local_llm.py docs-search --ask "<what you need, any language>"
-```
-
-It returns an advisory reading list (`readings` with `path`, `line`, `anchor`, `section`, `why`),
-pre-validated against the parsed docs — hallucinated paths and anchors are dropped by the script.
-Open each hit and cite the Markdown itself. If `readings` is empty, run the Fast Path with the
-returned `suggested_queries`. If the local LLM endpoint is unreachable, fall back to the Fast Path
-or `rg` — never block on the concierge.
+When you cannot name the domain terms yet, use the Fast Path with a natural-language request.
+If routing confidence is low, read the returned fallback docs, then use `scripts/search_docs.py`
+with the more specific terms you found. Do not delegate docs section selection to any separate
+local LLM helper.
 
 ## Boundaries
 

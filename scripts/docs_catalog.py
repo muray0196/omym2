@@ -1,19 +1,17 @@
 # ruff: noqa: INP001 -- Standalone script-local module shared by developer docs tools.
 """
 Summary: Builds the script-local OKF docs catalog from Markdown frontmatter and content.
-Why: Keeps docs search, docs routing, and local LLM docs selection on one parser.
+Why: Keeps docs search and docs routing on one parser.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, replace
+from pathlib import Path
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
+PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from script file."
 FRONTMATTER_DELIMITER = "---"
 INDEX_FILE_NAME = "index.md"
 LOG_FILE_NAME = "log.md"
@@ -83,11 +81,21 @@ def tokens(text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(TOKEN_PATTERN.findall(text.lower())))
 
 
+def project_root() -> Path:
+    """Return the repo root by walking up from this file to the nearest pyproject.toml."""
+    current_file = Path(__file__).resolve()
+    for parent in current_file.parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent
+    raise RuntimeError(PROJECT_ROOT_NOT_FOUND_MESSAGE)
+
+
 def _doc_card(path: Path, docs_root: Path, repo_root: Path) -> DocCard:
     text = _read_doc_text(path)
     fields = _frontmatter_fields(text)
-    headings = tuple(_headings(text))
-    repo_relative_path = path.relative_to(repo_root).as_posix()
+    lines = text.splitlines()
+    headings = tuple(_headings(lines))
+    repo_relative_path = _repo_relative_path(path, repo_root)
     docs_relative_path = path.relative_to(docs_root).as_posix()
     excerpt = _excerpt_text(text)
     links = tuple(_links(text))
@@ -103,22 +111,16 @@ def _doc_card(path: Path, docs_root: Path, repo_root: Path) -> DocCard:
         links=links,
         excerpt=excerpt,
         routing_text="",
-        lines=tuple(text.splitlines()),
+        lines=tuple(lines),
     )
-    return DocCard(
-        path=card.path,
-        docs_path=card.docs_path,
-        content_hash=card.content_hash,
-        doc_type=card.doc_type,
-        title=card.title,
-        description=card.description,
-        tags=card.tags,
-        headings=card.headings,
-        links=card.links,
-        excerpt=card.excerpt,
-        routing_text=_routing_text(card),
-        lines=card.lines,
-    )
+    return replace(card, routing_text=_routing_text(card))
+
+
+def _repo_relative_path(path: Path, repo_root: Path) -> str:
+    """Return path relative to repo_root, or the raw resolved path if docs_root sits outside the repo."""
+    if path.is_relative_to(repo_root):
+        return path.relative_to(repo_root).as_posix()
+    return path.as_posix()
 
 
 def _routing_text(card: DocCard) -> str:
@@ -168,7 +170,8 @@ def _links(text: str) -> list[str]:
 def _read_doc_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
-    except OSError:
+    except OSError, UnicodeDecodeError:
+        # A missing/unreadable or non-UTF-8 doc must not crash catalog building; treat it as empty.
         return ""
 
 
@@ -230,10 +233,10 @@ def _tags_field(fields: dict[str, FrontmatterValue]) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _headings(text: str) -> list[Heading]:
-    raw_headings = _raw_headings(text)
+def _headings(lines: list[str]) -> list[Heading]:
+    raw_headings = _raw_headings(lines)
     headings: list[Heading] = []
-    line_count = len(text.splitlines())
+    line_count = len(lines)
     for index, raw_heading in enumerate(raw_headings):
         next_line = raw_headings[index + 1].line if index + 1 < len(raw_headings) else line_count + 1
         headings.append(
@@ -248,11 +251,11 @@ def _headings(text: str) -> list[Heading]:
     return headings
 
 
-def _raw_headings(text: str) -> list[Heading]:
+def _raw_headings(lines: list[str]) -> list[Heading]:
     headings: list[Heading] = []
     seen_counts: dict[str, int] = {}
     in_fenced_code = False
-    for line_number, line in enumerate(text.splitlines(), start=1):
+    for line_number, line in enumerate(lines, start=1):
         if line.strip().startswith("```"):
             in_fenced_code = not in_fenced_code
             continue

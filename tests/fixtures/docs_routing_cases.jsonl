@@ -2,3 +2,4 @@
 {"query":"Where is the SQLite schema for PlanAction status defined?","expected":["docs/contracts/db-schema.md","docs/contracts/status-reason-catalog.md"],"forbidden":["docs/PRODUCT.md"]}
 {"query":"How is the Next.js frontend packaged into the Python app?","expected":["docs/codebase/web-frontend.md"],"forbidden":["docs/execution/apply.md"]}
 {"query":"What command should I run for docs validation?","expected":["docs/DEVELOPMENT.md"],"forbidden":["docs/execution/apply.md"]}
+{"query":"when does a run transition to failed","expected":["docs/execution/apply.md","docs/execution/model.md"],"forbidden":["docs/codebase/web-frontend.md"]}
