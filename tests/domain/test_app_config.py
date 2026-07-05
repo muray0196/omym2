@@ -11,6 +11,8 @@ import pytest
 
 from omym2.config import (
     CONFIG_VERSION,
+    DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION,
+    DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE,
     DEFAULT_PATH_POLICY_TEMPLATE,
     DEFAULT_UNKNOWN_ALBUM,
     DEFAULT_UNKNOWN_ARTIST,
@@ -20,6 +22,8 @@ from omym2.domain.models.app_config import (
     INVALID_ARTIST_ID_FALLBACK_MESSAGE,
     INVALID_CONFIG_VERSION_MESSAGE,
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
+    INVALID_PATH_POLICY_DISC_NUMBER_CONDITION_MESSAGE,
+    INVALID_PATH_POLICY_DISC_NUMBER_STYLE_MESSAGE,
     INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE,
     INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE,
     INVALID_PATH_POLICY_UNKNOWN_ALBUM_MESSAGE,
@@ -50,6 +54,8 @@ def test_config_loads_default() -> None:
     assert "{ext}" not in config.path_policy.template
     assert config.path_policy.unknown_artist == DEFAULT_UNKNOWN_ARTIST
     assert config.path_policy.unknown_album == DEFAULT_UNKNOWN_ALBUM
+    assert config.path_policy.disc_number_style == DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE
+    assert config.path_policy.disc_number_condition == DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION
 
 
 def test_config_default_artist_id_entries_are_immutable_and_per_instance() -> None:
@@ -115,6 +121,14 @@ def test_path_policy_config_rejects_empty_unknown_artist_or_album() -> None:
         _ = PathPolicyConfig(unknown_artist="   ")
     with pytest.raises(ValueError, match=INVALID_PATH_POLICY_UNKNOWN_ALBUM_MESSAGE):
         _ = PathPolicyConfig(unknown_album="")
+
+
+def test_path_policy_config_rejects_unsupported_disc_settings() -> None:
+    """PathPolicyConfig rejects unsupported {disc} style and condition values."""
+    with pytest.raises(ValueError, match=INVALID_PATH_POLICY_DISC_NUMBER_STYLE_MESSAGE):
+        _ = PathPolicyConfig(disc_number_style="prefixed")
+    with pytest.raises(ValueError, match=INVALID_PATH_POLICY_DISC_NUMBER_CONDITION_MESSAGE):
+        _ = PathPolicyConfig(disc_number_condition="sometimes")
 
 
 @pytest.mark.parametrize("entry_value", UNSAFE_ARTIST_ID_ENTRY_VALUES)

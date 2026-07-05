@@ -13,6 +13,9 @@ from typing import TYPE_CHECKING
 from omym2.config import (
     LOGICAL_PATH_SEPARATOR,
     PATH_EXTENSION_PREFIX,
+    PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+    PATH_POLICY_DISC_NUMBER_PREFIX,
+    PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
     PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT,
     PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES,
     PATH_POLICY_TRACK_NUMBER_WIDTH,
@@ -64,19 +67,25 @@ class PathPolicy:
         """Build a PathPolicy from the AppConfig fields it depends on."""
         return cls.from_path_policy_config(config.path_policy, config.artist_ids)
 
-    def canonical_path(self, metadata: TrackMetadata, file_extension: str) -> str:
+    def canonical_path(
+        self,
+        metadata: TrackMetadata,
+        file_extension: str,
+        *,
+        album_disc_total: int | None = None,
+    ) -> str:
         """Generate a normalized Library-root-relative canonical path."""
         extension_suffix = _normalize_extension_suffix(file_extension)
-        raw_stem = self._render_raw_stem(metadata)
+        raw_stem = self._render_raw_stem(metadata, album_disc_total)
         generated_path = _normalize_generated_path(raw_stem, extension_suffix, self.config)
         return normalize_library_relative_path(generated_path)
 
-    def _render_raw_stem(self, metadata: TrackMetadata) -> str:
+    def _render_raw_stem(self, metadata: TrackMetadata, album_disc_total: int | None) -> str:
         return self.config.template.format(
             album_artist=self._album_artist(metadata),
             year=self._optional_number(metadata.year),
             album=self._album(metadata),
-            disc=self._disc_number(metadata),
+            disc=self._disc_number(metadata, album_disc_total),
             track=self._track_number(metadata),
             title=self._title(metadata),
             artist=self._artist(metadata),
@@ -130,8 +139,19 @@ class PathPolicy:
             return metadata.title
         return sanitize_track_title(metadata.title)
 
-    def _disc_number(self, metadata: TrackMetadata) -> str:
-        return self._optional_number(metadata.disc_number)
+    def _disc_number(self, metadata: TrackMetadata, album_disc_total: int | None) -> str:
+        if (
+            self.config.disc_number_condition == PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS
+            and not _is_multi_disc_album(album_disc_total)
+        ):
+            return ""
+
+        rendered_number = self._optional_number(metadata.disc_number)
+        if rendered_number == PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT:
+            return rendered_number
+        if self.config.disc_number_style == PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED:
+            return f"{PATH_POLICY_DISC_NUMBER_PREFIX}{rendered_number}"
+        return rendered_number
 
     def _track_number(self, metadata: TrackMetadata) -> str:
         if metadata.track_number is None:
@@ -239,6 +259,10 @@ def _normalize_extension_suffix(file_extension: str) -> str:
     if sanitized_extension == "":
         raise ValueError(EMPTY_FILE_EXTENSION_MESSAGE)
     return f"{PATH_EXTENSION_PREFIX}{sanitized_extension}"
+
+
+def _is_multi_disc_album(album_disc_total: int | None) -> bool:
+    return album_disc_total is not None and album_disc_total > 1
 
 
 def _normalize_generated_path(raw_stem: str, extension_suffix: str, config: PathPolicyConfig) -> str:

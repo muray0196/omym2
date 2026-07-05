@@ -54,6 +54,18 @@ ALLOWED_COMMAND_MODES: Final = frozenset({"plan_first"})  # supported command de
 ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES: Final = frozenset({"skip"})  # duplicate content decisions
 ALLOWED_COLLISION_MISSING_METADATA_POLICIES: Final = frozenset({"block"})  # missing metadata decisions
 ALLOWED_COLLISION_TARGET_EXISTS_POLICIES: Final = frozenset({"conflict"})  # target collision decisions
+PATH_POLICY_DISC_NUMBER_STYLE_PLAIN: Final = "plain"  # render {disc} as the numeric tag value
+PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED: Final = "d_prefixed"  # render {disc} as D plus the numeric tag value
+PATH_POLICY_DISC_NUMBER_CONDITION_ALWAYS: Final = "always"  # render {disc} regardless of inferred album disc count
+PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS: Final = (
+    "multiple_discs"  # render {disc} only when album context is multi-disc
+)
+ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES: Final = frozenset(
+    {PATH_POLICY_DISC_NUMBER_STYLE_PLAIN, PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED}
+)  # supported {disc} display style values
+ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS: Final = frozenset(
+    {PATH_POLICY_DISC_NUMBER_CONDITION_ALWAYS, PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS}
+)  # supported {disc} rendering condition values
 ALLOWED_UI_THEMES: Final = frozenset({"system", "light", "dark", "oled"})  # supported local UI themes
 CONFIG_VERSION: Final = 1  # supported user config schema version
 DEFAULT_COMMAND_MODE: Final = "plan_first"  # initial plan creation mode for mutating commands
@@ -68,6 +80,8 @@ DEFAULT_UNKNOWN_ARTIST: Final = "Unknown Artist"  # fallback artist text for pat
 DEFAULT_UNKNOWN_ALBUM: Final = "Unknown Album"  # fallback album text for path generation
 DEFAULT_PATH_POLICY_SANITIZE: Final = True  # sanitize metadata text before it becomes path text
 DEFAULT_MAX_FILENAME_LENGTH: Final = 180  # maximum generated path component length, characters
+DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE: Final = PATH_POLICY_DISC_NUMBER_STYLE_PLAIN  # default {disc} display style
+DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION: Final = PATH_POLICY_DISC_NUMBER_CONDITION_ALWAYS  # default {disc} condition
 DEFAULT_METADATA_PREFER_ALBUM_ARTIST: Final = True  # prefer album artist when metadata provides it
 DEFAULT_METADATA_REQUIRE_TITLE: Final = True  # require title metadata during plan creation
 DEFAULT_METADATA_REQUIRE_ARTIST: Final = True  # require artist metadata during plan creation
@@ -118,11 +132,12 @@ SANITIZER_HYPHEN_RUN_PATTERN: Final = r"-+"  # repeated hyphens collapsed after 
 SANITIZER_REPLACEMENT: Final = "-"  # replacement for sanitizer characters outside [\w-]
 SANITIZER_UNSAFE_PATTERN: Final = r"[^\w-]"  # characters converted to sanitizer replacement
 SANITIZER_UTF8_ENCODING: Final = "utf-8"  # encoding used for sanitizer byte limits
+PATH_POLICY_DISC_NUMBER_PLACEHOLDER: Final = "disc"  # template field controlled by disc rendering settings
 PATH_POLICY_ARTIST_ID_PLACEHOLDER: Final = "artist_id"  # template field resolved from editable artist ID config
 PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "album_artist",
     "album",
-    "disc",
+    PATH_POLICY_DISC_NUMBER_PLACEHOLDER,
     "track",
     "title",
     "artist",
@@ -131,6 +146,7 @@ PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
 )  # placeholders allowed in path policy stem templates
 PATH_POLICY_BEHAVIOR_VERSION: Final = 5  # version included in hashes when canonical path behavior changes
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
+PATH_POLICY_DISC_NUMBER_PREFIX: Final = "D"  # prefix used by d_prefixed {disc} rendering
 PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES: Final[frozenset[str]] = frozenset(
     {"CON", "PRN", "AUX", "NUL"} | {f"COM{digit}" for digit in range(1, 10)} | {f"LPT{digit}" for digit in range(1, 10)}
 )  # Windows reserved device names treated as sanitized-to-empty stems, case-insensitive
@@ -142,6 +158,7 @@ PATH_POLICY_PREVIEW_ALBUM: Final = "Example Album"  # sample album shown in sett
 PATH_POLICY_PREVIEW_ALBUM_ARTIST: Final = "Aimer"  # sample album artist shown in settings preview
 PATH_POLICY_PREVIEW_YEAR: Final = 2024  # sample release year shown in settings preview
 PATH_POLICY_PREVIEW_DISC_NUMBER: Final = 1  # sample disc number shown in settings preview
+PATH_POLICY_PREVIEW_DISC_TOTAL: Final = 2  # sample disc total shown in settings preview
 PATH_POLICY_PREVIEW_TRACK_NUMBER: Final = 3  # sample track number shown in settings preview
 PATH_POLICY_PREVIEW_FILE_EXTENSION: Final = ".FLAC"  # sample source suffix shown in settings preview
 SQLITE_CONNECTION_TIMEOUT_SECONDS: Final = 30.0  # SQLite connection busy timeout, seconds

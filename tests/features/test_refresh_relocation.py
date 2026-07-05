@@ -14,6 +14,10 @@ from uuid import UUID
 import pytest
 
 from omym2.adapters.config.default_config import default_app_config
+from omym2.config import (
+    PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+    PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+)
 from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
@@ -52,6 +56,7 @@ INVALID_PATH_TEMPLATE = "{artist}/../{title}"
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 LIBRARY_ROOT = "/music/library"
 NEW_PATH = "Artist/2026_Album/1-02_New-Title.flac"
+NEW_D_PREFIXED_PATH = "Artist/2026_Album/D1-02_New-Title.flac"
 OLD_PATH = "Artist/2026_Album/1-02_Old-Title.flac"
 OTHER_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 OTHER_LIBRARY_ROOT = "/music/other"
@@ -85,6 +90,14 @@ SECOND_NEW_METADATA = TrackMetadata(
     year=2026,
     track_number=3,
     disc_number=1,
+)
+PEER_METADATA = TrackMetadata(
+    title="Peer",
+    artist="Artist",
+    album="Album",
+    year=2026,
+    track_number=5,
+    disc_number=2,
 )
 MISSING_ARTIST_METADATA = TrackMetadata(
     title="New Title",
@@ -125,6 +138,39 @@ def test_refresh_records_existing_track_id_for_relocation_after_metadata_change(
     assert uow.plans.get(PLAN_ID) == plan
     assert uow.plan_actions.get(ACTION_ID) == action
     assert uow.tracks.get(TRACK_ID) == _track()
+
+
+def test_refresh_renders_disc_number_from_active_peer_context() -> None:
+    """Refresh infers multi-disc context from active tracks and fresh snapshots."""
+    config = AppConfig(
+        path_policy=PathPolicyConfig(
+            disc_number_style=PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+            disc_number_condition=PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+        )
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(
+        _library(path_policy_hash=calculate_path_policy_fingerprint(config.path_policy, config.artist_ids))
+    )
+    uow.tracks.save(_track())
+    uow.tracks.save(
+        _track(
+            SECOND_TRACK_ID,
+            "Artist/2026_Album/D2-05_Peer.flac",
+            metadata=PEER_METADATA,
+        )
+    )
+    source_path = _absolute(OLD_PATH)
+    ports, _ = _ports(
+        uow,
+        {source_path: _snapshot(source_path, NEW_METADATA)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(config=config),
+    )
+
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(track_id=TRACK_ID))
+
+    assert plan.actions[0].target_path == NEW_D_PREFIXED_PATH
 
 
 def test_refresh_persists_zero_action_plan_when_canonical_path_is_unchanged() -> None:

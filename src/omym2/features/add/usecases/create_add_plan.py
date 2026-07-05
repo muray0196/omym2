@@ -13,6 +13,8 @@ from omym2.config import PLAN_ACTION_SORT_ORDER_START, PLAN_ACTION_SORT_ORDER_ST
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.track import TrackStatus
+from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.track import Track
+    from omym2.domain.services.album_disc import AlbumDiscTotals
     from omym2.features.add.dto import CreateAddPlanRequest
     from omym2.features.add.ports import CreateAddPlanPorts
     from omym2.features.common_ports import UnitOfWork
@@ -68,8 +71,25 @@ class CreateAddPlanUseCase:
             library_tracks = tuple(uow.tracks.list_by_library(library.library_id))
             duplicate_track_by_hash = _duplicate_track_by_hash(library_tracks)
             scan_entries = self.ports.file_scanner.scan(source_root)
+            captured_candidates = tuple(self._candidate(entry, config) for entry in scan_entries)
+            active_library_metadata = tuple(
+                track.metadata for track in library_tracks if track.status == TrackStatus.ACTIVE
+            )
+            album_disc_totals = infer_album_disc_totals(
+                (
+                    *(
+                        candidate.snapshot.metadata
+                        for candidate in captured_candidates
+                        if candidate.snapshot is not None
+                    ),
+                    *active_library_metadata,
+                ),
+                unknown_artist=config.path_policy.unknown_artist,
+                unknown_album=config.path_policy.unknown_album,
+            )
             candidates = tuple(
-                self._candidate(entry, config, path_policy, duplicate_track_by_hash) for entry in scan_entries
+                self._with_target_path(candidate, path_policy, duplicate_track_by_hash, album_disc_totals)
+                for candidate in captured_candidates
             )
             candidates = self._with_target_conflicts(library, candidates, library_tracks)
             plan_id = self.ports.id_generator.new_plan_id()
@@ -127,8 +147,6 @@ class CreateAddPlanUseCase:
         self,
         entry: FileScanEntry,
         config: AppConfig,
-        path_policy: PathPolicy,
-        duplicate_track_by_hash: dict[str, Track],
     ) -> _AddCandidate:
         source_path = _normalize_external_source_path(entry.path)
         try:
@@ -142,18 +160,39 @@ class CreateAddPlanUseCase:
         if _has_missing_required_metadata(snapshot, config):
             return _blocked_candidate(source_path, PlanActionReason.MISSING_REQUIRED_METADATA, snapshot=snapshot)
 
+        return _AddCandidate(
+            source_path=source_path,
+            snapshot=snapshot,
+            target_path=None,
+            action_type=ActionType.MOVE,
+            reason=None,
+            track_id=None,
+        )
+
+    def _with_target_path(
+        self,
+        candidate: _AddCandidate,
+        path_policy: PathPolicy,
+        duplicate_track_by_hash: dict[str, Track],
+        album_disc_totals: AlbumDiscTotals,
+    ) -> _AddCandidate:
+        snapshot = candidate.snapshot
+        if candidate.reason is not None or snapshot is None:
+            return candidate
+
         try:
             target_path = path_policy.canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
+                album_disc_total=album_disc_totals.for_metadata(snapshot.metadata),
             )
         except ValueError as exc:
-            return _blocked_candidate(source_path, _path_generation_failure_reason(exc), snapshot=snapshot)
+            return _blocked_candidate(candidate.source_path, _path_generation_failure_reason(exc), snapshot=snapshot)
 
         duplicate_track = duplicate_track_by_hash.get(snapshot.content_hash)
         if duplicate_track is not None:
             return _AddCandidate(
-                source_path=source_path,
+                source_path=candidate.source_path,
                 snapshot=snapshot,
                 target_path=target_path,
                 action_type=ActionType.SKIP,
@@ -162,7 +201,7 @@ class CreateAddPlanUseCase:
             )
 
         return _AddCandidate(
-            source_path=source_path,
+            source_path=candidate.source_path,
             snapshot=snapshot,
             target_path=target_path,
             action_type=ActionType.MOVE,

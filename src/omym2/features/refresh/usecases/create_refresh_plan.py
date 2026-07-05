@@ -14,6 +14,7 @@ from omym2.domain.models.library import LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import TrackStatus
+from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.library import Library
     from omym2.domain.models.track import Track
+    from omym2.domain.services.album_disc import AlbumDiscTotals
     from omym2.features.common_ports import UnitOfWork
     from omym2.features.refresh.dto import CreateRefreshPlanRequest
     from omym2.features.refresh.ports import CreateRefreshPlanPorts
@@ -75,7 +77,11 @@ class CreateRefreshPlanUseCase:
                 track for track in uow.tracks.list_by_library(library.library_id) if track.status == TrackStatus.ACTIVE
             )
             selected_tracks = self._selected_tracks(request, library, active_tracks)
-            candidates = tuple(self._candidate(library, track, config, path_policy) for track in selected_tracks)
+            captured_candidates = tuple(self._candidate(library, track, config) for track in selected_tracks)
+            album_disc_totals = _album_disc_totals(active_tracks, captured_candidates, config)
+            candidates = tuple(
+                self._with_target_path(candidate, path_policy, album_disc_totals) for candidate in captured_candidates
+            )
             candidates = self._with_target_conflicts(library, candidates, active_tracks)
             plan_id = self.ports.id_generator.new_plan_id()
             actions = self._actions(plan_id, library, candidates)
@@ -117,7 +123,6 @@ class CreateRefreshPlanUseCase:
         library: Library,
         track: Track,
         config: AppConfig,
-        path_policy: PathPolicy,
     ) -> _RefreshCandidate:
         source_filesystem_path = self.ports.path_resolver.resolve_library_path(library.root_path, track.current_path)
 
@@ -129,23 +134,40 @@ class CreateRefreshPlanUseCase:
         if _has_missing_required_metadata(snapshot, config):
             return _blocked_candidate(track, PlanActionReason.MISSING_REQUIRED_METADATA, snapshot=snapshot)
 
+        return _RefreshCandidate(
+            track=track,
+            snapshot=snapshot,
+            target_path=None,
+            reason=None,
+            needs_action=False,
+        )
+
+    def _with_target_path(
+        self,
+        candidate: _RefreshCandidate,
+        path_policy: PathPolicy,
+        album_disc_totals: AlbumDiscTotals,
+    ) -> _RefreshCandidate:
+        snapshot = candidate.snapshot
+        if candidate.reason is not None or snapshot is None:
+            return candidate
+
         try:
             target_path = path_policy.canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
+                album_disc_total=album_disc_totals.for_metadata(snapshot.metadata),
             )
         except ValueError as exc:
-            return _blocked_candidate(track, _path_generation_failure_reason(exc), snapshot=snapshot)
+            return replace(candidate, reason=_path_generation_failure_reason(exc), needs_action=True)
 
-        return _RefreshCandidate(
-            track=track,
-            snapshot=snapshot,
+        return replace(
+            candidate,
             target_path=target_path,
-            reason=None,
             needs_action=(
-                target_path != track.current_path
-                or snapshot.content_hash != track.content_hash
-                or snapshot.metadata_hash != track.metadata_hash
+                target_path != candidate.track.current_path
+                or snapshot.content_hash != candidate.track.content_hash
+                or snapshot.metadata_hash != candidate.track.metadata_hash
             ),
         )
 
@@ -321,6 +343,23 @@ def _action_type(candidate: _RefreshCandidate) -> ActionType:
     if candidate.reason is None and candidate.target_path == candidate.track.current_path:
         return ActionType.REFRESH_METADATA
     return ActionType.MOVE
+
+
+def _album_disc_totals(
+    active_tracks: Sequence[Track],
+    candidates: Sequence[_RefreshCandidate],
+    config: AppConfig,
+) -> AlbumDiscTotals:
+    refreshed_metadata_by_track_id = {
+        candidate.track.track_id: candidate.snapshot.metadata
+        for candidate in candidates
+        if candidate.snapshot is not None
+    }
+    return infer_album_disc_totals(
+        (refreshed_metadata_by_track_id.get(track.track_id, track.metadata) for track in active_tracks),
+        unknown_artist=config.path_policy.unknown_artist,
+        unknown_album=config.path_policy.unknown_album,
+    )
 
 
 def _move_target_sources(candidates: Sequence[_RefreshCandidate]) -> dict[str, tuple[str, ...]]:

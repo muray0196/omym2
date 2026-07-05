@@ -5,7 +5,7 @@ Why: Registers clean Libraries and records review Plans without moving files.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -14,6 +14,7 @@ from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import Track, TrackStatus
+from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.app_config import AppConfig
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
+    from omym2.domain.services.album_disc import AlbumDiscTotals
     from omym2.features.common_ports import UnitOfWork
     from omym2.features.organize.dto import CreateOrganizePlanRequest
     from omym2.features.organize.ports import CreateOrganizePlanPorts
@@ -62,7 +64,15 @@ class CreateOrganizePlanUseCase:
         with self.ports.uow as uow:
             library = self._select_library(uow, request.library_root, path_policy_hash, timestamp)
             scan_entries = self.ports.file_scanner.scan(library.root_path)
-            candidates = tuple(self._candidate(library.root_path, entry, config, path_policy) for entry in scan_entries)
+            captured_candidates = tuple(self._candidate(library.root_path, entry, config) for entry in scan_entries)
+            album_disc_totals = infer_album_disc_totals(
+                (candidate.snapshot.metadata for candidate in captured_candidates if candidate.snapshot is not None),
+                unknown_artist=config.path_policy.unknown_artist,
+                unknown_album=config.path_policy.unknown_album,
+            )
+            candidates = tuple(
+                self._with_target_path(candidate, path_policy, album_disc_totals) for candidate in captured_candidates
+            )
             result = self._persist_result(uow, library, candidates, config_hash, timestamp)
             uow.commit()
             return result
@@ -104,7 +114,6 @@ class CreateOrganizePlanUseCase:
         library_root: str,
         entry: FileScanEntry,
         config: AppConfig,
-        path_policy: PathPolicy,
     ) -> _OrganizeCandidate:
         try:
             source_path = self.ports.path_resolver.relative_to_library(library_root, entry.path)
@@ -131,24 +140,33 @@ class CreateOrganizePlanUseCase:
                 block_reason=PlanActionReason.MISSING_REQUIRED_METADATA,
             )
 
+        return _OrganizeCandidate(
+            source_path=source_path,
+            snapshot=snapshot,
+            target_path=None,
+            block_reason=None,
+        )
+
+    def _with_target_path(
+        self,
+        candidate: _OrganizeCandidate,
+        path_policy: PathPolicy,
+        album_disc_totals: AlbumDiscTotals,
+    ) -> _OrganizeCandidate:
+        snapshot = candidate.snapshot
+        if candidate.block_reason is not None or snapshot is None:
+            return candidate
+
         try:
             target_path = path_policy.canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
+                album_disc_total=album_disc_totals.for_metadata(snapshot.metadata),
             )
         except ValueError as exc:
-            return _blocked_candidate(
-                source_path=source_path,
-                snapshot=snapshot,
-                block_reason=_path_generation_failure_reason(exc),
-            )
+            return replace(candidate, block_reason=_path_generation_failure_reason(exc))
 
-        return _OrganizeCandidate(
-            source_path=source_path,
-            snapshot=snapshot,
-            target_path=target_path,
-            block_reason=None,
-        )
+        return replace(candidate, target_path=target_path)
 
     def _persist_result(
         self,

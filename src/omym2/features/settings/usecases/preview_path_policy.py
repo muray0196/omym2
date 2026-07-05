@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.path_policy import PathPolicy
 from omym2.features.settings.dto import PathPolicyPreviewResult
 
@@ -21,10 +22,16 @@ class PreviewPathPolicyUseCase:
 
     def execute(self, request: PathPolicyPreviewRequest) -> PathPolicyPreviewResult:
         """Return the rendered preview path or validation errors."""
+        album_disc_totals = infer_album_disc_totals(
+            (request.metadata,),
+            unknown_artist=request.path_policy.unknown_artist,
+            unknown_album=request.path_policy.unknown_album,
+        )
         try:
             preview_path = PathPolicy.from_path_policy_config(request.path_policy, request.artist_ids).canonical_path(
                 request.metadata,
                 request.file_extension,
+                album_disc_total=album_disc_totals.for_metadata(request.metadata),
             )
         except ValueError as exc:
             return PathPolicyPreviewResult(path=None, errors=(str(exc),))

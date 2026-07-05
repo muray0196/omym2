@@ -48,6 +48,8 @@ export interface AppConfig {
     unknown_album: string
     sanitize: boolean
     max_filename_length: number
+    disc_number_style: string
+    disc_number_condition: string
   }
   artist_ids: {
     max_length: number
@@ -76,6 +78,8 @@ export interface SettingsChoices {
   duplicate_hash_policies: string[]
   missing_metadata_policies: string[]
   target_exists_policies: string[]
+  disc_number_styles: string[]
+  disc_number_conditions: string[]
   ui_themes: string[]
 }
 
@@ -233,6 +237,7 @@ export interface SampleMetadata {
   album_artist: string
   year: string
   disc_number: string
+  disc_total: string
   track_number: string
   extension: string
 }
