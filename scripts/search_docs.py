@@ -13,13 +13,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from docs_catalog import DocCard, Heading, build_doc_cards
+
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from script file."
-FRONTMATTER_DELIMITER = "---"
-INDEX_FILE_NAME = "index.md"
-LOG_FILE_NAME = "log.md"
-INDEX_AND_LOG_FILE_NAMES = frozenset({INDEX_FILE_NAME, LOG_FILE_NAME})
-MARKDOWN_SUFFIX = ".md"
-TAGS_FIELD = "tags"
 BODY_WEIGHT = 4
 PATH_WEIGHT = 8
 TYPE_WEIGHT = 10
@@ -30,15 +26,9 @@ TITLE_WEIGHT = 40
 EXACT_PHRASE_MULTIPLIER = 3
 DEFAULT_LIMIT = 8
 SNIPPET_LIMIT = 220
-MIN_QUOTED_LENGTH = 2
-QUOTE_CHARACTERS = frozenset({'"', "'"})
 TOKEN_PATTERN: re.Pattern[str] = re.compile(r"[a-z0-9_./-]+")
 MARKDOWN_DECORATION_PATTERN: re.Pattern[str] = re.compile(r"^[#*\-\s>|`]+")
-HEADING_PATTERN: re.Pattern[str] = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
-NON_SLUG_CHAR_PATTERN: re.Pattern[str] = re.compile(r"[^\w\s-]")
-WHITESPACE_PATTERN: re.Pattern[str] = re.compile(r"\s+")
 
-FrontmatterValue = str | list[str]
 JsonObject = dict[str, object]
 
 
@@ -85,17 +75,6 @@ class SearchHit:
             "reasons": list(self.reasons),
             "snippet": self.snippet,
         }
-
-
-@dataclass(frozen=True)
-class Heading:
-    """Markdown heading location and stable GitHub-style anchor."""
-
-    level: int
-    title: str
-    slug: str
-    line: int
-    end_line: int
 
 
 @dataclass(frozen=True)
@@ -189,24 +168,18 @@ def _parse_args(argv: list[str] | None) -> ParsedArgs:
 
 
 def _documents(docs_root: Path) -> list[DocumentRecord]:
-    return [_document_record(path, docs_root) for path in _concept_files(docs_root)]
+    return [_document_record(card) for card in build_doc_cards(docs_root)]
 
 
-def _concept_files(docs_root: Path) -> list[Path]:
-    return sorted(path for path in docs_root.rglob(f"*{MARKDOWN_SUFFIX}") if path.name not in INDEX_AND_LOG_FILE_NAMES)
-
-
-def _document_record(path: Path, docs_root: Path) -> DocumentRecord:
-    text = _read_doc_text(path)
-    fields = _frontmatter_fields(text)
+def _document_record(card: DocCard) -> DocumentRecord:
     return DocumentRecord(
-        path=path.relative_to(docs_root).as_posix(),
-        doc_type=_string_field(fields, "type"),
-        title=_string_field(fields, "title"),
-        description=_string_field(fields, "description"),
-        tags=_tags_field(fields),
-        headings=tuple(_headings(text)),
-        lines=tuple(text.splitlines()),
+        path=card.docs_path,
+        doc_type=card.doc_type,
+        title=card.title,
+        description=card.description,
+        tags=card.tags,
+        headings=card.headings,
+        lines=card.lines,
     )
 
 
@@ -336,124 +309,6 @@ def _clip(text: str) -> str:
     if len(text) <= SNIPPET_LIMIT:
         return text
     return f"{text[: SNIPPET_LIMIT - 3].rstrip()}..."
-
-
-def _read_doc_text(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return ""
-
-
-def _frontmatter_fields(text: str) -> dict[str, FrontmatterValue]:
-    body = _frontmatter_body(text)
-    if body is None:
-        return {}
-    return _parse_frontmatter_fields(body)
-
-
-def _frontmatter_body(text: str) -> str | None:
-    opening = f"{FRONTMATTER_DELIMITER}\n"
-    if not text.startswith(opening):
-        return None
-
-    closing_marker = f"\n{FRONTMATTER_DELIMITER}"
-    closing_index = text.find(closing_marker, len(opening))
-    if closing_index == -1:
-        return None
-
-    return text[len(opening) : closing_index]
-
-
-def _parse_frontmatter_fields(body: str) -> dict[str, FrontmatterValue]:
-    fields: dict[str, FrontmatterValue] = {}
-    for line in body.splitlines():
-        if not line.strip() or ":" not in line:
-            continue
-        key, _, raw_value = line.partition(":")
-        fields[key.strip()] = _parse_frontmatter_value(raw_value)
-    return fields
-
-
-def _parse_frontmatter_value(raw_value: str) -> FrontmatterValue:
-    value = raw_value.strip()
-    if value.startswith("[") and value.endswith("]"):
-        inner = value[1:-1].strip()
-        if not inner:
-            return []
-        return [_unquote(item.strip()) for item in inner.split(",")]
-    return _unquote(value)
-
-
-def _unquote(value: str) -> str:
-    if len(value) >= MIN_QUOTED_LENGTH and value[0] == value[-1] and value[0] in QUOTE_CHARACTERS:
-        return value[1:-1]
-    return value
-
-
-def _string_field(fields: dict[str, FrontmatterValue], key: str) -> str:
-    value = fields.get(key)
-    return value if isinstance(value, str) else ""
-
-
-def _tags_field(fields: dict[str, FrontmatterValue]) -> tuple[str, ...]:
-    value = fields.get(TAGS_FIELD)
-    if not isinstance(value, list):
-        return ()
-    return tuple(value)
-
-
-def _headings(text: str) -> list[Heading]:
-    raw_headings = _raw_headings(text)
-    headings: list[Heading] = []
-    line_count = len(text.splitlines())
-    for index, raw_heading in enumerate(raw_headings):
-        next_line = raw_headings[index + 1].line if index + 1 < len(raw_headings) else line_count + 1
-        headings.append(
-            Heading(
-                level=raw_heading.level,
-                title=raw_heading.title,
-                slug=raw_heading.slug,
-                line=raw_heading.line,
-                end_line=next_line - 1,
-            )
-        )
-    return headings
-
-
-def _raw_headings(text: str) -> list[Heading]:
-    headings: list[Heading] = []
-    seen_counts: dict[str, int] = {}
-    in_fenced_code = False
-    for line_number, line in enumerate(text.splitlines(), start=1):
-        if line.strip().startswith("```"):
-            in_fenced_code = not in_fenced_code
-            continue
-        if in_fenced_code:
-            continue
-        match = HEADING_PATTERN.match(line)
-        if match is None:
-            continue
-        base_slug = _slugify(match.group(2))
-        occurrence = seen_counts.get(base_slug, 0)
-        seen_counts[base_slug] = occurrence + 1
-        slug = base_slug if occurrence == 0 else f"{base_slug}-{occurrence}"
-        headings.append(
-            Heading(
-                level=len(match.group(1)),
-                title=match.group(2),
-                slug=slug,
-                line=line_number,
-                end_line=line_number,
-            )
-        )
-    return headings
-
-
-def _slugify(heading_text: str) -> str:
-    lowered = heading_text.strip().lower()
-    without_punctuation = NON_SLUG_CHAR_PATTERN.sub("", lowered)
-    return WHITESPACE_PATTERN.sub("-", without_punctuation.strip())
 
 
 def _print_text_results(hits: list[SearchHit]) -> None:

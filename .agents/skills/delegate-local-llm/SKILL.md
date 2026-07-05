@@ -17,6 +17,7 @@ The local LLM (LM Studio, OpenAI-compatible, WSL host auto-detected) is a **boun
 | Summarize files or a diff into a compact brief | `uv run python scripts/ask_local_llm.py summarize --files <path> [--focus "..."]` |
 | Answer one factual question about specific files | `uv run python scripts/ask_local_llm.py question --ask "..." --files <path>` |
 | Draft OKF frontmatter description/tags for a doc | `uv run python scripts/ask_local_llm.py doc-description --files docs/<file>.md` |
+| Pick docs sections to read for a vague request | `uv run python scripts/ask_local_llm.py docs-search --ask "..."` (see `search-docs`) |
 
 Both scripts accept `--stdin` (pipe a diff or log), `--output <file>`, and `--dry-prompt` (print the prompt without calling the LLM — use this to debug). Model/endpoint come from `OMYM2_LOCAL_LLM_BASE_URL`, `OMYM2_LOCAL_LLM_MODEL` / `OMYM2_REVIEW_MODEL`, defaulting to port 1234.
 
@@ -36,6 +37,7 @@ Never delegate: architecture or safety decisions, anything touching Plan/apply/p
 - Discard any finding whose `evidence` you cannot verify in the actual files.
 - Cross-check `missing_test_cases` against the real test files before writing tests.
 - Never paste the output into a report or commit as-is; restate only what you verified.
+- `docs-search` readings are pre-validated against parsed docs headings, but they are navigation hints — cite the Markdown you actually read.
 - On timeout or connection error: the LM Studio server is probably not running — proceed without delegation rather than blocking the task.
 
 ## Failure handling

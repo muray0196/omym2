@@ -1,6 +1,6 @@
 # ruff: noqa: EM101, EM102, INP001, TRY003 -- Standalone local tool mirrors review_with_local_llm conventions and raises descriptive CLI errors.
 """
-Summary: Delegate one small bounded subtask (summarize, question, doc metadata) to a local OpenAI-compatible LLM.
+Summary: Delegate one small bounded subtask (summarize, question, doc metadata, docs lookup) to a local OpenAI-compatible LLM.
 Why: Let agents offload cheap context-compression work while Python keeps file access and output shape constrained.
 """
 
@@ -13,7 +13,9 @@ import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+from docs_catalog import build_doc_cards
 
 # The sibling review script is the single owner of these helpers; importing its
 # private names is the intended reuse seam for standalone developer scripts.
@@ -41,7 +43,8 @@ from review_with_local_llm import (
 )
 
 if TYPE_CHECKING:
-    from review_with_local_llm import JsonObject
+    from docs_catalog import DocCard, Heading
+    from review_with_local_llm import JsonObject, JsonValue
 
 DEFAULT_ASK_MAX_TOTAL_FILE_CHARS = 60_000
 DEFAULT_ASK_MAX_INPUT_CHARS = 100_000
@@ -49,12 +52,16 @@ EMPTY_ANSWER_MESSAGE = "local LLM returned an empty answer"
 SUMMARIZE_COMMAND = "summarize"
 QUESTION_COMMAND = "question"
 DOC_DESCRIPTION_COMMAND = "doc-description"
+DOCS_SEARCH_COMMAND = "docs-search"
 MAX_KEY_POINTS = 8
 MAX_OPEN_QUESTIONS = 4
 MAX_EVIDENCE_ITEMS = 6
 MAX_UNKNOWNS = 4
 MAX_TAGS = 5
 MAX_DOC_DESCRIPTION_CHARS = 200
+MAX_DOCS_READINGS = 6
+MAX_SUGGESTED_QUERIES = 4
+MAX_READING_WHY_CHARS = 200
 CONFIDENCE_LEVELS = frozenset({"low", "medium", "high"})
 
 
@@ -80,6 +87,7 @@ class ParsedArgs(argparse.Namespace):
         self.temperature: float = DEFAULT_TEMPERATURE
         self.dry_prompt: bool = False
         self.no_response_format: bool = False
+        self.docs_root: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +118,10 @@ OUTPUT_SPECS: dict[str, OutputSpec] = {
     DOC_DESCRIPTION_COMMAND: OutputSpec(
         text_keys=("description",),
         list_limits=(("tags", MAX_TAGS),),
+    ),
+    DOCS_SEARCH_COMMAND: OutputSpec(
+        text_keys=(),
+        list_limits=(("readings", MAX_DOCS_READINGS), ("suggested_queries", MAX_SUGGESTED_QUERIES)),
     ),
 }
 
@@ -155,6 +167,17 @@ TASK_INSTRUCTIONS: dict[str, str] = {
         - Base the description and tags only on the provided file content.
         """
     ).strip(),
+    DOCS_SEARCH_COMMAND: textwrap.dedent(
+        """
+        Task: docs-search
+        Goal: Pick the docs sections in <docs_catalog> that best answer the request in <request>.
+        - The request may be vague or written in Japanese; the catalog is English. Match by meaning, not string overlap.
+        - Choose the smallest set of sections that covers the request; prefer specific sections over top-level headings.
+        - Copy every path and anchor exactly from the catalog. Never invent, translate, or modify them.
+        - why: one short line stating what that section answers for this request.
+        - If the catalog has no good match, return an empty readings list, set confidence to low, and propose suggested_queries.
+        """
+    ).strip(),
 }
 
 JSON_OUTPUT_CONTRACTS: dict[str, str] = {
@@ -195,6 +218,20 @@ Return exactly one JSON object with this shape:
 Limits:
 - tags: 3 to 5 kebab-case items
 """.strip(),
+    DOCS_SEARCH_COMMAND: f"""
+Return exactly one JSON object with this shape:
+{{
+  "readings": [
+    {{"path": "path copied verbatim from the catalog", "anchor": "anchor slug copied verbatim from the catalog", "why": "string"}}
+  ],
+  "suggested_queries": ["short English keyword query for scripts/search_docs.py"],
+  "confidence": "low | medium | high"
+}}
+
+Limits:
+- readings: max {MAX_DOCS_READINGS} items; no line numbers; every path and anchor must appear verbatim in the catalog
+- suggested_queries: max {MAX_SUGGESTED_QUERIES} items
+""".strip(),
 }
 
 
@@ -206,7 +243,10 @@ def main(argv: list[str] | None = None) -> int:
         repo_root = _repo_root()
         stdin_text = sys.stdin.read() if args.stdin else ""
         context_files = _load_context_files(args, repo_root)
-        user_prompt = _build_user_prompt(args, context_files, stdin_text)
+        docs_documents: list[DocCard] = []
+        if args.command == DOCS_SEARCH_COMMAND:
+            docs_documents = _load_docs_documents(args, repo_root)
+        user_prompt = _build_user_prompt(args, context_files, stdin_text, _docs_catalog_text(docs_documents))
         if args.dry_prompt:
             _print_dry_prompt(SYSTEM_PROMPT, user_prompt)
             return 0
@@ -222,7 +262,10 @@ def main(argv: list[str] | None = None) -> int:
             use_response_format=not args.no_response_format,
             empty_message=EMPTY_ANSWER_MESSAGE,
         )
-        result = _compact_ask_output(_normalize_ask_json(_extract_json_object(answer), args.command), args.command)
+        normalized = _normalize_ask_json(_extract_json_object(answer), args.command)
+        if args.command == DOCS_SEARCH_COMMAND:
+            _resolve_docs_readings(normalized, docs_documents)
+        result = _compact_ask_output(normalized, args.command)
         _write_or_print_json(result, args.output)
     except ReviewError as exc:
         _ = sys.stderr.write(f"local LLM subtask failed: {exc}\n")
@@ -243,6 +286,7 @@ def _parse_args(argv: list[str] | None) -> ParsedArgs:
               python scripts/ask_local_llm.py summarize --files docs/STORAGE.md --focus "stored path policy"
               python scripts/ask_local_llm.py question --files docs/execution/apply.md --ask "When are FileEvents recorded?"
               python scripts/ask_local_llm.py doc-description --files docs/execution/apply.md
+              python scripts/ask_local_llm.py docs-search --ask "移動計画の適用でイベントはいつ記録される?"
               git diff | python scripts/ask_local_llm.py summarize --stdin
             """
         ),
@@ -256,7 +300,17 @@ def _parse_args(argv: list[str] | None) -> ParsedArgs:
         DOC_DESCRIPTION_COMMAND,
         help="Draft OKF frontmatter description and tags for one docs markdown file.",
     )
-    for subparser in (summarize, question, doc_description):
+    docs_search = subcommands.add_parser(
+        DOCS_SEARCH_COMMAND,
+        help="Pick docs sections to read for a vague or natural-language request.",
+    )
+    _ = docs_search.add_argument(
+        "--ask", required=True, help="Natural-language description of the needed docs knowledge."
+    )
+    _ = docs_search.add_argument(
+        "--docs-root", type=Path, default=None, help="Docs directory to catalog; defaults to the repo docs/ directory."
+    )
+    for subparser in (summarize, question, doc_description, docs_search):
         _add_common_args(subparser)
     return parser.parse_args(argv, namespace=ParsedArgs())
 
@@ -325,7 +379,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _validate_subcommand_inputs(args: ParsedArgs) -> None:
-    if not args.files and not args.stdin:
+    if args.command != DOCS_SEARCH_COMMAND and not args.files and not args.stdin:
         raise ReviewError("no input provided: pass --files and/or --stdin")
     if args.command == DOC_DESCRIPTION_COMMAND and len(args.files) != 1:
         raise ReviewError("doc-description requires exactly one --files entry")
@@ -354,7 +408,12 @@ def _load_context_files(args: ParsedArgs, repo_root: Path) -> list[AskContextFil
     return context
 
 
-def _build_user_prompt(args: ParsedArgs, context_files: list[AskContextFile], stdin_text: str) -> str:
+def _build_user_prompt(
+    args: ParsedArgs,
+    context_files: list[AskContextFile],
+    stdin_text: str,
+    docs_catalog: str = "",
+) -> str:
     file_blocks = (
         "\n\n".join(_xml_block("file", file.content, {"path": file.path}) for file in context_files)
         or "[No context files were loaded.]"
@@ -364,6 +423,9 @@ def _build_user_prompt(args: ParsedArgs, context_files: list[AskContextFile], st
         sections.append(_xml_block("question", args.ask or ""))
     elif args.command == SUMMARIZE_COMMAND and args.focus:
         sections.append(_xml_block("focus", args.focus))
+    elif args.command == DOCS_SEARCH_COMMAND:
+        sections.append(_xml_block("request", args.ask or ""))
+        sections.append(_xml_block("docs_catalog", _clip_middle(docs_catalog, args.max_input_chars)))
     sections.extend(
         (
             _xml_block("stdin_input", _clip_middle(stdin_text, args.max_input_chars) or "[no stdin input supplied]"),
@@ -372,6 +434,79 @@ def _build_user_prompt(args: ParsedArgs, context_files: list[AskContextFile], st
         )
     )
     return "\n\n".join(sections)
+
+
+def _load_docs_documents(args: ParsedArgs, repo_root: Path) -> list[DocCard]:
+    docs_root = args.docs_root if args.docs_root is not None else repo_root / "docs"
+    if not docs_root.is_dir():
+        raise ReviewError(f"docs root {docs_root} does not exist or is not a directory")
+    return build_doc_cards(docs_root, repo_root)
+
+
+def _docs_catalog_text(documents: list[DocCard]) -> str:
+    if not documents:
+        return "[no docs catalog loaded]"
+    blocks: list[str] = []
+    for document in documents:
+        lines = [
+            f"path: {document.docs_path}",
+            f"type: {document.doc_type}",
+            f"title: {document.title}",
+            f"description: {document.description}",
+            f"tags: {', '.join(document.tags)}",
+            "sections:",
+        ]
+        lines.extend(f"- #{heading.slug} {heading.title}" for heading in document.headings)
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def _resolve_docs_readings(obj: JsonObject, documents: list[DocCard]) -> None:
+    """Rebuild readings from the parsed docs catalog, dropping unverifiable entries."""
+    raw_readings = obj.get("readings")
+    if not isinstance(raw_readings, list):
+        obj["readings"] = []
+        return
+
+    by_path = {document.docs_path: document for document in documents}
+    resolved: list[JsonValue] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_item in cast("list[object]", raw_readings):
+        if not isinstance(raw_item, dict):
+            continue
+        item = cast("JsonObject", raw_item)
+        path = item.get("path")
+        if not isinstance(path, str) or path not in by_path:
+            continue
+        document = by_path[path]
+        heading = _resolve_reading_heading(document, item.get("anchor"))
+        if heading is None:
+            continue
+        key = (document.docs_path, heading.slug)
+        if key in seen:
+            continue
+        seen.add(key)
+        why = item.get("why")
+        why_text = why if isinstance(why, str) else ""
+        resolved.append(
+            {
+                "path": document.docs_path,
+                "line": heading.line,
+                "anchor": heading.slug,
+                "section": heading.title,
+                "why": why_text[:MAX_READING_WHY_CHARS],
+            }
+        )
+    obj["readings"] = resolved[:MAX_DOCS_READINGS]
+
+
+def _resolve_reading_heading(document: DocCard, raw_anchor: object) -> Heading | None:
+    if isinstance(raw_anchor, str) and raw_anchor:
+        for heading in document.headings:
+            if heading.slug == raw_anchor:
+                return heading
+        return None
+    return document.headings[0] if document.headings else None
 
 
 def _normalize_ask_json(obj: JsonObject, command: str) -> JsonObject:

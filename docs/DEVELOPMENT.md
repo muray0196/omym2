@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies developer quality commands, the checks.sh wrapper, docs search scripts, local LLM helpers, suppression rules, and Python runtime configuration policy.
+description: Specifies developer quality commands, the checks.sh wrapper, docs search and routing scripts, local LLM helpers, suppression rules, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation]
-timestamp: 2026-07-05T11:26:54+09:00
+timestamp: 2026-07-05T13:21:07+09:00
 ---
 
 # Development Harness
@@ -92,16 +92,21 @@ scripts/checks.sh test <pytest-target>
 
 The command groups in this document remain authoritative; the script must stay in sync with them.
 
-## Docs Search Scripts
+## Docs Search And Routing Scripts
 
 `scripts/generate_docs_indexes.py` regenerates directory `index.md` files from docs frontmatter.
 `scripts/search_docs.py` parses docs frontmatter, headings, and section bodies in memory at query
 time and returns file, line, and anchor targets for citation-ready docs navigation. There is no
 generated search artifact; results can never go stale.
+`scripts/route_docs.py` builds on the same parsed catalog and returns JSON reading guidance for a
+natural-language task, always including `ARCHITECTURE.md` as required context. It is deterministic
+and does not require a local model server.
+`scripts/eval_docs_router.py` measures lexical routing cases from
+`tests/fixtures/docs_routing_cases.jsonl`.
 
 ## Local LLM Scripts
 
-`scripts/review_with_local_llm.py` runs a test-focused review or missing-test-case generation against a local OpenAI-compatible LLM endpoint. `scripts/ask_local_llm.py` delegates bounded summarize, question, and doc-description subtasks to the same endpoint. Both are standalone developer tools: they never edit files and their output is advisory.
+`scripts/review_with_local_llm.py` runs a test-focused review or missing-test-case generation against a local OpenAI-compatible LLM endpoint. `scripts/ask_local_llm.py` delegates bounded summarize, question, doc-description, and docs-search (docs reading-list selection with script-side path validation) subtasks to the same endpoint. Both are standalone developer tools: they never edit files and their output is advisory.
 
 ## Test Commands
 

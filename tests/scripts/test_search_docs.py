@@ -244,6 +244,9 @@ def _heading_line(docs_root: Path, relative_path: str, heading: str) -> int:
 
 def _load_search_module() -> SearchModule:
     project_root = _project_root()
+    scripts_path = str(project_root / "scripts")
+    if scripts_path not in sys.path:
+        sys.path.insert(0, scripts_path)
     module_path = project_root / "scripts" / "search_docs.py"
     spec = importlib.util.spec_from_file_location("search_docs", module_path)
     if spec is None or spec.loader is None:

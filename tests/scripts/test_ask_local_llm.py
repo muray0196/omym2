@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import textwrap
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -21,6 +22,7 @@ PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
 MODULE_LOAD_ERROR_MESSAGE = "Unable to load ask_local_llm.py"
 EXPECTED_KEY_POINT_CAP = 8
 EXPECTED_OPEN_QUESTION_CAP = 4
+EXPECTED_READINGS_CAP = 6
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_INVALID_JSON = 2
@@ -232,6 +234,179 @@ def test_main_reports_invalid_model_json_with_exit_code_two(
     assert "did not return valid JSON" in capsys.readouterr().err
 
 
+def test_docs_search_dry_prompt_includes_catalog_and_request(
+    ask_module: AskModule,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """docs-search needs no --files/--stdin and renders the catalog without network use."""
+    docs_root = _fixture_docs(tmp_path)
+    monkeypatch.setattr(ask_module, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(ask_module, "_tracked_file_set", set)
+    monkeypatch.setattr(ask_module, "_request_review", _fail_if_called)
+
+    exit_code = ask_module.main(
+        ["docs-search", "--ask", "ファイルイベントはいつ記録される?", "--docs-root", str(docs_root), "--dry-prompt"]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    output = capsys.readouterr().out
+    assert "<docs_catalog>" in output
+    assert "path: guide.md" in output
+    assert "- #apply-flow Apply Flow" in output
+    assert "ファイルイベントはいつ記録される?" in output
+
+
+def test_docs_search_drops_hallucinated_readings_and_fills_lines(
+    ask_module: AskModule,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """Invented paths and anchors are dropped; line and section come from the parsed docs."""
+    docs_root = _fixture_docs(tmp_path)
+    monkeypatch.setattr(ask_module, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(ask_module, "_tracked_file_set", set)
+    canned = json.dumps(
+        {
+            "readings": [
+                {"path": "guide.md", "anchor": "apply-flow", "why": "records timing"},
+                {"path": "ghost.md", "anchor": "apply-flow", "why": "invented path"},
+                {"path": "guide.md", "anchor": "no-such-anchor", "why": "invented anchor"},
+            ],
+            "confidence": "high",
+        }
+    )
+    monkeypatch.setattr(ask_module, "_request_review", _canned_answer(canned))
+
+    exit_code = ask_module.main(["docs-search", "--ask", "event timing", "--docs-root", str(docs_root)])
+
+    assert exit_code == EXIT_SUCCESS
+    payload = cast("dict[str, object]", json.loads(capsys.readouterr().out))
+    assert payload["readings"] == [
+        {
+            "path": "guide.md",
+            "line": _heading_line(docs_root, "guide.md", "## Apply Flow"),
+            "anchor": "apply-flow",
+            "section": "Apply Flow",
+            "why": "records timing",
+        }
+    ]
+    assert payload["confidence"] == "high"
+
+
+def test_docs_search_dedupes_and_caps_readings(
+    ask_module: AskModule,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """Duplicate (path, anchor) pairs collapse and output stays within the readings cap."""
+    docs_root = _fixture_docs(tmp_path)
+    monkeypatch.setattr(ask_module, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(ask_module, "_tracked_file_set", set)
+    anchors = [
+        ("guide.md", "apply-guide"),
+        ("guide.md", "apply-guide"),
+        ("guide.md", "apply-flow"),
+        ("guide.md", "undo-flow"),
+        ("guide.md", "check-flow"),
+        ("guide.md", "history-flow"),
+        ("contracts/plan.md", "plan-contract"),
+        ("contracts/plan.md", "planaction"),
+    ]
+    canned = json.dumps(
+        {
+            "readings": [{"path": path, "anchor": anchor, "why": "relevant"} for path, anchor in anchors],
+            "confidence": "medium",
+        }
+    )
+    monkeypatch.setattr(ask_module, "_request_review", _canned_answer(canned))
+
+    exit_code = ask_module.main(["docs-search", "--ask", "everything", "--docs-root", str(docs_root)])
+
+    assert exit_code == EXIT_SUCCESS
+    payload = cast("dict[str, object]", json.loads(capsys.readouterr().out))
+    readings = cast("list[dict[str, object]]", payload["readings"])
+    assert len(readings) == EXPECTED_READINGS_CAP
+    assert len({(reading["path"], reading["anchor"]) for reading in readings}) == EXPECTED_READINGS_CAP
+
+
+def test_docs_search_empty_anchor_falls_back_to_first_heading(
+    ask_module: AskModule,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """A doc-level reading without an anchor resolves to the doc's first heading."""
+    docs_root = _fixture_docs(tmp_path)
+    monkeypatch.setattr(ask_module, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(ask_module, "_tracked_file_set", set)
+    canned = json.dumps(
+        {"readings": [{"path": "contracts/plan.md", "anchor": "", "why": "overview"}], "confidence": "medium"}
+    )
+    monkeypatch.setattr(ask_module, "_request_review", _canned_answer(canned))
+
+    exit_code = ask_module.main(["docs-search", "--ask", "plan overview", "--docs-root", str(docs_root)])
+
+    assert exit_code == EXIT_SUCCESS
+    payload = cast("dict[str, object]", json.loads(capsys.readouterr().out))
+    assert payload["readings"] == [
+        {
+            "path": "contracts/plan.md",
+            "line": _heading_line(docs_root, "contracts/plan.md", "# Plan Contract"),
+            "anchor": "plan-contract",
+            "section": "Plan Contract",
+            "why": "overview",
+        }
+    ]
+
+
+def test_docs_search_empty_readings_keeps_suggested_queries(
+    ask_module: AskModule,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """A no-match reply compacts to fallback queries agents can feed to search_docs.py."""
+    docs_root = _fixture_docs(tmp_path)
+    monkeypatch.setattr(ask_module, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(ask_module, "_tracked_file_set", set)
+    canned = json.dumps({"readings": [], "suggested_queries": ["plan apply"], "confidence": "low"})
+    monkeypatch.setattr(ask_module, "_request_review", _canned_answer(canned))
+
+    exit_code = ask_module.main(["docs-search", "--ask", "unrelated topic", "--docs-root", str(docs_root)])
+
+    assert exit_code == EXIT_SUCCESS
+    payload = cast("object", json.loads(capsys.readouterr().out))
+    assert payload == {"suggested_queries": ["plan apply"], "confidence": "low"}
+
+
+def test_docs_search_requires_ask(ask_module: AskModule) -> None:
+    """The docs-search subcommand requires exactly one --ask value."""
+    with pytest.raises(SystemExit):
+        _ = ask_module._parse_args(["docs-search"])  # pyright: ignore[reportPrivateUsage]
+
+
+def test_docs_search_missing_docs_root_fails_clearly(
+    ask_module: AskModule,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """A missing docs directory is an advisory failure, not a crash."""
+    monkeypatch.setattr(ask_module, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(ask_module, "_tracked_file_set", set)
+
+    exit_code = ask_module.main(
+        ["docs-search", "--ask", "anything", "--docs-root", str(tmp_path / "missing"), "--dry-prompt"]
+    )
+
+    assert exit_code == EXIT_FAILURE
+    assert "does not exist" in capsys.readouterr().err
+
+
 def _fail_if_called(**_kwargs: object) -> str:
     message = "the LLM request function must not be called in this test"
     raise AssertionError(message)
@@ -243,6 +418,75 @@ def _duplicated_evidence_answer(**_kwargs: object) -> str:
 
 def _non_json_answer(**_kwargs: object) -> str:
     return "not json at all"
+
+
+def _canned_answer(answer: str) -> Callable[..., str]:
+    def _respond(**_kwargs: object) -> str:
+        return answer
+
+    return _respond
+
+
+def _fixture_docs(root: Path) -> Path:
+    docs_root = root / "docs"
+    _write_text(
+        docs_root / "guide.md",
+        textwrap.dedent(
+            """\
+            ---
+            type: Execution Spec
+            title: Apply Guide
+            description: Defines the apply flow.
+            tags: [apply]
+            timestamp: 2026-07-05T02:00:00+09:00
+            ---
+
+            # Apply Guide
+
+            ## Apply Flow
+
+            FileEvents are recorded before mutation.
+
+            ## Undo Flow
+
+            Undo reverses the last run.
+
+            ## Check Flow
+
+            Check reports issues.
+
+            ## History Flow
+
+            History lists runs.
+            """
+        ),
+    )
+    _write_text(
+        docs_root / "contracts" / "plan.md",
+        textwrap.dedent(
+            """\
+            ---
+            type: Contract
+            title: Plan Contract
+            description: Defines PlanAction states.
+            tags: [plan]
+            timestamp: 2026-07-05T02:00:00+09:00
+            ---
+
+            # Plan Contract
+
+            ## PlanAction
+
+            PlanAction states are pending and applied.
+            """
+        ),
+    )
+    return docs_root
+
+
+def _heading_line(docs_root: Path, relative_path: str, heading: str) -> int:
+    lines = (docs_root / relative_path).read_text(encoding="utf-8").splitlines()
+    return lines.index(heading) + 1
 
 
 def _load_ask_module() -> AskModule:
