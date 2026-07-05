@@ -1,11 +1,11 @@
 ---
 name: update-docs
-description: Edit anything under docs/ safely. Use for adding, changing, moving, or deleting docs, keeping OKF frontmatter and index files consistent, and deciding where a rule's authoritative home is.
+description: Edit anything under docs/ safely. Use for adding, changing, moving, or deleting docs, keeping docs frontmatter and index files consistent, and deciding where a rule's authoritative home is.
 ---
 
 # Update Docs
 
-`docs/` is an OKF v0.1 knowledge bundle. Conformance is enforced by `tests/docs/test_okf_bundle.py`; a wrong edit fails CI.
+`docs/` is a structured documentation bundle. Conformance is enforced by `tests/docs/test_docs_bundle.py`; a wrong edit fails CI.
 
 ## Hard format rules
 
@@ -22,7 +22,7 @@ description: Edit anything under docs/ safely. Use for adding, changing, moving,
    ```
 
    All five fields required; `tags` non-empty; `timestamp` ISO 8601.
-2. `index.md` files carry no frontmatter (only the root `docs/index.md` may have `okf_version`).
+2. `index.md` files carry no frontmatter (only the root `docs/index.md` may have `docs_bundle_version`).
 3. Every directory's `index.md` lists each sibling doc as:
    `* [Title](file.md) - description`
    where the description **exactly matches** that file's frontmatter `description`.

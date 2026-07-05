@@ -149,7 +149,7 @@ TASK_INSTRUCTIONS: dict[str, str] = {
     DOC_DESCRIPTION_COMMAND: textwrap.dedent(
         f"""
         Task: doc-description
-        Goal: Draft OKF frontmatter metadata (description and tags) for the single provided docs markdown file.
+        Goal: Draft docs frontmatter metadata (description and tags) for the single provided docs markdown file.
         - description: exactly one sentence, at most {MAX_DOC_DESCRIPTION_CHARS} characters, summarizing what the doc specifies.
         - tags: 3 to 5 kebab-case topic tags.
         - Base the description and tags only on the provided file content.
@@ -254,7 +254,7 @@ def _parse_args(argv: list[str] | None) -> ParsedArgs:
     _ = question.add_argument("--ask", required=True, help="The single question to answer.")
     doc_description = subcommands.add_parser(
         DOC_DESCRIPTION_COMMAND,
-        help="Draft OKF frontmatter description and tags for one docs markdown file.",
+        help="Draft docs frontmatter description and tags for one docs markdown file.",
     )
     for subparser in (summarize, question, doc_description):
         _add_common_args(subparser)

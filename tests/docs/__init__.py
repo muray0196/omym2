@@ -1,5 +1,5 @@
 """
-Summary: Marks OKF documentation bundle conformance tests.
+Summary: Marks documentation bundle conformance tests.
 Why: Groups docs/ structure guardrails separately from behavior and architecture tests.
 """
 

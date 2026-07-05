@@ -21,7 +21,7 @@ TITLE_FIELD = "title"
 DESCRIPTION_FIELD = "description"
 MIN_QUOTED_LENGTH = 2
 QUOTE_CHARACTERS = frozenset({'"', "'"})
-ROOT_FRONTMATTER = '---\nokf_version: "0.1"\n---'
+ROOT_FRONTMATTER = '---\ndocs_bundle_version: "0.1"\n---'
 DEFAULT_DIRECTORIES_HEADING = "Directories"
 
 

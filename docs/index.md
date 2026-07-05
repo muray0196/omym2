@@ -1,5 +1,5 @@
 ---
-okf_version: "0.1"
+docs_bundle_version: "0.1"
 ---
 
 # Core Documentation

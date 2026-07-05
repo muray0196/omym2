@@ -1,6 +1,6 @@
 ---
 name: delegate-local-llm
-description: Offload bounded, evidence-grounded subtasks (test review, missing-case ideas, file summaries, factual questions, OKF description drafts) to a local LLM via scripts/. Use to save context or parallelize low-risk analysis.
+description: Offload bounded, evidence-grounded subtasks (test review, missing-case ideas, file summaries, factual questions, docs description drafts) to a local LLM via scripts/. Use to save context or parallelize low-risk analysis.
 ---
 
 # Delegate To Local LLM
@@ -16,7 +16,7 @@ The local LLM (LM Studio, OpenAI-compatible, WSL host auto-detected) is a **boun
 | Missing-test-case ideas for a diff | `uv run python scripts/review_with_local_llm.py cases --base main` |
 | Summarize files or a diff into a compact brief | `uv run python scripts/ask_local_llm.py summarize --files <path> [--focus "..."]` |
 | Answer one factual question about specific files | `uv run python scripts/ask_local_llm.py question --ask "..." --files <path>` |
-| Draft OKF frontmatter description/tags for a doc | `uv run python scripts/ask_local_llm.py doc-description --files docs/<file>.md` |
+| Draft docs frontmatter description/tags for a doc | `uv run python scripts/ask_local_llm.py doc-description --files docs/<file>.md` |
 
 Both scripts accept `--stdin` (pipe a diff or log), `--output <file>`, and `--dry-prompt` (print the prompt without calling the LLM — use this to debug). Model/endpoint come from `OMYM2_LOCAL_LLM_BASE_URL`, `OMYM2_LOCAL_LLM_MODEL` / `OMYM2_REVIEW_MODEL`, defaulting to port 1234.
 

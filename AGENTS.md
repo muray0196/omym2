@@ -31,7 +31,7 @@ When the user allows subagents, route them automatically:
 
 ## Knowledge Navigation
 
-`docs/` is a single OKF v0.1 knowledge bundle: every doc carries YAML
+`docs/` is a structured documentation bundle: every doc carries YAML
 frontmatter (`type`, `title`, `description`, `tags`, `timestamp`), and each
 directory has an `index.md` for progressive disclosure. Start at
 `docs/index.md`. When you edit a doc, update its frontmatter `description`
