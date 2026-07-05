@@ -65,8 +65,12 @@ MISSING_ARTIST_METADATA = TrackMetadata(
 )
 MISPLACED_PATH = "Unsorted/Title.flac"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
+SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 SECOND_LIBRARY_ROOT = "/music/other"
+SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
+THIRD_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
+THIRD_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345682"))
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 UNREGISTERED_LIBRARY_ROOT = "/music/new"
 PATH_OUTSIDE_LIBRARY_MESSAGE = "outside library"
@@ -144,6 +148,43 @@ def test_organize_creates_plan_for_misplaced_library_file() -> None:
     assert track is not None
     assert track.current_path == MISPLACED_PATH
     assert track.canonical_path == EXPECTED_CANONICAL_PATH
+
+
+def test_organize_resolves_latest_album_year_across_scanned_album_group() -> None:
+    """Organize renders one effective album year while storing raw track years."""
+    first_path = f"{LIBRARY_ROOT}/Unsorted/Song 1.flac"
+    second_path = f"{LIBRARY_ROOT}/Unsorted/Song 2.flac"
+    third_path = f"{LIBRARY_ROOT}/Unsorted/Song 3.flac"
+    first_metadata = _album_track_metadata(title="Song 1", year=1998, track_number=1)
+    second_metadata = _album_track_metadata(title="Song 2", year=2002, track_number=2)
+    third_metadata = _album_track_metadata(title="Song 3", year=2004, track_number=3)
+    uow = InMemoryUnitOfWork()
+    ports, _, _ = _ports(
+        uow,
+        (_entry(first_path), _entry(second_path), _entry(third_path)),
+        {
+            first_path: _snapshot(first_path, first_metadata),
+            second_path: _snapshot(second_path, second_metadata),
+            third_path: _snapshot(third_path, third_metadata),
+        },
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            track_ids=deque((TRACK_ID, SECOND_TRACK_ID, THIRD_TRACK_ID)),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID, THIRD_ACTION_ID)),
+        ),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+
+    assert tuple(action.target_path for action in result.actions) == (
+        "Artist/2004_Album/1-01_Song-1.flac",
+        "Artist/2004_Album/1-02_Song-2.flac",
+        "Artist/2004_Album/1-03_Song-3.flac",
+    )
+    tracks = uow.tracks.list_by_library(LIBRARY_ID)
+    assert tuple(track.metadata.year for track in tracks) == (1998, 2002, 2004)
+    assert tuple(track.canonical_path for track in tracks) == tuple(action.target_path for action in result.actions)
 
 
 def test_organize_blocks_missing_required_metadata() -> None:
@@ -407,4 +448,16 @@ def _library(library_id: LibraryId, root_path: str) -> Library:
         status=LibraryStatus.REGISTERED,
         created_at=BASE_TIME,
         updated_at=BASE_TIME,
+    )
+
+
+def _album_track_metadata(title: str, year: int | None, track_number: int) -> TrackMetadata:
+    return TrackMetadata(
+        title=title,
+        artist="Artist",
+        album="Album",
+        album_artist="Artist",
+        year=year,
+        track_number=track_number,
+        disc_number=1,
     )

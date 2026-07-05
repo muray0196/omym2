@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from omym2.config import (
+    ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS,
     ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES,
     ALLOWED_COLLISION_MISSING_METADATA_POLICIES,
     ALLOWED_COLLISION_TARGET_EXISTS_POLICIES,
@@ -56,6 +57,7 @@ def serialize_app_config(config: AppConfig) -> dict[str, object]:
             "require_title": config.metadata.require_title,
             "require_artist": config.metadata.require_artist,
             "require_album": config.metadata.require_album,
+            "album_year_resolution": config.metadata.album_year_resolution,
         },
         "collision": {
             "on_target_exists": config.collision.on_target_exists,
@@ -73,6 +75,7 @@ def serialize_settings_choices() -> dict[str, object]:
         "duplicate_hash_policies": sorted(ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES),
         "missing_metadata_policies": sorted(ALLOWED_COLLISION_MISSING_METADATA_POLICIES),
         "target_exists_policies": sorted(ALLOWED_COLLISION_TARGET_EXISTS_POLICIES),
+        "album_year_resolution_methods": sorted(ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS),
         "ui_themes": sorted(ALLOWED_UI_THEMES),
     }
 

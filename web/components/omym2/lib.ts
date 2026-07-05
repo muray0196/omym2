@@ -65,6 +65,8 @@ export const TEMPLATE_TOKENS = [
   "{artist_id}",
 ] as const
 
+const ALBUM_YEAR_RESOLUTION_METHODS = new Set(["latest", "oldest", "most_frequent"])
+
 /** A tiny stable "hash" of the config object for display only. */
 export function configHash(config: AppConfig): string {
   const json = JSON.stringify(config)
@@ -116,6 +118,9 @@ export function validateConfig(config: AppConfig): ValidationResult {
   }
   if (!config.artist_ids.fallback_id.trim()) {
     errors.push("artist_ids.fallback_id must not be empty.")
+  }
+  if (!ALBUM_YEAR_RESOLUTION_METHODS.has(config.metadata.album_year_resolution)) {
+    errors.push("metadata.album_year_resolution must be a supported method.")
   }
 
   return { valid: errors.length === 0, errors }

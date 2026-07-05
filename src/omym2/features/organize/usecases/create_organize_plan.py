@@ -5,7 +5,7 @@ Why: Registers clean Libraries and records review Plans without moving files.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -14,6 +14,7 @@ from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import Track, TrackStatus
+from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
@@ -55,14 +56,19 @@ class CreateOrganizePlanUseCase:
         """Create an organize Plan, or register a clean Library without a Plan."""
         config = self.ports.config_store.load()
         config_hash = calculate_config_fingerprint(config)
-        path_policy_hash = calculate_path_policy_fingerprint(config.path_policy, config.artist_ids)
+        path_policy_hash = calculate_path_policy_fingerprint(
+            config.path_policy,
+            config.artist_ids,
+            config.metadata.album_year_resolution,
+        )
         path_policy = PathPolicy.from_app_config(config)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
             library = self._select_library(uow, request.library_root, path_policy_hash, timestamp)
             scan_entries = self.ports.file_scanner.scan(library.root_path)
-            candidates = tuple(self._candidate(library.root_path, entry, config, path_policy) for entry in scan_entries)
+            candidates = tuple(self._candidate(library.root_path, entry, config) for entry in scan_entries)
+            candidates = self._with_target_paths(candidates, config, path_policy)
             result = self._persist_result(uow, library, candidates, config_hash, timestamp)
             uow.commit()
             return result
@@ -104,7 +110,6 @@ class CreateOrganizePlanUseCase:
         library_root: str,
         entry: FileScanEntry,
         config: AppConfig,
-        path_policy: PathPolicy,
     ) -> _OrganizeCandidate:
         try:
             source_path = self.ports.path_resolver.relative_to_library(library_root, entry.path)
@@ -131,24 +136,51 @@ class CreateOrganizePlanUseCase:
                 block_reason=PlanActionReason.MISSING_REQUIRED_METADATA,
             )
 
-        try:
-            target_path = path_policy.canonical_path(
-                snapshot.metadata,
-                snapshot.file_extension,
-            )
-        except ValueError as exc:
-            return _blocked_candidate(
-                source_path=source_path,
-                snapshot=snapshot,
-                block_reason=_path_generation_failure_reason(exc),
-            )
-
         return _OrganizeCandidate(
             source_path=source_path,
             snapshot=snapshot,
-            target_path=target_path,
+            target_path=None,
             block_reason=None,
         )
+
+    def _with_target_paths(
+        self,
+        candidates: Sequence[_OrganizeCandidate],
+        config: AppConfig,
+        path_policy: PathPolicy,
+    ) -> tuple[_OrganizeCandidate, ...]:
+        metadata_batch = tuple(
+            candidate.snapshot.metadata
+            for candidate in candidates
+            if candidate.snapshot is not None and candidate.block_reason is None
+        )
+        resolved_years = resolve_album_years(
+            metadata_batch,
+            config.path_policy,
+            config.metadata.album_year_resolution,
+        )
+        judged_candidates: list[_OrganizeCandidate] = []
+
+        for candidate in candidates:
+            snapshot = candidate.snapshot
+            if snapshot is None or candidate.block_reason is not None:
+                judged_candidates.append(candidate)
+                continue
+
+            try:
+                target_path = path_policy.canonical_path(
+                    metadata_with_resolved_album_year(snapshot.metadata, config.path_policy, resolved_years),
+                    snapshot.file_extension,
+                )
+            except ValueError as exc:
+                judged_candidates.append(
+                    replace(candidate, target_path=None, block_reason=_path_generation_failure_reason(exc))
+                )
+                continue
+
+            judged_candidates.append(replace(candidate, target_path=target_path))
+
+        return tuple(judged_candidates)
 
     def _persist_result(
         self,

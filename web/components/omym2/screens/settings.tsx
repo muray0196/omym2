@@ -177,6 +177,11 @@ export function SettingsScreen() {
   const targetExistsOptions = toOptions(settingsChoices.target_exists_policies)
   const duplicateHashOptions = toOptions(settingsChoices.duplicate_hash_policies)
   const missingMetadataOptions = toOptions(settingsChoices.missing_metadata_policies)
+  const albumYearResolutionOptions = toOptions(settingsChoices.album_year_resolution_methods, {
+    latest: "latest (newest)",
+    most_frequent: "most_frequent",
+    oldest: "oldest",
+  })
   const themeOptions = toOptions(settingsChoices.ui_themes, THEME_LABELS)
 
   return (
@@ -446,6 +451,18 @@ export function SettingsScreen() {
                     onChange={(v) => update("metadata", { require_album: v })}
                     label="Require album"
                   />
+                  <Field label="Album year resolution">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={albumYearResolutionOptions}
+                        value={draftConfig.metadata.album_year_resolution}
+                        onChange={(e) =>
+                          update("metadata", { album_year_resolution: e.target.value })
+                        }
+                      />
+                    )}
+                  </Field>
                 </div>
               </Panel>
 

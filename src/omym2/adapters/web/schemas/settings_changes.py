@@ -46,6 +46,7 @@ def describe_config_changes(before: AppConfig, after: AppConfig) -> tuple[Settin
         ("Require title", before.metadata.require_title, after.metadata.require_title),
         ("Require artist", before.metadata.require_artist, after.metadata.require_artist),
         ("Require album", before.metadata.require_album, after.metadata.require_album),
+        ("Album year resolution", before.metadata.album_year_resolution, after.metadata.album_year_resolution),
         ("Target exists policy", before.collision.on_target_exists, after.collision.on_target_exists),
         ("Duplicate hash policy", before.collision.on_duplicate_hash, after.collision.on_duplicate_hash),
         ("Missing metadata policy", before.collision.on_missing_metadata, after.collision.on_missing_metadata),

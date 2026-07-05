@@ -241,6 +241,35 @@ def test_refresh_all_selects_all_active_tracks() -> None:
     assert tuple(action.track_id for action in plan.actions) == (TRACK_ID, SECOND_TRACK_ID)
 
 
+def test_refresh_resolves_latest_album_year_across_selected_album_group() -> None:
+    """Refresh uses a single effective album year for mixed-year tracks."""
+    older_metadata = _album_track_metadata(title="Song 1", year=1998, track_number=1)
+    latest_metadata = _album_track_metadata(title="Song 2", year=2004, track_number=2)
+    older_path = "Artist/1998_Album/1-01_Song-1.flac"
+    latest_path = "Artist/2004_Album/1-02_Song-2.flac"
+    uow = _uow_with_library_and_tracks(
+        _track(current_path=older_path, metadata=older_metadata),
+        _track(SECOND_TRACK_ID, latest_path, metadata=latest_metadata),
+    )
+    ports, _ = _ports(
+        uow,
+        {
+            _absolute(older_path): _snapshot(_absolute(older_path), older_metadata),
+            _absolute(latest_path): _snapshot(_absolute(latest_path), latest_metadata),
+        },
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(include_all=True))
+
+    assert plan.summary["action_count"] == "1"
+    action = plan.actions[0]
+    assert action.track_id == TRACK_ID
+    assert action.source_path == older_path
+    assert action.target_path == "Artist/2004_Album/1-01_Song-1.flac"
+    assert uow.tracks.get(TRACK_ID) == _track(current_path=older_path, metadata=older_metadata)
+
+
 def test_refresh_refuses_when_no_registered_library_can_be_selected() -> None:
     """Refresh does not guess a Library before registration."""
     ports, _ = _ports(InMemoryUnitOfWork(), {}, SequenceIdGenerator())
@@ -555,3 +584,15 @@ def _snapshot(path: str, metadata: TrackMetadata) -> FileSnapshot:
 
 def _absolute(relative_path: str) -> str:
     return f"{LIBRARY_ROOT}/{relative_path}"
+
+
+def _album_track_metadata(title: str, year: int | None, track_number: int) -> TrackMetadata:
+    return TrackMetadata(
+        title=title,
+        artist="Artist",
+        album="Album",
+        album_artist="Artist",
+        year=year,
+        track_number=track_number,
+        disc_number=1,
+    )

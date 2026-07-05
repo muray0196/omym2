@@ -10,6 +10,7 @@ from dataclasses import asdict
 from hashlib import new
 
 from omym2.config import (
+    ALBUM_YEAR_RESOLUTION_OLDEST,
     CONFIG_FINGERPRINT_ALGORITHM,
     CONFIG_FINGERPRINT_ENCODING,
     CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR,
@@ -68,3 +69,29 @@ def test_path_policy_fingerprint_changes_when_used_artist_ids_change() -> None:
     )
 
     assert changed_hash != default_hash
+
+
+def test_path_policy_fingerprint_changes_when_used_album_year_resolution_changes() -> None:
+    """Album-year settings affect Library registration when {year} can render paths."""
+    path_policy = AppConfig().path_policy
+    default_hash = calculate_path_policy_fingerprint(path_policy, AppConfig().artist_ids)
+    changed_hash = calculate_path_policy_fingerprint(
+        path_policy,
+        AppConfig().artist_ids,
+        ALBUM_YEAR_RESOLUTION_OLDEST,
+    )
+
+    assert changed_hash != default_hash
+
+
+def test_path_policy_fingerprint_ignores_album_year_resolution_when_template_cannot_use_it() -> None:
+    """Album-year settings do not stale Library registration for unrelated templates."""
+    path_policy = PathPolicyConfig(template="{artist}/{title}")
+    default_hash = calculate_path_policy_fingerprint(path_policy, AppConfig().artist_ids)
+    changed_hash = calculate_path_policy_fingerprint(
+        path_policy,
+        AppConfig().artist_ids,
+        ALBUM_YEAR_RESOLUTION_OLDEST,
+    )
+
+    assert changed_hash == default_hash

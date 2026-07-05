@@ -14,6 +14,7 @@ from omym2.domain.models.library import LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import TrackStatus
+from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
@@ -65,7 +66,11 @@ class CreateRefreshPlanUseCase:
         _require_one_target_selector(request)
         config = self.ports.config_store.load()
         config_hash = calculate_config_fingerprint(config)
-        path_policy_hash = calculate_path_policy_fingerprint(config.path_policy, config.artist_ids)
+        path_policy_hash = calculate_path_policy_fingerprint(
+            config.path_policy,
+            config.artist_ids,
+            config.metadata.album_year_resolution,
+        )
         path_policy = PathPolicy.from_app_config(config)
         timestamp = self.ports.clock.now()
 
@@ -75,7 +80,8 @@ class CreateRefreshPlanUseCase:
                 track for track in uow.tracks.list_by_library(library.library_id) if track.status == TrackStatus.ACTIVE
             )
             selected_tracks = self._selected_tracks(request, library, active_tracks)
-            candidates = tuple(self._candidate(library, track, config, path_policy) for track in selected_tracks)
+            candidates = tuple(self._candidate(library, track, config) for track in selected_tracks)
+            candidates = self._with_target_paths(candidates, active_tracks, config, path_policy)
             candidates = self._with_target_conflicts(library, candidates, active_tracks)
             plan_id = self.ports.id_generator.new_plan_id()
             actions = self._actions(plan_id, library, candidates)
@@ -117,7 +123,6 @@ class CreateRefreshPlanUseCase:
         library: Library,
         track: Track,
         config: AppConfig,
-        path_policy: PathPolicy,
     ) -> _RefreshCandidate:
         source_filesystem_path = self.ports.path_resolver.resolve_library_path(library.root_path, track.current_path)
 
@@ -129,25 +134,64 @@ class CreateRefreshPlanUseCase:
         if _has_missing_required_metadata(snapshot, config):
             return _blocked_candidate(track, PlanActionReason.MISSING_REQUIRED_METADATA, snapshot=snapshot)
 
-        try:
-            target_path = path_policy.canonical_path(
-                snapshot.metadata,
-                snapshot.file_extension,
-            )
-        except ValueError as exc:
-            return _blocked_candidate(track, _path_generation_failure_reason(exc), snapshot=snapshot)
-
         return _RefreshCandidate(
             track=track,
             snapshot=snapshot,
-            target_path=target_path,
+            target_path=None,
             reason=None,
-            needs_action=(
-                target_path != track.current_path
-                or snapshot.content_hash != track.content_hash
-                or snapshot.metadata_hash != track.metadata_hash
-            ),
+            needs_action=False,
         )
+
+    def _with_target_paths(
+        self,
+        candidates: Sequence[_RefreshCandidate],
+        active_tracks: Sequence[Track],
+        config: AppConfig,
+        path_policy: PathPolicy,
+    ) -> tuple[_RefreshCandidate, ...]:
+        selected_track_ids = {candidate.track.track_id for candidate in candidates}
+        metadata_batch = tuple(
+            candidate.snapshot.metadata
+            for candidate in candidates
+            if candidate.snapshot is not None and candidate.reason is None
+        ) + tuple(track.metadata for track in active_tracks if track.track_id not in selected_track_ids)
+        resolved_years = resolve_album_years(
+            metadata_batch,
+            config.path_policy,
+            config.metadata.album_year_resolution,
+        )
+        judged_candidates: list[_RefreshCandidate] = []
+
+        for candidate in candidates:
+            snapshot = candidate.snapshot
+            if snapshot is None or candidate.reason is not None:
+                judged_candidates.append(candidate)
+                continue
+
+            try:
+                target_path = path_policy.canonical_path(
+                    metadata_with_resolved_album_year(snapshot.metadata, config.path_policy, resolved_years),
+                    snapshot.file_extension,
+                )
+            except ValueError as exc:
+                judged_candidates.append(
+                    replace(candidate, target_path=None, reason=_path_generation_failure_reason(exc), needs_action=True)
+                )
+                continue
+
+            judged_candidates.append(
+                replace(
+                    candidate,
+                    target_path=target_path,
+                    needs_action=(
+                        target_path != candidate.track.current_path
+                        or snapshot.content_hash != candidate.track.content_hash
+                        or snapshot.metadata_hash != candidate.track.metadata_hash
+                    ),
+                )
+            )
+
+        return tuple(judged_candidates)
 
     def _with_target_conflicts(
         self,

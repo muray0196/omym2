@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from omym2.adapters.config.config_validator import (
     ADD_SECTION,
+    ALBUM_YEAR_RESOLUTION_KEY,
     ARTIST_IDS_SECTION,
     AUTO_APPLY_KEY,
     COLLISION_SECTION,
@@ -165,6 +166,7 @@ def dump_config_toml(config: AppConfig) -> str:
             (REQUIRE_TITLE_KEY, config.metadata.require_title),
             (REQUIRE_ARTIST_KEY, config.metadata.require_artist),
             (REQUIRE_ALBUM_KEY, config.metadata.require_album),
+            (ALBUM_YEAR_RESOLUTION_KEY, config.metadata.album_year_resolution),
         ),
     )
     _append_section(

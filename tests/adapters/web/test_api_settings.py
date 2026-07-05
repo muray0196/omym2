@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.web.app import create_web_app
 from omym2.config import (
+    ALBUM_YEAR_RESOLUTION_OLDEST,
     CONFIG_FILE_ENCODING,
     WEB_API_ARTIST_IDS_GENERATE_ROUTE,
     WEB_API_SETTINGS_PREVIEW_ROUTE,
@@ -20,7 +21,7 @@ from omym2.config import (
     WEB_API_SETTINGS_VALIDATE_ROUTE,
     WEB_CSRF_HEADER_NAME,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathsConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, MetadataConfig, PathsConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -56,8 +57,17 @@ def test_get_settings_returns_config_choices_validation_preview_and_csrf(tmp_pat
         _object_payload(_object_payload(payload, "config"), "path_policy")["template"]
         == AppConfig().path_policy.template
     )
+    assert (
+        _object_payload(_object_payload(payload, "config"), "metadata")["album_year_resolution"]
+        == AppConfig().metadata.album_year_resolution
+    )
     assert _object_payload(_object_payload(payload, "config"), "artist_ids")["entries"] == {}
     assert _object_payload(payload, "choices")["command_modes"] == ["plan_first"]
+    assert _object_payload(payload, "choices")["album_year_resolution_methods"] == [
+        "latest",
+        "most_frequent",
+        "oldest",
+    ]
     assert _object_payload(payload, "validation")["valid"] is True
     assert _object_payload(payload, "preview")["path"] == EXPECTED_DEFAULT_PREVIEW
     assert payload["errors"] == []
@@ -155,6 +165,20 @@ def test_save_settings_persists_editable_artist_id_entries(tmp_path: Path) -> No
     assert response.status_code == SUCCESS_STATUS_CODE
     saved_config = TomlConfigStore(config_path).load()
     assert saved_config.artist_ids.entries == {ARTIST_NAME: EDITED_ARTIST_ID}
+
+
+def test_save_settings_persists_album_year_resolution(tmp_path: Path) -> None:
+    """Settings save writes the album-year resolution method through TOML."""
+    config_path = tmp_path / "config.toml"
+    client = TestClient(create_web_app(config_path))
+    csrf_token = _csrf_token(client)
+    payload = _settings_payload(AppConfig(metadata=MetadataConfig(album_year_resolution=ALBUM_YEAR_RESOLUTION_OLDEST)))
+
+    response = client.post(WEB_API_SETTINGS_SAVE_ROUTE, json=payload, headers={WEB_CSRF_HEADER_NAME: csrf_token})
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    saved_config = TomlConfigStore(config_path).load()
+    assert saved_config.metadata.album_year_resolution == ALBUM_YEAR_RESOLUTION_OLDEST
 
 
 def test_generate_artist_ids_saves_missing_entries_without_overwriting(tmp_path: Path) -> None:
@@ -309,6 +333,7 @@ def _settings_payload(config: AppConfig) -> dict[str, object]:
                 "require_title": config.metadata.require_title,
                 "require_artist": config.metadata.require_artist,
                 "require_album": config.metadata.require_album,
+                "album_year_resolution": config.metadata.album_year_resolution,
             },
             "collision": {
                 "on_target_exists": config.collision.on_target_exists,

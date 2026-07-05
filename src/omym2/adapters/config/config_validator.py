@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from omym2.config import (
+    ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS,
     ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES,
     ALLOWED_COLLISION_MISSING_METADATA_POLICIES,
     ALLOWED_COLLISION_TARGET_EXISTS_POLICIES,
@@ -17,6 +18,7 @@ from omym2.config import (
     ALLOWED_UI_THEMES,
     CONFIG_VERSION,
     DEFAULT_ADD_AUTO_APPLY,
+    DEFAULT_ALBUM_YEAR_RESOLUTION,
     DEFAULT_ARTIST_ID_FALLBACK,
     DEFAULT_ARTIST_ID_MAX_LENGTH,
     DEFAULT_COLLISION_ON_DUPLICATE_HASH,
@@ -65,6 +67,7 @@ class ChoiceRule:
 
 
 ADD_SECTION = "add"
+ALBUM_YEAR_RESOLUTION_KEY = "album_year_resolution"
 ARTIST_IDS_SECTION = "artist_ids"
 AUTO_APPLY_KEY = "auto_apply"
 COLLISION_SECTION = "collision"
@@ -118,7 +121,9 @@ ORGANIZE_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY, ONLY_MISPLACED_KEY}
 PATH_POLICY_KEYS = frozenset(
     {TEMPLATE_KEY, UNKNOWN_ARTIST_KEY, UNKNOWN_ALBUM_KEY, SANITIZE_KEY, MAX_FILENAME_LENGTH_KEY}
 )
-METADATA_KEYS = frozenset({PREFER_ALBUM_ARTIST_KEY, REQUIRE_TITLE_KEY, REQUIRE_ARTIST_KEY, REQUIRE_ALBUM_KEY})
+METADATA_KEYS = frozenset(
+    {PREFER_ALBUM_ARTIST_KEY, REQUIRE_TITLE_KEY, REQUIRE_ARTIST_KEY, REQUIRE_ALBUM_KEY, ALBUM_YEAR_RESOLUTION_KEY}
+)
 COLLISION_KEYS = frozenset({ON_TARGET_EXISTS_KEY, ON_DUPLICATE_HASH_KEY, ON_MISSING_METADATA_KEY})
 UI_KEYS = frozenset({THEME_KEY, SHOW_ADVANCED_SETTINGS_KEY})
 
@@ -305,6 +310,16 @@ def _metadata_config(table: ConfigTable, errors: list[str]) -> MetadataConfig:
         ),
         require_album=_bool(
             table, REQUIRE_ALBUM_KEY, METADATA_SECTION, default=DEFAULT_METADATA_REQUIRE_ALBUM, errors=errors
+        ),
+        album_year_resolution=_choice(
+            table,
+            ChoiceRule(
+                key=ALBUM_YEAR_RESOLUTION_KEY,
+                section=METADATA_SECTION,
+                default=DEFAULT_ALBUM_YEAR_RESOLUTION,
+                allowed_values=ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS,
+            ),
+            errors,
         ),
     )
 
