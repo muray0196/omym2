@@ -35,7 +35,9 @@ description: Edit anything under docs/ safely. Use for adding, changing, moving,
 3. In every edited doc: refresh `timestamp` to now; update `description` if the doc's scope changed.
 4. If `description` changed, update the matching line in that directory's `index.md`.
 5. If you added, deleted, moved, or renamed a doc: update its directory `index.md`, plus every router that links to it (`AGENTS.md`, `ARCHITECTURE.md`, other docs, `.agents/skills/*/SKILL.md`).
-6. Verify: `scripts/checks.sh docs` — must pass before you finish.
+6. Regenerate directory indexes after docs changes:
+   `uv run python scripts/generate_docs_indexes.py --write`
+7. Verify: `scripts/checks.sh docs` — must pass before you finish.
 
 Optional: draft a `description` and `tags` with the local LLM:
 `uv run python scripts/ask_local_llm.py doc-description --files docs/<file>.md` (see `delegate-local-llm`). Verify the draft yourself before using it.

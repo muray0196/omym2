@@ -38,6 +38,10 @@ directory has an `index.md` for progressive disclosure. Start at
 and `timestamp` and the matching `index.md` entry; CI enforces conformance
 via the docs bundle test under `tests/docs/`.
 
+For targeted docs lookup, use `scripts/search_docs.py` or the `search-docs`
+skill; it searches the Markdown directly and returns citable `path:line`
+and anchor targets.
+
 ## Docs Router
 
 | Path | Use |

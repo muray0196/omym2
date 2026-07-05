@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies developer quality commands for edit-loop and final validation gates (ruff, basedpyright, npm lint/build, pytest), the checks.sh wrapper, local LLM helper scripts, suppression rules, and Python runtime configuration policy.
+description: Specifies developer quality commands, the checks.sh wrapper, docs search scripts, local LLM helpers, suppression rules, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-05T11:26:54+09:00
 ---
 
 # Development Harness
@@ -91,6 +91,13 @@ scripts/checks.sh test <pytest-target>
 * `test <pytest-target>`: focused failure inspection
 
 The command groups in this document remain authoritative; the script must stay in sync with them.
+
+## Docs Search Scripts
+
+`scripts/generate_docs_indexes.py` regenerates directory `index.md` files from docs frontmatter.
+`scripts/search_docs.py` parses docs frontmatter, headings, and section bodies in memory at query
+time and returns file, line, and anchor targets for citation-ready docs navigation. There is no
+generated search artifact; results can never go stale.
 
 ## Local LLM Scripts
 
