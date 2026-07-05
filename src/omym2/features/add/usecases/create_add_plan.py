@@ -13,6 +13,7 @@ from omym2.config import PLAN_ACTION_SORT_ORDER_START, PLAN_ACTION_SORT_ORDER_ST
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
@@ -135,7 +136,10 @@ class CreateAddPlanUseCase:
         config: AppConfig,
         path_policy: PathPolicy,
     ) -> tuple[_AddCandidate, ...]:
-        metadata_batch = tuple(track.metadata for track in library_tracks) + tuple(
+        active_library_metadata = tuple(
+            track.metadata for track in library_tracks if track.status == TrackStatus.ACTIVE
+        )
+        metadata_batch = active_library_metadata + tuple(
             candidate.snapshot.metadata
             for candidate in candidates
             if candidate.snapshot is not None and candidate.reason is None

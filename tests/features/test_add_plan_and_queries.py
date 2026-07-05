@@ -265,6 +265,42 @@ def test_add_plan_resolves_latest_album_year_across_incoming_album_group() -> No
     assert third_metadata.year == YEAR_2004
 
 
+def test_add_plan_ignores_removed_tracks_when_resolving_album_year() -> None:
+    """Removed Library tracks do not influence effective add target years."""
+    active_metadata = _album_track_metadata(title="Active", year=YEAR_2002, track_number=1)
+    removed_metadata = _album_track_metadata(title="Removed", year=YEAR_2004, track_number=2)
+    incoming_metadata = _album_track_metadata(title="Incoming", year=YEAR_1998, track_number=3)
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(
+        _track(
+            calculate_content_fingerprint(b"active"),
+            "Artist/2002_Album/1-01_Active.flac",
+            metadata=active_metadata,
+        )
+    )
+    uow.tracks.save(
+        _track(
+            calculate_content_fingerprint(b"removed"),
+            "Artist/2004_Album/1-02_Removed.flac",
+            track_id=SECOND_TRACK_ID,
+            metadata=removed_metadata,
+            status=TrackStatus.REMOVED,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, incoming_metadata, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert plan.actions[0].target_path == "Artist/2002_Album/1-03_Incoming.flac"
+    assert incoming_metadata.year == YEAR_1998
+
+
 def test_add_normalizes_configured_relative_incoming_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -621,16 +657,23 @@ def _library(library_id: LibraryId, root_path: str, path_policy_hash: str | None
     )
 
 
-def _track(content_hash: str, current_path: str, *, track_id: TrackId = TRACK_ID) -> Track:
+def _track(
+    content_hash: str,
+    current_path: str,
+    *,
+    track_id: TrackId = TRACK_ID,
+    metadata: TrackMetadata = METADATA,
+    status: TrackStatus = TrackStatus.ACTIVE,
+) -> Track:
     return Track(
         track_id=track_id,
         library_id=LIBRARY_ID,
         current_path=current_path,
         canonical_path=current_path,
         content_hash=content_hash,
-        metadata_hash=calculate_metadata_fingerprint(METADATA),
-        metadata=METADATA,
-        status=TrackStatus.ACTIVE,
+        metadata_hash=calculate_metadata_fingerprint(metadata),
+        metadata=metadata,
+        status=status,
         first_seen_at=BASE_TIME,
         last_seen_at=BASE_TIME,
         updated_at=BASE_TIME,
