@@ -140,9 +140,10 @@ class PathPolicy:
         return sanitize_track_title(metadata.title)
 
     def _disc_number(self, metadata: TrackMetadata, album_disc_total: int | None) -> str:
+        inferred_disc_total = album_disc_total if album_disc_total is not None else metadata.disc_total
         if (
             self.config.disc_number_condition == PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS
-            and not _is_multi_disc_album(album_disc_total)
+            and not _is_multi_disc_album(inferred_disc_total)
         ):
             return ""
 

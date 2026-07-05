@@ -108,6 +108,20 @@ def test_path_policy_renders_disc_number_for_multi_disc_album_context() -> None:
     assert canonical_path == EXPECTED_D_PREFIXED_PATH
 
 
+def test_path_policy_renders_disc_number_from_metadata_disc_total_without_album_context() -> None:
+    """PathPolicy treats a single file's disc_total tag as multi-disc context."""
+    metadata = _track_metadata_with_disc_total(2)
+
+    canonical_path = PathPolicy(
+        PathPolicyConfig(
+            disc_number_style=PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+            disc_number_condition=PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+        )
+    ).canonical_path(metadata, FILE_EXTENSION)
+
+    assert canonical_path == EXPECTED_D_PREFIXED_PATH
+
+
 def test_path_policy_appends_source_extension_to_rendered_stem() -> None:
     """PathPolicy renders a stem template and appends the lowercase source suffix."""
     canonical_path = PathPolicy(PathPolicyConfig(template=STEM_TEMPLATE)).canonical_path(
@@ -452,6 +466,10 @@ def test_duplicate_policy_skips_duplicate_hash() -> None:
 
 
 def _track_metadata() -> TrackMetadata:
+    return _track_metadata_with_disc_total(None)
+
+
+def _track_metadata_with_disc_total(disc_total: int | None) -> TrackMetadata:
     return TrackMetadata(
         title=TITLE,
         artist=ALBUM_ARTIST,
@@ -461,4 +479,5 @@ def _track_metadata() -> TrackMetadata:
         year=YEAR,
         track_number=TRACK_NUMBER,
         disc_number=DISC_NUMBER,
+        disc_total=disc_total,
     )
