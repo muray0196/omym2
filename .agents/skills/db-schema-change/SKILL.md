@@ -30,17 +30,22 @@ Authoritative docs: `docs/contracts/db-schema.md`, `docs/TESTING.md`
    convention (see `202606220001_initial_schema.sql`). Discovery is
    automatic (packaged `*.sql` resources); no registration step is needed.
 2. Write the migration so it either fully applies or fails: the runner
-   (`adapters/db/sqlite/migration_runner.py`) wraps each migration file and
-   its `schema_migrations` marker in one transaction.
+   (`src/omym2/adapters/db/sqlite/migration_runner.py`) wraps each migration
+   file and its `schema_migrations` marker in one transaction.
 3. Update repositories and domain models in the same change so
    persist/restore stays verbatim.
-4. If any path column is touched, open `path-identity-safety`.
-5. Update the table definitions in `docs/contracts/db-schema.md` in the same
-   change — open `update-docs`.
-6. Add tests per the Contract Change Test Requirements in `docs/TESTING.md`:
-   migration execution, repository persist and restore, path representation
-   when affected, foreign-key or uniqueness behavior when affected. Anchor:
-   `tests/adapters/db/sqlite/test_sqlite_foundation.py`.
+4. If any path column is touched, open `path-identity-safety`. When both
+   skills apply, follow this skill's procedure first and apply
+   `path-identity-safety`'s invariants throughout the work.
+
+## Done means
+
+- The table definitions in `docs/contracts/db-schema.md` are updated in the
+  same change (open `update-docs`).
+- Tests are added per the Contract Change Test Requirements in
+  `docs/TESTING.md`: migration execution, repository persist and restore,
+  path representation when affected, foreign-key or uniqueness behavior when
+  affected. Anchor: `tests/adapters/db/sqlite/test_sqlite_foundation.py`.
 
 ## Stop and report when
 

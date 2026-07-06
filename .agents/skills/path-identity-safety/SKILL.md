@@ -30,8 +30,13 @@ Authoritative docs: `docs/contracts/path-identity-storage.md`, `docs/contracts/d
    If a field is not in this table, find its class in `docs/contracts/path-identity-storage.md` before continuing.
 2. For each field, verify the invariant that matches its class still holds after your change.
 3. Check the identity rules: does anything key on a path where it should key on `library_id` / `track_id`?
-4. If the DB schema changes, open `db-schema-change` and follow `docs/contracts/db-schema.md`.
-5. Add tests for every changed representation or transition: normalization, relink, identity stability, root-relative persistence (`tests/shared/test_paths.py` and mirror locations are the anchors).
+4. If the DB schema changes, open `db-schema-change` and follow `docs/contracts/db-schema.md`. When both skills apply, follow `db-schema-change`'s procedure first and apply this skill's invariants throughout the work.
+
+## Done means
+
+- Tests are added for every changed representation or transition:
+  normalization, relink, identity stability, root-relative persistence
+  (`tests/shared/test_paths.py` and mirror locations are the anchors).
 
 ## Stop and report when
 

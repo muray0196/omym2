@@ -39,12 +39,14 @@ If an adapter needs an `if` that encodes domain meaning, that decision belongs i
 
 ## New file checklist
 
-1. Placement matches the table in `implement-change` (or `docs/codebase/source-layout.md`).
-2. Module name is `snake_case.py` and concrete. Banned names: `utils.py`, `helpers.py`, `manager.py`, `service.py`, `common.py`; no `_service.py` or `_dao.py` suffixes.
-3. No `features/<feature>/domain/` or `features/<feature>/adapters/` directories.
-4. `domain/` names are nouns; usecase names are `{verb}_{object}.py`.
+- [ ] Placement matches the table in `implement-change` (or `docs/codebase/source-layout.md`).
+- [ ] Module name is `snake_case.py` and concrete. Banned names: `utils.py`, `helpers.py`, `manager.py`, `service.py`, `common.py`; no `_service.py` or `_dao.py` suffixes.
+- [ ] No `src/omym2/features/<feature>/domain/` or `src/omym2/features/<feature>/adapters/` directories.
+- [ ] `domain/` names are nouns; usecase names are `{verb}_{object}.py`.
 
-## Verify
+## Done means
+
+These pass:
 
 ```bash
 scripts/checks.sh arch
