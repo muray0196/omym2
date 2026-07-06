@@ -4,7 +4,8 @@ Use this routing before choosing task-specific docs.
 
 ## Required Reading
 
-Read `ARCHITECTURE.md` before starting any task:
+Read `ARCHITECTURE.md` before any task that touches `src/`, `web/`, or
+`tests/`. Docs-only, issue-only, or purely read-only tasks may skip it.
 
 ## Prohibited Reading
 
@@ -17,9 +18,8 @@ suppressions, or runtime configuration work.
 
 ## Validation Shortcut
 
-`scripts/checks.sh` wraps the quality gates from `docs/DEVELOPMENT.md`:
-`changed` (edit loop, default), `all` (final gates), `py`, `web`, `docs`,
-`arch`, and `test <pytest-target>`.
+Mode selection is owned by `.agents/skills/validate/SKILL.md`. Gate
+definitions live in `docs/DEVELOPMENT.md`.
 
 ## Subagents
 
@@ -33,7 +33,10 @@ Delegate implementation, investigation, editing, testing, and detailed analysis 
 * Use `coder` only after scope, target files, and approach are settled.
 * Use `reviewer` after non-trivial implementation or before PR/commit review.
 * The main agent owns orchestration, final judgment, repo-policy checks, and
-  high-risk architecture, storage, path, or Plan decisions.
+  high-risk architecture, storage, path, or Plan decisions. "High-risk" means
+  anything matching a safety-skill row in `.agents/skills/implement-change`'s
+  routing table (Plan/apply/undo, stored paths & identity, DB schema, config
+  contract).
 
 ### Briefing a Subagent
 
@@ -42,8 +45,8 @@ Subagents start with zero context. Every dispatch must be self-contained:
 1. Goal — one sentence stating the outcome.
 2. Scope — exact files, symbols, or directories, plus what is out of bounds.
 3. Constraints — the repo rules that apply: which `.agents/skills/` entries to
-   follow, never read `WORKFLOW.md`, and the check command to run
-   (`scripts/checks.sh changed` or `scripts/checks.sh test <target>`).
+   follow, never read `WORKFLOW.md`, and the check mode selected per
+   `.agents/skills/validate`.
 4. Expected output — the exact report shape needed back (paths with line
    numbers, diff summary, or verdict).
 

@@ -3,7 +3,7 @@ type: Command Reference
 title: Commands
 description: Lists and summarizes the OMYM2 CLI command surface, including add, plans, apply, refresh, organize, history, undo, check, inspect, config, artist-ids, and settings.
 tags: [cli, commands, reference]
-timestamp: 2026-07-06T18:55:23+09:00
+timestamp: 2026-07-07T00:39:14+09:00
 ---
 
 # Commands
@@ -35,8 +35,9 @@ omym2 add <source-dir>
 omym2 add --apply
 omym2 add --apply --yes
 
-# Plan
+# Plans and apply
 omym2 plans
+omym2 plans <plan-id>
 omym2 apply <plan-id>
 omym2 apply <plan-id> --yes
 omym2 apply latest

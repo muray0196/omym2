@@ -17,7 +17,7 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
 ## Rules
 
 - Match existing component style: TypeScript, Tailwind, existing `components/ui/` primitives before new dependencies.
-- Settings save requests must keep sending the CSRF token header (`X-OMYM2-CSRF-Token`).
+- Every state-changing POST — Settings save, artist ID generation, and Plan creation (add/organize/refresh) — must keep sending the CSRF token header (`X-OMYM2-CSRF-Token`).
 
 ## Procedure
 
@@ -26,13 +26,13 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
    - backend: route in `src/omym2/adapters/web/routes/api.py` that calls a feature usecase through ports (routes never read TOML or the filesystem directly), plus known-route registration in `src/omym2/adapters/web/app.py` if a new page path is added;
    - frontend: `api-client.ts` method + matching entry in `mock-data.ts` so static preview keeps working.
    Backend edits also follow `implement-change`.
-3. Validate: `scripts/checks.sh web` (runs `npm ci`, `format:check`, `lint`, `build`).
+3. Validate: run the check mode `validate` selects for frontend gates (installs deps, `format:check`, `lint`, `build`).
 4. `npm run build` also regenerates `src/omym2/adapters/web/static_dist/` via `web/scripts/sync-static-export.mjs`. Keep the generated copy local; do not stage or commit `static_dist/`.
 5. Manual check when UI behavior changed: `cd web && npm run dev`, or serve the packaged UI with `uv run omym2 settings`.
 
 ## Done means
 
-- `scripts/checks.sh web` passes and the ignored local `static_dist/` is in sync.
+- The check mode `validate` selects for frontend gates passes and the ignored local `static_dist/` is in sync.
 - Mock mode still renders every screen you touched (no crash on mock data shape).
 
 ## Stop and report when

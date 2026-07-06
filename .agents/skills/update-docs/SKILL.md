@@ -41,11 +41,12 @@ description: Edit anything under docs/ safely. Use for adding, changing, moving,
 2. Make the edit in the authoritative home. If another doc repeats the rule, replace the repeat with a pointer.
 3. In every edited doc: refresh `timestamp` to now; update `description` if the doc's scope changed.
 4. If `description` changed, update the matching line in that directory's `index.md`.
-5. If you added, deleted, moved, or renamed a doc: update its directory `index.md`, plus every router that links to it (`AGENTS.md`, `ARCHITECTURE.md`, other docs, `.agents/skills/*/SKILL.md`).
+5. If you added, deleted, moved, or renamed a doc: update its directory `index.md`, then find every router that links to it and update those links too:
+   `grep -rln "$(basename <edited-file>)" AGENTS.md ARCHITECTURE.md docs .agents/skills`
 
 ## Done means
 
-- `scripts/checks.sh docs` passes.
+- The check mode `validate` selects for docs bundle conformance passes.
 
 ## Stop and report when
 

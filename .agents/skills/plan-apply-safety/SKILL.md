@@ -31,6 +31,13 @@ Highest-risk area of OMYM2: mistakes here move or lose user music files. Authori
 5. Blocked actions stay blocked; nothing "retries" a blocked action implicitly.
 6. Refresh updates Track / FileEvent / Plan state only through the documented contracts, never by ad-hoc reconciliation.
 
+## Procedure
+
+1. Read the docs above, in the listed order.
+2. Check the design against every non-negotiable invariant above.
+3. Every PlanAction carries stored `source_path`/`target_path`, so this skill and `path-identity-safety` always co-trigger together: follow this skill's execution-semantics checks first, then apply `path-identity-safety`'s stored-path invariants throughout the work.
+4. Work through the Done means checklist below before declaring the change safe.
+
 ## Done means
 
 - [ ] Can this change mutate a Library music file? If yes, is every mutation inside a Plan-centered flow?
@@ -38,7 +45,7 @@ Highest-risk area of OMYM2: mistakes here move or lose user music files. Authori
 - [ ] Is the FileEvent written as pending before any mutation code runs?
 - [ ] Are the three failure classes handled and persisted differently?
 - [ ] Does apply read only recorded PlanActions (grep for AppConfig / PathPolicy usage inside apply)?
-- [ ] Does every changed contract edge have a test (`tests/features/`, plus integration where an adapter is involved)?
+- [ ] Every changed contract edge has a test per `docs/TESTING.md`'s Contract Change Test Requirements table, Execution contract row.
 
 ## Stop and report when
 

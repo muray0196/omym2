@@ -51,49 +51,19 @@ omym2 add /path/to/incoming --apply
 
 ## Usage
 
+Most common commands:
+
 ```bash
-# Settings
-omym2 settings
-omym2 config show
-omym2 config validate
-
-# Register or reconcile a library
-omym2 organize --library <path>
-omym2 organize --library <path> --apply
-omym2 organize
-omym2 organize --apply
-
-# Add new files to a registered library
-omym2 add
 omym2 add <source-dir>
-omym2 add --apply
-omym2 add --apply --yes
-
-# Review and apply plans
+omym2 organize --library <path>
 omym2 plans
-omym2 plans <plan-id>
 omym2 apply <plan-id>
-omym2 apply <plan-id> --yes
-omym2 apply latest
-
-# Re-evaluate files after editing tags outside OMYM2
-omym2 refresh <file>
-omym2 refresh <dir>
-omym2 refresh --all
-omym2 refresh <file> --apply
-
-# History and recovery
-omym2 history
 omym2 undo <run-id>
-omym2 undo <run-id> --apply
-
-# Status and inspection
-omym2 check
-omym2 inspect <file>
-
-# Artist ID path values
-omym2 artist-ids generate [--overwrite] [--fasttext-model <path>] <artist>...
 ```
+
+See [docs/COMMANDS.md](docs/COMMANDS.md) for the complete command surface,
+including `refresh`, `history`, `check`, `inspect`, `config`, and
+`artist-ids`.
 
 ## Common Workflow
 

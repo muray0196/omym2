@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Layout
 description: Authoritative description of OMYM2's src/ layout and Feature-oriented Hexagonal Architecture, covering the domain, features, adapters, platform, and shared packages and rules for adding new directories.
 tags: [source-layout, architecture, hexagonal-architecture, python]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-07T00:39:14+09:00
 ---
 
 # Source Layout
@@ -30,7 +30,7 @@ src/
 
 Core concepts such as Library, Track, Plan, Run, FileEvent, and PathPolicy are not split by feature. They are placed in `domain/` as the shared domain kernel for all of OMYM2.
 
-Features are divided by user goal, such as `settings`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`, `plans`, `history`, `tracks`, and `inspect`.
+Features are divided by user goal, such as `settings`, `artist_ids`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`, `plans`, `history`, `tracks`, and `inspect`.
 
 CLI and Web call feature usecases as inbound adapters. DB, filesystem, metadata reader, and config loader implement ports as outbound adapters.
 
@@ -102,6 +102,7 @@ PathPolicy is a pure domain service.
 `features/` contains usecases divided by user goal.
 
 * `settings`: read and write config, validate it, and preview path policy
+* `artist_ids`: generate and save artist ID path values in config, preserving existing entries unless overwrite is requested
 * `organize`: scan the selected Library, create a relocation plan when needed, and register the Library when clean
 * `add`: create an add plan from Incoming / specified source
 * `refresh`: reload metadata and create a relocation plan
@@ -124,6 +125,7 @@ When a usecase needs files from a directory, it uses FileScanner only to discove
 * `adapters/db/sqlite`: SQLite repositories / UnitOfWork
 * `adapters/fs`: file discovery / snapshot capture / move / path operations / hash calculation
 * `adapters/metadata`: metadata reading with mutagen
+* `adapters/artist_ids`: fastText Japanese-name detection and MusicBrainz artist name lookup
 * `adapters/config`: TOML config store / validator / defaults
 * `adapters/cli`: CLI commands
 * `adapters/web`: local Web UI

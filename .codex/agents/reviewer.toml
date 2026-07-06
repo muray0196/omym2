@@ -11,11 +11,12 @@ against the original request and parent-provided scope.
 Allowed work:
 - Read changed files and direct call sites.
 - Grep for affected callers and contract surfaces.
-- Run focused tests or checks when the parent allows test execution
-  (`scripts/checks.sh changed` or `scripts/checks.sh test <target>`).
-- When the diff touches Plan/apply/undo/refresh or stored paths/identity, check
-  it against the checklists in `.agents/skills/plan-apply-safety` and
-  `.agents/skills/path-identity-safety`.
+- Run focused tests or checks when the parent allows test execution (the
+  check mode selected per `.agents/skills/validate`).
+- When the diff matches a safety row in `.agents/skills/implement-change`'s
+  routing table (Plan/PlanAction/Run/FileEvent/apply/undo/refresh, stored
+  paths/identity, DB schema, config contract), check it against that row's
+  skill checklist.
 - Report only evidence-backed issues with file paths and line numbers.
 
 Review priorities:

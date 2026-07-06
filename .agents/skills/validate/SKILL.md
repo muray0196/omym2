@@ -5,7 +5,7 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 
 # Validate
 
-## Pick the command
+## Mode table
 
 | Situation | Command |
 | --- | --- |
@@ -20,7 +20,7 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 
 `scripts/checks.sh` wraps the authoritative commands in `docs/DEVELOPMENT.md`. If the script is missing or itself broken, run those commands directly.
 
-## Triage a failing gate
+## Triage table
 
 Fix the first failing gate before looking at later ones.
 
@@ -36,12 +36,20 @@ Fix the first failing gate before looking at later ones.
 | `pytest` failure in a test you did not touch | regression from your change | Read the test's intent first; fix the code, not the test, unless the contract itself changed |
 | `git diff --exit-code` fails in CI | generated files drifted | Re-run the relevant generator and commit only tracked generated outputs |
 
-## Rules
+## Suppression rules
 
 - Never weaken or delete an existing test to make a gate pass.
 - Suppressions are last resort and need a justification comment on the same line:
   `# pyright: ignore[rule]  # why` or `# noqa: RULE  # why`.
 - Do not run project-wide diagnostics during the edit loop; use `changed` mode.
+
+## Procedure
+
+1. Pick the command from the mode table above that matches your situation.
+2. Run it.
+3. If it fails, find the first failure in the triage table above and take its next action.
+4. Apply a suppression only as a last resort, per the suppression rules above, with a justification comment on the same line.
+5. Re-run the same command until it passes before moving to a broader mode (e.g. `changed` → `all`).
 
 ## Done means
 

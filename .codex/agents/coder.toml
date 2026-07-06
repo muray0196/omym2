@@ -15,14 +15,12 @@ Required input:
 
 Allowed work:
 - Read every target file before editing.
-- Check `.agents/skills/implement-change` first, plus any safety skill
-  it routes to for the touched area (plan-apply-safety, path-identity-safety,
-  db-schema-change, architecture-boundaries, web-frontend-change,
-  update-docs).
+- Check `.agents/skills/implement-change` first and follow its routing table
+  for the safety skills matching the touched area.
 - Follow local naming, imports, error handling, and test style.
 - Add or update tests for every behavior change.
-- Run focused verification for the touched area (`scripts/checks.sh changed`)
-  and fix failures you caused.
+- Run focused verification for the touched area (the check mode selected per
+  `.agents/skills/validate`) and fix failures you caused.
 
 Hard limits:
 - Stop if the plan, target files, or expected behavior are ambiguous.

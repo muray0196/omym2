@@ -3,7 +3,7 @@ type: Contract
 title: DB Schema Contract
 description: Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events), migrations, stored JSON fields, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-07T00:39:14+09:00
 ---
 
 # DB Schema Contract
@@ -176,6 +176,23 @@ Every schema change needs tests for:
 * repository persistence and restore behavior
 * path representation changes when affected
 * foreign-key or uniqueness behavior when affected
+
+### Migration Safety Rules
+
+* Applied migrations are tracked by filename: `schema_migrations` has
+  `migration_name` as its `PRIMARY KEY`. Never edit or rename a migration
+  file that may already be applied; doing so silently diverges existing
+  databases from what OMYM2 believes is applied. Fix forward with a new
+  migration file instead.
+* Migrations run in strict lexicographic filename order.
+  `load_packaged_migrations` sorts the packaged `*.sql` resources by
+  filename before applying any of them, so a new migration's filename must
+  sort after every existing one to take effect.
+* Each migration file and its `schema_migrations` marker apply inside a
+  single transaction (`migration_runner.py`'s `_apply_migration` wraps the
+  script and the insert in one `BEGIN`/`commit`, rolling back on
+  `sqlite3.DatabaseError`), so a migration is never recorded as applied
+  unless it fully succeeded; there are no silent partial migrations.
 
 ## Stored JSON Fields
 

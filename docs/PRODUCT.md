@@ -3,7 +3,7 @@ type: Product Overview
 title: Product
 description: Describes OMYM2's product shape as a headless domain core with a CLI runner and a local Web settings console, and defines its primary safe-import use case and technology stack.
 tags: [product, overview, cli, web-ui]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-07T00:39:14+09:00
 ---
 
 # Product
@@ -64,29 +64,8 @@ Relocation of the existing Library is separate from the daily `add` flow. Path i
 
 ## Usage Image
 
-```bash
-omym2 settings
-
-omym2 organize --library /path/to/music-library
-omym2 plans
-omym2 apply <plan-id>
-
-omym2 add
-omym2 plans
-omym2 apply <plan-id>
-```
-
-Maintenance:
-
-```bash
-omym2 refresh <library-file>
-omym2 organize
-omym2 history
-omym2 undo <run-id>
-omym2 check
-omym2 inspect <file>
-omym2 settings
-```
+See [COMMANDS.md](COMMANDS.md) for the command sequence behind the primary
+Incoming-to-Library flow and periodic maintenance operations.
 
 ## Role of the UI
 

@@ -3,7 +3,7 @@ type: Contract
 title: Config Contract
 description: Defines the authoritative contract for OMYM2's TOML-based application config, including its file location, AppConfig shape, path-policy templates, artist ID rules, and metadata/collision policy.
 tags: [config, toml, path-policy, artist-ids]
-timestamp: 2026-07-06T21:51:19+09:00
+timestamp: 2026-07-07T00:39:14+09:00
 ---
 
 # Config Contract
@@ -110,6 +110,10 @@ show_advanced_settings = false
 Config has a version so future migrations can be supported.
 
 Config migration policy belongs in this contract. Migration implementation belongs to the config adapter. Do not add a separate migration document.
+
+## Organize Config
+
+`only_misplaced` (default `true`) is a validated, persisted `[organize]` key. As implemented today, `organize` Plan creation already scans the whole selected Library and records a Plan action only for files that are misplaced (current path differs from the canonical target path) or blocked; already-correctly-placed files never become Plan actions regardless of this flag. The organize usecase does not yet branch on `only_misplaced`, so both boolean values currently produce the same scan-and-plan behavior.
 
 ## PathPolicyConfig
 
@@ -221,5 +225,7 @@ The initial policy blocks target conflicts, skips duplicate hashes, and blocks m
 ## UI Settings
 
 UI settings are application config. They are stored in TOML, not SQLite.
+
+`theme` accepts one of `system`, `light`, `dark`, or `oled`; default `system`.
 
 The local Web UI may edit settings, validate settings, and preview PathPolicy output. It must use config usecases and config adapters rather than reading or writing TOML directly from route logic.

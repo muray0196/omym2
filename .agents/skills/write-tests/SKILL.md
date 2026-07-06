@@ -32,14 +32,9 @@ Shared fakes live in `tests/fakes/`. Look there before writing a new fake.
 
 ## What must be tested (by contract touched)
 
-| You changed | Required test focus |
-| --- | --- |
-| Config contract | load, save, validation, defaults, migration |
-| DB schema | migrations, repositories, constraints, stored JSON, timestamps, path representation |
-| Path identity | normalization, relink, Library/Track identity, root-relative persistence |
-| Status catalog | state transitions, failure behavior, persisted values |
-| Plan/apply/undo/refresh/check execution | Plan, PlanAction, Run, FileEvent, apply order, failure cases |
-| Layer or naming rule | `tests/architecture/` |
+Open `docs/TESTING.md`'s Contract Change Test Requirements table and match
+the row for the contract you changed (Config, DB schema, Path identity,
+Status catalog, Execution, or Architecture).
 
 ## Anti-patterns (reject these in your own work)
 
@@ -56,7 +51,7 @@ Shared fakes live in `tests/fakes/`. Look there before writing a new fake.
 
 ## Done means
 
-- `scripts/checks.sh test <file-or-node-id>` passes, then `scripts/checks.sh changed` passes.
+- The check mode `validate` selects for inspecting one failing test passes, then the check mode it selects for the edit-loop situation passes.
 
 ## Stop and report when
 

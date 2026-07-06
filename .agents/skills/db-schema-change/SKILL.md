@@ -12,16 +12,14 @@ Authoritative docs: `docs/contracts/db-schema.md`, `docs/TESTING.md`
 
 1. Migrations preserve existing managed state or fail explicitly before
    partially changing schema state. No silent partial migrations.
-2. Never edit or rename a migration file that may already be applied:
-   `schema_migrations` tracks migrations by filename, so editing an applied
-   file silently diverges existing databases. Fix forward with a new
-   migration instead.
-3. Migrations apply in lexicographic filename order. A new migration must
-   sort after every existing one.
-4. Repositories persist and restore typed domain models verbatim; stored
+2. Migration-safety rules (never edit or rename an applied migration; strict
+   lexicographic filename ordering; single-transaction apply) are owned by
+   `docs/contracts/db-schema.md`'s Migration Safety Rules section — read it
+   before writing a migration.
+3. Repositories persist and restore typed domain models verbatim; stored
    JSON shape (`metadata_json`, `summary_json`) never decides business
    policy.
-5. Every Library-managed record carries `library_id`.
+4. Every Library-managed record carries `library_id`.
 
 ## Procedure
 
@@ -42,10 +40,9 @@ Authoritative docs: `docs/contracts/db-schema.md`, `docs/TESTING.md`
 
 - The table definitions in `docs/contracts/db-schema.md` are updated in the
   same change (open `update-docs`).
-- Tests are added per the Contract Change Test Requirements in
-  `docs/TESTING.md`: migration execution, repository persist and restore,
-  path representation when affected, foreign-key or uniqueness behavior when
-  affected. Anchor: `tests/adapters/db/sqlite/test_sqlite_foundation.py`.
+- Tests are added per `docs/TESTING.md`'s Contract Change Test Requirements
+  table, DB schema contract row. Anchor:
+  `tests/adapters/db/sqlite/test_sqlite_foundation.py`.
 
 ## Stop and report when
 

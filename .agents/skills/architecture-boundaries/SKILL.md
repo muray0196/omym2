@@ -24,7 +24,7 @@ Additional hard rules:
 - `domain/` performs no I/O: no sqlite3, no file reads/writes, no HTTP, no TOML, no mutagen, no FastAPI/Typer imports.
 - A feature never imports another feature's internals. Chaining usecases (e.g. `add --apply`) happens in CLI, Web, or platform.
 - CLI commands and Web routes never touch the filesystem directly; they translate input, call usecases, format output.
-- Outbound adapters (`db`, `fs`, `metadata`, `config`) implement ports from `features/*/ports.py` or `features/common_ports.py`.
+- Outbound adapters (`db`, `fs`, `metadata`, `config`) implement ports from `src/omym2/features/*/ports.py` or `src/omym2/features/common_ports.py`.
 
 ## Business rule placement
 
@@ -44,15 +44,16 @@ If an adapter needs an `if` that encodes domain meaning, that decision belongs i
 - [ ] No `src/omym2/features/<feature>/domain/` or `src/omym2/features/<feature>/adapters/` directories.
 - [ ] `domain/` names are nouns; usecase names are `{verb}_{object}.py`.
 
+## Procedure
+
+1. Consult the import decision table above for the layer you are editing and the layer you want to import.
+2. Check business rule placement above: if an adapter would need an `if` that encodes domain meaning, move that decision into a domain service or usecase instead.
+3. Work through the new file checklist above before adding any file.
+4. Verify: run the check mode `validate` selects for architecture boundary / naming rules.
+
 ## Done means
 
-These pass:
-
-```bash
-scripts/checks.sh arch
-```
-
-Architecture tests in `tests/architecture/` enforce the highest-risk rules; passing them is necessary but not sufficient — the tables above still apply.
+The check mode `validate` selects for architecture boundary / naming rules passes. Architecture tests in `tests/architecture/` enforce the highest-risk rules; passing them is necessary but not sufficient — the tables above still apply.
 
 ## Stop and report when
 
