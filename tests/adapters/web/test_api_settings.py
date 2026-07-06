@@ -375,7 +375,6 @@ def _settings_payload(config: AppConfig) -> dict[str, object]:
             "organize": {
                 "default_mode": config.organize.default_mode,
                 "auto_apply": config.organize.auto_apply,
-                "only_misplaced": config.organize.only_misplaced,
             },
             "refresh": {"default_mode": config.refresh.default_mode, "auto_apply": config.refresh.auto_apply},
             "path_policy": {

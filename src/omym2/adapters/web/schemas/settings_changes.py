@@ -31,7 +31,6 @@ def describe_config_changes(before: AppConfig, after: AppConfig) -> tuple[Settin
         ("Add auto apply", before.add.auto_apply, after.add.auto_apply),
         ("Organize mode", before.organize.default_mode, after.organize.default_mode),
         ("Organize auto apply", before.organize.auto_apply, after.organize.auto_apply),
-        ("Organize only misplaced", before.organize.only_misplaced, after.organize.only_misplaced),
         ("Refresh mode", before.refresh.default_mode, after.refresh.default_mode),
         ("Refresh auto apply", before.refresh.auto_apply, after.refresh.auto_apply),
         ("Path template", before.path_policy.template, after.path_policy.template),

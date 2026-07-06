@@ -88,7 +88,6 @@ CONFIG_VERSION: Final = 1  # supported user config schema version
 DEFAULT_COMMAND_MODE: Final = "plan_first"  # initial plan creation mode for mutating commands
 DEFAULT_ADD_AUTO_APPLY: Final = False  # add command auto-apply default
 DEFAULT_ORGANIZE_AUTO_APPLY: Final = False  # organize command auto-apply default
-DEFAULT_ORGANIZE_ONLY_MISPLACED: Final = True  # organize scans only misplaced files by default
 DEFAULT_REFRESH_AUTO_APPLY: Final = False  # refresh command auto-apply default
 DEFAULT_ALBUM_YEAR_RESOLUTION: Final = ALBUM_YEAR_RESOLUTION_LATEST  # album-group year resolution default
 DEFAULT_PATH_POLICY_TEMPLATE: Final = (

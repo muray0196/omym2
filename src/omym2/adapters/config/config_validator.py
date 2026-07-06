@@ -33,7 +33,6 @@ from omym2.config import (
     DEFAULT_METADATA_REQUIRE_ARTIST,
     DEFAULT_METADATA_REQUIRE_TITLE,
     DEFAULT_ORGANIZE_AUTO_APPLY,
-    DEFAULT_ORGANIZE_ONLY_MISPLACED,
     DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION,
     DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE,
     DEFAULT_PATH_POLICY_SANITIZE,
@@ -104,7 +103,6 @@ UI_SECTION = "ui"
 UNKNOWN_ALBUM_KEY = "unknown_album"
 UNKNOWN_ARTIST_KEY = "unknown_artist"
 VERSION_KEY = "version"
-ONLY_MISPLACED_KEY = "only_misplaced"
 
 ROOT_KEYS = frozenset(
     {
@@ -123,7 +121,7 @@ ROOT_KEYS = frozenset(
 PATHS_KEYS = frozenset({LIBRARY_KEY, INCOMING_KEY})
 ARTIST_IDS_KEYS = frozenset({MAX_LENGTH_KEY, FALLBACK_ID_KEY, ENTRIES_KEY})
 COMMAND_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY})
-ORGANIZE_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY, ONLY_MISPLACED_KEY})
+ORGANIZE_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY})
 PATH_POLICY_KEYS = frozenset(
     {
         TEMPLATE_KEY,
@@ -248,13 +246,6 @@ def _organize_config(table: ConfigTable, errors: list[str]) -> OrganizeConfig:
             errors,
         ),
         auto_apply=_bool(table, AUTO_APPLY_KEY, ORGANIZE_SECTION, default=DEFAULT_ORGANIZE_AUTO_APPLY, errors=errors),
-        only_misplaced=_bool(
-            table,
-            ONLY_MISPLACED_KEY,
-            ORGANIZE_SECTION,
-            default=DEFAULT_ORGANIZE_ONLY_MISPLACED,
-            errors=errors,
-        ),
     )
 
 

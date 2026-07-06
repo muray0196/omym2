@@ -38,7 +38,6 @@ export interface AppConfig {
   organize: {
     default_mode: string
     auto_apply: boolean
-    only_misplaced: boolean
   }
   refresh: {
     default_mode: string

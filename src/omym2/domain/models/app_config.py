@@ -31,7 +31,6 @@ from omym2.config import (
     DEFAULT_METADATA_REQUIRE_ARTIST,
     DEFAULT_METADATA_REQUIRE_TITLE,
     DEFAULT_ORGANIZE_AUTO_APPLY,
-    DEFAULT_ORGANIZE_ONLY_MISPLACED,
     DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION,
     DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE,
     DEFAULT_PATH_POLICY_SANITIZE,
@@ -93,7 +92,6 @@ class OrganizeConfig(CommandConfig):
     """Default execution behavior for organize."""
 
     auto_apply: bool = DEFAULT_ORGANIZE_AUTO_APPLY
-    only_misplaced: bool = DEFAULT_ORGANIZE_ONLY_MISPLACED
 
 
 @dataclass(frozen=True, slots=True)

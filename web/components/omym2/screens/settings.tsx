@@ -321,12 +321,6 @@ export function SettingsScreen() {
                     onChange={(v) => update("organize", { auto_apply: v })}
                     label="Auto-apply"
                   />
-                  <Toggle
-                    checked={draftConfig.organize.only_misplaced}
-                    onChange={(v) => update("organize", { only_misplaced: v })}
-                    label="Only misplaced"
-                    help="Restrict organize to files whose current path differs from the canonical path."
-                  />
                 </div>
               </Panel>
 

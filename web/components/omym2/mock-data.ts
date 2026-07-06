@@ -37,7 +37,6 @@ export const defaultConfig: AppConfig = {
   organize: {
     default_mode: "plan_first",
     auto_apply: false,
-    only_misplaced: true,
   },
   refresh: {
     default_mode: "plan_first",

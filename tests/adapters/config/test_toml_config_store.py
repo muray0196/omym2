@@ -275,6 +275,18 @@ def test_toml_config_store_validation_fails_invalid_album_year_resolution(tmp_pa
         _ = TomlConfigStore(config_path).load()
 
 
+def test_toml_config_store_validation_fails_removed_organize_only_misplaced_key(tmp_path: Path) -> None:
+    """A config file still containing the removed organize.only_misplaced key is rejected."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        "version = 1\n\n[organize]\nonly_misplaced = true\n",
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError, match=r"Unknown config key: organize\.only_misplaced\."):
+        _ = TomlConfigStore(config_path).load()
+
+
 def test_toml_config_store_validation_fails_invalid_toml(tmp_path: Path) -> None:
     """Malformed TOML is reported as a config validation error."""
     config_path = tmp_path / CONFIG_FILE_NAME

@@ -29,7 +29,6 @@ from omym2.adapters.config.config_validator import (
     ON_DUPLICATE_HASH_KEY,
     ON_MISSING_METADATA_KEY,
     ON_TARGET_EXISTS_KEY,
-    ONLY_MISPLACED_KEY,
     ORGANIZE_SECTION,
     PATH_POLICY_SECTION,
     PATHS_SECTION,
@@ -125,7 +124,6 @@ def dump_config_toml(config: AppConfig) -> str:
         (
             (DEFAULT_MODE_KEY, config.organize.default_mode),
             (AUTO_APPLY_KEY, config.organize.auto_apply),
-            (ONLY_MISPLACED_KEY, config.organize.only_misplaced),
         ),
     )
     _append_section(

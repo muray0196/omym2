@@ -3,7 +3,7 @@ type: Execution Spec
 title: Organize Execution
 description: Defines organize --library PATH behavior for first Library registration, existing Library rescan, unregistered-path refusal, and registration timing relative to plan creation and apply.
 tags: [organize, library-registration, plan-creation, path-policy]
-timestamp: 2026-07-07T00:39:14+09:00
+timestamp: 2026-07-07T12:00:00+09:00
 ---
 
 # Organize Execution
@@ -45,7 +45,7 @@ Relink rules are defined in [../contracts/path-identity-storage.md](../contracts
 
 `organize --library PATH` scans the specified Library read-only and computes canonical paths under the current PathPolicy.
 
-The `organize.only_misplaced` config key (see [../contracts/config.md](../contracts/config.md#organize-config)) is validated and persisted, but the current scan always covers the whole Library and only ever plans misplaced or blocked files; the key does not yet change scan scope.
+The scan always covers the whole Library and only ever plans misplaced (current path differs from the canonical target path) or blocked files; already-correctly-placed files never become Plan actions.
 
 In the MVP, `organize --library PATH` supports these identity cases:
 

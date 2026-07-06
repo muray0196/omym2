@@ -23,11 +23,10 @@ Contract Change Test Requirements table, "Config contract" row.
    no version-based migration exists yet. Decide and test the exact
    backward-compatibility behavior for every removed/renamed key or version
    bump; do not leave it implicit.
-4. `docs/contracts/config.md`'s AppConfig Shape example is the closest
-   documented source for `organize.only_misplaced` and `ui.theme`; it does not
-   enumerate `ui.theme`'s full allowed set. Verify allowed values against
-   `src/omym2/config.py` (e.g. `ALLOWED_UI_THEMES`) rather than assuming the
-   doc is exhaustive.
+4. Verify allowed values and enums against the constants in
+   `src/omym2/config.py` (e.g. `ALLOWED_UI_THEMES`) rather than assuming
+   `docs/contracts/config.md` is exhaustive; when the doc lags the source,
+   update the doc in the same change (open `update-docs`).
 
 ## Every changed or added key touches these surfaces
 
