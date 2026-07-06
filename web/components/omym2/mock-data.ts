@@ -58,6 +58,7 @@ export const defaultConfig: AppConfig = {
     require_title: true,
     require_artist: true,
     require_album: false,
+    album_year_resolution: "latest",
   },
   collision: {
     on_target_exists: "conflict",
@@ -77,6 +78,7 @@ export const mockSettingsState: SettingsState = {
     duplicate_hash_policies: ["skip"],
     missing_metadata_policies: ["block"],
     target_exists_policies: ["conflict"],
+    album_year_resolution_methods: ["latest", "most_frequent", "oldest"],
     disc_number_styles: ["d_prefixed", "plain"],
     disc_number_conditions: ["always", "multiple_discs"],
     ui_themes: ["dark", "light", "oled", "system"],

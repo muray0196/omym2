@@ -3,7 +3,7 @@ type: Contract
 title: Config Contract
 description: Defines the authoritative contract for OMYM2's TOML-based application config, including its file location, AppConfig shape, path-policy templates, artist ID rules, and metadata/collision policy.
 tags: [config, toml, path-policy, artist-ids]
-timestamp: 2026-07-05T14:34:21+09:00
+timestamp: 2026-07-06T21:51:19+09:00
 ---
 
 # Config Contract
@@ -93,6 +93,7 @@ prefer_album_artist = true
 require_title = true
 require_artist = true
 require_album = false
+album_year_resolution = "latest"
 
 [collision]
 on_target_exists = "conflict"
@@ -195,6 +196,19 @@ this same rule, since it can flow into generated IDs and saved entries.
 ## Metadata And Collision Policy
 
 Metadata policy controls which tag fields are required for plan creation.
+
+`album_year_resolution` controls the effective album year used for `{year}`
+path rendering when a planning batch can see related tracks in the same album
+group. Raw per-track `TrackMetadata.year` values remain unchanged. Supported
+values:
+
+* `latest` (default): newest usable track year in the album group
+* `oldest`: oldest usable track year in the album group
+* `most_frequent`: most common usable year; ties choose the latest tied year
+
+Missing years are ignored when at least one usable year exists in the group.
+When every track in the group has no usable year, `{year}` keeps the existing
+empty placeholder rendering.
 
 Collision policy controls what plan creation records when:
 

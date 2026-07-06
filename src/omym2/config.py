@@ -54,6 +54,16 @@ ALLOWED_COMMAND_MODES: Final = frozenset({"plan_first"})  # supported command de
 ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES: Final = frozenset({"skip"})  # duplicate content decisions
 ALLOWED_COLLISION_MISSING_METADATA_POLICIES: Final = frozenset({"block"})  # missing metadata decisions
 ALLOWED_COLLISION_TARGET_EXISTS_POLICIES: Final = frozenset({"conflict"})  # target collision decisions
+ALBUM_YEAR_RESOLUTION_LATEST: Final = "latest"  # choose the newest usable year in an album group
+ALBUM_YEAR_RESOLUTION_OLDEST: Final = "oldest"  # choose the oldest usable year in an album group
+ALBUM_YEAR_RESOLUTION_MOST_FREQUENT: Final = "most_frequent"  # choose the modal album-group year
+ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS: Final = frozenset(
+    {
+        ALBUM_YEAR_RESOLUTION_LATEST,
+        ALBUM_YEAR_RESOLUTION_OLDEST,
+        ALBUM_YEAR_RESOLUTION_MOST_FREQUENT,
+    }
+)  # supported album-year resolution method values
 PATH_POLICY_DISC_NUMBER_STYLE_PLAIN: Final = "plain"  # render {disc} as the numeric tag value
 PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED: Final = "d_prefixed"  # render {disc} as D plus the numeric tag value
 PATH_POLICY_DISC_NUMBER_CONDITION_ALWAYS: Final = "always"  # render {disc} regardless of inferred album disc count
@@ -73,6 +83,7 @@ DEFAULT_ADD_AUTO_APPLY: Final = False  # add command auto-apply default
 DEFAULT_ORGANIZE_AUTO_APPLY: Final = False  # organize command auto-apply default
 DEFAULT_ORGANIZE_ONLY_MISPLACED: Final = True  # organize scans only misplaced files by default
 DEFAULT_REFRESH_AUTO_APPLY: Final = False  # refresh command auto-apply default
+DEFAULT_ALBUM_YEAR_RESOLUTION: Final = ALBUM_YEAR_RESOLUTION_LATEST  # album-group year resolution default
 DEFAULT_PATH_POLICY_TEMPLATE: Final = (
     "{album_artist}/{year}_{album}/{disc}-{track}_{title}"  # canonical path stem template
 )
@@ -134,6 +145,7 @@ SANITIZER_UNSAFE_PATTERN: Final = r"[^\w-]"  # characters converted to sanitizer
 SANITIZER_UTF8_ENCODING: Final = "utf-8"  # encoding used for sanitizer byte limits
 PATH_POLICY_DISC_NUMBER_PLACEHOLDER: Final = "disc"  # template field controlled by disc rendering settings
 PATH_POLICY_ARTIST_ID_PLACEHOLDER: Final = "artist_id"  # template field resolved from editable artist ID config
+PATH_POLICY_YEAR_PLACEHOLDER: Final = "year"  # template field resolved from album-year metadata
 PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "album_artist",
     "album",
@@ -141,10 +153,10 @@ PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     "track",
     "title",
     "artist",
-    "year",
+    PATH_POLICY_YEAR_PLACEHOLDER,
     PATH_POLICY_ARTIST_ID_PLACEHOLDER,
 )  # placeholders allowed in path policy stem templates
-PATH_POLICY_BEHAVIOR_VERSION: Final = 5  # version included in hashes when canonical path behavior changes
+PATH_POLICY_BEHAVIOR_VERSION: Final = 6  # version included in hashes when canonical path behavior changes
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
 PATH_POLICY_DISC_NUMBER_PREFIX: Final = "D"  # prefix used by d_prefixed {disc} rendering
 PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES: Final[frozenset[str]] = frozenset(

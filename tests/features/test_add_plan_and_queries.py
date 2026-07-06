@@ -103,7 +103,12 @@ SECOND_INCOMING_FILE = "/music/incoming/Title2.flac"
 SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 SECOND_LIBRARY_ROOT = "/music/second"
 SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
+THIRD_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
+THIRD_INCOMING_FILE = "/music/incoming/Title3.flac"
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
+YEAR_1998 = 1998
+YEAR_2002 = 2002
+YEAR_2004 = 2004
 
 
 def test_add_refuses_when_no_registered_library_can_be_selected() -> None:
@@ -230,6 +235,83 @@ def test_add_uses_configured_incoming_and_persists_move_action() -> None:
     assert uow.plan_actions.get(ACTION_ID) == action
     assert uow.tracks.list_by_library(LIBRARY_ID) == ()
     assert uow.commit_count == 1
+
+
+def test_add_plan_resolves_latest_album_year_across_incoming_album_group() -> None:
+    """Add renders one effective album year without changing raw snapshots."""
+    first_metadata = _album_track_metadata(title="Song 1", year=YEAR_1998, track_number=1)
+    second_metadata = _album_track_metadata(title="Song 2", year=YEAR_2002, track_number=2)
+    third_metadata = _album_track_metadata(title="Song 3", year=YEAR_2004, track_number=3)
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE), _entry(SECOND_INCOMING_FILE), _entry(THIRD_INCOMING_FILE)),
+        {
+            INCOMING_FILE: _snapshot(INCOMING_FILE, first_metadata, calculate_content_fingerprint(b"audio-1")),
+            SECOND_INCOMING_FILE: _snapshot(
+                SECOND_INCOMING_FILE,
+                second_metadata,
+                calculate_content_fingerprint(b"audio-2"),
+            ),
+            THIRD_INCOMING_FILE: _snapshot(
+                THIRD_INCOMING_FILE,
+                third_metadata,
+                calculate_content_fingerprint(b"audio-3"),
+            ),
+        },
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID, THIRD_ACTION_ID)),
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert tuple(action.target_path for action in plan.actions) == (
+        "Artist/2004_Album/1-01_Song-1.flac",
+        "Artist/2004_Album/1-02_Song-2.flac",
+        "Artist/2004_Album/1-03_Song-3.flac",
+    )
+    assert first_metadata.year == YEAR_1998
+    assert second_metadata.year == YEAR_2002
+    assert third_metadata.year == YEAR_2004
+
+
+def test_add_plan_ignores_removed_tracks_when_resolving_album_year() -> None:
+    """Removed Library tracks do not influence effective add target years."""
+    active_metadata = _album_track_metadata(title="Active", year=YEAR_2002, track_number=1)
+    removed_metadata = _album_track_metadata(title="Removed", year=YEAR_2004, track_number=2)
+    incoming_metadata = _album_track_metadata(title="Incoming", year=YEAR_1998, track_number=3)
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(
+        _track(
+            calculate_content_fingerprint(b"active"),
+            "Artist/2002_Album/1-01_Active.flac",
+            metadata=active_metadata,
+        )
+    )
+    uow.tracks.save(
+        _track(
+            calculate_content_fingerprint(b"removed"),
+            "Artist/2004_Album/1-02_Removed.flac",
+            track_id=SECOND_TRACK_ID,
+            metadata=removed_metadata,
+            status=TrackStatus.REMOVED,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, incoming_metadata, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert plan.actions[0].target_path == "Artist/2002_Album/1-03_Incoming.flac"
+    assert incoming_metadata.year == YEAR_1998
 
 
 def test_add_renders_disc_number_from_existing_library_peer_context() -> None:
@@ -631,6 +713,7 @@ def _track(
     *,
     track_id: TrackId = TRACK_ID,
     metadata: TrackMetadata = METADATA,
+    status: TrackStatus = TrackStatus.ACTIVE,
 ) -> Track:
     return Track(
         track_id=track_id,
@@ -640,8 +723,20 @@ def _track(
         content_hash=content_hash,
         metadata_hash=calculate_metadata_fingerprint(metadata),
         metadata=metadata,
-        status=TrackStatus.ACTIVE,
+        status=status,
         first_seen_at=BASE_TIME,
         last_seen_at=BASE_TIME,
         updated_at=BASE_TIME,
+    )
+
+
+def _album_track_metadata(title: str, year: int | None, track_number: int) -> TrackMetadata:
+    return TrackMetadata(
+        title=title,
+        artist="Artist",
+        album="Album",
+        album_artist="Artist",
+        year=year,
+        track_number=track_number,
+        disc_number=1,
     )

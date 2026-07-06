@@ -61,6 +61,7 @@ export interface AppConfig {
     require_title: boolean
     require_artist: boolean
     require_album: boolean
+    album_year_resolution: string
   }
   collision: {
     on_target_exists: string
@@ -78,6 +79,7 @@ export interface SettingsChoices {
   duplicate_hash_policies: string[]
   missing_metadata_policies: string[]
   target_exists_policies: string[]
+  album_year_resolution_methods: string[]
   disc_number_styles: string[]
   disc_number_conditions: string[]
   ui_themes: string[]

@@ -12,11 +12,13 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from omym2.config import (
+    ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS,
     ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     ARTIST_ID_ENTRY_VALUE_PATTERN,
     CONFIG_VERSION,
     DEFAULT_ADD_AUTO_APPLY,
+    DEFAULT_ALBUM_YEAR_RESOLUTION,
     DEFAULT_ARTIST_ID_FALLBACK,
     DEFAULT_ARTIST_ID_MAX_LENGTH,
     DEFAULT_COLLISION_ON_DUPLICATE_HASH,
@@ -65,6 +67,7 @@ INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE = "PathPolicy template contains
 INVALID_PATH_POLICY_TEMPLATE_SYNTAX_MESSAGE = "PathPolicy template contains unsupported placeholder syntax."
 INVALID_PATH_POLICY_UNKNOWN_ALBUM_MESSAGE = "PathPolicy unknown_album must not be empty."
 INVALID_PATH_POLICY_UNKNOWN_ARTIST_MESSAGE = "PathPolicy unknown_artist must not be empty."
+INVALID_METADATA_ALBUM_YEAR_RESOLUTION_MESSAGE = "Metadata album_year_resolution must be a supported method."
 
 _ARTIST_ID_ENTRY_VALUE_PATTERN = re.compile(ARTIST_ID_ENTRY_VALUE_PATTERN)
 
@@ -156,6 +159,12 @@ class MetadataConfig:
     require_title: bool = DEFAULT_METADATA_REQUIRE_TITLE
     require_artist: bool = DEFAULT_METADATA_REQUIRE_ARTIST
     require_album: bool = DEFAULT_METADATA_REQUIRE_ALBUM
+    album_year_resolution: str = DEFAULT_ALBUM_YEAR_RESOLUTION
+
+    def __post_init__(self) -> None:
+        """Validate metadata handling choices used during plan creation."""
+        if self.album_year_resolution not in ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS:
+            raise ValueError(INVALID_METADATA_ALBUM_YEAR_RESOLUTION_MESSAGE)
 
 
 @dataclass(frozen=True, slots=True)

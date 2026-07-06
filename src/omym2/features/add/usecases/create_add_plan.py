@@ -15,6 +15,7 @@ from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
+from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
@@ -34,7 +35,6 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.track import Track
-    from omym2.domain.services.album_disc import AlbumDiscTotals
     from omym2.features.add.dto import CreateAddPlanRequest
     from omym2.features.add.ports import CreateAddPlanPorts
     from omym2.features.common_ports import UnitOfWork
@@ -62,7 +62,11 @@ class CreateAddPlanUseCase:
         config = self.ports.config_store.load()
         source_root = _source_root(request, config)
         config_hash = calculate_config_fingerprint(config)
-        path_policy_hash = calculate_path_policy_fingerprint(config.path_policy, config.artist_ids)
+        path_policy_hash = calculate_path_policy_fingerprint(
+            config.path_policy,
+            config.artist_ids,
+            config.metadata.album_year_resolution,
+        )
         path_policy = PathPolicy.from_app_config(config)
         timestamp = self.ports.clock.now()
 
@@ -71,26 +75,9 @@ class CreateAddPlanUseCase:
             library_tracks = tuple(uow.tracks.list_by_library(library.library_id))
             duplicate_track_by_hash = _duplicate_track_by_hash(library_tracks)
             scan_entries = self.ports.file_scanner.scan(source_root)
-            captured_candidates = tuple(self._candidate(entry, config) for entry in scan_entries)
-            active_library_metadata = tuple(
-                track.metadata for track in library_tracks if track.status == TrackStatus.ACTIVE
-            )
-            album_disc_totals = infer_album_disc_totals(
-                (
-                    *(
-                        candidate.snapshot.metadata
-                        for candidate in captured_candidates
-                        if candidate.snapshot is not None
-                    ),
-                    *active_library_metadata,
-                ),
-                unknown_artist=config.path_policy.unknown_artist,
-                unknown_album=config.path_policy.unknown_album,
-            )
-            candidates = tuple(
-                self._with_target_path(candidate, path_policy, duplicate_track_by_hash, album_disc_totals)
-                for candidate in captured_candidates
-            )
+            candidates = tuple(self._candidate(entry, config) for entry in scan_entries)
+            candidates = self._with_target_paths(candidates, library_tracks, config, path_policy)
+            candidates = self._with_duplicates(candidates, duplicate_track_by_hash)
             candidates = self._with_target_conflicts(library, candidates, library_tracks)
             plan_id = self.ports.id_generator.new_plan_id()
             actions = self._actions(plan_id, library, candidates)
@@ -143,6 +130,92 @@ class CreateAddPlanUseCase:
         target_filesystem_path = self.ports.path_resolver.resolve_library_path(library.root_path, target_path)
         return self.ports.file_presence.exists(target_filesystem_path)
 
+    def _with_target_paths(
+        self,
+        candidates: Sequence[_AddCandidate],
+        library_tracks: Sequence[Track],
+        config: AppConfig,
+        path_policy: PathPolicy,
+    ) -> tuple[_AddCandidate, ...]:
+        active_library_metadata = tuple(
+            track.metadata for track in library_tracks if track.status == TrackStatus.ACTIVE
+        )
+        metadata_batch = active_library_metadata + tuple(
+            candidate.snapshot.metadata
+            for candidate in candidates
+            if candidate.snapshot is not None and candidate.reason is None
+        )
+        resolved_years = resolve_album_years(
+            metadata_batch,
+            config.path_policy,
+            config.metadata.album_year_resolution,
+        )
+        resolved_metadata_batch = tuple(
+            metadata_with_resolved_album_year(metadata, config.path_policy, resolved_years)
+            for metadata in metadata_batch
+        )
+        album_disc_totals = infer_album_disc_totals(
+            resolved_metadata_batch,
+            unknown_artist=config.path_policy.unknown_artist,
+            unknown_album=config.path_policy.unknown_album,
+        )
+        judged_candidates: list[_AddCandidate] = []
+
+        for candidate in candidates:
+            snapshot = candidate.snapshot
+            if snapshot is None or candidate.reason is not None:
+                judged_candidates.append(candidate)
+                continue
+
+            try:
+                resolved_metadata = metadata_with_resolved_album_year(
+                    snapshot.metadata,
+                    config.path_policy,
+                    resolved_years,
+                )
+                target_path = path_policy.canonical_path(
+                    resolved_metadata,
+                    snapshot.file_extension,
+                    album_disc_total=album_disc_totals.for_metadata(resolved_metadata),
+                )
+            except ValueError as exc:
+                judged_candidates.append(
+                    replace(candidate, reason=_path_generation_failure_reason(exc), target_path=None)
+                )
+                continue
+
+            judged_candidates.append(replace(candidate, target_path=target_path))
+
+        return tuple(judged_candidates)
+
+    def _with_duplicates(
+        self,
+        candidates: Sequence[_AddCandidate],
+        duplicate_track_by_hash: dict[str, Track],
+    ) -> tuple[_AddCandidate, ...]:
+        judged_candidates: list[_AddCandidate] = []
+        for candidate in candidates:
+            snapshot = candidate.snapshot
+            if snapshot is None or candidate.reason is not None:
+                judged_candidates.append(candidate)
+                continue
+
+            duplicate_track = duplicate_track_by_hash.get(snapshot.content_hash)
+            if duplicate_track is None:
+                judged_candidates.append(candidate)
+                continue
+
+            judged_candidates.append(
+                replace(
+                    candidate,
+                    action_type=ActionType.SKIP,
+                    reason=PlanActionReason.DUPLICATE_HASH,
+                    track_id=duplicate_track.track_id,
+                )
+            )
+
+        return tuple(judged_candidates)
+
     def _candidate(
         self,
         entry: FileScanEntry,
@@ -164,46 +237,6 @@ class CreateAddPlanUseCase:
             source_path=source_path,
             snapshot=snapshot,
             target_path=None,
-            action_type=ActionType.MOVE,
-            reason=None,
-            track_id=None,
-        )
-
-    def _with_target_path(
-        self,
-        candidate: _AddCandidate,
-        path_policy: PathPolicy,
-        duplicate_track_by_hash: dict[str, Track],
-        album_disc_totals: AlbumDiscTotals,
-    ) -> _AddCandidate:
-        snapshot = candidate.snapshot
-        if candidate.reason is not None or snapshot is None:
-            return candidate
-
-        try:
-            target_path = path_policy.canonical_path(
-                snapshot.metadata,
-                snapshot.file_extension,
-                album_disc_total=album_disc_totals.for_metadata(snapshot.metadata),
-            )
-        except ValueError as exc:
-            return _blocked_candidate(candidate.source_path, _path_generation_failure_reason(exc), snapshot=snapshot)
-
-        duplicate_track = duplicate_track_by_hash.get(snapshot.content_hash)
-        if duplicate_track is not None:
-            return _AddCandidate(
-                source_path=candidate.source_path,
-                snapshot=snapshot,
-                target_path=target_path,
-                action_type=ActionType.SKIP,
-                reason=PlanActionReason.DUPLICATE_HASH,
-                track_id=duplicate_track.track_id,
-            )
-
-        return _AddCandidate(
-            source_path=candidate.source_path,
-            snapshot=snapshot,
-            target_path=target_path,
             action_type=ActionType.MOVE,
             reason=None,
             track_id=None,

@@ -12,7 +12,7 @@ import pytest
 
 from omym2.adapters.config import toml_config_store
 from omym2.adapters.config.toml_config_store import TomlConfigStore, dump_config_toml, load_config_text
-from omym2.config import CONFIG_FILE_ENCODING
+from omym2.config import ALBUM_YEAR_RESOLUTION_OLDEST, CONFIG_FILE_ENCODING
 from omym2.domain.models.app_config import (
     INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE,
     INVALID_ARTIST_ID_FALLBACK_MESSAGE,
@@ -20,6 +20,7 @@ from omym2.domain.models.app_config import (
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     AppConfig,
     ArtistIdConfig,
+    MetadataConfig,
     PathPolicyConfig,
     PathsConfig,
     UiConfig,
@@ -61,6 +62,7 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
     config = AppConfig(
         paths=PathsConfig(library=LIBRARY_PATH, incoming=INCOMING_PATH),
         artist_ids=ArtistIdConfig(entries={ARTIST_NAME: ARTIST_ID}),
+        metadata=MetadataConfig(album_year_resolution=ALBUM_YEAR_RESOLUTION_OLDEST),
         ui=UiConfig(theme=UI_THEME_DARK),
     )
 
@@ -68,6 +70,9 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
 
     assert config_path.is_file()
     assert store.load() == config
+    assert f'album_year_resolution = "{ALBUM_YEAR_RESOLUTION_OLDEST}"' in config_path.read_text(
+        encoding=CONFIG_FILE_ENCODING
+    )
     assert f'"{ARTIST_NAME}" = "{ARTIST_ID}"' in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
 
 
@@ -255,6 +260,18 @@ def test_toml_config_store_validation_fails_invalid_artist_id_entry_value(tmp_pa
     )
 
     with pytest.raises(ConfigStoreValidationError, match=INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE):
+        _ = TomlConfigStore(config_path).load()
+
+
+def test_toml_config_store_validation_fails_invalid_album_year_resolution(tmp_path: Path) -> None:
+    """Adapter validation rejects unknown album-year resolution methods."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        'version = 1\n\n[metadata]\nalbum_year_resolution = "median"\n',
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError, match=r"metadata\.album_year_resolution must be one of"):
         _ = TomlConfigStore(config_path).load()
 
 
