@@ -3,7 +3,7 @@ type: Command Reference
 title: Commands
 description: Lists and summarizes the OMYM2 CLI command surface, including add, plans, apply, refresh, organize, history, undo, check, inspect, config, artist-ids, and settings.
 tags: [cli, commands, reference]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-06T18:55:23+09:00
 ---
 
 # Commands
@@ -67,7 +67,29 @@ Detailed add behavior is defined in [execution/add.md](execution/add.md).
 
 ## plans
 
-`plans` displays created plans.
+`plans` lists created Plans and shows one Plan in detail. It is the review gate before `apply`.
+
+```bash
+omym2 plans [--status STATUS] [--type TYPE] [--limit N] [--json]
+omym2 plans <PLAN_ID> [--actions STATUS] [--blocked-only] [--summary] [--diff] [--json]
+```
+
+| Flag | Mode | Meaning |
+| --- | --- | --- |
+| `--status STATUS` | list | Only Plans with this Plan status. |
+| `--type TYPE` | list | Only Plans with this Plan type. |
+| `--limit N` | list | At most N rows, applied after filtering and sorting. |
+| `--actions STATUS` | detail | Only actions with this action status. |
+| `--blocked-only` | detail | Shorthand for `--actions blocked`. |
+| `--summary` | detail | Header plus live action tallies without the per-action dump. |
+| `--diff` | detail | One arrow-style `source -> target` line per action. |
+| `--json` | both | Machine-readable JSON instead of text. |
+
+The list is sorted newest-first by creation time. This default order is intentional so the most recent Plan is always the first row.
+
+The recommended pre-apply review workflow is `omym2 plans <PLAN_ID> --blocked-only --diff`, which shows exactly the actions that will not be applied and why.
+
+`--json` output is stable enough for scripting, but it is not a versioned public API. `--json` cannot be combined with `--summary` or `--diff`.
 
 `apply latest` means the most recently created Plan with status `ready`.
 
