@@ -11,6 +11,7 @@ import {
   Route as RouteIcon,
   Settings,
   ShieldCheck,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react"
 import { type ReactNode, useState } from "react"
@@ -24,6 +25,7 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: LucideIcon; route: Route }[
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, route: { name: "dashboard" } },
   { key: "settings", label: "Settings", icon: Settings, route: { name: "settings" } },
   { key: "path-policy", label: "Path Policy", icon: RouteIcon, route: { name: "path-policy" } },
+  { key: "plans", label: "Plans", icon: ClipboardList, route: { name: "plans" } },
   { key: "runs", label: "Runs", icon: ListChecks, route: { name: "runs" } },
   { key: "check", label: "Check", icon: ShieldCheck, route: { name: "check" } },
   { key: "tracks", label: "Tracks", icon: Music, route: { name: "tracks" } },
@@ -31,6 +33,7 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: LucideIcon; route: Route }[
 
 function activeKey(route: Route): NavKey {
   if (route.name === "run-detail") return "runs"
+  if (route.name === "plan-detail") return "plans"
   return route.name
 }
 

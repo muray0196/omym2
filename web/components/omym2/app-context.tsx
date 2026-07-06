@@ -10,8 +10,13 @@ import {
   type ReactNode,
 } from "react"
 import {
+  createAddPlan as createAddPlanRequest,
+  createOrganizePlan as createOrganizePlanRequest,
+  createRefreshPlan as createRefreshPlanRequest,
   getCheck,
   getHistory,
+  getPlanDetail,
+  getPlans,
   getRunDetail,
   getSettings,
   getTracks,
@@ -25,6 +30,12 @@ import type {
   AppConfig,
   CheckIssue,
   PathPreview,
+  PlanActionStatus,
+  PlanCreateResult,
+  PlanDetail,
+  PlanStatus,
+  PlanSummary,
+  PlanType,
   RunDetail,
   RunSummary,
   SettingsChange,
@@ -37,12 +48,21 @@ export type Route =
   | { name: "dashboard" }
   | { name: "settings" }
   | { name: "path-policy" }
+  | { name: "plans" }
+  | { name: "plan-detail"; planId: string }
   | { name: "runs" }
   | { name: "run-detail"; runId: string }
   | { name: "check" }
   | { name: "tracks" }
 
-export type NavKey = "dashboard" | "settings" | "path-policy" | "runs" | "check" | "tracks"
+export type NavKey =
+  "dashboard" | "settings" | "path-policy" | "plans" | "runs" | "check" | "tracks"
+
+export interface PlanFilters {
+  status?: PlanStatus | "all"
+  type?: PlanType | "all"
+  limit?: number
+}
 
 interface AppContextValue {
   route: Route
@@ -60,6 +80,17 @@ interface AppContextValue {
   checkLoaded: boolean
   historyErrors: string[]
   historyLoaded: boolean
+  createAddPlan: (sourcePath: string | null) => Promise<PlanCreateResult>
+  createOrganizePlan: (libraryRoot: string | null) => Promise<PlanCreateResult>
+  createRefreshPlan: (targetPath: string | null, includeAll: boolean) => Promise<PlanCreateResult>
+  loadPlanDetail: (planId: string, actionStatus?: PlanActionStatus | "all") => Promise<void>
+  loadPlans: (filters?: PlanFilters) => Promise<void>
+  planDetailErrors: Record<string, string[]>
+  planDetailLoading: Record<string, boolean>
+  planDetails: Record<string, PlanDetail | null>
+  planErrors: string[]
+  plans: PlanSummary[]
+  plansLoaded: boolean
   loadRunDetail: (runId: string) => Promise<void>
   runDetailErrors: Record<string, string[]>
   runDetailLoading: Record<string, boolean>
@@ -101,6 +132,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [runs, setRuns] = useState<RunSummary[]>([])
   const [historyErrors, setHistoryErrors] = useState<string[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [plans, setPlans] = useState<PlanSummary[]>([])
+  const [planErrors, setPlanErrors] = useState<string[]>([])
+  const [plansLoaded, setPlansLoaded] = useState(false)
+  const [planDetails, setPlanDetails] = useState<Record<string, PlanDetail | null>>({})
+  const [planDetailErrors, setPlanDetailErrors] = useState<Record<string, string[]>>({})
+  const [planDetailLoading, setPlanDetailLoading] = useState<Record<string, boolean>>({})
   const [runDetails, setRunDetails] = useState<Record<string, RunDetail | null>>({})
   const [runDetailErrors, setRunDetailErrors] = useState<Record<string, string[]>>({})
   const [runDetailLoading, setRunDetailLoading] = useState<Record<string, boolean>>({})
@@ -150,8 +187,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let cancelled = false
 
     async function loadInspectionState() {
-      const [historyResult, checkResult, tracksResult] = await Promise.allSettled([
+      const [historyResult, plansResult, checkResult, tracksResult] = await Promise.allSettled([
         getHistory(),
+        getPlans(),
         getCheck(),
         getTracks(),
       ])
@@ -164,6 +202,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setHistoryErrors([errorMessage(historyResult.reason, "Run history failed to load.")])
       }
       setHistoryLoaded(true)
+
+      if (plansResult.status === "fulfilled") {
+        setPlans(plansResult.value.plans)
+        setPlanErrors(plansResult.value.errors)
+      } else {
+        setPlanErrors([errorMessage(plansResult.reason, "Plans failed to load.")])
+      }
+      setPlansLoaded(true)
 
       if (checkResult.status === "fulfilled") {
         setCheckIssues(checkResult.value.issues)
@@ -204,6 +250,107 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setRunDetailLoading((current) => ({ ...current, [runId]: false }))
     }
   }, [])
+
+  const loadPlans = useCallback(async (filters: PlanFilters = {}) => {
+    try {
+      const result = await getPlans(filters)
+      setPlans(result.plans)
+      setPlanErrors(result.errors)
+    } catch (error: unknown) {
+      setPlanErrors([errorMessage(error, "Plans failed to load.")])
+    } finally {
+      setPlansLoaded(true)
+    }
+  }, [])
+
+  const loadPlanDetail = useCallback(
+    async (planId: string, actionStatus: PlanActionStatus | "all" = "all") => {
+      setPlanDetailLoading((current) => ({ ...current, [planId]: true }))
+      try {
+        const result = await getPlanDetail(planId, actionStatus)
+        setPlanDetails((current) => ({ ...current, [planId]: result.detail }))
+        setPlanDetailErrors((current) => ({ ...current, [planId]: result.errors }))
+      } catch (error: unknown) {
+        setPlanDetails((current) => ({ ...current, [planId]: null }))
+        setPlanDetailErrors((current) => ({
+          ...current,
+          [planId]: [errorMessage(error, "Plan detail failed to load.")],
+        }))
+      } finally {
+        setPlanDetailLoading((current) => ({ ...current, [planId]: false }))
+      }
+    },
+    [],
+  )
+
+  const recordCreatedPlan = useCallback((result: PlanCreateResult) => {
+    setPlanErrors(result.errors)
+    const detail = result.detail
+    if (!detail) return
+    setPlans((current) => upsertPlan(current, detail.plan))
+    setPlanDetails((current) => ({ ...current, [detail.plan.plan_id]: detail }))
+    setPlanDetailErrors((current) => ({ ...current, [detail.plan.plan_id]: result.errors }))
+  }, [])
+
+  const createAddPlan = useCallback(
+    async (sourcePath: string | null) => {
+      try {
+        const result = await createAddPlanRequest(sourcePath, csrfToken)
+        recordCreatedPlan(result)
+        return result
+      } catch (error: unknown) {
+        const result: PlanCreateResult = {
+          created: false,
+          detail: null,
+          registration: null,
+          errors: [errorMessage(error, "Add Plan creation failed.")],
+        }
+        setPlanErrors(result.errors)
+        return result
+      }
+    },
+    [csrfToken, recordCreatedPlan],
+  )
+
+  const createOrganizePlan = useCallback(
+    async (libraryRoot: string | null) => {
+      try {
+        const result = await createOrganizePlanRequest(libraryRoot, csrfToken)
+        recordCreatedPlan(result)
+        return result
+      } catch (error: unknown) {
+        const result: PlanCreateResult = {
+          created: false,
+          detail: null,
+          registration: null,
+          errors: [errorMessage(error, "Organize Plan creation failed.")],
+        }
+        setPlanErrors(result.errors)
+        return result
+      }
+    },
+    [csrfToken, recordCreatedPlan],
+  )
+
+  const createRefreshPlan = useCallback(
+    async (targetPath: string | null, includeAll: boolean) => {
+      try {
+        const result = await createRefreshPlanRequest(targetPath, includeAll, csrfToken)
+        recordCreatedPlan(result)
+        return result
+      } catch (error: unknown) {
+        const result: PlanCreateResult = {
+          created: false,
+          detail: null,
+          registration: null,
+          errors: [errorMessage(error, "Refresh Plan creation failed.")],
+        }
+        setPlanErrors(result.errors)
+        return result
+      }
+    },
+    [csrfToken, recordCreatedPlan],
+  )
 
   // Apply theme to <html>.
   useEffect(() => {
@@ -298,8 +445,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       checkErrors,
       checkIssues,
       checkLoaded,
+      createAddPlan,
+      createOrganizePlan,
+      createRefreshPlan,
       historyErrors,
       historyLoaded,
+      loadPlanDetail,
+      loadPlans,
+      planDetailErrors,
+      planDetailLoading,
+      planDetails,
+      planErrors,
+      plans,
+      plansLoaded,
       loadRunDetail,
       runDetailErrors,
       runDetailLoading,
@@ -338,11 +496,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       checkErrors,
       checkIssues,
       checkLoaded,
+      createAddPlan,
+      createOrganizePlan,
+      createRefreshPlan,
       csrfToken,
       draftConfig,
       historyErrors,
       historyLoaded,
+      loadPlanDetail,
+      loadPlans,
       loadRunDetail,
+      planDetailErrors,
+      planDetailLoading,
+      planDetails,
+      planErrors,
+      plans,
+      plansLoaded,
       route,
       runDetailErrors,
       runDetailLoading,
@@ -367,6 +536,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 function routeFromPath(pathname: string): Route {
   if (pathname === "/settings") return { name: "settings" }
   if (pathname === "/path-policy") return { name: "path-policy" }
+  if (pathname === "/plans") return { name: "plans" }
+  if (pathname.startsWith("/plans/")) {
+    return { name: "plan-detail", planId: decodeURIComponent(pathname.replace("/plans/", "")) }
+  }
   if (pathname === "/history") return { name: "runs" }
   if (pathname.startsWith("/history/")) {
     return { name: "run-detail", runId: decodeURIComponent(pathname.replace("/history/", "")) }
@@ -382,6 +555,10 @@ function routeToPath(route: Route): string {
       return "/settings"
     case "path-policy":
       return "/path-policy"
+    case "plans":
+      return "/plans"
+    case "plan-detail":
+      return `/plans/${encodeURIComponent(route.planId)}`
     case "runs":
       return "/history"
     case "run-detail":
@@ -398,4 +575,9 @@ function routeToPath(route: Route): string {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
+}
+
+function upsertPlan(plans: PlanSummary[], next: PlanSummary): PlanSummary[] {
+  const withoutNext = plans.filter((plan) => plan.plan_id !== next.plan_id)
+  return [next, ...withoutNext].sort((a, b) => b.created_at.localeCompare(a.created_at))
 }

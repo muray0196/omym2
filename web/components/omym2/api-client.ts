@@ -5,8 +5,11 @@ Why: Connects settings UI state to persisted TOML while preserving static previe
 
 import {
   mockCheckResponse,
+  mockCreatePlan,
   mockHistoryResponse,
   mockGenerateArtistIds,
+  mockPlanDetailResponse,
+  mockPlansResponse,
   mockRunDetailResponse,
   mockSaveSettings,
   mockSettingsState,
@@ -19,6 +22,12 @@ import type {
   ArtistIdGenerationResult,
   CheckResponse,
   HistoryResponse,
+  PlanActionStatus,
+  PlanCreateResult,
+  PlanDetailResponse,
+  PlansResponse,
+  PlanStatus,
+  PlanType,
   RunDetailResponse,
   SampleMetadata,
   SettingsPreviewResult,
@@ -46,11 +55,53 @@ export async function getHistory(): Promise<HistoryResponse> {
   return requestJson<HistoryResponse>("/api/history")
 }
 
+export async function getPlans(
+  filters: {
+    status?: PlanStatus | "all"
+    type?: PlanType | "all"
+    limit?: number
+  } = {},
+): Promise<PlansResponse> {
+  if (isMockApiMode()) {
+    const response = clonePayload(mockPlansResponse)
+    return { ...response, plans: filterPlanRows(response.plans, filters) }
+  }
+  const params = new URLSearchParams()
+  if (filters.status && filters.status !== "all") {
+    params.set("status", filters.status)
+  }
+  if (filters.type && filters.type !== "all") {
+    params.set("type", filters.type)
+  }
+  if (filters.limit) {
+    params.set("limit", String(filters.limit))
+  }
+  const query = params.toString()
+  return requestJson<PlansResponse>(query ? `/api/plans?${query}` : "/api/plans")
+}
+
 export async function getRunDetail(runId: string): Promise<RunDetailResponse> {
   if (isMockApiMode()) {
     return clonePayload(mockRunDetailResponse(runId))
   }
   return requestJson<RunDetailResponse>(`/api/history/${encodeURIComponent(runId)}`)
+}
+
+export async function getPlanDetail(
+  planId: string,
+  actionStatus?: PlanActionStatus | "all",
+): Promise<PlanDetailResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockPlanDetailResponse(planId, actionStatus))
+  }
+  const params = new URLSearchParams()
+  if (actionStatus && actionStatus !== "all") {
+    params.set("actions", actionStatus)
+  }
+  const query = params.toString()
+  return requestJson<PlanDetailResponse>(
+    `/api/plans/${encodeURIComponent(planId)}${query ? `?${query}` : ""}`,
+  )
 }
 
 export async function getCheck(): Promise<CheckResponse> {
@@ -119,6 +170,49 @@ export async function generateArtistIds(
   })
 }
 
+export async function createAddPlan(
+  sourcePath: string | null,
+  csrfToken: string,
+): Promise<PlanCreateResult> {
+  if (isMockApiMode()) {
+    return clonePayload(mockCreatePlan("add"))
+  }
+  return requestJson<PlanCreateResult>("/api/plans/add", {
+    body: JSON.stringify({ source_path: sourcePath }),
+    headers: { [CSRF_HEADER]: csrfToken },
+    method: "POST",
+  })
+}
+
+export async function createOrganizePlan(
+  libraryRoot: string | null,
+  csrfToken: string,
+): Promise<PlanCreateResult> {
+  if (isMockApiMode()) {
+    return clonePayload(mockCreatePlan("organize"))
+  }
+  return requestJson<PlanCreateResult>("/api/plans/organize", {
+    body: JSON.stringify({ library_root: libraryRoot }),
+    headers: { [CSRF_HEADER]: csrfToken },
+    method: "POST",
+  })
+}
+
+export async function createRefreshPlan(
+  targetPath: string | null,
+  includeAll: boolean,
+  csrfToken: string,
+): Promise<PlanCreateResult> {
+  if (isMockApiMode()) {
+    return clonePayload(mockCreatePlan("refresh"))
+  }
+  return requestJson<PlanCreateResult>("/api/plans/refresh", {
+    body: JSON.stringify({ target_path: targetPath, include_all: includeAll }),
+    headers: { [CSRF_HEADER]: csrfToken },
+    method: "POST",
+  })
+}
+
 async function requestJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (!headers.has("Content-Type")) {
@@ -158,6 +252,27 @@ function isMockApiMode(): boolean {
 function isJsonContentType(contentType: string): boolean {
   const mediaType = contentType.split(";")[0]?.trim().toLowerCase() ?? ""
   return mediaType === "application/json" || mediaType.endsWith("+json")
+}
+
+function filterPlanRows(
+  plans: PlansResponse["plans"],
+  filters: {
+    status?: PlanStatus | "all"
+    type?: PlanType | "all"
+    limit?: number
+  },
+): PlansResponse["plans"] {
+  let filtered = plans
+  if (filters.status && filters.status !== "all") {
+    filtered = filtered.filter((plan) => plan.status === filters.status)
+  }
+  if (filters.type && filters.type !== "all") {
+    filtered = filtered.filter((plan) => plan.plan_type === filters.type)
+  }
+  if (filters.limit && filters.limit > 0) {
+    filtered = filtered.slice(0, filters.limit)
+  }
+  return filtered
 }
 
 function clonePayload<T>(payload: T): T {

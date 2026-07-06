@@ -2,6 +2,7 @@
 
 import {
   Check,
+  ClipboardList,
   LayoutDashboard,
   ListChecks,
   Music,
@@ -46,6 +47,12 @@ const NAV_ENTRIES: { label: string; icon: LucideIcon; route: Route; keywords: st
     icon: RouteIcon,
     route: { name: "path-policy" },
     keywords: "template preview canonical",
+  },
+  {
+    label: "Plans",
+    icon: ClipboardList,
+    route: { name: "plans" },
+    keywords: "review target paths",
   },
   { label: "Runs", icon: ListChecks, route: { name: "runs" }, keywords: "history apply" },
   {

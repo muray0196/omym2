@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
+from omym2.adapters.fs.file_presence import FilesystemFilePresence
 from omym2.adapters.fs.file_scanner import FilesystemFileScanner
 from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
 from omym2.adapters.fs.path_resolver import FilesystemPathResolver
@@ -28,6 +29,8 @@ from omym2.config import (
     WEB_NEXT_STATIC_DIRECTORY_NAME,
     WEB_NEXT_STATIC_ROUTE,
     WEB_PATH_POLICY_ROUTE,
+    WEB_PLAN_DETAIL_ROUTE,
+    WEB_PLANS_ROUTE,
     WEB_ROOT_ROUTE,
     WEB_RUN_DETAIL_ROUTE,
     WEB_SETTINGS_ROUTE,
@@ -37,8 +40,13 @@ from omym2.config import (
     WEB_STATIC_EXPORT_MISSING_MESSAGE,
     WEB_TRACKS_ROUTE,
 )
+from omym2.features.add.ports import CreateAddPlanPorts
 from omym2.features.check.ports import CheckLibraryPorts
+from omym2.features.common_ports import SystemClock, Uuid7IdGenerator
 from omym2.features.history.ports import HistoryPorts
+from omym2.features.organize.ports import CreateOrganizePlanPorts
+from omym2.features.plans.ports import PlanQueryPorts
+from omym2.features.refresh.ports import CreateRefreshPlanPorts
 from omym2.features.settings.ports import SettingsPorts
 from omym2.features.tracks.ports import TracksPorts
 
@@ -55,6 +63,7 @@ def create_web_app(
     config_file = config_path or app_paths.config_file
     database_file = database_path or app_paths.database_file
     store = TomlConfigStore(config_file)
+    metadata_reader = MutagenMetadataReader()
 
     app = FastAPI(title=WEB_APP_TITLE)
     app.include_router(
@@ -63,12 +72,41 @@ def create_web_app(
                 check_ports_factory=lambda: CheckLibraryPorts(
                     uow=SQLiteUnitOfWork(database_file),
                     file_scanner=FilesystemFileScanner(),
-                    file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=MutagenMetadataReader()),
+                    file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=metadata_reader),
                     config_store=store,
                     path_resolver=FilesystemPathResolver(),
                 ),
                 csrf_token=secrets.token_urlsafe(WEB_CSRF_TOKEN_BYTES),
                 history_ports_factory=lambda: HistoryPorts(uow=SQLiteUnitOfWork(database_file)),
+                plan_query_ports_factory=lambda: PlanQueryPorts(uow=SQLiteUnitOfWork(database_file)),
+                add_plan_ports_factory=lambda: CreateAddPlanPorts(
+                    uow=SQLiteUnitOfWork(database_file),
+                    file_scanner=FilesystemFileScanner(),
+                    file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=metadata_reader),
+                    file_presence=FilesystemFilePresence(),
+                    config_store=store,
+                    path_resolver=FilesystemPathResolver(),
+                    clock=SystemClock(),
+                    id_generator=Uuid7IdGenerator(),
+                ),
+                organize_plan_ports_factory=lambda: CreateOrganizePlanPorts(
+                    uow=SQLiteUnitOfWork(database_file),
+                    file_scanner=FilesystemFileScanner(),
+                    file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=metadata_reader),
+                    config_store=store,
+                    path_resolver=FilesystemPathResolver(),
+                    clock=SystemClock(),
+                    id_generator=Uuid7IdGenerator(),
+                ),
+                refresh_plan_ports_factory=lambda: CreateRefreshPlanPorts(
+                    uow=SQLiteUnitOfWork(database_file),
+                    file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=metadata_reader),
+                    file_presence=FilesystemFilePresence(),
+                    config_store=store,
+                    path_resolver=FilesystemPathResolver(),
+                    clock=SystemClock(),
+                    id_generator=Uuid7IdGenerator(),
+                ),
                 settings_ports=SettingsPorts(config_store=store),
                 tracks_ports_factory=lambda: TracksPorts(uow=SQLiteUnitOfWork(database_file)),
             )
@@ -106,6 +144,8 @@ def create_web_app(
         WEB_RUN_DETAIL_ROUTE,
         WEB_CHECK_ROUTE,
         WEB_TRACKS_ROUTE,
+        WEB_PLANS_ROUTE,
+        WEB_PLAN_DETAIL_ROUTE,
     ):
         app.add_api_route(route, serve_spa, methods=["GET"], include_in_schema=False)
 

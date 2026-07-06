@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Authoritative reference for the Next.js web/ frontend layout, its audited static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
 tags: [web-frontend, nextjs, static-export, api-boundary]
-timestamp: 2026-07-05T00:15:47+09:00
+timestamp: 2026-07-06T23:26:08+09:00
 ---
 
 # Web Frontend
@@ -25,7 +25,7 @@ web/
   app/                  # App Router entry: layout.tsx, page.tsx, globals.css
   components/
     omym2/              # console shell, app context, API client, forms, widgets
-      screens/          # check, dashboard, path-policy, run-detail, runs, settings, tracks
+      screens/          # check, dashboard, path-policy, plan-detail, plans, run-detail, runs, settings, tracks
     ui/                 # shared UI primitives
   lib/                  # utils.ts helpers
   public/               # icons and static assets copied into the export
@@ -50,7 +50,7 @@ The audit rejects common secret, debug, server-only, and analytics artifacts suc
 The export is packaged inside the Python package so `omym2 settings` can serve the current Web UI without a Node runtime:
 
 * `omym2 settings` (`src/omym2/adapters/cli/commands/settings.py`) creates the FastAPI app and serves it locally with uvicorn.
-* `src/omym2/adapters/web/app.py` mounts `_next/static` assets, returns `index.html` for the known UI routes (`/`, `/settings`, `/path-policy`, `/history`, `/history/{run_id}`, `/check`, `/tracks`), serves remaining root-level export files, and answers 503 when the export is missing.
+* `src/omym2/adapters/web/app.py` mounts `_next/static` assets, returns `index.html` for the known UI routes (`/`, `/settings`, `/path-policy`, `/plans`, `/plans/{plan_id}`, `/history`, `/history/{run_id}`, `/check`, `/tracks`), serves remaining root-level export files, and answers 503 when the export is missing.
 
 After changing the frontend, run the build so the ignored local `static_dist/`
 copy matches the source before runtime or package verification. Do not commit
@@ -60,7 +60,7 @@ copy matches the source before runtime or package verification. Do not commit
 
 The frontend talks to the backend only through the JSON API:
 
-* `web/components/omym2/api-client.ts` calls `/api/settings`, `/api/settings/validate`, `/api/settings/preview`, `/api/settings/save`, `/api/history`, `/api/history/{run_id}`, `/api/check`, and `/api/tracks`. Settings saves send the CSRF token in the `X-OMYM2-CSRF-Token` header.
-* `src/omym2/adapters/web/routes/api.py` translates JSON payloads into feature usecases (settings load / validate / preview / save, history, check, tracks). Routes never read TOML or the filesystem directly; config access goes through `SettingsPorts` and the `ConfigStore` port.
+* `web/components/omym2/api-client.ts` calls `/api/settings`, `/api/settings/validate`, `/api/settings/preview`, `/api/settings/save`, `/api/plans`, `/api/plans/{plan_id}`, `/api/plans/add`, `/api/plans/organize`, `/api/plans/refresh`, `/api/history`, `/api/history/{run_id}`, `/api/check`, and `/api/tracks`. Settings saves and Plan creation POSTs send the CSRF token in the `X-OMYM2-CSRF-Token` header.
+* `src/omym2/adapters/web/routes/api.py` translates JSON payloads into feature usecases (settings load / validate / preview / save, Plan list / detail / creation, history, check, tracks). Routes never read TOML or the filesystem directly; config access goes through `SettingsPorts` and the `ConfigStore` port, and Plan creation stays review-only without wiring apply or file moving.
 
 When the page is not served from localhost (or `NEXT_PUBLIC_OMYM2_API_MODE=mock` is set), `api-client.ts` returns mock data from `components/omym2/mock-data.ts` instead of calling the API, which keeps static previews working without a backend.

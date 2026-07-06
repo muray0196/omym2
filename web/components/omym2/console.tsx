@@ -5,6 +5,8 @@ import { AppShell } from "./app-shell"
 import { DashboardScreen } from "./screens/dashboard"
 import { SettingsScreen } from "./screens/settings"
 import { PathPolicyScreen } from "./screens/path-policy"
+import { PlansScreen } from "./screens/plans"
+import { PlanDetailScreen } from "./screens/plan-detail"
 import { RunsScreen } from "./screens/runs"
 import { RunDetailScreen } from "./screens/run-detail"
 import { CheckScreen } from "./screens/check"
@@ -19,6 +21,10 @@ function ActiveScreen() {
       return <SettingsScreen />
     case "path-policy":
       return <PathPolicyScreen />
+    case "plans":
+      return <PlansScreen />
+    case "plan-detail":
+      return <PlanDetailScreen planId={route.planId} />
     case "runs":
       return <RunsScreen />
     case "run-detail":

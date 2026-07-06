@@ -2,8 +2,10 @@
 
 export type LibraryStatus = "registered" | "unregistered" | "stale" | "blocked"
 export type TrackStatus = "active" | "removed"
+export type PlanType = "add" | "organize" | "refresh" | "undo"
 export type PlanStatus =
   "ready" | "applying" | "applied" | "partial_failed" | "failed" | "cancelled" | "expired"
+export type PlanActionType = "move" | "skip" | "refresh_metadata"
 export type PlanActionStatus = "planned" | "blocked" | "applied" | "failed"
 export type RunStatus = "running" | "succeeded" | "partial_failed" | "failed"
 export type FileEventStatus = "pending" | "succeeded" | "failed"
@@ -141,6 +143,71 @@ export interface ArtistIdGenerationResult {
   generated: boolean
   errors: string[]
   entries: ArtistIdGenerationEntry[]
+}
+
+export interface PlanSummary {
+  plan_id: string
+  library_id: string
+  plan_type: PlanType
+  status: PlanStatus
+  created_at: string
+  summary: Record<string, string>
+}
+
+export interface PlanHeader extends PlanSummary {
+  config_hash: string
+  library_root_at_plan: string
+}
+
+export interface PlanAction {
+  action_id: string
+  plan_id: string
+  library_id: string
+  track_id: string | null
+  action_type: PlanActionType
+  source_path: string | null
+  target_path: string | null
+  content_hash_at_plan: string | null
+  metadata_hash_at_plan: string | null
+  status: PlanActionStatus
+  reason: string | null
+  sort_order: number
+}
+
+export interface PlanDetail {
+  plan: PlanHeader
+  actions: PlanAction[]
+  total_action_count: number
+}
+
+export interface PlansResponse {
+  plans: PlanSummary[]
+  errors: string[]
+}
+
+export interface PlanDetailResponse {
+  detail: PlanDetail | null
+  errors: string[]
+}
+
+export interface OrganizeRegistration {
+  library: {
+    library_id: string
+    root_path: string
+    path_policy_hash: string
+    registered_at: string | null
+    status: LibraryStatus
+    created_at: string
+    updated_at: string
+  }
+  track_count: number
+}
+
+export interface PlanCreateResult {
+  created: boolean
+  detail: PlanDetail | null
+  registration: OrganizeRegistration | null
+  errors: string[]
 }
 
 export interface RunSummary {

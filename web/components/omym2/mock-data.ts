@@ -4,6 +4,13 @@ import type {
   CheckIssue,
   FileEvent,
   HistoryResponse,
+  PlanAction,
+  PlanCreateResult,
+  PlanDetail,
+  PlanDetailResponse,
+  PlansResponse,
+  PlanSummary,
+  PlanType,
   RunDetailResponse,
   RunSummary,
   SettingsPreviewResult,
@@ -140,6 +147,193 @@ export function mockGenerateArtistIds(artistNames: string[]): ArtistIdGeneration
         overwritten: false,
       })),
   }
+}
+
+export const mockPlans: PlanSummary[] = [
+  {
+    plan_id: "plan_d54b1a09-3c8e-4f2b-a6d7-1e9c0b4a7f55",
+    library_id: LIBRARY_ID,
+    plan_type: "add",
+    status: "ready",
+    created_at: "2026-06-29T10:12:03Z",
+    summary: { action_count: "3", move_actions: "3", blocked_actions: "0" },
+  },
+  {
+    plan_id: "plan_b98c2f10-5d4a-4e7b-8c61-3a0f9d2e1c44",
+    library_id: LIBRARY_ID,
+    plan_type: "refresh",
+    status: "ready",
+    created_at: "2026-06-28T18:42:16Z",
+    summary: { action_count: "2", move_actions: "1", metadata_actions: "1", blocked_actions: "0" },
+  },
+  {
+    plan_id: "plan_f31e7a08-2b6c-4d90-8a5e-1c4f0b9d7e22",
+    library_id: LIBRARY_ID,
+    plan_type: "organize",
+    status: "applied",
+    created_at: "2026-06-27T08:31:11Z",
+    summary: { action_count: "5", planned_actions: "5", blocked_actions: "0" },
+  },
+]
+
+const mockPlanActions: Record<string, PlanAction[]> = {
+  "plan_d54b1a09-3c8e-4f2b-a6d7-1e9c0b4a7f55": [
+    {
+      action_id: "act_001",
+      plan_id: "plan_d54b1a09-3c8e-4f2b-a6d7-1e9c0b4a7f55",
+      library_id: LIBRARY_ID,
+      track_id: null,
+      action_type: "move",
+      source_path: "/music/incoming/Aimer - Spark Again.flac",
+      target_path: "Aimer/2020_Walpurgis/1-01_Spark-Again.flac",
+      content_hash_at_plan: "sha256:mock-content-001",
+      metadata_hash_at_plan: "sha256:mock-metadata-001",
+      status: "planned",
+      reason: null,
+      sort_order: 1,
+    },
+    {
+      action_id: "act_002",
+      plan_id: "plan_d54b1a09-3c8e-4f2b-a6d7-1e9c0b4a7f55",
+      library_id: LIBRARY_ID,
+      track_id: null,
+      action_type: "move",
+      source_path: "/music/incoming/Aimer - Deep down.flac",
+      target_path: "Aimer/2022_Deep-Down/1-02_Deep-down.flac",
+      content_hash_at_plan: "sha256:mock-content-002",
+      metadata_hash_at_plan: "sha256:mock-metadata-002",
+      status: "planned",
+      reason: null,
+      sort_order: 2,
+    },
+    {
+      action_id: "act_003",
+      plan_id: "plan_d54b1a09-3c8e-4f2b-a6d7-1e9c0b4a7f55",
+      library_id: LIBRARY_ID,
+      track_id: null,
+      action_type: "move",
+      source_path: "/music/incoming/Aimer - Resonantia.flac",
+      target_path: "Aimer/2023_Resonantia/1-03_Resonantia.flac",
+      content_hash_at_plan: "sha256:mock-content-003",
+      metadata_hash_at_plan: "sha256:mock-metadata-003",
+      status: "planned",
+      reason: null,
+      sort_order: 3,
+    },
+  ],
+  "plan_b98c2f10-5d4a-4e7b-8c61-3a0f9d2e1c44": [
+    {
+      action_id: "act_101",
+      plan_id: "plan_b98c2f10-5d4a-4e7b-8c61-3a0f9d2e1c44",
+      library_id: LIBRARY_ID,
+      track_id: "trk_refresh_001",
+      action_type: "move",
+      source_path: "Aimer/Open-a-Door/1-03_Old-Title.flac",
+      target_path: "Aimer/2023_Open-a-Door/1-03_New-Title.flac",
+      content_hash_at_plan: "sha256:mock-content-101",
+      metadata_hash_at_plan: "sha256:mock-metadata-101",
+      status: "planned",
+      reason: null,
+      sort_order: 1,
+    },
+    {
+      action_id: "act_102",
+      plan_id: "plan_b98c2f10-5d4a-4e7b-8c61-3a0f9d2e1c44",
+      library_id: LIBRARY_ID,
+      track_id: "trk_refresh_002",
+      action_type: "refresh_metadata",
+      source_path: "Aimer/2023_Open-a-Door/1-04_Unchanged.flac",
+      target_path: "Aimer/2023_Open-a-Door/1-04_Unchanged.flac",
+      content_hash_at_plan: "sha256:mock-content-102",
+      metadata_hash_at_plan: "sha256:mock-metadata-102",
+      status: "planned",
+      reason: null,
+      sort_order: 2,
+    },
+  ],
+  "plan_f31e7a08-2b6c-4d90-8a5e-1c4f0b9d7e22": [
+    {
+      action_id: "act_201",
+      plan_id: "plan_f31e7a08-2b6c-4d90-8a5e-1c4f0b9d7e22",
+      library_id: LIBRARY_ID,
+      track_id: "trk_organize_001",
+      action_type: "move",
+      source_path: "Loose/Track.flac",
+      target_path: "Aimer/2019_Sun-Dance/1-01_Track.flac",
+      content_hash_at_plan: "sha256:mock-content-201",
+      metadata_hash_at_plan: "sha256:mock-metadata-201",
+      status: "applied",
+      reason: null,
+      sort_order: 1,
+    },
+  ],
+}
+
+export const mockPlansResponse: PlansResponse = {
+  plans: mockPlans,
+  errors: [],
+}
+
+export function mockPlanDetailResponse(planId: string, actionStatus?: string): PlanDetailResponse {
+  const plan = mockPlans.find((candidate) => candidate.plan_id === planId)
+  if (!plan) {
+    return { detail: null, errors: ["Plan was not found."] }
+  }
+  const actions = mockPlanActions[planId] ?? []
+  const filtered =
+    actionStatus && actionStatus !== "all"
+      ? actions.filter((a) => a.status === actionStatus)
+      : actions
+  return {
+    detail: {
+      plan: {
+        ...plan,
+        config_hash: "mock-config-hash",
+        library_root_at_plan: defaultConfig.paths.library ?? "/music/library",
+      },
+      actions: filtered,
+      total_action_count: actions.length,
+    },
+    errors: [],
+  }
+}
+
+export function mockCreatePlan(planType: PlanType): PlanCreateResult {
+  const createdPlan: PlanSummary = {
+    plan_id: `plan_mock_${planType}_${Date.now()}`,
+    library_id: LIBRARY_ID,
+    plan_type: planType,
+    status: "ready",
+    created_at: new Date().toISOString(),
+    summary: { action_count: "1", blocked_actions: "0" },
+  }
+  const action: PlanAction = {
+    action_id: `act_mock_${planType}`,
+    plan_id: createdPlan.plan_id,
+    library_id: LIBRARY_ID,
+    track_id: planType === "add" ? null : "trk_mock_created",
+    action_type: planType === "refresh" ? "refresh_metadata" : "move",
+    source_path:
+      planType === "add"
+        ? "/music/incoming/Example Song.flac"
+        : "Aimer/2024_Album/1-03_Example.flac",
+    target_path: "Aimer/2024_Album/1-03_Example-Song.flac",
+    content_hash_at_plan: "sha256:mock-created-content",
+    metadata_hash_at_plan: "sha256:mock-created-metadata",
+    status: "planned",
+    reason: null,
+    sort_order: 1,
+  }
+  const detail: PlanDetail = {
+    plan: {
+      ...createdPlan,
+      config_hash: "mock-created-config-hash",
+      library_root_at_plan: defaultConfig.paths.library ?? "/music/library",
+    },
+    actions: [action],
+    total_action_count: 1,
+  }
+  return { created: true, detail, registration: null, errors: [] }
 }
 
 export const mockRuns: RunSummary[] = [
