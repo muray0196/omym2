@@ -23,7 +23,7 @@ suppressions, or runtime configuration work.
 
 ## Subagents
 
-You are the orchestrator.
+You are the orchestrator. Use subagents to complete tasks.
 Focus on planning, delegation, review, and synthesis. Do not do the execution work yourself unless necessary.
 Delegate implementation, investigation, editing, testing, and detailed analysis to subagents.
 
