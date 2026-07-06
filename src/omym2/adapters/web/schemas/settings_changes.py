@@ -39,6 +39,12 @@ def describe_config_changes(before: AppConfig, after: AppConfig) -> tuple[Settin
         ("Unknown album", before.path_policy.unknown_album, after.path_policy.unknown_album),
         ("Sanitize path text", before.path_policy.sanitize, after.path_policy.sanitize),
         ("Max filename length", before.path_policy.max_filename_length, after.path_policy.max_filename_length),
+        ("Disc number style", before.path_policy.disc_number_style, after.path_policy.disc_number_style),
+        (
+            "Disc number condition",
+            before.path_policy.disc_number_condition,
+            after.path_policy.disc_number_condition,
+        ),
         ("Artist ID max length", before.artist_ids.max_length, after.artist_ids.max_length),
         ("Artist ID fallback", before.artist_ids.fallback_id, after.artist_ids.fallback_id),
         ("Artist ID entries", before.artist_ids.entries, after.artist_ids.entries),

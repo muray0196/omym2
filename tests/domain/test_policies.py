@@ -7,7 +7,12 @@ from __future__ import annotations
 
 import pytest
 
-from omym2.config import DEFAULT_ARTIST_ID_FALLBACK, DEFAULT_ARTIST_ID_MAX_LENGTH
+from omym2.config import (
+    DEFAULT_ARTIST_ID_FALLBACK,
+    DEFAULT_ARTIST_ID_MAX_LENGTH,
+    PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+    PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+)
 from omym2.domain.models.app_config import ArtistIdConfig, PathPolicyConfig
 from omym2.domain.models.plan_action import PlanActionReason
 from omym2.domain.models.track_metadata import TrackMetadata
@@ -26,6 +31,8 @@ DIFFERENT_CONTENT = b"different content"
 DISC_NUMBER = 1
 EDGE_BUDGET_FINAL_COMPONENT = "S.flac"
 EXPECTED_CANONICAL_PATH = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
+EXPECTED_D_PREFIXED_PATH = "Aimer/2024_Example-Album/D1-03_Example-Song.flac"
+EXPECTED_MULTI_DISC_SUPPRESSED_PATH = "Aimer/2024_Example-Album/03_Example-Song.flac"
 EXTENSION_BYTES_FILENAME_LENGTH = 5
 EXPECTED_STEM_TEMPLATE_PATH = "Aimer/Example-Album/1-03-Example-Song.flac"
 EXPECTED_ARTIST_ID_PATH = "AIMR/Example-Song.flac"
@@ -63,6 +70,56 @@ def test_path_policy_generates_relative_path_without_hash_suffix() -> None:
     canonical_path = PathPolicy(PathPolicyConfig()).canonical_path(metadata, FILE_EXTENSION)
 
     assert canonical_path == EXPECTED_CANONICAL_PATH
+
+
+def test_path_policy_renders_d_prefixed_disc_number() -> None:
+    """PathPolicy can render {disc} with a D prefix."""
+    metadata = _track_metadata()
+
+    canonical_path = PathPolicy(
+        PathPolicyConfig(disc_number_style=PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED)
+    ).canonical_path(metadata, FILE_EXTENSION)
+
+    assert canonical_path == EXPECTED_D_PREFIXED_PATH
+
+
+def test_path_policy_suppresses_single_disc_album_disc_number() -> None:
+    """PathPolicy can suppress {disc} when context does not infer multi-disc."""
+    metadata = _track_metadata()
+
+    canonical_path = PathPolicy(
+        PathPolicyConfig(disc_number_condition=PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS)
+    ).canonical_path(metadata, FILE_EXTENSION, album_disc_total=1)
+
+    assert canonical_path == EXPECTED_MULTI_DISC_SUPPRESSED_PATH
+
+
+def test_path_policy_renders_disc_number_for_multi_disc_album_context() -> None:
+    """PathPolicy keeps {disc} when context infers a multi-disc album."""
+    metadata = _track_metadata()
+
+    canonical_path = PathPolicy(
+        PathPolicyConfig(
+            disc_number_style=PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+            disc_number_condition=PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+        )
+    ).canonical_path(metadata, FILE_EXTENSION, album_disc_total=2)
+
+    assert canonical_path == EXPECTED_D_PREFIXED_PATH
+
+
+def test_path_policy_renders_disc_number_from_metadata_disc_total_without_album_context() -> None:
+    """PathPolicy treats a single file's disc_total tag as multi-disc context."""
+    metadata = _track_metadata_with_disc_total(2)
+
+    canonical_path = PathPolicy(
+        PathPolicyConfig(
+            disc_number_style=PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+            disc_number_condition=PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+        )
+    ).canonical_path(metadata, FILE_EXTENSION)
+
+    assert canonical_path == EXPECTED_D_PREFIXED_PATH
 
 
 def test_path_policy_appends_source_extension_to_rendered_stem() -> None:
@@ -409,6 +466,10 @@ def test_duplicate_policy_skips_duplicate_hash() -> None:
 
 
 def _track_metadata() -> TrackMetadata:
+    return _track_metadata_with_disc_total(None)
+
+
+def _track_metadata_with_disc_total(disc_total: int | None) -> TrackMetadata:
     return TrackMetadata(
         title=TITLE,
         artist=ALBUM_ARTIST,
@@ -418,4 +479,5 @@ def _track_metadata() -> TrackMetadata:
         year=YEAR,
         track_number=TRACK_NUMBER,
         disc_number=DISC_NUMBER,
+        disc_total=disc_total,
     )

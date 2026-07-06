@@ -15,6 +15,8 @@ from omym2.config import (
     ALLOWED_COLLISION_MISSING_METADATA_POLICIES,
     ALLOWED_COLLISION_TARGET_EXISTS_POLICIES,
     ALLOWED_COMMAND_MODES,
+    ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
+    ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     ALLOWED_UI_THEMES,
     CONFIG_VERSION,
     DEFAULT_ADD_AUTO_APPLY,
@@ -32,6 +34,8 @@ from omym2.config import (
     DEFAULT_METADATA_REQUIRE_TITLE,
     DEFAULT_ORGANIZE_AUTO_APPLY,
     DEFAULT_ORGANIZE_ONLY_MISPLACED,
+    DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION,
+    DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE,
     DEFAULT_PATH_POLICY_SANITIZE,
     DEFAULT_PATH_POLICY_TEMPLATE,
     DEFAULT_REFRESH_AUTO_APPLY,
@@ -72,6 +76,8 @@ ARTIST_IDS_SECTION = "artist_ids"
 AUTO_APPLY_KEY = "auto_apply"
 COLLISION_SECTION = "collision"
 DEFAULT_MODE_KEY = "default_mode"
+DISC_NUMBER_CONDITION_KEY = "disc_number_condition"
+DISC_NUMBER_STYLE_KEY = "disc_number_style"
 INCOMING_KEY = "incoming"
 ENTRIES_KEY = "entries"
 FALLBACK_ID_KEY = "fallback_id"
@@ -119,7 +125,15 @@ ARTIST_IDS_KEYS = frozenset({MAX_LENGTH_KEY, FALLBACK_ID_KEY, ENTRIES_KEY})
 COMMAND_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY})
 ORGANIZE_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY, ONLY_MISPLACED_KEY})
 PATH_POLICY_KEYS = frozenset(
-    {TEMPLATE_KEY, UNKNOWN_ARTIST_KEY, UNKNOWN_ALBUM_KEY, SANITIZE_KEY, MAX_FILENAME_LENGTH_KEY}
+    {
+        TEMPLATE_KEY,
+        UNKNOWN_ARTIST_KEY,
+        UNKNOWN_ALBUM_KEY,
+        SANITIZE_KEY,
+        MAX_FILENAME_LENGTH_KEY,
+        DISC_NUMBER_STYLE_KEY,
+        DISC_NUMBER_CONDITION_KEY,
+    }
 )
 METADATA_KEYS = frozenset(
     {PREFER_ALBUM_ARTIST_KEY, REQUIRE_TITLE_KEY, REQUIRE_ARTIST_KEY, REQUIRE_ALBUM_KEY, ALBUM_YEAR_RESOLUTION_KEY}
@@ -268,6 +282,26 @@ def _path_policy_config(table: ConfigTable, errors: list[str]) -> PathPolicyConf
             MAX_FILENAME_LENGTH_KEY,
             PATH_POLICY_SECTION,
             DEFAULT_MAX_FILENAME_LENGTH,
+            errors,
+        ),
+        disc_number_style=_choice(
+            table,
+            ChoiceRule(
+                key=DISC_NUMBER_STYLE_KEY,
+                section=PATH_POLICY_SECTION,
+                default=DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE,
+                allowed_values=ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
+            ),
+            errors,
+        ),
+        disc_number_condition=_choice(
+            table,
+            ChoiceRule(
+                key=DISC_NUMBER_CONDITION_KEY,
+                section=PATH_POLICY_SECTION,
+                default=DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION,
+                allowed_values=ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
+            ),
             errors,
         ),
     )

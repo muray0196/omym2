@@ -14,6 +14,7 @@ from omym2.domain.models.library import LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import TrackStatus
+from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
@@ -160,6 +161,15 @@ class CreateRefreshPlanUseCase:
             config.path_policy,
             config.metadata.album_year_resolution,
         )
+        resolved_metadata_batch = tuple(
+            metadata_with_resolved_album_year(metadata, config.path_policy, resolved_years)
+            for metadata in metadata_batch
+        )
+        album_disc_totals = infer_album_disc_totals(
+            resolved_metadata_batch,
+            unknown_artist=config.path_policy.unknown_artist,
+            unknown_album=config.path_policy.unknown_album,
+        )
         judged_candidates: list[_RefreshCandidate] = []
 
         for candidate in candidates:
@@ -169,9 +179,15 @@ class CreateRefreshPlanUseCase:
                 continue
 
             try:
+                resolved_metadata = metadata_with_resolved_album_year(
+                    snapshot.metadata,
+                    config.path_policy,
+                    resolved_years,
+                )
                 target_path = path_policy.canonical_path(
-                    metadata_with_resolved_album_year(snapshot.metadata, config.path_policy, resolved_years),
+                    resolved_metadata,
                     snapshot.file_extension,
+                    album_disc_total=album_disc_totals.for_metadata(resolved_metadata),
                 )
             except ValueError as exc:
                 judged_candidates.append(

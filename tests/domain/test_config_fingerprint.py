@@ -15,6 +15,8 @@ from omym2.config import (
     CONFIG_FINGERPRINT_ENCODING,
     CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR,
     CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR,
+    PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+    PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
 from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig, UiConfig
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
@@ -95,3 +97,31 @@ def test_path_policy_fingerprint_ignores_album_year_resolution_when_template_can
     )
 
     assert changed_hash == default_hash
+
+
+def test_path_policy_fingerprint_ignores_disc_settings_when_template_cannot_use_them() -> None:
+    """Disc rendering settings do not stale registration for templates without {disc}."""
+    default_hash = calculate_path_policy_fingerprint(PathPolicyConfig(template="{artist}/{title}"))
+    changed_hash = calculate_path_policy_fingerprint(
+        PathPolicyConfig(
+            template="{artist}/{title}",
+            disc_number_style=PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+            disc_number_condition=PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+        )
+    )
+
+    assert changed_hash == default_hash
+
+
+def test_path_policy_fingerprint_changes_when_disc_settings_can_affect_template() -> None:
+    """Disc rendering settings stale registration when {disc} can render paths."""
+    default_hash = calculate_path_policy_fingerprint(PathPolicyConfig(template="{artist}/{disc}-{title}"))
+    changed_hash = calculate_path_policy_fingerprint(
+        PathPolicyConfig(
+            template="{artist}/{disc}-{title}",
+            disc_number_style=PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+            disc_number_condition=PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+        )
+    )
+
+    assert changed_hash != default_hash

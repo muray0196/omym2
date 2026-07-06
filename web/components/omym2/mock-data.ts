@@ -42,6 +42,8 @@ export const defaultConfig: AppConfig = {
     unknown_album: "Unknown Album",
     sanitize: true,
     max_filename_length: 180,
+    disc_number_style: "plain",
+    disc_number_condition: "always",
   },
   artist_ids: {
     max_length: 8,
@@ -77,6 +79,8 @@ export const mockSettingsState: SettingsState = {
     missing_metadata_policies: ["block"],
     target_exists_policies: ["conflict"],
     album_year_resolution_methods: ["latest", "most_frequent", "oldest"],
+    disc_number_styles: ["d_prefixed", "plain"],
+    disc_number_conditions: ["always", "multiple_discs"],
     ui_themes: ["dark", "light", "oled", "system"],
   },
   validation: {

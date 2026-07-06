@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies developer quality commands for edit-loop and final validation gates (ruff, basedpyright, npm lint/build, pytest), the checks.sh wrapper, local LLM helper scripts, suppression rules, and Python runtime configuration policy.
+description: Specifies developer quality commands for edit-loop and final validation gates (ruff, basedpyright, npm lint/build, pytest), the checks.sh wrapper, suppression rules, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-06T00:37:20+09:00
 ---
 
 # Development Harness
@@ -91,10 +91,6 @@ scripts/checks.sh test <pytest-target>
 * `test <pytest-target>`: focused failure inspection
 
 The command groups in this document remain authoritative; the script must stay in sync with them.
-
-## Local LLM Scripts
-
-`scripts/review_with_local_llm.py` runs a test-focused review or missing-test-case generation against a local OpenAI-compatible LLM endpoint. `scripts/ask_local_llm.py` delegates bounded summarize, question, and doc-description subtasks to the same endpoint. Both are standalone developer tools: they never edit files and their output is advisory.
 
 ## Test Commands
 

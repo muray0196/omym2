@@ -31,7 +31,7 @@ Highest-risk area of OMYM2: mistakes here move or lose user music files. Authori
 5. Blocked actions stay blocked; nothing "retries" a blocked action implicitly.
 6. Refresh updates Track / FileEvent / Plan state only through the documented contracts, never by ad-hoc reconciliation.
 
-## Checklist before finishing
+## Done means
 
 - [ ] Can this change mutate a Library music file? If yes, is every mutation inside a Plan-centered flow?
 - [ ] Are all Plan / PlanAction / Run / FileEvent state transitions among those allowed in the status catalog?

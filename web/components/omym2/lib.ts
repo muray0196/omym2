@@ -66,6 +66,8 @@ export const TEMPLATE_TOKENS = [
 ] as const
 
 const ALBUM_YEAR_RESOLUTION_METHODS = new Set(["latest", "oldest", "most_frequent"])
+const DISC_NUMBER_STYLES = new Set(["plain", "d_prefixed"])
+const DISC_NUMBER_CONDITIONS = new Set(["always", "multiple_discs"])
 
 /** A tiny stable "hash" of the config object for display only. */
 export function configHash(config: AppConfig): string {
@@ -112,6 +114,12 @@ export function validateConfig(config: AppConfig): ValidationResult {
   }
   if (!config.path_policy.unknown_album.trim()) {
     errors.push("unknown_album fallback must not be empty.")
+  }
+  if (!DISC_NUMBER_STYLES.has(config.path_policy.disc_number_style)) {
+    errors.push("disc_number_style is not supported.")
+  }
+  if (!DISC_NUMBER_CONDITIONS.has(config.path_policy.disc_number_condition)) {
+    errors.push("disc_number_condition is not supported.")
   }
   if (config.artist_ids.max_length < 1) {
     errors.push("artist_ids.max_length must be positive.")

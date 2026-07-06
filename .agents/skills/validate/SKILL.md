@@ -38,9 +38,15 @@ Fix the first failing gate before looking at later ones.
 
 ## Rules
 
-- After 2 focused fix attempts on the same failure, stop and report the failure output plus your hypothesis.
 - Never weaken or delete an existing test to make a gate pass.
 - Suppressions are last resort and need a justification comment on the same line:
   `# pyright: ignore[rule]  # why` or `# noqa: RULE  # why`.
 - Do not run project-wide diagnostics during the edit loop; use `changed` mode.
-- A task is not complete until `scripts/checks.sh all` passes from a clean state.
+
+## Done means
+
+- `scripts/checks.sh all` passes from a clean state.
+
+## Stop and report when
+
+- After 2 focused fix attempts on the same failure, stop and report the failure output plus your hypothesis.

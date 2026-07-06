@@ -14,8 +14,8 @@ Allowed work:
 - Run focused tests or checks when the parent allows test execution
   (`scripts/checks.sh changed` or `scripts/checks.sh test <target>`).
 - When the diff touches Plan/apply/undo/refresh or stored paths/identity, check
-  it against the checklists in `skills/plan-apply-safety` and
-  `skills/path-identity-safety`.
+  it against the checklists in `.agents/skills/plan-apply-safety` and
+  `.agents/skills/path-identity-safety`.
 - Report only evidence-backed issues with file paths and line numbers.
 
 Review priorities:

@@ -1,5 +1,5 @@
 """
-Summary: Enforces OKF v0.1 knowledge-bundle conformance for docs/.
+Summary: Enforces documentation bundle conformance for docs/.
 Why: Keeps generated documentation frontmatter, indexes, and links from drifting out of sync.
 """
 
@@ -24,7 +24,6 @@ INDEX_AND_LOG_FILE_NAMES = frozenset({INDEX_FILE_NAME, LOG_FILE_NAME})
 REQUIRED_STRING_FIELDS = ("type", "title", "description")
 TAGS_FIELD = "tags"
 TIMESTAMP_FIELD = "timestamp"
-ROOT_INDEX_ALLOWED_FIELDS = frozenset({"okf_version"})
 MARKDOWN_FILE_PATTERN = "*.md"
 MARKDOWN_LINK_PATTERN = re.compile(r"\]\(([^)]+)\)")
 INDEX_ENTRY_PATTERN = re.compile(r"^\*\s+\[(?P<title>[^\]]+)\]\((?P<target>[^)]+)\)\s+-\s+(?P<description>.+)$")
@@ -32,7 +31,7 @@ HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 NON_SLUG_CHAR_PATTERN = re.compile(r"[^\w\s-]")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 EXTERNAL_LINK_PREFIXES = ("http://", "https://", "mailto:")
-DELETED_BUNDLE_SEGMENT = "okf"
+DELETED_LEGACY_DOCS_SEGMENT = "okf"
 MIN_QUOTED_LENGTH = 2
 QUOTE_CHARACTERS = frozenset({'"', "'"})
 TYPE_FIELD = "type"
@@ -51,7 +50,7 @@ def test_frontmatter_required_fields() -> None:
 
 
 def test_index_files_have_no_frontmatter() -> None:
-    """Index files stay frontmatter-free, except the bundle root which may carry okf_version only."""
+    """Index files stay frontmatter-free."""
     failures: list[str] = []
     for path in _all_markdown_files():
         if path.name != INDEX_FILE_NAME:
@@ -79,13 +78,13 @@ def test_links_resolve() -> None:
     assert not failures, "Broken links:\n" + "\n".join(failures)
 
 
-def test_no_okf_lite_links() -> None:
-    """No doc links into the deleted docs/okf/ directory."""
+def test_no_deleted_legacy_docs_links() -> None:
+    """No doc links into the deleted legacy docs directory."""
     failures: list[str] = []
     for path in _all_markdown_files():
-        failures.extend(_okf_link_failures(path))
+        failures.extend(_deleted_legacy_docs_link_failures(path))
 
-    assert not failures, "Links into deleted docs/okf/:\n" + "\n".join(failures)
+    assert not failures, "Links into deleted legacy docs directory:\n" + "\n".join(failures)
 
 
 def test_directories_listed_in_parent_index() -> None:
@@ -245,24 +244,8 @@ def _index_frontmatter_failures(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
     body = _frontmatter_body(text)
 
-    if path == _bundle_root_index():
-        return _root_index_frontmatter_failures(relative, body)
     if body is not None:
         return [f"{relative}: index files must not carry frontmatter"]
-    return []
-
-
-def _root_index_frontmatter_failures(relative: str, body: str | None) -> list[str]:
-    if body is None:
-        return []
-    try:
-        fields = _parse_frontmatter_fields(body)
-    except ValueError as error:
-        return [f"{relative}: {error}"]
-
-    extra_fields = sorted(set(fields) - ROOT_INDEX_ALLOWED_FIELDS)
-    if extra_fields:
-        return [f"{relative}: frontmatter has disallowed fields {extra_fields}"]
     return []
 
 
@@ -374,10 +357,10 @@ def _slugify(heading_text: str) -> str:
     return WHITESPACE_PATTERN.sub("-", without_punctuation.strip())
 
 
-# --- test_no_okf_lite_links -------------------------------------------------------------------
+# --- test_no_deleted_legacy_docs_links -----------------------------------------------------------
 
 
-def _okf_link_failures(path: Path) -> list[str]:
+def _deleted_legacy_docs_link_failures(path: Path) -> list[str]:
     relative = _relative_to_docs(path)
     text = path.read_text(encoding="utf-8")
     failures: list[str] = []
@@ -385,8 +368,8 @@ def _okf_link_failures(path: Path) -> list[str]:
         if raw_target.startswith(EXTERNAL_LINK_PREFIXES):
             continue
         target_path_part = raw_target.partition("#")[0]
-        if target_path_part and DELETED_BUNDLE_SEGMENT in Path(target_path_part).parts:
-            failures.append(f"{relative}: links into deleted docs/okf/: {raw_target!r}")
+        if target_path_part and DELETED_LEGACY_DOCS_SEGMENT in Path(target_path_part).parts:
+            failures.append(f"{relative}: links into deleted legacy docs directory: {raw_target!r}")
     return failures
 
 
@@ -524,10 +507,6 @@ def _all_docs_directories() -> list[Path]:
 
 def _relative_to_docs(path: Path) -> str:
     return str(path.resolve().relative_to(_docs_root()))
-
-
-def _bundle_root_index() -> Path:
-    return _docs_root() / INDEX_FILE_NAME
 
 
 def _docs_root() -> Path:

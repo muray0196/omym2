@@ -6,6 +6,7 @@ Why: Protects Library registration and review-plan creation before apply exists.
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -13,6 +14,11 @@ from uuid import UUID
 import pytest
 
 from omym2.adapters.config.default_config import default_app_config
+from omym2.config import (
+    PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+    PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+)
+from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
@@ -36,7 +42,6 @@ from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
 if TYPE_CHECKING:
-    from omym2.domain.models.app_config import AppConfig
     from omym2.features.common_ports import FileSystemPath
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
@@ -44,6 +49,8 @@ BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 CONTENT = b"audio"
 CONTENT_HASH = calculate_content_fingerprint(CONTENT)
 EXPECTED_CANONICAL_PATH = "Artist/2026_Album/1-02_Title.flac"
+EXPECTED_D_PREFIXED_PATH = "Artist/2026_Album/D1-02_Title.flac"
+EXPECTED_SECOND_D_PREFIXED_PATH = "Artist/2026_Album/D2-03_Second-Title.flac"
 FILE_EXTENSION = ".flac"
 FILE_SIZE = 5
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
@@ -71,6 +78,14 @@ SECOND_LIBRARY_ROOT = "/music/other"
 SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
 THIRD_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
 THIRD_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345682"))
+SECOND_METADATA = TrackMetadata(
+    title="Second Title",
+    artist="Artist",
+    album="Album",
+    year=2026,
+    track_number=3,
+    disc_number=2,
+)
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 UNREGISTERED_LIBRARY_ROOT = "/music/new"
 PATH_OUTSIDE_LIBRARY_MESSAGE = "outside library"
@@ -187,6 +202,41 @@ def test_organize_resolves_latest_album_year_across_scanned_album_group() -> Non
     assert tuple(track.canonical_path for track in tracks) == tuple(action.target_path for action in result.actions)
 
 
+def test_organize_renders_disc_numbers_when_scanned_album_is_multi_disc() -> None:
+    """Organize infers multi-disc context from scanned snapshots before rendering."""
+    first_path = f"{LIBRARY_ROOT}/Unsorted/Disc1.flac"
+    second_path = f"{LIBRARY_ROOT}/Unsorted/Disc2.flac"
+    config = AppConfig(
+        path_policy=PathPolicyConfig(
+            disc_number_style=PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+            disc_number_condition=PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+        )
+    )
+    uow = InMemoryUnitOfWork()
+    ports, _, _ = _ports(
+        uow,
+        (_entry(first_path), _entry(second_path)),
+        {
+            first_path: _snapshot(first_path, METADATA),
+            second_path: _snapshot(second_path, SECOND_METADATA),
+        },
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            track_ids=deque((TRACK_ID, TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345682")))),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345683")))),
+        ),
+        options=PortOptions(config=config),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+
+    assert tuple(action.target_path for action in result.actions) == (
+        EXPECTED_D_PREFIXED_PATH,
+        EXPECTED_SECOND_D_PREFIXED_PATH,
+    )
+
+
 def test_organize_blocks_missing_required_metadata() -> None:
     """Missing required metadata creates a blocked review action."""
     uow = InMemoryUnitOfWork()
@@ -226,7 +276,7 @@ def test_organize_blocks_missing_source_after_scan() -> None:
             plan_ids=deque((PLAN_ID,)),
             action_ids=deque((ACTION_ID,)),
         ),
-        missing_paths={MISPLACED_ABSOLUTE_PATH},
+        options=PortOptions(missing_paths={MISPLACED_ABSOLUTE_PATH}),
     )
 
     result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
@@ -400,21 +450,30 @@ class SimplePathResolver:
         return path_text.removeprefix(expected_prefix)
 
 
+@dataclass(frozen=True, slots=True)
+class PortOptions:
+    """Optional fake settings for CreateOrganizePlanPorts."""
+
+    config: AppConfig | None = None
+    missing_paths: set[str] | None = None
+
+
 def _ports(
     uow: InMemoryUnitOfWork,
     entries: tuple[FileScanEntry, ...],
     snapshots: dict[str, FileSnapshot],
     id_generator: SequenceIdGenerator,
     *,
-    missing_paths: set[str] | None = None,
+    options: PortOptions | None = None,
 ) -> tuple[CreateOrganizePlanPorts, StaticFileScanner, MappingSnapshotReader]:
+    port_options = PortOptions() if options is None else options
     scanner = StaticFileScanner(entries)
-    snapshot_reader = MappingSnapshotReader(snapshots, missing_paths)
+    snapshot_reader = MappingSnapshotReader(snapshots, port_options.missing_paths)
     ports = CreateOrganizePlanPorts(
         uow=uow,
         file_scanner=scanner,
         file_snapshot_reader=snapshot_reader,
-        config_store=StaticConfigStore(),
+        config_store=StaticConfigStore(port_options.config),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=id_generator,

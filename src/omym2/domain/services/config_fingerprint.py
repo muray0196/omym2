@@ -21,6 +21,7 @@ from omym2.config import (
     DEFAULT_ALBUM_YEAR_RESOLUTION,
     PATH_POLICY_ARTIST_ID_PLACEHOLDER,
     PATH_POLICY_BEHAVIOR_VERSION,
+    PATH_POLICY_DISC_NUMBER_PLACEHOLDER,
     PATH_POLICY_YEAR_PLACEHOLDER,
 )
 
@@ -57,7 +58,7 @@ def calculate_path_policy_fingerprint(
     # settings such as UI display choices or command defaults.
     path_policy_payload: dict[str, object] = {
         CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY: PATH_POLICY_BEHAVIOR_VERSION,
-        CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY: asdict(path_policy_config),
+        CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY: _path_policy_payload(path_policy_config),
     }
     if artist_id_config is not None and _template_uses_placeholder(
         path_policy_config.template,
@@ -94,6 +95,21 @@ def _app_config_payload(config: AppConfig) -> dict[str, object]:
         "collision": asdict(config.collision),
         "ui": asdict(config.ui),
     }
+
+
+def _path_policy_payload(config: PathPolicyConfig) -> dict[str, object]:
+    """Return path policy settings that can affect Library registration paths."""
+    payload: dict[str, object] = {
+        "template": config.template,
+        "unknown_artist": config.unknown_artist,
+        "unknown_album": config.unknown_album,
+        "sanitize": config.sanitize,
+        "max_filename_length": config.max_filename_length,
+    }
+    if _template_uses_placeholder(config.template, PATH_POLICY_DISC_NUMBER_PLACEHOLDER):
+        payload["disc_number_style"] = config.disc_number_style
+        payload["disc_number_condition"] = config.disc_number_condition
+    return payload
 
 
 def _artist_id_payload(config: ArtistIdConfig) -> dict[str, object]:

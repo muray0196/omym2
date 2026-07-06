@@ -17,6 +17,8 @@ from omym2.adapters.config.config_validator import (
     AUTO_APPLY_KEY,
     COLLISION_SECTION,
     DEFAULT_MODE_KEY,
+    DISC_NUMBER_CONDITION_KEY,
+    DISC_NUMBER_STYLE_KEY,
     ENTRIES_KEY,
     FALLBACK_ID_KEY,
     INCOMING_KEY,
@@ -143,6 +145,8 @@ def dump_config_toml(config: AppConfig) -> str:
             (UNKNOWN_ALBUM_KEY, config.path_policy.unknown_album),
             (SANITIZE_KEY, config.path_policy.sanitize),
             (MAX_FILENAME_LENGTH_KEY, config.path_policy.max_filename_length),
+            (DISC_NUMBER_STYLE_KEY, config.path_policy.disc_number_style),
+            (DISC_NUMBER_CONDITION_KEY, config.path_policy.disc_number_condition),
         ),
     )
     _append_section(

@@ -21,13 +21,14 @@ from omym2.config import (
     WEB_API_SETTINGS_VALIDATE_ROUTE,
     WEB_CSRF_HEADER_NAME,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, MetadataConfig, PathsConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, MetadataConfig, PathPolicyConfig, PathsConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 ERROR_STATUS_CODE = 400
 EXPECTED_DEFAULT_PREVIEW = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
+EXPECTED_D_PREFIXED_PREVIEW = "Aimer/2024_Example-Album/D1-03_Example-Song.flac"
 EXPECTED_UPDATED_PREVIEW = "Aimer/03_Example-Song.flac"
 EXPECTED_UNICODE_PREVIEW = "こんにちは/2024_你好/1-03_Café-Song.flac"
 FORBIDDEN_STATUS_CODE = 403
@@ -38,6 +39,8 @@ UPDATED_TEMPLATE = "{artist}/{track}_{title}"
 ARTIST_NAME = "John Smith"
 ARTIST_ID = "JOHNSMTH"
 EDITED_ARTIST_ID = "MANUAL"
+DISC_NUMBER_STYLE_D_PREFIXED = "d_prefixed"
+DISC_NUMBER_CONDITION_MULTIPLE_DISCS = "multiple_discs"
 
 
 class _JsonResponse(Protocol):
@@ -61,6 +64,10 @@ def test_get_settings_returns_config_choices_validation_preview_and_csrf(tmp_pat
         _object_payload(_object_payload(payload, "config"), "metadata")["album_year_resolution"]
         == AppConfig().metadata.album_year_resolution
     )
+    assert (
+        _object_payload(_object_payload(payload, "config"), "path_policy")["disc_number_style"]
+        == AppConfig().path_policy.disc_number_style
+    )
     assert _object_payload(_object_payload(payload, "config"), "artist_ids")["entries"] == {}
     assert _object_payload(payload, "choices")["command_modes"] == ["plan_first"]
     assert _object_payload(payload, "choices")["album_year_resolution_methods"] == [
@@ -68,6 +75,8 @@ def test_get_settings_returns_config_choices_validation_preview_and_csrf(tmp_pat
         "most_frequent",
         "oldest",
     ]
+    assert _object_payload(payload, "choices")["disc_number_styles"] == ["d_prefixed", "plain"]
+    assert _object_payload(payload, "choices")["disc_number_conditions"] == ["always", "multiple_discs"]
     assert _object_payload(payload, "validation")["valid"] is True
     assert _object_payload(payload, "preview")["path"] == EXPECTED_DEFAULT_PREVIEW
     assert payload["errors"] == []
@@ -117,6 +126,37 @@ def test_preview_settings_returns_backend_path_policy_result(tmp_path: Path) -> 
     assert response.status_code == SUCCESS_STATUS_CODE
     response_payload = _json_payload(response)
     assert response_payload["path"] == EXPECTED_UNICODE_PREVIEW
+    assert response_payload["errors"] == []
+
+
+def test_preview_settings_accepts_disc_total_for_multi_disc_only(tmp_path: Path) -> None:
+    """Settings preview uses disc_total to demonstrate multi-disc-only rendering."""
+    client = TestClient(create_web_app(tmp_path / "config.toml"))
+    payload = _settings_payload(
+        AppConfig(
+            path_policy=PathPolicyConfig(
+                disc_number_style=DISC_NUMBER_STYLE_D_PREFIXED,
+                disc_number_condition=DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+            )
+        )
+    )
+    payload["metadata"] = {
+        "title": "Example Song",
+        "artist": "Aimer",
+        "album": "Example Album",
+        "album_artist": "Aimer",
+        "year": "2024",
+        "disc_number": "1",
+        "disc_total": "2",
+        "track_number": "3",
+        "extension": "FLAC",
+    }
+
+    response = client.post(WEB_API_SETTINGS_PREVIEW_ROUTE, json=payload)
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    response_payload = _json_payload(response)
+    assert response_payload["path"] == EXPECTED_D_PREFIXED_PREVIEW
     assert response_payload["errors"] == []
 
 
@@ -179,6 +219,28 @@ def test_save_settings_persists_album_year_resolution(tmp_path: Path) -> None:
     assert response.status_code == SUCCESS_STATUS_CODE
     saved_config = TomlConfigStore(config_path).load()
     assert saved_config.metadata.album_year_resolution == ALBUM_YEAR_RESOLUTION_OLDEST
+
+
+def test_save_settings_persists_disc_number_settings(tmp_path: Path) -> None:
+    """Settings save persists path policy disc rendering fields."""
+    config_path = tmp_path / "config.toml"
+    client = TestClient(create_web_app(config_path))
+    csrf_token = _csrf_token(client)
+    payload = _settings_payload(
+        AppConfig(
+            path_policy=PathPolicyConfig(
+                disc_number_style=DISC_NUMBER_STYLE_D_PREFIXED,
+                disc_number_condition=DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+            )
+        )
+    )
+
+    response = client.post(WEB_API_SETTINGS_SAVE_ROUTE, json=payload, headers={WEB_CSRF_HEADER_NAME: csrf_token})
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    saved_config = TomlConfigStore(config_path).load()
+    assert saved_config.path_policy.disc_number_style == DISC_NUMBER_STYLE_D_PREFIXED
+    assert saved_config.path_policy.disc_number_condition == DISC_NUMBER_CONDITION_MULTIPLE_DISCS
 
 
 def test_generate_artist_ids_saves_missing_entries_without_overwriting(tmp_path: Path) -> None:
@@ -322,6 +384,8 @@ def _settings_payload(config: AppConfig) -> dict[str, object]:
                 "unknown_album": config.path_policy.unknown_album,
                 "sanitize": config.path_policy.sanitize,
                 "max_filename_length": config.path_policy.max_filename_length,
+                "disc_number_style": config.path_policy.disc_number_style,
+                "disc_number_condition": config.path_policy.disc_number_condition,
             },
             "artist_ids": {
                 "max_length": config.artist_ids.max_length,

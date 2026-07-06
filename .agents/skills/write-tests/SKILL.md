@@ -17,7 +17,7 @@ Test policy is authoritative in `docs/TESTING.md`. This skill is the operational
 | `features/*/usecases/` | `tests/features/` | unit tests through ports, using fakes |
 | `adapters/` (SQLite, fs, metadata, config, cli, web) | `tests/adapters/` | integration tests with real adapter |
 | `shared/` | `tests/shared/` | pure unit tests |
-| `scripts/*.py` | `tests/scripts/` | load module by file path (see existing tests) |
+| `scripts/*.py` | `tests/scripts/` (create on first use) | run the script via `subprocess`; anchor: `tests/docs/test_index_generation.py` |
 | Layer / naming rules | `tests/architecture/` | already exist; extend only for new rules |
 | `docs/` bundle shape | `tests/docs/` | already exist; do not duplicate |
 
@@ -41,17 +41,23 @@ Shared fakes live in `tests/fakes/`. Look there before writing a new fake.
 | Plan/apply/undo/refresh/check execution | Plan, PlanAction, Run, FileEvent, apply order, failure cases |
 | Layer or naming rule | `tests/architecture/` |
 
-## Procedure
-
-1. Find the existing test file for the module (mirror path). Extend it; create a new file only if none exists.
-2. Copy the naming and fixture style of a neighboring test. Test functions: `test_<behavior>` stating the expected outcome.
-3. Cover the normal case, one error case, and the boundary the change introduces. Do not pad with redundant cases.
-4. Run focused first: `scripts/checks.sh test <file-or-node-id>`, then `scripts/checks.sh changed`.
-5. Optional: get missing-case ideas from the local LLM — see `delegate-local-llm` (`review_with_local_llm.py cases`). Treat output as hints, not requirements.
-
 ## Anti-patterns (reject these in your own work)
 
 - Asserting on implementation details (private attributes, call order) instead of observable behavior.
 - Over-mocking: if you mock the thing under test, the test is void.
 - Tests that depend on wall-clock time, real UUIDs, ordering of dict/set iteration, or files outside `tmp_path`.
 - Editing an unrelated failing test to green it — report it instead.
+
+## Procedure
+
+1. Find the existing test file for the module (mirror path). Extend it; create a new file only if none exists.
+2. Copy the naming and fixture style of a neighboring test. Test functions: `test_<behavior>` stating the expected outcome.
+3. Cover the normal case, one error case, and the boundary the change introduces. Do not pad with redundant cases.
+
+## Done means
+
+- `scripts/checks.sh test <file-or-node-id>` passes, then `scripts/checks.sh changed` passes.
+
+## Stop and report when
+
+- This skill's placement, fixture, or coverage rules conflict with what you find in the existing test suite.

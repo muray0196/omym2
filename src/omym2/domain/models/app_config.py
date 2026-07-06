@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 from omym2.config import (
     ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS,
+    ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
+    ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     ARTIST_ID_ENTRY_VALUE_PATTERN,
     CONFIG_VERSION,
     DEFAULT_ADD_AUTO_APPLY,
@@ -30,6 +32,8 @@ from omym2.config import (
     DEFAULT_METADATA_REQUIRE_TITLE,
     DEFAULT_ORGANIZE_AUTO_APPLY,
     DEFAULT_ORGANIZE_ONLY_MISPLACED,
+    DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION,
+    DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE,
     DEFAULT_PATH_POLICY_SANITIZE,
     DEFAULT_PATH_POLICY_TEMPLATE,
     DEFAULT_REFRESH_AUTO_APPLY,
@@ -56,6 +60,8 @@ INVALID_ARTIST_ID_FALLBACK_MESSAGE = (
 )
 INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE = "ArtistIdConfig max_length must be positive."
 INVALID_MAX_FILENAME_LENGTH_MESSAGE = "PathPolicy max_filename_length must be positive."
+INVALID_PATH_POLICY_DISC_NUMBER_CONDITION_MESSAGE = "PathPolicy disc_number_condition is not supported."
+INVALID_PATH_POLICY_DISC_NUMBER_STYLE_MESSAGE = "PathPolicy disc_number_style is not supported."
 INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE = "PathPolicy template must not include a file extension."
 INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE = "PathPolicy template contains unsupported placeholder."
 INVALID_PATH_POLICY_TEMPLATE_SYNTAX_MESSAGE = "PathPolicy template contains unsupported placeholder syntax."
@@ -99,11 +105,17 @@ class PathPolicyConfig:
     unknown_album: str = DEFAULT_UNKNOWN_ALBUM
     sanitize: bool = DEFAULT_PATH_POLICY_SANITIZE
     max_filename_length: int = DEFAULT_MAX_FILENAME_LENGTH
+    disc_number_style: str = DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE
+    disc_number_condition: str = DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION
 
     def __post_init__(self) -> None:
         """Validate path policy tunables that affect generated paths."""
         if self.max_filename_length <= 0:
             raise ValueError(INVALID_MAX_FILENAME_LENGTH_MESSAGE)
+        if self.disc_number_style not in ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES:
+            raise ValueError(INVALID_PATH_POLICY_DISC_NUMBER_STYLE_MESSAGE)
+        if self.disc_number_condition not in ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS:
+            raise ValueError(INVALID_PATH_POLICY_DISC_NUMBER_CONDITION_MESSAGE)
         if self.unknown_artist.strip() == "":
             raise ValueError(INVALID_PATH_POLICY_UNKNOWN_ARTIST_MESSAGE)
         if self.unknown_album.strip() == "":

@@ -13,6 +13,8 @@ from omym2.config import (
     ALLOWED_COLLISION_MISSING_METADATA_POLICIES,
     ALLOWED_COLLISION_TARGET_EXISTS_POLICIES,
     ALLOWED_COMMAND_MODES,
+    ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
+    ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     ALLOWED_UI_THEMES,
 )
 
@@ -46,6 +48,8 @@ def serialize_app_config(config: AppConfig) -> dict[str, object]:
             "unknown_album": config.path_policy.unknown_album,
             "sanitize": config.path_policy.sanitize,
             "max_filename_length": config.path_policy.max_filename_length,
+            "disc_number_style": config.path_policy.disc_number_style,
+            "disc_number_condition": config.path_policy.disc_number_condition,
         },
         "artist_ids": {
             "max_length": config.artist_ids.max_length,
@@ -76,6 +80,8 @@ def serialize_settings_choices() -> dict[str, object]:
         "missing_metadata_policies": sorted(ALLOWED_COLLISION_MISSING_METADATA_POLICIES),
         "target_exists_policies": sorted(ALLOWED_COLLISION_TARGET_EXISTS_POLICIES),
         "album_year_resolution_methods": sorted(ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS),
+        "disc_number_styles": sorted(ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES),
+        "disc_number_conditions": sorted(ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS),
         "ui_themes": sorted(ALLOWED_UI_THEMES),
     }
 

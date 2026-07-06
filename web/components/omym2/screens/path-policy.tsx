@@ -28,6 +28,7 @@ const SAMPLE_PRESETS: SamplePreset[] = [
       album_artist: "Aimer",
       year: "2024",
       disc_number: "1",
+      disc_total: "2",
       track_number: "3",
       extension: "flac",
     },
@@ -42,6 +43,7 @@ const SAMPLE_PRESETS: SamplePreset[] = [
       album_artist: "Various Artists",
       year: "2013",
       disc_number: "2",
+      disc_total: "2",
       track_number: "5",
       extension: "mp3",
     },
@@ -56,6 +58,7 @@ const SAMPLE_PRESETS: SamplePreset[] = [
       album_artist: "",
       year: "",
       disc_number: "",
+      disc_total: "",
       track_number: "1",
       extension: "m4a",
     },
@@ -70,6 +73,7 @@ const SAMPLE_PRESETS: SamplePreset[] = [
       album_artist: "AC/DC",
       year: "1986",
       disc_number: "1",
+      disc_total: "1",
       track_number: "2",
       extension: "flac",
     },
@@ -83,6 +87,7 @@ const FIELD_LABELS: { key: keyof SampleMetadata; label: string }[] = [
   { key: "album_artist", label: "Album artist" },
   { key: "year", label: "Year" },
   { key: "disc_number", label: "Disc no." },
+  { key: "disc_total", label: "Disc total" },
   { key: "track_number", label: "Track no." },
   { key: "extension", label: "Extension" },
 ]
@@ -179,6 +184,18 @@ export function PathPolicyScreen() {
                     Max filename length
                   </dt>
                   <dd className="font-medium tabular-nums">{policy.max_filename_length}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Disc style
+                  </dt>
+                  <dd className="font-medium">{policy.disc_number_style}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Disc condition
+                  </dt>
+                  <dd className="font-medium">{policy.disc_number_condition}</dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-muted-foreground">

@@ -3,7 +3,7 @@ type: Contract
 title: Config Contract
 description: Defines the authoritative contract for OMYM2's TOML-based application config, including its file location, AppConfig shape, path-policy templates, artist ID rules, and metadata/collision policy.
 tags: [config, toml, path-policy, artist-ids]
-timestamp: 2026-07-05T16:40:57+09:00
+timestamp: 2026-07-06T21:51:19+09:00
 ---
 
 # Config Contract
@@ -77,6 +77,8 @@ unknown_artist = "Unknown Artist"
 unknown_album = "Unknown Album"
 sanitize = true
 max_filename_length = 180
+disc_number_style = "plain"
+disc_number_condition = "always"
 
 [artist_ids]
 max_length = 8
@@ -137,6 +139,31 @@ The source music file suffix is appended after template rendering. Source suffix
 The initial template does not include hash-based suffixes. If the final target path already exists, the PlanAction is blocked with `target_exists`.
 
 PathPolicy is pure and does not perform I/O. Target existence is checked by usecases through ports.
+
+`{disc}` renders from `TrackMetadata.disc_number` only. `disc_number_style`
+controls the displayed value:
+
+* `plain` renders the numeric value such as `1` or `2`.
+* `d_prefixed` renders the configured `D` prefix plus the numeric value, such
+  as `D1` or `D2`.
+
+`disc_number_condition` controls when `{disc}` has a value:
+
+* `always` preserves the initial behavior. It renders the disc number when
+  `disc_number` is present and uses the empty-component replacement when the
+  actual disc number is missing.
+* `multiple_discs` renders the disc number only when already-loaded metadata
+  for the album infers a total greater than 1. If the album is not inferred as
+  multi-disc, PathPolicy suppresses the `{disc}` value; separators remain owned
+  by the template.
+
+Album multi-disc inference groups already-loaded `TrackMetadata` by album
+artist fallback (`album_artist`, then `artist`, then `unknown_artist`), album
+fallback (`album`, then `unknown_album`), and year. The inferred total is the
+maximum positive value among `disc_total` and `disc_number` for tracks in that
+group. Missing, zero, and negative disc values are ignored. PathPolicy and this
+inference are pure domain logic and must not read the filesystem, SQLite,
+TOML, Mutagen, or adapter state.
 
 `{artist_id}` is a user-facing path/config value. It is resolved from the
 already-loaded `artist_ids.entries` mapping using the source artist name from
