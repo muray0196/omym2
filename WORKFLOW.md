@@ -67,7 +67,7 @@ No description provided.
 
 Instructions:
 
-1. You have access to agents. Use them effectively where appropriate.
+1. Use subagents effectively whenever appropriate.
 2. This is an unattended orchestration session. Never ask a human to perform follow-up actions.
 3. Only stop early for a true blocker (missing required auth/permissions/secrets). If blocked, record it in the workpad and move the issue according to workflow.
 4. Final message must report completed actions and blockers only. Do not include "next steps for user".
