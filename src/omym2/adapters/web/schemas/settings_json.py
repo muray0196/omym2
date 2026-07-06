@@ -115,6 +115,7 @@ def _preview_metadata_from_payload(value: object) -> _MetadataParseResult:
     int_errors: list[str] = []
     year = _optional_int(metadata_payload.get("year"), "metadata.year", int_errors)
     disc_number = _optional_int(metadata_payload.get("disc_number"), "metadata.disc_number", int_errors)
+    disc_total = _optional_int(metadata_payload.get("disc_total"), "metadata.disc_total", int_errors)
     track_number = _optional_int(metadata_payload.get("track_number"), "metadata.track_number", int_errors)
     if int_errors:
         return _MetadataParseResult(metadata=None, errors=tuple(int_errors))
@@ -126,6 +127,7 @@ def _preview_metadata_from_payload(value: object) -> _MetadataParseResult:
             album_artist=_optional_text(metadata_payload.get("album_artist")),
             year=year,
             disc_number=disc_number,
+            disc_total=disc_total,
             track_number=track_number,
         ),
         errors=(),

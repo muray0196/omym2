@@ -14,6 +14,10 @@ from uuid import UUID
 import pytest
 
 from omym2.adapters.config.default_config import default_app_config
+from omym2.config import (
+    PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+    PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+)
 from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig, PathsConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
@@ -53,6 +57,7 @@ CASE_INSENSITIVE_DUPLICATE_TARGET_PATH = "artist/2026_Album/1-02_Title.flac"
 CONTENT = b"audio"
 CONTENT_HASH = calculate_content_fingerprint(CONTENT)
 EXPECTED_CANONICAL_PATH = "Artist/2026_Album/1-02_Title.flac"
+EXPECTED_D_PREFIXED_PATH = "Artist/2026_Album/D1-02_Title.flac"
 FILE_EXTENSION = ".flac"
 FILE_SIZE = 5
 INCOMING_FILE = "/music/incoming/Title.flac"
@@ -83,6 +88,14 @@ MISSING_ARTIST_METADATA = TrackMetadata(
     disc_number=1,
 )
 OTHER_CONTENT_HASH = calculate_content_fingerprint(b"other audio")
+PEER_METADATA = TrackMetadata(
+    title="Peer",
+    artist="Artist",
+    album="Album",
+    year=2026,
+    track_number=5,
+    disc_number=2,
+)
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 SECOND_DUPLICATE_TRACK_PATH = "Artist/2026_Album/1-05_Title-Copy.flac"
@@ -217,6 +230,43 @@ def test_add_uses_configured_incoming_and_persists_move_action() -> None:
     assert uow.plan_actions.get(ACTION_ID) == action
     assert uow.tracks.list_by_library(LIBRARY_ID) == ()
     assert uow.commit_count == 1
+
+
+def test_add_renders_disc_number_from_existing_library_peer_context() -> None:
+    """Add infers multi-disc context from active Library tracks plus incoming snapshots."""
+    config = AppConfig(
+        path_policy=PathPolicyConfig(
+            disc_number_style=PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+            disc_number_condition=PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+        )
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(
+        _library(
+            LIBRARY_ID,
+            LIBRARY_ROOT,
+            path_policy_hash=calculate_path_policy_fingerprint(config.path_policy, config.artist_ids),
+        )
+    )
+    uow.tracks.save(
+        _track(
+            OTHER_CONTENT_HASH,
+            "Artist/2026_Album/D2-05_Peer.flac",
+            track_id=SECOND_TRACK_ID,
+            metadata=PEER_METADATA,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(config=config),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert plan.actions[0].target_path == EXPECTED_D_PREFIXED_PATH
 
 
 def test_add_normalizes_configured_relative_incoming_source(
@@ -575,15 +625,21 @@ def _library(library_id: LibraryId, root_path: str, path_policy_hash: str | None
     )
 
 
-def _track(content_hash: str, current_path: str, *, track_id: TrackId = TRACK_ID) -> Track:
+def _track(
+    content_hash: str,
+    current_path: str,
+    *,
+    track_id: TrackId = TRACK_ID,
+    metadata: TrackMetadata = METADATA,
+) -> Track:
     return Track(
         track_id=track_id,
         library_id=LIBRARY_ID,
         current_path=current_path,
         canonical_path=current_path,
         content_hash=content_hash,
-        metadata_hash=calculate_metadata_fingerprint(METADATA),
-        metadata=METADATA,
+        metadata_hash=calculate_metadata_fingerprint(metadata),
+        metadata=metadata,
         status=TrackStatus.ACTIVE,
         first_seen_at=BASE_TIME,
         last_seen_at=BASE_TIME,

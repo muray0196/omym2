@@ -30,6 +30,16 @@ const THEME_LABELS: Record<string, string> = {
   system: "System",
 }
 
+const DISC_STYLE_LABELS: Record<string, string> = {
+  d_prefixed: "D-prefixed",
+  plain: "Plain number",
+}
+
+const DISC_CONDITION_LABELS: Record<string, string> = {
+  always: "Always",
+  multiple_discs: "Multi-disc only",
+}
+
 type SaveState = "idle" | "saving" | "success" | "error"
 
 type SectionKey = "paths" | "behavior" | "path-policy" | "metadata" | "rules"
@@ -177,6 +187,11 @@ export function SettingsScreen() {
   const targetExistsOptions = toOptions(settingsChoices.target_exists_policies)
   const duplicateHashOptions = toOptions(settingsChoices.duplicate_hash_policies)
   const missingMetadataOptions = toOptions(settingsChoices.missing_metadata_policies)
+  const discStyleOptions = toOptions(settingsChoices.disc_number_styles, DISC_STYLE_LABELS)
+  const discConditionOptions = toOptions(
+    settingsChoices.disc_number_conditions,
+    DISC_CONDITION_LABELS,
+  )
   const themeOptions = toOptions(settingsChoices.ui_themes, THEME_LABELS)
 
   return (
@@ -407,6 +422,30 @@ export function SettingsScreen() {
                           update("path_policy", {
                             max_filename_length: Number(e.target.value) || 0,
                           })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <Field label="Disc style">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={discStyleOptions}
+                        value={pp.disc_number_style}
+                        onChange={(e) =>
+                          update("path_policy", { disc_number_style: e.target.value })
+                        }
+                      />
+                    )}
+                  </Field>
+                  <Field label="Disc condition">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={discConditionOptions}
+                        value={pp.disc_number_condition}
+                        onChange={(e) =>
+                          update("path_policy", { disc_number_condition: e.target.value })
                         }
                       />
                     )}

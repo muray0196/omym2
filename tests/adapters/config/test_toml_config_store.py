@@ -20,6 +20,7 @@ from omym2.domain.models.app_config import (
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     AppConfig,
     ArtistIdConfig,
+    PathPolicyConfig,
     PathsConfig,
     UiConfig,
 )
@@ -39,6 +40,8 @@ INJECTED_ARTIST_NAME = "Injected"
 INJECTED_ARTIST_ID = "INJECTED"
 FIRST_SAME_SIZE_LIBRARY_PATH = "/music/a"
 SECOND_SAME_SIZE_LIBRARY_PATH = "/music/b"
+DISC_NUMBER_STYLE_D_PREFIXED = "d_prefixed"
+DISC_NUMBER_CONDITION_MULTIPLE_DISCS = "multiple_discs"
 
 
 def test_toml_config_store_loads_default_when_config_missing(tmp_path: Path) -> None:
@@ -66,6 +69,25 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
     assert config_path.is_file()
     assert store.load() == config
     assert f'"{ARTIST_NAME}" = "{ARTIST_ID}"' in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
+
+
+def test_toml_config_store_saves_and_loads_disc_number_settings(tmp_path: Path) -> None:
+    """Path policy disc settings round-trip through TOML."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    config = AppConfig(
+        path_policy=PathPolicyConfig(
+            disc_number_style=DISC_NUMBER_STYLE_D_PREFIXED,
+            disc_number_condition=DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+        )
+    )
+
+    store.save(config)
+
+    config_text = config_path.read_text(encoding=CONFIG_FILE_ENCODING)
+    assert f'disc_number_style = "{DISC_NUMBER_STYLE_D_PREFIXED}"' in config_text
+    assert f'disc_number_condition = "{DISC_NUMBER_CONDITION_MULTIPLE_DISCS}"' in config_text
+    assert store.load() == config
 
 
 def test_toml_config_store_load_caches_parsed_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -176,6 +198,21 @@ def test_toml_config_store_validation_fails_invalid_path_policy(tmp_path: Path) 
 
     with pytest.raises(ConfigStoreValidationError, match=INVALID_MAX_FILENAME_LENGTH_MESSAGE):
         _ = TomlConfigStore(config_path).load()
+
+
+def test_toml_config_store_validation_fails_invalid_disc_number_settings(tmp_path: Path) -> None:
+    """Adapter validation rejects unsupported path policy disc setting values."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        'version = 1\n\n[path_policy]\ndisc_number_style = "prefix"\ndisc_number_condition = "sometimes"',
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError) as exc_info:
+        _ = TomlConfigStore(config_path).load()
+
+    assert "path_policy.disc_number_style" in str(exc_info.value)
+    assert "path_policy.disc_number_condition" in str(exc_info.value)
 
 
 def test_toml_config_store_validation_fails_invalid_artist_id_max_length(tmp_path: Path) -> None:
