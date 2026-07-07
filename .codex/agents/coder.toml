@@ -1,6 +1,6 @@
 name = "coder"
 description = "Scoped implementation agent. Edits code/tests only after the parent provides a concrete plan and target files."
-model = "gpt-5.4"
+model = "gpt-5.3-codex-spark"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 
