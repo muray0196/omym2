@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 import mutagen
 
 from omym2.domain.models.track_metadata import TrackMetadata
+from omym2.features.common_ports import MetadataReadError
 
 if TYPE_CHECKING:
     from omym2.features.common_ports import FileSystemPath
@@ -33,10 +34,6 @@ MUTAGEN_ERROR_ATTRIBUTE = "MutagenError"
 MUTAGEN_FILE_ATTRIBUTE = "File"
 UNSUPPORTED_TAG_CONTAINER_MESSAGE = "Mutagen returned an unsupported tag container."
 YEAR_PATTERN = re.compile(r"(?P<year>\d{4})")
-
-
-class MetadataReadError(ValueError):
-    """Raised when a metadata adapter cannot read a supported tag mapping."""
 
 
 class MutagenFileOpener(Protocol):

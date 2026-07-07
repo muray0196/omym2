@@ -39,7 +39,7 @@ src/
 
 ## Dependency Boundaries Summary
 
-Inbound adapters call features, features use domain, and domain may use shared primitives. Outbound adapters implement ports owned by features or common feature ports. `platform/` is the intended composition root and wires features and adapters together.
+Inbound adapters call features, features use domain, and domain may use shared primitives. Outbound adapters implement ports owned by features or common feature ports. `platform/` is the composition root; it wires concrete adapters to feature usecases, and CLI and Web entry points build their dependencies through it instead of constructing adapters themselves.
 
 Detailed dependency direction, forbidden dependency lists, direct feature-to-feature import rules, and adapter boundary examples are authoritative in [docs/codebase/dependency-boundaries.md](docs/codebase/dependency-boundaries.md).
 
@@ -51,7 +51,7 @@ Detailed dependency direction, forbidden dependency lists, direct feature-to-fea
 
 `adapters/` implement ports and handle external I/O. Adapters may create and restore domain models, but they must not contain business rules such as conflict judgment, duplicate judgment, canonical path calculation, metadata validation, or PlanAction status decisions.
 
-`platform/` is intended to wire concrete adapters to feature usecases and own application runtime assembly. Today it is an empty placeholder; wiring currently lives in `adapters/cli/commands/` and `adapters/web/app.py`.
+`platform/` wires concrete adapters to feature usecases and owns application runtime assembly. The `omym2` console script and `python -m omym2` both start through `platform/cli_entry_point.py`, which builds a `CommandDependencies` bundle via `platform/cli_composition.py` and dispatches into `adapters/cli/main.py`. `adapters/web/app.py` only assembles FastAPI routes and static assets from an injected `ApiRouteContext`; `platform/web_composition.py` builds that context and the concrete adapters behind it.
 
 `shared/` contains only pure auxiliary primitives. It does not depend on domain, features, adapters, or platform.
 

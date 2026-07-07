@@ -8,21 +8,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
-from omym2.adapters.config.application_paths import default_application_paths
-from omym2.adapters.config.toml_config_store import TomlConfigStore
-from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
-from omym2.adapters.metadata.mutagen_reader import MetadataReadError, MutagenMetadataReader
-from omym2.features.common_ports import ConfigStoreValidationError
+from omym2.features.common_ports import ConfigStoreValidationError, MetadataReadError
 from omym2.features.inspect.dto import InspectFileRequest, InspectFileResult
-from omym2.features.inspect.ports import InspectFilePorts
 from omym2.features.inspect.usecases.inspect_file import InspectFileUseCase
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
     from typing import TextIO
 
     from omym2.domain.models.track_metadata import TrackMetadata
+    from omym2.features.inspect.ports import InspectFilePorts
 
 ERROR_EXIT_CODE = 1
 INSPECT_USAGE_MESSAGE = "Usage: omym2 inspect <file>"
@@ -35,16 +30,12 @@ def run_inspect_command(
     args: Sequence[str],
     stdout: TextIO,
     stderr: TextIO,
-    config_path: Path | None = None,
+    ports: InspectFilePorts,
 ) -> int:
     """Run inspect for one file and return a process exit code."""
     if len(args) != 1:
         write_usage(stderr, INSPECT_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
-
-    store = TomlConfigStore(config_path or default_application_paths().config_file)
-    snapshot_reader = FilesystemFileSnapshotReader(metadata_reader=MutagenMetadataReader())
-    ports = InspectFilePorts(file_snapshot_reader=snapshot_reader, config_store=store)
 
     try:
         result = InspectFileUseCase(ports).execute(InspectFileRequest(path=args[0]))

@@ -3,7 +3,7 @@ type: Testing Guide
 title: Testing
 description: Defines OMYM2's test policy across architecture, unit, and integration test categories, fixture policy, and which contract changes require which test focus.
 tags: [testing, pytest, architecture-tests, fixtures]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-07T14:00:00+09:00
 ---
 
 # Testing
@@ -31,6 +31,8 @@ Required architecture test coverage:
 * domain does not import adapters or platform
 * shared does not import upper layers
 * forbidden dependencies remain forbidden
+* adapters do not import platform
+* CLI and Web adapters do not import concrete outbound adapters (`db`, `fs`, `metadata`, `config`, `artist_ids`), except the documented two-pair allowlist
 
 ## Unit Tests
 

@@ -16,7 +16,6 @@ from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
-from omym2.adapters.web.app import create_web_app
 from omym2.config import (
     ALBUM_YEAR_RESOLUTION_OLDEST,
     CONFIG_FILE_ENCODING,
@@ -36,6 +35,7 @@ from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
+from omym2.platform.web_composition import build_web_app as create_web_app
 from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
 
 if TYPE_CHECKING:

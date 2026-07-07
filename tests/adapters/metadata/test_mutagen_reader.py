@@ -11,9 +11,9 @@ import pytest
 
 from omym2.adapters.metadata.mutagen_reader import (
     MUTAGEN_UNSUPPORTED_FILE_MESSAGE,
-    MetadataReadError,
     MutagenMetadataReader,
 )
+from omym2.features.common_ports import MetadataReadError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

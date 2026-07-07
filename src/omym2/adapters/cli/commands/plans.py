@@ -14,24 +14,21 @@ from omym2.adapters.cli.commands.plans_serializers import (
     serialize_plan_detail_response,
     serialize_plan_list_response,
 )
-from omym2.adapters.config.application_paths import default_application_paths
-from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.domain.models.plan import PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType
 from omym2.features.plans.dto import GetPlanDetailRequest, ListPlansRequest
-from omym2.features.plans.ports import PlanQueryPorts
 from omym2.features.plans.usecases.get_plan_detail import GetPlanDetailUseCase, PlanNotFoundError
 from omym2.features.plans.usecases.list_plans import ListPlansUseCase
 from omym2.shared.ids import PlanId, parse_uuid
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
     from typing import TextIO
 
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
     from omym2.features.plans.dto import PlanDetail
+    from omym2.features.plans.ports import PlanQueryPorts
 
 ACTIONS_OPTION = "--actions"
 BLOCKED_ONLY_FLAG = "--blocked-only"
@@ -62,7 +59,7 @@ def run_plans_command(
     args: Sequence[str],
     stdout: TextIO,
     stderr: TextIO,
-    database_path: Path | None = None,
+    ports: PlanQueryPorts,
 ) -> int:
     """Run plans and return a process exit code."""
     if len(args) > 0 and not args[0].startswith(FLAG_PREFIX):
@@ -71,14 +68,14 @@ def run_plans_command(
         except ValueError:
             write_usage(stderr, PLANS_DETAIL_USAGE_MESSAGE)
             return USAGE_EXIT_CODE
-        return _run_plan_detail(args[0], detail_options, stdout, stderr, database_path)
+        return _run_plan_detail(args[0], detail_options, stdout, stderr, ports)
 
     try:
         list_options = _parse_list_args(args)
     except ValueError:
         write_usage(stderr, PLANS_LIST_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
-    return _run_plan_list(list_options, stdout, database_path)
+    return _run_plan_list(list_options, stdout, ports)
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,9 +187,7 @@ def _parse_positive_int(raw_value: str) -> int:
     return value
 
 
-def _run_plan_list(options: _PlanListOptions, stdout: TextIO, database_path: Path | None) -> int:
-    app_paths = default_application_paths()
-    ports = PlanQueryPorts(uow=SQLiteUnitOfWork(database_path or app_paths.database_file))
+def _run_plan_list(options: _PlanListOptions, stdout: TextIO, ports: PlanQueryPorts) -> int:
     request = ListPlansRequest(status=options.status, plan_type=options.plan_type, limit=options.limit)
     plans = ListPlansUseCase(ports).execute(request)
 
@@ -215,7 +210,7 @@ def _run_plan_detail(
     options: _PlanDetailOptions,
     stdout: TextIO,
     stderr: TextIO,
-    database_path: Path | None,
+    ports: PlanQueryPorts,
 ) -> int:
     try:
         plan_id = PlanId(parse_uuid(raw_plan_id))
@@ -223,8 +218,6 @@ def _run_plan_detail(
         write_line(stderr, INVALID_PLAN_ID_MESSAGE)
         return ERROR_EXIT_CODE
 
-    app_paths = default_application_paths()
-    ports = PlanQueryPorts(uow=SQLiteUnitOfWork(database_path or app_paths.database_file))
     try:
         detail = GetPlanDetailUseCase(ports).execute(
             GetPlanDetailRequest(plan_id=plan_id, action_status=options.action_status)

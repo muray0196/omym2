@@ -9,7 +9,6 @@ import sys
 from io import StringIO
 from typing import TYPE_CHECKING
 
-from omym2.adapters.cli.main import main
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
@@ -18,6 +17,7 @@ from omym2.domain.models.library import LibraryStatus
 from omym2.domain.models.plan import PlanStatus
 from omym2.domain.models.run import RunStatus
 from omym2.domain.models.track_metadata import TrackMetadata
+from omym2.platform.cli_entry_point import run_cli as main
 
 if TYPE_CHECKING:
     from pathlib import Path

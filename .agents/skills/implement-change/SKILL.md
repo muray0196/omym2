@@ -31,6 +31,7 @@ description: Default end-to-end procedure for any OMYM2 Python code change. Use 
    | SQLite / filesystem / metadata / config I/O | `src/omym2/adapters/{db,fs,metadata,config}/` | technical names allowed |
    | CLI command | `src/omym2/adapters/cli/commands/` | command name |
    | Web API route | `src/omym2/adapters/web/routes/` | — |
+   | Wiring concrete adapters to feature ports / app assembly | `src/omym2/platform/` | composition module, e.g. `{concern}_composition.py` |
    | Pure helper without domain knowledge | `src/omym2/shared/` | concrete concern name |
 
    Never create a banned file name or directory — see `architecture-boundaries`'s New file checklist for the full list.

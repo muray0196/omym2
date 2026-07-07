@@ -13,12 +13,12 @@ from uuid import UUID
 
 import pytest
 
-from omym2.adapters.cli.main import main
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.platform.cli_entry_point import run_cli as main
 from omym2.shared.ids import ActionId, LibraryId, PlanId
 
 if TYPE_CHECKING:

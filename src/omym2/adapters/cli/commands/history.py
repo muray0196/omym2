@@ -8,18 +8,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.output import write_line, write_usage
-from omym2.adapters.config.application_paths import default_application_paths
-from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.features.history.dto import ListRunsRequest
-from omym2.features.history.ports import HistoryPorts
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
     from typing import TextIO
 
     from omym2.domain.models.run import Run
+    from omym2.features.history.ports import HistoryPorts
 
 HISTORY_USAGE_MESSAGE = "Usage: omym2 history"
 NO_RUNS_MESSAGE = "No runs."
@@ -31,15 +28,13 @@ def run_history_command(
     args: Sequence[str],
     stdout: TextIO,
     stderr: TextIO,
-    database_path: Path | None = None,
+    ports: HistoryPorts,
 ) -> int:
     """Run history and return a process exit code."""
     if len(args) != 0:
         write_usage(stderr, HISTORY_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
 
-    app_paths = default_application_paths()
-    ports = HistoryPorts(uow=SQLiteUnitOfWork(database_path or app_paths.database_file))
     runs = ListRunsUseCase(ports).execute(ListRunsRequest())
 
     if len(runs) == 0:

@@ -7,7 +7,13 @@ from __future__ import annotations
 
 from io import StringIO
 
-from omym2.adapters.cli.commands.settings import SettingsCommandDependencies, run_settings_command
+from fastapi import FastAPI
+
+from omym2.adapters.cli.commands.settings import (
+    SettingsCommandDependencies,
+    SettingsCommandPorts,
+    run_settings_command,
+)
 from omym2.config import WEB_DEFAULT_HOST, WEB_DEFAULT_PORT, WEB_SETTINGS_ROUTE
 
 ERROR_EXIT_CODE = 1
@@ -35,6 +41,7 @@ def test_settings_command_opens_browser_and_runs_server() -> None:
         (),
         stdout,
         stderr,
+        SettingsCommandPorts(web_app_factory=FastAPI),
         dependencies=SettingsCommandDependencies(browser_opener=open_browser, server_runner=run_server),
     )
 
@@ -51,7 +58,7 @@ def test_settings_command_rejects_arguments() -> None:
     stdout = StringIO()
     stderr = StringIO()
 
-    exit_code = run_settings_command(("unexpected",), stdout, stderr)
+    exit_code = run_settings_command(("unexpected",), stdout, stderr, SettingsCommandPorts(web_app_factory=FastAPI))
 
     assert exit_code == USAGE_EXIT_CODE
     assert stdout.getvalue() == ""
@@ -71,6 +78,7 @@ def test_settings_command_reports_server_start_failure() -> None:
         (),
         stdout,
         stderr,
+        SettingsCommandPorts(web_app_factory=FastAPI),
         dependencies=SettingsCommandDependencies(browser_opener=lambda _: True, server_runner=fail_server),
     )
 
