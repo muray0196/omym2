@@ -41,6 +41,10 @@ class ConfigStoreValidationError(ValueError):
         super().__init__("; ".join(self.errors))
 
 
+class MetadataReadError(ValueError):
+    """Raised when a metadata adapter cannot read a supported tag mapping."""
+
+
 class LibraryRepository(Protocol):
     """Persistence contract for Library identity and registration state."""
 

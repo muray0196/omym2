@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Layout
 description: Authoritative description of OMYM2's src/ layout and Feature-oriented Hexagonal Architecture, covering the domain, features, adapters, platform, and shared packages and rules for adding new directories.
 tags: [source-layout, architecture, hexagonal-architecture, python]
-timestamp: 2026-07-07T00:39:14+09:00
+timestamp: 2026-07-07T14:00:00+09:00
 ---
 
 # Source Layout
@@ -134,9 +134,14 @@ Adapters may create and restore domain models. They must not contain business ru
 
 ## platform/
 
-`platform/` is the intended composition root. It wires concrete adapters to feature usecases and owns application runtime assembly.
+`platform/` is the composition root. It wires concrete adapters to feature usecases and owns application runtime assembly.
 
-Today `platform/` is an empty placeholder package; the actual wiring is currently done by `adapters/cli/commands/*.py` and `adapters/web/app.py`.
+* `runtime_context.py`: `RuntimeContext` (resolved config file, database file, a shared `TomlConfigStore`, and a shared `MutagenMetadataReader`) and `runtime_context_for(...)`, which resolves `default_application_paths()` once per invocation.
+* `feature_composition.py`: `build_*` functions that construct each feature's `*Ports` dataclass from concrete adapters, one per feature (add, apply, check, history, inspect, organize, plans, refresh, settings, tracks, undo), plus `build_uow`.
+* `artist_ids_composition.py`: language-detector and artist-name-resolver selection (`language_detector_for_model`, `default_artist_resolver`, `web_artist_language_detector`, `web_artist_name_resolver`) and the artist-ids CLI ports builder.
+* `cli_composition.py`: `build_command_dependencies(...)`, which builds the full `CommandDependencies` bundle for one CLI invocation.
+* `cli_entry_point.py`: `main()` / `run_cli(...)`, the process entry point that both the `omym2` console script and `python -m omym2` route through.
+* `web_composition.py`: `build_api_route_context(...)` and `build_web_app(...)`, which build the Web UI's `ApiRouteContext` and FastAPI app.
 
 Feature-to-feature chaining belongs in CLI, Web, or platform orchestration, not inside a feature importing another feature's internals.
 

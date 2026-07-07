@@ -8,9 +8,9 @@ from __future__ import annotations
 from io import StringIO
 from typing import TYPE_CHECKING
 
-from omym2.adapters.cli.main import main
 from omym2.config import CONFIG_FILE_ENCODING, CONFIG_VERSION
 from omym2.domain.models.app_config import INVALID_MAX_FILENAME_LENGTH_MESSAGE
+from omym2.platform.cli_entry_point import run_cli as main
 
 if TYPE_CHECKING:
     from pathlib import Path

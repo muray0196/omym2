@@ -1,12 +1,13 @@
 """
-Summary: Defines the initial OMYM2 CLI entry point.
-Why: Establishes the command adapter boundary before feature commands exist.
+Summary: Dispatches the OMYM2 CLI commands using a prebuilt dependency bundle.
+Why: Keeps command adapters free of concrete wiring while main() stays a pure dispatcher.
 """
 
 from __future__ import annotations
 
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.add import run_add_command
@@ -24,8 +25,20 @@ from omym2.adapters.cli.commands.undo import run_undo_command
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
     from typing import TextIO
+
+    from omym2.adapters.cli.commands.add import AddCommandDependencies
+    from omym2.adapters.cli.commands.apply import ApplyCommandDependencies
+    from omym2.adapters.cli.commands.artist_ids import ArtistIdsCommandPorts
+    from omym2.adapters.cli.commands.organize import OrganizeCommandDependencies
+    from omym2.adapters.cli.commands.refresh import RefreshCommandDependencies
+    from omym2.adapters.cli.commands.settings import SettingsCommandPorts
+    from omym2.adapters.cli.commands.undo import UndoCommandDependencies
+    from omym2.features.check.ports import CheckLibraryPorts
+    from omym2.features.history.ports import HistoryPorts
+    from omym2.features.inspect.ports import InspectFilePorts
+    from omym2.features.plans.ports import PlanQueryPorts
+    from omym2.features.settings.ports import SettingsPorts
 
 ADD_COMMAND = "add"
 ARTIST_IDS_COMMAND = "artist-ids"
@@ -44,12 +57,30 @@ UNKNOWN_COMMAND_EXIT_CODE = 2
 type CommandCallback = Callable[[], int]
 
 
+@dataclass(frozen=True, slots=True)
+class CommandDependencies:
+    """Prebuilt per-command dependency bundle assembled by the composition root."""
+
+    add: AddCommandDependencies
+    apply: ApplyCommandDependencies
+    artist_ids: ArtistIdsCommandPorts
+    check: CheckLibraryPorts
+    config: SettingsPorts
+    history: HistoryPorts
+    inspect: InspectFilePorts
+    organize: OrganizeCommandDependencies
+    plans: PlanQueryPorts
+    refresh: RefreshCommandDependencies
+    settings: SettingsCommandPorts
+    undo: UndoCommandDependencies
+
+
 def main(
     argv: Sequence[str] | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
-    config_path: Path | None = None,
-    database_path: Path | None = None,
+    *,
+    dependencies: CommandDependencies,
 ) -> int:
     """Run the OMYM2 CLI and return a process exit code."""
     output = sys.stdout if stdout is None else stdout
@@ -61,18 +92,18 @@ def main(
 
     command, *command_args = args
     command_runners: dict[str, CommandCallback] = {
-        ADD_COMMAND: lambda: run_add_command(command_args, output, error_output, config_path, database_path),
-        ARTIST_IDS_COMMAND: lambda: run_artist_ids_command(command_args, output, error_output, config_path),
-        APPLY_COMMAND: lambda: run_apply_command(command_args, output, error_output, database_path),
-        CHECK_COMMAND: lambda: run_check_command(command_args, output, error_output, config_path, database_path),
-        CONFIG_COMMAND: lambda: run_config_command(command_args, output, error_output, config_path),
-        HISTORY_COMMAND: lambda: run_history_command(command_args, output, error_output, database_path),
-        INSPECT_COMMAND: lambda: run_inspect_command(command_args, output, error_output, config_path),
-        ORGANIZE_COMMAND: lambda: run_organize_command(command_args, output, error_output, config_path, database_path),
-        PLANS_COMMAND: lambda: run_plans_command(command_args, output, error_output, database_path),
-        REFRESH_COMMAND: lambda: run_refresh_command(command_args, output, error_output, config_path, database_path),
-        SETTINGS_COMMAND: lambda: run_settings_command(command_args, output, error_output, config_path),
-        UNDO_COMMAND: lambda: run_undo_command(command_args, output, error_output, database_path),
+        ADD_COMMAND: lambda: run_add_command(command_args, output, error_output, dependencies.add),
+        ARTIST_IDS_COMMAND: lambda: run_artist_ids_command(command_args, output, error_output, dependencies.artist_ids),
+        APPLY_COMMAND: lambda: run_apply_command(command_args, output, error_output, dependencies.apply),
+        CHECK_COMMAND: lambda: run_check_command(command_args, output, error_output, dependencies.check),
+        CONFIG_COMMAND: lambda: run_config_command(command_args, output, error_output, dependencies.config),
+        HISTORY_COMMAND: lambda: run_history_command(command_args, output, error_output, dependencies.history),
+        INSPECT_COMMAND: lambda: run_inspect_command(command_args, output, error_output, dependencies.inspect),
+        ORGANIZE_COMMAND: lambda: run_organize_command(command_args, output, error_output, dependencies.organize),
+        PLANS_COMMAND: lambda: run_plans_command(command_args, output, error_output, dependencies.plans),
+        REFRESH_COMMAND: lambda: run_refresh_command(command_args, output, error_output, dependencies.refresh),
+        SETTINGS_COMMAND: lambda: run_settings_command(command_args, output, error_output, dependencies.settings),
+        UNDO_COMMAND: lambda: run_undo_command(command_args, output, error_output, dependencies.undo),
     }
     runner = command_runners.get(command)
     if runner is None:

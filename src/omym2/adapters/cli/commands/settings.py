@@ -14,12 +14,9 @@ from urllib.parse import urlunparse
 import uvicorn
 
 from omym2.adapters.cli.commands.output import write_line, write_usage
-from omym2.adapters.web.app import create_web_app
 from omym2.config import WEB_DEFAULT_HOST, WEB_DEFAULT_PORT, WEB_SETTINGS_ROUTE, WEB_URL_SCHEME
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from fastapi import FastAPI
 
 ERROR_EXIT_CODE = 1
@@ -43,11 +40,18 @@ class SettingsCommandDependencies:
     server_runner: ServerRunner = _run_server
 
 
+@dataclass(frozen=True, slots=True)
+class SettingsCommandPorts:
+    """Ports needed to build the settings Web UI application."""
+
+    web_app_factory: Callable[[], FastAPI]
+
+
 def run_settings_command(
     args: Sequence[str],
     stdout: TextIO,
     stderr: TextIO,
-    config_path: Path | None = None,
+    ports: SettingsCommandPorts,
     dependencies: SettingsCommandDependencies | None = None,
 ) -> int:
     """Run the local settings console until the server stops."""
@@ -61,7 +65,7 @@ def run_settings_command(
     write_line(stdout, f"Settings console: {settings_url}")
 
     try:
-        command_dependencies.server_runner(create_web_app(config_path), WEB_DEFAULT_HOST, WEB_DEFAULT_PORT)
+        command_dependencies.server_runner(ports.web_app_factory(), WEB_DEFAULT_HOST, WEB_DEFAULT_PORT)
     except OSError as exc:
         write_line(stderr, f"Settings server error: {exc}")
         return ERROR_EXIT_CODE

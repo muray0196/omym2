@@ -14,6 +14,7 @@ from omym2.adapters.cli.commands.artist_ids import ArtistIdsCommandDependencies,
 from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.config import CONFIG_FILE_ENCODING
 from omym2.domain.models.app_config import AppConfig, ArtistIdConfig
+from omym2.platform.artist_ids_composition import build_artist_ids_command_ports
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -46,7 +47,9 @@ def test_artist_ids_generate_command_saves_generated_entry(tmp_path: Path) -> No
     stdout = StringIO()
     stderr = StringIO()
 
-    exit_code = run_artist_ids_command(["generate", ENGLISH_ARTIST], stdout, stderr, config_path)
+    exit_code = run_artist_ids_command(
+        ["generate", ENGLISH_ARTIST], stdout, stderr, build_artist_ids_command_ports(config_path)
+    )
 
     assert exit_code == 0
     assert stderr.getvalue() == ""
@@ -64,7 +67,7 @@ def test_artist_ids_generate_command_uses_injected_japanese_dependencies(tmp_pat
         ["generate", JAPANESE_ARTIST],
         stdout,
         stderr,
-        config_path,
+        build_artist_ids_command_ports(config_path),
         ArtistIdsCommandDependencies(language_detector=_JapaneseDetector(), artist_resolver=_Resolver()),
     )
 
@@ -80,7 +83,9 @@ def test_artist_ids_generate_command_preserves_existing_without_overwrite(tmp_pa
     stdout = StringIO()
     stderr = StringIO()
 
-    exit_code = run_artist_ids_command(["generate", ENGLISH_ARTIST], stdout, stderr, config_path)
+    exit_code = run_artist_ids_command(
+        ["generate", ENGLISH_ARTIST], stdout, stderr, build_artist_ids_command_ports(config_path)
+    )
 
     assert exit_code == 0
     assert "preserved" in stdout.getvalue()
@@ -97,7 +102,9 @@ def test_artist_ids_generate_command_reports_invalid_persisted_config(tmp_path: 
     stdout = StringIO()
     stderr = StringIO()
 
-    exit_code = run_artist_ids_command(["generate", ENGLISH_ARTIST], stdout, stderr, config_path)
+    exit_code = run_artist_ids_command(
+        ["generate", ENGLISH_ARTIST], stdout, stderr, build_artist_ids_command_ports(config_path)
+    )
 
     assert exit_code == 1
     assert stdout.getvalue() == ""
@@ -122,7 +129,7 @@ def test_artist_ids_generate_command_reports_missing_fasttext_dependency(
         ["generate", "--fasttext-model", str(tmp_path / "lid.bin"), ENGLISH_ARTIST],
         stdout,
         stderr,
-        config_path,
+        build_artist_ids_command_ports(config_path),
     )
 
     assert exit_code == 1
@@ -153,7 +160,7 @@ def test_artist_ids_generate_command_reports_fasttext_model_load_failure(
         ["generate", "--fasttext-model", str(tmp_path / "missing.bin"), ENGLISH_ARTIST],
         stdout,
         stderr,
-        config_path,
+        build_artist_ids_command_ports(config_path),
     )
 
     assert exit_code == 1

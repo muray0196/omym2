@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from omym2.adapters.web.app import create_web_app
 from omym2.config import (
     CONFIG_FILE_ENCODING,
     WEB_API_PREFIX,
@@ -24,6 +23,7 @@ from omym2.config import (
     WEB_STATIC_EXPORT_MISSING_MESSAGE,
     WEB_TRACKS_ROUTE,
 )
+from omym2.platform.web_composition import build_web_app as create_web_app
 
 MISSING_BUILD_STATUS_CODE = 503
 NOT_FOUND_STATUS_CODE = 404

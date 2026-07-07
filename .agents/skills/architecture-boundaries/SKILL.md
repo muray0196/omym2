@@ -25,6 +25,8 @@ Additional hard rules:
 - A feature never imports another feature's internals. Chaining usecases (e.g. `add --apply`) happens in CLI, Web, or platform.
 - CLI commands and Web routes never touch the filesystem directly; they translate input, call usecases, format output.
 - Outbound adapters (`db`, `fs`, `metadata`, `config`) implement ports from `src/omym2/features/*/ports.py` or `src/omym2/features/common_ports.py`.
+- Inbound adapters (`adapters/cli/`, `adapters/web/`) must not import concrete outbound adapter subpackages (`adapters.db`, `adapters.fs`, `adapters.metadata`, `adapters.config`, `adapters.artist_ids`), and `adapters/cli/` must not import `adapters.web`. This is enforced by an architecture test with an exact-pair allowlist for exactly two pure, I/O-free functions coupled only to the TOML config representation (`adapters/cli/commands/config.py` → `omym2.adapters.config.toml_config_store`, `adapters/web/schemas/settings_json.py` → `omym2.adapters.config.config_validator`); do not add new pairs without updating that allowlist and this rule.
+- `platform/` is the composition root: it builds concrete adapters, wires them into each feature's `*Ports` dataclass, and assembles the CLI/Web entry points. New wiring/chaining code belongs there, not inside `adapters/cli/` or `adapters/web/`.
 
 ## Business rule placement
 

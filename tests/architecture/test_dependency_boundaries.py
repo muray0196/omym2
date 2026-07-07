@@ -6,6 +6,7 @@ Why: Catches imports that would couple policy code to concrete adapters.
 from __future__ import annotations
 
 import ast
+import itertools
 from pathlib import Path
 
 DOMAIN_ALLOWED_IMPORT_PREFIXES = (
@@ -20,6 +21,22 @@ SHARED_ALLOWED_IMPORT_PREFIXES = (
 )
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
 PYTHON_FILE_PATTERN = "*.py"
+
+INBOUND_ADAPTER_FORBIDDEN_OUTBOUND_PREFIXES = (
+    "omym2.adapters.db",
+    "omym2.adapters.fs",
+    "omym2.adapters.metadata",
+    "omym2.adapters.config",
+    "omym2.adapters.artist_ids",
+)
+
+# Exact (file, imported-module) pairs exempted from the inbound-adapter boundary
+# check. Membership rule: pure, I/O-free functions coupled to the TOML config
+# representation only.
+INBOUND_ADAPTER_ALLOWED_OUTBOUND_IMPORTS = (
+    ("adapters/cli/commands/config.py", "omym2.adapters.config.toml_config_store"),
+    ("adapters/web/schemas/settings_json.py", "omym2.adapters.config.config_validator"),
+)
 
 
 def test_domain_does_not_import_adapters_or_platform() -> None:
@@ -43,6 +60,33 @@ def test_shared_does_not_import_upper_layers() -> None:
         assert not _violating_project_imports(source_file, SHARED_ALLOWED_IMPORT_PREFIXES)
 
 
+def test_adapters_does_not_import_platform() -> None:
+    """Adapters must not depend on the platform composition root that wires them."""
+    for source_file in _python_files_under(_source_root() / "omym2" / "adapters"):
+        assert not _project_imports_matching_prefixes(source_file, ("omym2.platform",))
+
+
+def test_inbound_adapters_does_not_import_concrete_outbound_adapters() -> None:
+    """CLI and web adapters must depend on ports, not concrete outbound adapters."""
+    adapters_root = _source_root() / "omym2" / "adapters"
+    cli_root = adapters_root / "cli"
+    web_root = adapters_root / "web"
+
+    for source_file in itertools.chain(_python_files_under(cli_root), _python_files_under(web_root)):
+        forbidden_prefixes = INBOUND_ADAPTER_FORBIDDEN_OUTBOUND_PREFIXES
+        if source_file.is_relative_to(cli_root):
+            forbidden_prefixes += ("omym2.adapters.web",)
+
+        allowed_prefixes = _allowed_outbound_import_prefixes(source_file)
+        violations = {
+            imported_module
+            for imported_module in _project_imports_matching_prefixes(source_file, forbidden_prefixes)
+            if not _matches_any_prefix(imported_module, allowed_prefixes)
+        }
+
+        assert not violations
+
+
 def _allowed_feature_import_prefixes(source_file: Path, features_root: Path) -> tuple[str, ...]:
     relative_parts = source_file.relative_to(features_root).parts
     if source_file.name == "common_ports.py" or len(relative_parts) == 1:
@@ -64,6 +108,23 @@ def _violating_project_imports(source_file: Path, allowed_prefixes: tuple[str, .
         for imported_module in _imported_modules(source_file)
         if imported_module.startswith("omym2.") and not _matches_any_prefix(imported_module, allowed_prefixes)
     }
+
+
+def _project_imports_matching_prefixes(source_file: Path, forbidden_prefixes: tuple[str, ...]) -> set[str]:
+    return {
+        imported_module
+        for imported_module in _imported_modules(source_file)
+        if _matches_any_prefix(imported_module, forbidden_prefixes)
+    }
+
+
+def _allowed_outbound_import_prefixes(source_file: Path) -> tuple[str, ...]:
+    relative_path = source_file.relative_to(_source_root() / "omym2").as_posix()
+    return tuple(
+        module_prefix
+        for path_suffix, module_prefix in INBOUND_ADAPTER_ALLOWED_OUTBOUND_IMPORTS
+        if relative_path.endswith(path_suffix)
+    )
 
 
 def _matches_any_prefix(imported_module: str, prefixes: tuple[str, ...]) -> bool:

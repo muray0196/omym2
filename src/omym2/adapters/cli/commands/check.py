@@ -8,24 +8,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
-from omym2.adapters.config.application_paths import default_application_paths
-from omym2.adapters.config.toml_config_store import TomlConfigStore
-from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
-from omym2.adapters.fs.file_scanner import FilesystemFileScanner
-from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
-from omym2.adapters.fs.path_resolver import FilesystemPathResolver
-from omym2.adapters.metadata.mutagen_reader import MetadataReadError, MutagenMetadataReader
 from omym2.features.check.dto import CheckLibraryRequest
-from omym2.features.check.ports import CheckLibraryPorts
 from omym2.features.check.usecases.check_library import CheckLibraryError, CheckLibraryUseCase
-from omym2.features.common_ports import ConfigStoreValidationError
+from omym2.features.common_ports import ConfigStoreValidationError, MetadataReadError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
     from typing import TextIO
 
     from omym2.domain.models.check_issue import CheckIssue
+    from omym2.features.check.ports import CheckLibraryPorts
 
 CHECK_USAGE_MESSAGE = "Usage: omym2 check"
 ERROR_EXIT_CODE = 1
@@ -38,32 +30,21 @@ def run_check_command(
     args: Sequence[str],
     stdout: TextIO,
     stderr: TextIO,
-    config_path: Path | None = None,
-    database_path: Path | None = None,
+    ports: CheckLibraryPorts,
 ) -> int:
     """Run check and return a process exit code."""
     if len(args) != 0:
         write_usage(stderr, CHECK_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
 
-    return _run_check(stdout, stderr, config_path, database_path)
+    return _run_check(ports, stdout, stderr)
 
 
 def _run_check(
+    ports: CheckLibraryPorts,
     stdout: TextIO,
     stderr: TextIO,
-    config_path: Path | None,
-    database_path: Path | None,
 ) -> int:
-    app_paths = default_application_paths()
-    ports = CheckLibraryPorts(
-        uow=SQLiteUnitOfWork(database_path or app_paths.database_file),
-        file_scanner=FilesystemFileScanner(),
-        file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=MutagenMetadataReader()),
-        config_store=TomlConfigStore(config_path or app_paths.config_file),
-        path_resolver=FilesystemPathResolver(),
-    )
-
     try:
         issues = CheckLibraryUseCase(ports).execute(CheckLibraryRequest())
     except ConfigStoreValidationError as exc:

@@ -8,17 +8,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
-from omym2.adapters.config.application_paths import default_application_paths
-from omym2.adapters.config.toml_config_store import TomlConfigStore, dump_config_toml
+from omym2.adapters.config.toml_config_store import dump_config_toml
 from omym2.features.common_ports import ConfigStoreValidationError
-from omym2.features.settings.ports import SettingsPorts
 from omym2.features.settings.usecases.load_settings import LoadSettingsUseCase
 from omym2.features.settings.usecases.validate_settings import ValidateSettingsUseCase
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
     from typing import TextIO
+
+    from omym2.features.settings.ports import SettingsPorts
 
 CONFIG_VALIDATE_SUCCESS_MESSAGE = "Config is valid."
 CONFIG_USAGE_MESSAGE = "Usage: omym2 config {show|validate}"
@@ -33,15 +32,13 @@ def run_config_command(
     args: Sequence[str],
     stdout: TextIO,
     stderr: TextIO,
-    config_path: Path | None = None,
+    ports: SettingsPorts,
 ) -> int:
     """Run a config subcommand and return a process exit code."""
     if len(args) != 1:
         write_usage(stderr, CONFIG_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
 
-    store = TomlConfigStore(config_path or default_application_paths().config_file)
-    ports = SettingsPorts(config_store=store)
     subcommand = args[0]
 
     if subcommand == SHOW_SUBCOMMAND:

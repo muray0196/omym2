@@ -11,7 +11,6 @@ from io import StringIO
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from omym2.adapters.cli.main import main
 from omym2.adapters.config.application_paths import ApplicationPaths, default_application_paths
 from omym2.adapters.config.default_config import default_app_config
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
@@ -26,6 +25,7 @@ from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
+from omym2.platform.cli_entry_point import run_cli as main
 from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
 
 if TYPE_CHECKING:

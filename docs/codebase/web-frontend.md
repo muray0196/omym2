@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Authoritative reference for the Next.js web/ frontend layout, its audited static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
 tags: [web-frontend, nextjs, static-export, api-boundary]
-timestamp: 2026-07-07T00:39:14+09:00
+timestamp: 2026-07-07T14:00:00+09:00
 ---
 
 # Web Frontend
@@ -49,8 +49,9 @@ The audit rejects common secret, debug, server-only, and analytics artifacts suc
 
 The export is packaged inside the Python package so `omym2 settings` can serve the current Web UI without a Node runtime:
 
-* `omym2 settings` (`src/omym2/adapters/cli/commands/settings.py`) creates the FastAPI app and serves it locally with uvicorn.
-* `src/omym2/adapters/web/app.py` mounts `_next/static` assets, returns `index.html` for the known UI routes (`/`, `/settings`, `/path-policy`, `/plans`, `/plans/{plan_id}`, `/history`, `/history/{run_id}`, `/check`, `/tracks`), serves remaining root-level export files, and answers 503 when the export is missing.
+* `omym2 settings` (`src/omym2/adapters/cli/commands/settings.py`) calls an injected `SettingsCommandPorts.web_app_factory` to obtain the FastAPI app and serves it locally with uvicorn; it does not build the app itself.
+* `src/omym2/platform/web_composition.py::build_web_app` is that factory: it builds the Web UI's `ApiRouteContext` (config store, feature ports factories, CSRF token, artist-id language detector and name resolver) via `build_api_route_context`, then calls `src/omym2/adapters/web/app.py::create_web_app(context, static_dist_path)`.
+* `src/omym2/adapters/web/app.py::create_web_app` takes that pre-built `ApiRouteContext` and only assembles routes and static assets: it mounts `_next/static` assets, returns `index.html` for the known UI routes (`/`, `/settings`, `/path-policy`, `/plans`, `/plans/{plan_id}`, `/history`, `/history/{run_id}`, `/check`, `/tracks`), serves remaining root-level export files, and answers 503 when the export is missing. It does not construct outbound adapters itself.
 
 After changing the frontend, run the build so the ignored local `static_dist/`
 copy matches the source before runtime or package verification. Do not commit

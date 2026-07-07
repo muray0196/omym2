@@ -5,26 +5,16 @@ Why: Wires React and JSON API routes to feature usecases without involving CLI c
 
 from __future__ import annotations
 
-import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from omym2.adapters.config.application_paths import default_application_paths
-from omym2.adapters.config.toml_config_store import TomlConfigStore
-from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
-from omym2.adapters.fs.file_presence import FilesystemFilePresence
-from omym2.adapters.fs.file_scanner import FilesystemFileScanner
-from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
-from omym2.adapters.fs.path_resolver import FilesystemPathResolver
-from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
 from omym2.adapters.web.routes.api import ApiRouteContext, create_api_router
 from omym2.config import (
     WEB_APP_TITLE,
     WEB_CHECK_ROUTE,
-    WEB_CSRF_TOKEN_BYTES,
     WEB_HISTORY_ROUTE,
     WEB_NEXT_STATIC_DIRECTORY_NAME,
     WEB_NEXT_STATIC_ROUTE,
@@ -40,78 +30,15 @@ from omym2.config import (
     WEB_STATIC_EXPORT_MISSING_MESSAGE,
     WEB_TRACKS_ROUTE,
 )
-from omym2.features.add.ports import CreateAddPlanPorts
-from omym2.features.check.ports import CheckLibraryPorts
-from omym2.features.common_ports import SystemClock, Uuid7IdGenerator
-from omym2.features.history.ports import HistoryPorts
-from omym2.features.organize.ports import CreateOrganizePlanPorts
-from omym2.features.plans.ports import PlanQueryPorts
-from omym2.features.refresh.ports import CreateRefreshPlanPorts
-from omym2.features.settings.ports import SettingsPorts
-from omym2.features.tracks.ports import TracksPorts
 
 
-def create_web_app(
-    config_path: Path | None = None,
-    database_path: Path | None = None,
-    static_dist_path: Path | None = None,
-) -> FastAPI:
-    """Create the localhost Web UI application."""
+def create_web_app(context: ApiRouteContext, static_dist_path: Path | None = None) -> FastAPI:
+    """Create the localhost Web UI application from a pre-built API route context."""
     package_dir = Path(__file__).resolve().parent
     web_dist = static_dist_path or package_dir / WEB_STATIC_EXPORT_DIRECTORY_NAME
-    app_paths = default_application_paths()
-    config_file = config_path or app_paths.config_file
-    database_file = database_path or app_paths.database_file
-    store = TomlConfigStore(config_file)
-    metadata_reader = MutagenMetadataReader()
 
     app = FastAPI(title=WEB_APP_TITLE)
-    app.include_router(
-        create_api_router(
-            ApiRouteContext(
-                check_ports_factory=lambda: CheckLibraryPorts(
-                    uow=SQLiteUnitOfWork(database_file),
-                    file_scanner=FilesystemFileScanner(),
-                    file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=metadata_reader),
-                    config_store=store,
-                    path_resolver=FilesystemPathResolver(),
-                ),
-                csrf_token=secrets.token_urlsafe(WEB_CSRF_TOKEN_BYTES),
-                history_ports_factory=lambda: HistoryPorts(uow=SQLiteUnitOfWork(database_file)),
-                plan_query_ports_factory=lambda: PlanQueryPorts(uow=SQLiteUnitOfWork(database_file)),
-                add_plan_ports_factory=lambda: CreateAddPlanPorts(
-                    uow=SQLiteUnitOfWork(database_file),
-                    file_scanner=FilesystemFileScanner(),
-                    file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=metadata_reader),
-                    file_presence=FilesystemFilePresence(),
-                    config_store=store,
-                    path_resolver=FilesystemPathResolver(),
-                    clock=SystemClock(),
-                    id_generator=Uuid7IdGenerator(),
-                ),
-                organize_plan_ports_factory=lambda: CreateOrganizePlanPorts(
-                    uow=SQLiteUnitOfWork(database_file),
-                    file_scanner=FilesystemFileScanner(),
-                    file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=metadata_reader),
-                    config_store=store,
-                    path_resolver=FilesystemPathResolver(),
-                    clock=SystemClock(),
-                    id_generator=Uuid7IdGenerator(),
-                ),
-                refresh_plan_ports_factory=lambda: CreateRefreshPlanPorts(
-                    uow=SQLiteUnitOfWork(database_file),
-                    file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=metadata_reader),
-                    file_presence=FilesystemFilePresence(),
-                    config_store=store,
-                    path_resolver=FilesystemPathResolver(),
-                    clock=SystemClock(),
-                    id_generator=Uuid7IdGenerator(),
-                ),
-                settings_ports=SettingsPorts(config_store=store),
-                tracks_ports_factory=lambda: TracksPorts(uow=SQLiteUnitOfWork(database_file)),
-            )
-        )
-    )
+    app.include_router(create_api_router(context))
 
     next_static_directory = web_dist / WEB_NEXT_STATIC_DIRECTORY_NAME
     if next_static_directory.exists():

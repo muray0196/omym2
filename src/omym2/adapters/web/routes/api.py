@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, cast
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from omym2.adapters.metadata.mutagen_reader import MetadataReadError
 from omym2.adapters.web.routes.api_serializers import (
     serialize_app_config,
     serialize_artist_id_generation,
@@ -74,7 +73,7 @@ from omym2.features.artist_ids.dto import GenerateArtistIdsRequest
 from omym2.features.artist_ids.usecases.generate_artist_ids import GenerateArtistIdsUseCase
 from omym2.features.check.dto import CheckLibraryRequest
 from omym2.features.check.usecases.check_library import CheckLibraryError, CheckLibraryUseCase
-from omym2.features.common_ports import ConfigStoreValidationError
+from omym2.features.common_ports import ConfigStoreValidationError, MetadataReadError
 from omym2.features.history.dto import GetRunDetailRequest, ListRunsRequest
 from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase, RunNotFoundError
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
@@ -108,6 +107,7 @@ from omym2.shared.ids import PlanId, RunId, parse_uuid
 
 if TYPE_CHECKING:
     from omym2.features.add.ports import CreateAddPlanPorts
+    from omym2.features.artist_ids.ports import ArtistLanguageDetector, ArtistNameResolver
     from omym2.features.check.ports import CheckLibraryPorts
     from omym2.features.history.ports import HistoryPorts
     from omym2.features.organize.ports import CreateOrganizePlanPorts
@@ -155,6 +155,8 @@ class ApiRouteContext:
     refresh_plan_ports_factory: RefreshPlanPortsFactory
     settings_ports: SettingsPorts
     tracks_ports_factory: TracksPortsFactory
+    artist_id_language_detector: ArtistLanguageDetector
+    artist_id_name_resolver: ArtistNameResolver
 
 
 def create_api_router(context: ApiRouteContext) -> APIRouter:
@@ -354,8 +356,8 @@ async def _generate_artist_ids(context: ApiRouteContext, request: Request) -> JS
     try:
         result = GenerateArtistIdsUseCase(
             config_store=context.settings_ports.config_store,
-            language_detector=_NonJapaneseLanguageDetector(),
-            artist_resolver=_NoopArtistNameResolver(),
+            language_detector=context.artist_id_language_detector,
+            artist_resolver=context.artist_id_name_resolver,
         ).execute(generation_request)
     except ConfigStoreValidationError as exc:
         return _artist_ids_error(exc.errors)
@@ -733,24 +735,6 @@ def _optional_boolean_field(payload: object, field_name: str) -> tuple[bool, tup
     if not isinstance(raw_value, bool):
         return False, (f"Request body {field_name} must be a boolean.",)
     return raw_value, ()
-
-
-@dataclass(frozen=True, slots=True)
-class _NonJapaneseLanguageDetector:
-    """Web generation avoids model I/O and generates directly from source names."""
-
-    def is_japanese(self, text: str) -> bool:
-        _ = text
-        return False
-
-
-@dataclass(frozen=True, slots=True)
-class _NoopArtistNameResolver:
-    """Web generation avoids MusicBrainz I/O during settings saves."""
-
-    def english_or_latin_name(self, source_artist: str) -> str | None:
-        _ = source_artist
-        return None
 
 
 def _run_detail_error(message: str) -> JSONResponse:
