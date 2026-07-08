@@ -13,6 +13,19 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 mode="${1:-changed}"
+readonly PACKAGED_WEB_STATIC_DIR="src/omym2/adapters/web/static_dist"
+readonly PACKAGED_WEB_STATIC_INDEX="$PACKAGED_WEB_STATIC_DIR/index.html"
+readonly REACT_STATIC_TEST_PATH="tests/adapters/web/test_react_static.py"
+
+require_packaged_web_static_dist() {
+    if [[ -d "$PACKAGED_WEB_STATIC_DIR" && -f "$PACKAGED_WEB_STATIC_INDEX" ]]; then
+        return 0
+    fi
+    echo "checks.sh: packaged Web static export missing at '$PACKAGED_WEB_STATIC_DIR'." >&2
+    echo "checks.sh: expected entrypoint '$PACKAGED_WEB_STATIC_INDEX'." >&2
+    echo "checks.sh: run 'scripts/checks.sh web' before package static export audit." >&2
+    exit 1
+}
 
 run_changed() {
     local -a files=()
@@ -45,10 +58,13 @@ run_py() {
 run_web() {
     cd web
     npm ci
+    npm audit --omit=dev
     npm run format:check
     npm run lint
     npm run build
     cd ..
+    require_packaged_web_static_dist
+    uv run pytest "$REACT_STATIC_TEST_PATH" -q --tb=short --show-capture=all
 }
 
 case "$mode" in
@@ -73,6 +89,9 @@ arch)
     ;;
 test)
     target="${2:?usage: scripts/checks.sh test <pytest-target>}"
+    if [[ "$target" == "$REACT_STATIC_TEST_PATH"* || "$target" == *"/$REACT_STATIC_TEST_PATH"* ]]; then
+        require_packaged_web_static_dist
+    fi
     uv run pytest "$target" -q --tb=short --show-capture=all
     ;;
 *)
