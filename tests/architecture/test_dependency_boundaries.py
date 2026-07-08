@@ -37,6 +37,7 @@ INBOUND_ADAPTER_ALLOWED_OUTBOUND_IMPORTS = (
     ("adapters/cli/commands/config.py", "omym2.adapters.config.toml_config_store"),
     ("adapters/web/schemas/settings_json.py", "omym2.adapters.config.config_validator"),
 )
+FORBIDDEN_FILESYSTEM_METHODS = ("expanduser", "resolve")
 
 
 def test_domain_does_not_import_adapters_or_platform() -> None:
@@ -87,6 +88,15 @@ def test_inbound_adapters_does_not_import_concrete_outbound_adapters() -> None:
         assert not violations
 
 
+def test_cli_command_modules_do_not_resolve_paths_directly() -> None:
+    """CLI command adapters must not call filesystem path resolution helpers directly."""
+    command_modules = _python_files_under(_source_root() / "omym2" / "adapters" / "cli" / "commands")
+
+    for source_file in command_modules:
+        forbidden_calls = _forbidden_filesystem_calls(source_file)
+        assert not forbidden_calls
+
+
 def _allowed_feature_import_prefixes(source_file: Path, features_root: Path) -> tuple[str, ...]:
     relative_parts = source_file.relative_to(features_root).parts
     if source_file.name == "common_ports.py" or len(relative_parts) == 1:
@@ -125,6 +135,17 @@ def _allowed_outbound_import_prefixes(source_file: Path) -> tuple[str, ...]:
         for path_suffix, module_prefix in INBOUND_ADAPTER_ALLOWED_OUTBOUND_IMPORTS
         if relative_path.endswith(path_suffix)
     )
+
+
+def _forbidden_filesystem_calls(source_file: Path) -> set[str]:
+    module_tree = ast.parse(source_file.read_text(encoding="utf-8"))
+    return {
+        f"{source_file.name}:{node.lineno}:{node.func.attr}"
+        for node in ast.walk(module_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in FORBIDDEN_FILESYSTEM_METHODS
+    }
 
 
 def _matches_any_prefix(imported_module: str, prefixes: tuple[str, ...]) -> bool:

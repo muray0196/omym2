@@ -15,6 +15,7 @@ from omym2.adapters.cli.commands.settings import SettingsCommandPorts
 from omym2.adapters.cli.commands.undo import UndoCommandDependencies
 from omym2.adapters.cli.main import CommandDependencies
 from omym2.platform.artist_ids_composition import artist_ids_command_ports_for
+from omym2.platform.cli_path_normalization import normalize_cli_path
 from omym2.platform.feature_composition import (
     build_apply_plan_ports,
     build_check_library_ports,
@@ -50,6 +51,7 @@ def build_command_dependencies(
         add=AddCommandDependencies(
             create_add_plan_ports_factory=lambda: build_create_add_plan_ports(runtime),
             apply_plan_ports_factory=lambda: build_apply_plan_ports(runtime),
+            normalize_source_path=normalize_cli_path,
         ),
         apply=ApplyCommandDependencies(
             uow_factory=lambda: build_uow(runtime),
@@ -63,11 +65,13 @@ def build_command_dependencies(
         organize=OrganizeCommandDependencies(
             create_organize_plan_ports_factory=lambda: build_create_organize_plan_ports(runtime),
             apply_plan_ports_factory=lambda: build_apply_plan_ports(runtime),
+            normalize_library_root=normalize_cli_path,
         ),
         plans=build_plan_query_ports(runtime),
         refresh=RefreshCommandDependencies(
             create_refresh_plan_ports_factory=lambda: build_create_refresh_plan_ports(runtime),
             apply_plan_ports_factory=lambda: build_apply_plan_ports(runtime),
+            normalize_target_path=normalize_cli_path,
         ),
         settings=SettingsCommandPorts(
             web_app_factory=lambda: build_web_app(runtime.config_file, runtime.database_file)

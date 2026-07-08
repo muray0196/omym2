@@ -6,7 +6,6 @@ Why: Exposes relocation Plan creation after external tag correction.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.apply_execution import confirm_and_apply_plan
@@ -44,6 +43,7 @@ class RefreshCommandDependencies:
 
     create_refresh_plan_ports_factory: Callable[[], CreateRefreshPlanPorts]
     apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
+    normalize_target_path: Callable[[FileSystemPath], str]
 
 
 def run_refresh_command(
@@ -68,11 +68,12 @@ def _run_refresh(
     stderr: TextIO,
     dependencies: RefreshCommandDependencies,
 ) -> int:
+    target_path = dependencies.normalize_target_path(options.target_path) if options.target_path is not None else None
     ports = dependencies.create_refresh_plan_ports_factory()
 
     try:
         plan = CreateRefreshPlanUseCase(ports).execute(
-            CreateRefreshPlanRequest(target_path=options.target_path, include_all=options.include_all)
+            CreateRefreshPlanRequest(target_path=target_path, include_all=options.include_all)
         )
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
@@ -120,7 +121,7 @@ def _parse_args(args: Sequence[str]) -> _RefreshCommandOptions:
         elif arg == ALL_FLAG:
             include_all = True
         elif not arg.startswith("-") and target_path is None:
-            target_path = _normalize_target_path(arg)
+            target_path = arg
         else:
             raise ValueError(REFRESH_USAGE_MESSAGE)
 
@@ -128,10 +129,6 @@ def _parse_args(args: Sequence[str]) -> _RefreshCommandOptions:
         raise ValueError(REFRESH_USAGE_MESSAGE)
 
     return _RefreshCommandOptions(target_path=target_path, include_all=include_all, should_apply=should_apply)
-
-
-def _normalize_target_path(raw_path: FileSystemPath) -> str:
-    return str(Path(raw_path).expanduser().resolve(strict=False))
 
 
 def _write_result(stdout: TextIO, plan: Plan) -> None:
