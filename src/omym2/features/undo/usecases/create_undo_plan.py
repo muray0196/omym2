@@ -13,6 +13,7 @@ from omym2.config import PLAN_ACTION_SORT_ORDER_START, PLAN_ACTION_SORT_ORDER_ST
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.run import RunStatus
 from omym2.domain.models.track import TrackStatus
 
 if TYPE_CHECKING:
@@ -27,7 +28,12 @@ if TYPE_CHECKING:
 
 RUN_LIBRARY_NOT_FOUND_MESSAGE = "Run Library was not found."
 RUN_NOT_FOUND_MESSAGE = "Run was not found."
+RUN_NOT_TERMINAL_MESSAGE = "Undo can only be planned after the Run has finished."
 RUN_PLAN_NOT_FOUND_MESSAGE = "Run Plan was not found."
+RUN_REFRESH_METADATA_UNSUPPORTED_MESSAGE = (
+    "Undo is not supported for Runs that include refresh_metadata actions because metadata-only refresh history is not "
+    "reversible yet."
+)
 SUMMARY_ACTION_COUNT_KEY = "action_count"
 SUMMARY_BLOCKED_ACTIONS_KEY = "blocked_actions"
 SUMMARY_MOVE_ACTIONS_KEY = "move_actions"
@@ -47,6 +53,8 @@ class CreateUndoPlanUseCase:
             run = uow.runs.get(request.run_id)
             if run is None:
                 raise UndoPlanError(RUN_NOT_FOUND_MESSAGE)
+            if run.status == RunStatus.RUNNING:
+                raise UndoPlanError(RUN_NOT_TERMINAL_MESSAGE)
 
             library = uow.libraries.get(run.library_id)
             if library is None:
@@ -55,6 +63,12 @@ class CreateUndoPlanUseCase:
             source_plan = uow.plans.get(run.plan_id)
             if source_plan is None:
                 raise UndoPlanError(RUN_PLAN_NOT_FOUND_MESSAGE)
+            if any(
+                action.action_type == ActionType.REFRESH_METADATA
+                for action in uow.plan_actions.list_by_plan(run.plan_id)
+            ):
+                # Undo currently replays FileEvents only; refresh_metadata updates Track state without a reversible log.
+                raise UndoPlanError(RUN_REFRESH_METADATA_UNSUPPORTED_MESSAGE)
 
             undo_plan_id = self.ports.id_generator.new_plan_id()
             events = tuple(

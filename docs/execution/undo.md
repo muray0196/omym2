@@ -1,20 +1,24 @@
 ---
 type: Execution Spec
 title: Undo Execution
-description: Defines per-Run undo, tracing succeeded FileEvents in reverse to build an undo Plan, restore-destination conflict handling, and Track removal behavior when restoring imported files to external paths.
+description: Defines per-Run undo, terminal Run requirements, refresh_metadata rejection, reverse FileEvent tracing, restore-destination conflict handling, and external restore Track removal.
 tags: [undo, file-event, plan-creation, restore]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-08T22:55:21+09:00
 ---
 
 # Undo Execution
 
-This document is authoritative for undo per Run, reverse FileEvent tracing, undo Plan creation, external restore target path handling, conflict behavior at restore destination, and Track removal behavior for restored imported files.
+This document is authoritative for undo per Run, terminal Run requirements, unsupported refresh_metadata history, reverse FileEvent tracing, undo Plan creation, external restore target path handling, conflict behavior at restore destination, and Track removal behavior for restored imported files.
 
 Common execution rules are in [model.md](model.md). Apply rules are in [apply.md](apply.md). Path exceptions are in [../contracts/path-identity-storage.md](../contracts/path-identity-storage.md#absolute-external-path-exceptions).
 
 ## Undo Behavior
 
 Undo is performed per Run.
+
+Undo Plan creation requires the source Run to be terminal. A `running` Run must be rejected because its FileEvent history can still change.
+
+Undo Plan creation must reject any source Run whose Plan contains a `refresh_metadata` action. `refresh_metadata` updates Track metadata and hashes without a FileEvent, and the initial history model does not persist before/after metadata state for reversal.
 
 ```text
 run
