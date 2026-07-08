@@ -2,22 +2,21 @@
 
 import { Database, FolderTree, ListChecks, Music, ShieldCheck, Terminal } from "lucide-react"
 import { useApp } from "../app-context"
+import { CommandPaletteTrigger } from "../command-palette"
+import { AppIconTile, CommandRow } from "../command-kit"
 import { formatTimestamp, severityForIssue, truncateMiddle, validateConfig } from "../lib"
 import {
   Button,
-  DataTable,
   EmptyState,
   MetricCard,
   Mono,
   Notice,
   Panel,
   StatusBadge,
+  toneForStatus,
   truncateLabel,
-  type Column,
 } from "../primitives"
 import { CliCommand } from "../widgets"
-import { PageHeading } from "./page-heading"
-import type { RunSummary } from "../types"
 
 export function DashboardScreen() {
   const {
@@ -72,36 +71,24 @@ export function DashboardScreen() {
     .sort((a, b) => b.started_at.localeCompare(a.started_at))
     .slice(0, 4)
 
-  const runColumns: Column<RunSummary>[] = [
-    {
-      key: "run_id",
-      header: "Run",
-      cell: (r) => (
-        <Mono className="text-foreground" title={r.run_id}>
-          {truncateMiddle(r.run_id, 22)}
-        </Mono>
-      ),
-    },
-    {
-      key: "status",
-      header: "Status",
-      cell: (r) => <StatusBadge status={r.status} iconOnly />,
-      className: "w-16 text-center",
-    },
-    {
-      key: "started",
-      header: "Started",
-      cell: (r) => <span className="text-muted-foreground">{formatTimestamp(r.started_at)}</span>,
-      className: "whitespace-nowrap",
-    },
-  ]
-
   return (
     <>
-      <PageHeading
-        title="Dashboard"
-        description="Confirm that OMYM2 is configured and consistent enough for safe CLI use. This console does not move files."
-      />
+      {/* Launcher header — a wordmark moment plus a prompt pointing at Ctrl K,
+          echoing Raycast's root view. No hero stripe: red stays reserved
+          for danger states elsewhere in the console. */}
+      <div className="mb-8 flex flex-col gap-4 border-b border-hairline pb-8">
+        <div className="flex items-center gap-3">
+          <AppIconTile icon={Music} size={40} />
+          <div>
+            <h1 className="text-2xl font-medium leading-tight text-ink">OMYM2 Console</h1>
+            <p className="mt-1 max-w-2xl text-pretty text-sm leading-relaxed text-mute">
+              Confirm that OMYM2 is configured and consistent enough for safe CLI use. This console
+              does not move files.
+            </p>
+          </div>
+        </div>
+        <CommandPaletteTrigger className="w-full max-w-md" />
+      </div>
 
       <section
         aria-label="Readiness summary"
@@ -233,19 +220,28 @@ export function DashboardScreen() {
               </Button>
             }
           >
-            <DataTable
-              columns={runColumns}
-              rows={recentRuns}
-              getRowKey={(r) => r.run_id}
-              onRowClick={(r) => navigate({ name: "run-detail", runId: r.run_id })}
-              caption="Most recent runs"
-              empty={
-                <EmptyState
-                  icon={ListChecks}
-                  title={historyLoaded ? "No runs recorded yet." : "Loading runs..."}
-                />
-              }
-            />
+            {recentRuns.length === 0 ? (
+              <EmptyState
+                icon={ListChecks}
+                title={historyLoaded ? "No runs recorded yet." : "Loading runs..."}
+              />
+            ) : (
+              <div className="flex flex-col gap-1">
+                {recentRuns.map((run) => (
+                  <CommandRow
+                    key={run.run_id}
+                    tone={toneForStatus(run.status)}
+                    label={
+                      <Mono className="text-on-dark" title={run.run_id}>
+                        {truncateMiddle(run.run_id, 32)}
+                      </Mono>
+                    }
+                    hint={`${truncateLabel(run.status)} · ${formatTimestamp(run.started_at)}`}
+                    onSelect={() => navigate({ name: "run-detail", runId: run.run_id })}
+                  />
+                ))}
+              </div>
+            )}
           </Panel>
         </div>
 
@@ -262,21 +258,21 @@ export function DashboardScreen() {
             ) : (
               <div className="flex flex-col gap-3">
                 <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-md border border-border p-2">
+                  <div className="rounded-md border border-hairline bg-surface-elevated p-2">
                     <p className="text-lg font-semibold tabular-nums text-danger">{errorIssues}</p>
-                    <p className="text-xs text-muted-foreground">Errors</p>
+                    <p className="text-xs text-mute">Errors</p>
                   </div>
-                  <div className="rounded-md border border-border p-2">
+                  <div className="rounded-md border border-hairline bg-surface-elevated p-2">
                     <p className="text-lg font-semibold tabular-nums text-warning">
                       {warningIssues}
                     </p>
-                    <p className="text-xs text-muted-foreground">Warnings</p>
+                    <p className="text-xs text-mute">Warnings</p>
                   </div>
-                  <div className="rounded-md border border-border p-2">
+                  <div className="rounded-md border border-hairline bg-surface-elevated p-2">
                     <p className="text-lg font-semibold tabular-nums text-info">
                       {issueCount - errorIssues - warningIssues}
                     </p>
-                    <p className="text-xs text-muted-foreground">Info</p>
+                    <p className="text-xs text-mute">Info</p>
                   </div>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => navigate({ name: "check" })}>
@@ -289,7 +285,7 @@ export function DashboardScreen() {
           <Panel title="Library" icon={Database}>
             <dl className="flex flex-col gap-2.5 text-sm">
               <div className="flex items-center justify-between gap-2">
-                <dt className="text-muted-foreground">Status</dt>
+                <dt className="text-mute">Status</dt>
                 <dd>
                   <StatusBadge
                     status={
@@ -315,19 +311,19 @@ export function DashboardScreen() {
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <dt className="text-muted-foreground">Library ID</dt>
+                <dt className="text-mute">Library ID</dt>
                 <dd>
                   {knownLibraryId ? (
-                    <Mono className="text-foreground" title={knownLibraryId}>
+                    <Mono className="text-on-dark" title={knownLibraryId}>
                       {truncateMiddle(knownLibraryId, 18)}
                     </Mono>
                   ) : (
-                    <span className="text-muted-foreground">—</span>
+                    <span className="text-mute">—</span>
                   )}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <dt className="text-muted-foreground">Active runs</dt>
+                <dt className="text-mute">Active runs</dt>
                 <dd className="font-medium tabular-nums">{historyLoaded ? runningCount : "—"}</dd>
               </div>
             </dl>

@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Geist_Mono, Inter } from "next/font/google"
 import "./globals.css"
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] })
+// Inter carries the Raycast typographic voice (ss03 stylistic set, enabled
+// globally in globals.css). Geist Mono stays for path/code chips.
+const inter = Inter({ variable: "--font-inter", subsets: ["latin"] })
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
@@ -32,11 +34,10 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  colorScheme: "light dark",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "white" },
-    { media: "(prefers-color-scheme: dark)", color: "black" },
-  ],
+  // This console is dark-only — the Raycast system has no light mode, so the
+  // browser chrome (scrollbars, form controls) should render dark too.
+  colorScheme: "dark",
+  themeColor: "#07080a",
 }
 
 export default function RootLayout({
@@ -47,7 +48,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} bg-background`}
+      className={`${inter.variable} ${geistMono.variable} bg-background`}
       style={{ scrollbarGutter: "stable" }}
     >
       <body className="font-sans antialiased">{children}</body>

@@ -15,7 +15,7 @@ import {
   Panel,
   SegmentedControl,
   StatusBadge,
-  TONE_MARKER_CLASSES,
+  TONE_DOT_CLASSES,
   toneForStatus,
   type Column,
 } from "../primitives"
@@ -64,11 +64,9 @@ function RunsTimeline({
       {groups.map((group) => (
         <section key={group.day} aria-label={group.day}>
           <div className="mb-2 flex items-center gap-2.5">
-            <h3 className="font-mono text-xs font-semibold tabular-nums text-foreground">
-              {group.day}
-            </h3>
-            <span className="h-px flex-1 bg-border" aria-hidden="true" />
-            <span className="text-xs tabular-nums text-muted-foreground">
+            <h3 className="font-mono text-xs font-semibold tabular-nums text-body">{group.day}</h3>
+            <span className="h-px flex-1 bg-hairline" aria-hidden="true" />
+            <span className="text-xs tabular-nums text-mute">
               {group.runs.length} {group.runs.length === 1 ? "run" : "runs"}
             </span>
           </div>
@@ -78,28 +76,31 @@ function RunsTimeline({
               return (
                 <li key={run.run_id} className="flex gap-3">
                   <div className="flex w-3.5 flex-col items-center">
+                    {/* 2px tone marker — the only saturated accent on this fold. */}
                     <span
                       className={cn(
-                        "mt-2.5 size-3 shrink-0 rounded-full border-2",
-                        TONE_MARKER_CLASSES[toneForStatus(run.status)],
+                        "mt-2 h-6 w-0.5 shrink-0 rounded-full",
+                        TONE_DOT_CLASSES[toneForStatus(run.status)],
                       )}
                       aria-hidden="true"
                     />
-                    {!isLast ? <span className="w-px flex-1 bg-border" aria-hidden="true" /> : null}
+                    {!isLast ? (
+                      <span className="w-px flex-1 bg-hairline" aria-hidden="true" />
+                    ) : null}
                   </div>
                   <button
                     type="button"
                     onClick={() => onSelect(run)}
-                    className="group mb-2 flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    className="group mb-2 flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-hairline bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-card/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                   >
-                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    <span className="font-mono text-xs tabular-nums text-mute">
                       {formatTimestamp(run.started_at).slice(11)}
                     </span>
                     <StatusBadge status={run.status} />
-                    <Mono className="min-w-0 flex-1 truncate text-foreground" title={run.run_id}>
+                    <Mono className="min-w-0 flex-1 truncate text-ink" title={run.run_id}>
                       {truncateMiddle(run.run_id, 28)}
                     </Mono>
-                    <span className="text-xs tabular-nums text-muted-foreground">
+                    <span className="text-xs tabular-nums text-mute">
                       {run.completed_at
                         ? formatDuration(run.started_at, run.completed_at)
                         : "running"}
@@ -110,7 +111,7 @@ function RunsTimeline({
                       </span>
                     ) : null}
                     <ChevronRight
-                      className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                      className="size-4 shrink-0 text-mute transition-transform group-hover:translate-x-0.5"
                       aria-hidden="true"
                     />
                   </button>
@@ -169,7 +170,7 @@ export function RunsScreen() {
       key: "run_id",
       header: "Run ID",
       cell: (r) => (
-        <Mono className="text-foreground" title={r.run_id}>
+        <Mono className="text-ink" title={r.run_id}>
           {truncateMiddle(r.run_id, 20)}
         </Mono>
       ),
@@ -178,7 +179,7 @@ export function RunsScreen() {
       key: "plan_id",
       header: "Plan ID",
       cell: (r) => (
-        <Mono className="text-muted-foreground" title={r.plan_id}>
+        <Mono className="text-mute" title={r.plan_id}>
           {truncateMiddle(r.plan_id, 18)}
         </Mono>
       ),
@@ -187,7 +188,7 @@ export function RunsScreen() {
       key: "library_id",
       header: "Library",
       cell: (r) => (
-        <Mono className="text-muted-foreground" title={r.library_id}>
+        <Mono className="text-mute" title={r.library_id}>
           {truncateMiddle(r.library_id, 16)}
         </Mono>
       ),
@@ -202,16 +203,14 @@ export function RunsScreen() {
       key: "started_at",
       header: "Started",
       cell: (r) => (
-        <span className="whitespace-nowrap text-muted-foreground">
-          {formatTimestamp(r.started_at)}
-        </span>
+        <span className="whitespace-nowrap text-mute">{formatTimestamp(r.started_at)}</span>
       ),
     },
     {
       key: "completed_at",
       header: "Completed",
       cell: (r) => (
-        <span className="whitespace-nowrap text-muted-foreground">
+        <span className="whitespace-nowrap text-mute">
           {r.completed_at ? formatDuration(r.started_at, r.completed_at) : "—"}
         </span>
       ),
@@ -223,7 +222,7 @@ export function RunsScreen() {
         r.error_summary ? (
           <span className="text-danger">{r.error_summary}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-mute">—</span>
         ),
       className: "max-w-xs",
     },
@@ -277,7 +276,7 @@ export function RunsScreen() {
             {(id) => (
               <div className="relative">
                 <Search
-                  className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-mute"
                   aria-hidden="true"
                 />
                 <TextInput

@@ -18,17 +18,17 @@ import {
 export function ChangeDiff({ rows }: { rows: ConfigDiffRow[] }) {
   if (rows.length === 0) {
     return (
-      <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
+      <p className="rounded-md border border-dashed border-hairline px-3 py-4 text-center text-sm text-mute">
         No pending changes.
       </p>
     )
   }
   return (
-    <div className="overflow-hidden rounded-md border border-border">
+    <div className="overflow-hidden rounded-md border border-hairline">
       <table className="w-full border-collapse text-sm">
         <caption className="sr-only">Pending configuration changes</caption>
         <thead>
-          <tr className="border-b border-border bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <tr className="border-b border-hairline bg-surface-elevated text-left text-xs uppercase tracking-wide text-mute">
             <th scope="col" className="px-3 py-2 font-semibold">
               Field
             </th>
@@ -42,9 +42,9 @@ export function ChangeDiff({ rows }: { rows: ConfigDiffRow[] }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.field} className="border-b border-border last:border-0 align-top">
+            <tr key={row.field} className="border-b border-hairline last:border-0 align-top">
               <td className="px-3 py-2">
-                <Mono className="text-muted-foreground">{row.field}</Mono>
+                <Mono className="text-mute">{row.field}</Mono>
               </td>
               <td className="px-3 py-2">
                 <Mono className="text-danger line-through decoration-danger/40">{row.before}</Mono>
@@ -66,7 +66,7 @@ export function PathTree({ path, libraryRoot }: { path: string; libraryRoot: str
   return (
     <ol className="flex flex-col font-mono text-[0.8125rem] leading-6" aria-label="Path segments">
       {libraryRoot ? (
-        <li className="text-muted-foreground">
+        <li className="text-mute">
           <span title={libraryRoot}>{libraryRoot}</span>
         </li>
       ) : null}
@@ -75,15 +75,12 @@ export function PathTree({ path, libraryRoot }: { path: string; libraryRoot: str
         const indentUnits = index + (libraryRoot ? 1 : 0)
         return (
           <li key={`${index}-${segment}`} className="flex items-center whitespace-nowrap">
-            <span className="select-none text-muted-foreground/60" aria-hidden="true">
+            <span className="select-none text-mute/60" aria-hidden="true">
               {"\u00A0\u00A0".repeat(indentUnits)}
               {"└─ "}
             </span>
             <span
-              className={cn(
-                "min-w-0 truncate",
-                isFile ? "font-medium text-foreground" : "text-foreground/80",
-              )}
+              className={cn("min-w-0 truncate", isFile ? "font-medium text-ink" : "text-ink/80")}
               title={segment}
             >
               {segment}
@@ -108,21 +105,18 @@ export function PathPreview({
   return (
     <div className="flex flex-col gap-3">
       {path ? (
-        <div className="rounded-md border border-border bg-muted/40 p-3">
+        <div className="rounded-md border border-hairline bg-surface-elevated p-3">
           <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-xs font-medium uppercase tracking-wide text-mute">
               Canonical relative path
             </span>
             <CopyButton value={path} label="Copy canonical path" />
           </div>
           <div className="flex items-start gap-2">
-            <FolderTree
-              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Mono className="break-all text-foreground">{path}</Mono>
+            <FolderTree className="mt-0.5 size-4 shrink-0 text-mute" aria-hidden="true" />
+            <Mono className="break-all text-ink">{path}</Mono>
           </div>
-          <div className="mt-3 overflow-x-auto rounded border border-border bg-background/60 px-3 py-2">
+          <div className="mt-3 overflow-x-auto rounded border border-hairline bg-surface-canvas/60 px-3 py-2">
             <PathTree path={path} libraryRoot={libraryRoot} />
           </div>
         </div>
@@ -139,7 +133,7 @@ export function PathPreview({
       ) : null}
 
       {!path && errors.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Enter metadata to preview the path.</p>
+        <p className="text-sm text-mute">Enter metadata to preview the path.</p>
       ) : null}
     </div>
   )
@@ -162,11 +156,11 @@ export function RunTimeline({ events }: { events: FileEvent[] }) {
                 className={cn("mt-1 size-3 shrink-0 rounded-full border-2", markerClass)}
                 aria-hidden="true"
               />
-              {!isLast ? <span className="w-px flex-1 bg-border" aria-hidden="true" /> : null}
+              {!isLast ? <span className="w-px flex-1 bg-hairline" aria-hidden="true" /> : null}
             </div>
             <div className="min-w-0 flex-1 pb-4">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold tabular-nums text-muted-foreground">
+                <span className="text-xs font-semibold tabular-nums text-mute">
                   #{event.sequence_no}
                 </span>
                 <span className="text-sm font-medium">{event.event_type.replace(/_/g, " ")}</span>
@@ -175,13 +169,13 @@ export function RunTimeline({ events }: { events: FileEvent[] }) {
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                 {event.source_path ? (
                   <>
-                    <Mono className="text-muted-foreground" title={event.source_path}>
+                    <Mono className="text-mute" title={event.source_path}>
                       {event.source_path}
                     </Mono>
-                    <ArrowRight className="size-3 text-muted-foreground" aria-hidden="true" />
+                    <ArrowRight className="size-3 text-mute" aria-hidden="true" />
                   </>
                 ) : null}
-                <Mono className="text-foreground" title={event.target_path}>
+                <Mono className="text-ink" title={event.target_path}>
                   {event.target_path || "—"}
                 </Mono>
               </div>
@@ -191,7 +185,7 @@ export function RunTimeline({ events }: { events: FileEvent[] }) {
                   {event.error_message}
                 </p>
               ) : null}
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-xs text-mute">
                 {formatTimestamp(event.started_at)}
                 {event.completed_at ? ` → ${formatTimestamp(event.completed_at)}` : ""}
               </p>
@@ -216,18 +210,18 @@ export function CliCommand({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-3 rounded-md border border-border bg-muted/50 px-3 py-2",
+        "flex items-center justify-between gap-3 rounded-md border border-hairline bg-surface-elevated px-3 py-2",
         className,
       )}
     >
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="select-none font-mono text-xs text-muted-foreground">$</span>
-          <Mono className="truncate text-foreground" title={command}>
+          <span className="select-none font-mono text-xs text-mute">$</span>
+          <Mono className="truncate text-on-dark" title={command}>
             {command}
           </Mono>
         </div>
-        {description ? <p className="mt-0.5 text-xs text-muted-foreground">{description}</p> : null}
+        {description ? <p className="mt-0.5 text-xs text-mute">{description}</p> : null}
       </div>
       <CopyButton value={command} label="Copy command" />
     </div>

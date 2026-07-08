@@ -7,7 +7,8 @@ import { previewSettings } from "../api-client"
 import { TEMPLATE_TOKENS } from "../lib"
 import type { PathPreview as PathPreviewResult, SampleMetadata } from "../types"
 import { Button, Mono, Panel } from "../primitives"
-import { Field, Select, TextArea, TextInput } from "../forms"
+import { PillTab } from "../command-kit"
+import { Field, TextArea, TextInput } from "../forms"
 import { PathPreview } from "../widgets"
 import { PageHeading } from "./page-heading"
 
@@ -118,6 +119,10 @@ export function PathPolicyScreen() {
     setPresetId("custom")
   }
 
+  function appendWorkingToken(token: string) {
+    setWorkingTemplate((prev) => prev + token)
+  }
+
   useEffect(() => {
     let cancelled = false
     const previewConfig = {
@@ -160,64 +165,41 @@ export function PathPolicyScreen() {
             description="Read-only. Edit these values in Settings."
           >
             <dl className="flex flex-col gap-3 text-sm">
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Template</dt>
+              <div className="border-b border-hairline pb-3">
+                <dt className="text-xs uppercase tracking-wide text-mute">Template</dt>
                 <dd className="mt-1">
-                  <Mono className="break-all text-foreground">{policy.template}</Mono>
+                  <Mono className="break-all text-ink">{policy.template}</Mono>
                 </dd>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Unknown artist
-                  </dt>
-                  <dd className="font-medium">{policy.unknown_artist}</dd>
+                  <dt className="text-xs uppercase tracking-wide text-mute">Unknown artist</dt>
+                  <dd className="mt-0.5 font-medium text-ink">{policy.unknown_artist}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Unknown album
-                  </dt>
-                  <dd className="font-medium">{policy.unknown_album}</dd>
+                  <dt className="text-xs uppercase tracking-wide text-mute">Unknown album</dt>
+                  <dd className="mt-0.5 font-medium text-ink">{policy.unknown_album}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Max filename length
-                  </dt>
-                  <dd className="font-medium tabular-nums">{policy.max_filename_length}</dd>
+                  <dt className="text-xs uppercase tracking-wide text-mute">Max filename length</dt>
+                  <dd className="mt-0.5 font-medium tabular-nums text-ink">
+                    {policy.max_filename_length}
+                  </dd>
                 </div>
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Disc style
-                  </dt>
-                  <dd className="font-medium">{policy.disc_number_style}</dd>
+                  <dt className="text-xs uppercase tracking-wide text-mute">Disc style</dt>
+                  <dd className="mt-0.5 font-medium text-ink">{policy.disc_number_style}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Disc condition
-                  </dt>
-                  <dd className="font-medium">{policy.disc_number_condition}</dd>
+                  <dt className="text-xs uppercase tracking-wide text-mute">Disc condition</dt>
+                  <dd className="mt-0.5 font-medium text-ink">{policy.disc_number_condition}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Sanitize segments
-                  </dt>
-                  <dd className="font-medium">{policy.sanitize ? "Enabled" : "Disabled"}</dd>
+                  <dt className="text-xs uppercase tracking-wide text-mute">Sanitize segments</dt>
+                  <dd className="mt-0.5 font-medium text-ink">
+                    {policy.sanitize ? "Enabled" : "Disabled"}
+                  </dd>
                 </div>
-              </div>
-              <div>
-                <dt className="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">
-                  Available tokens
-                </dt>
-                <dd className="flex flex-wrap gap-1.5">
-                  {TEMPLATE_TOKENS.map((token) => (
-                    <span
-                      key={token}
-                      className="rounded-md border border-border bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground"
-                    >
-                      {token}
-                    </span>
-                  ))}
-                </dd>
               </div>
             </dl>
           </Panel>
@@ -234,19 +216,27 @@ export function PathPolicyScreen() {
             }
           >
             <div className="flex flex-col gap-4">
-              <Field label="Preset">
-                {(id) => (
-                  <Select
-                    id={id}
-                    value={presetId}
-                    onChange={(e) => selectPreset(e.target.value)}
-                    options={[
-                      ...SAMPLE_PRESETS.map((p) => ({ value: p.id, label: p.label })),
-                      { value: "custom", label: "Custom (edited)" },
-                    ]}
-                  />
-                )}
-              </Field>
+              <div>
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-mute">
+                  Preset
+                </p>
+                <div
+                  role="group"
+                  aria-label="Sample metadata presets"
+                  className="flex flex-wrap gap-1.5"
+                >
+                  {SAMPLE_PRESETS.map((preset) => (
+                    <PillTab
+                      key={preset.id}
+                      active={presetId === preset.id}
+                      onClick={() => selectPreset(preset.id)}
+                    >
+                      {preset.label}
+                    </PillTab>
+                  ))}
+                  {presetId === "custom" ? <PillTab active>Custom (edited)</PillTab> : null}
+                </div>
+              </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 {FIELD_LABELS.map(({ key, label }) => (
                   <Field key={key} label={label}>
@@ -283,29 +273,51 @@ export function PathPolicyScreen() {
               ) : null
             }
           >
-            <Field
-              label="Working template"
-              help="Templates must not include a file extension; the source extension is appended automatically."
-            >
-              {(id) => (
-                <TextArea
-                  id={id}
-                  mono
-                  rows={2}
-                  value={workingTemplate}
-                  onChange={(e) => setWorkingTemplate(e.target.value)}
-                />
-              )}
-            </Field>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {templateModified ? (
-                <span className="font-medium text-warning">
-                  Edited locally — not saved. The preview reflects this working template.
-                </span>
-              ) : (
-                "This mirrors the saved Settings template. The preview below reflects exactly what the CLI would produce."
-              )}
-            </p>
+            <div className="flex flex-col gap-4">
+              <Field
+                label="Working template"
+                help="Templates must not include a file extension; the source extension is appended automatically."
+              >
+                {(id) => (
+                  <TextArea
+                    id={id}
+                    mono
+                    rows={2}
+                    value={workingTemplate}
+                    onChange={(e) => setWorkingTemplate(e.target.value)}
+                  />
+                )}
+              </Field>
+              <div>
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-mute">
+                  Tokens (click to insert)
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {TEMPLATE_TOKENS.map((token) => (
+                    <PillTab
+                      key={token}
+                      onClick={() => appendWorkingToken(token)}
+                      ariaLabel={`Insert ${token}`}
+                      className="border border-hairline bg-surface-elevated font-mono text-xs text-body hover:bg-surface-card hover:text-on-dark"
+                    >
+                      {token}
+                    </PillTab>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-mute">
+                {templateModified ? (
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="rounded-xs bg-warning-muted px-1.5 py-0.5 font-medium text-warning">
+                      Edited locally
+                    </span>
+                    <span>Not saved — the preview reflects this working template.</span>
+                  </span>
+                ) : (
+                  "This mirrors the saved Settings template. The preview below reflects exactly what the CLI would produce."
+                )}
+              </p>
+            </div>
           </Panel>
 
           <Panel title="Generated path" icon={Music}>

@@ -126,14 +126,14 @@ function hashCell(contentHash: string | null, metadataHash: string | null) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       <span className="flex items-center gap-1">
-        <Hash className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <Mono className="truncate text-muted-foreground" title={contentHash ?? ""}>
+        <Hash className="size-3 shrink-0 text-mute" aria-hidden="true" />
+        <Mono className="truncate text-mute" title={contentHash ?? ""}>
           {contentHash ? truncateMiddle(contentHash, 18) : "—"}
         </Mono>
       </span>
       <span className="flex items-center gap-1">
-        <Hash className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <Mono className="truncate text-muted-foreground" title={metadataHash ?? ""}>
+        <Hash className="size-3 shrink-0 text-mute" aria-hidden="true" />
+        <Mono className="truncate text-mute" title={metadataHash ?? ""}>
           {metadataHash ? truncateMiddle(metadataHash, 18) : "—"}
         </Mono>
       </span>
@@ -215,9 +215,7 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
     {
       key: "sort_order",
       header: "#",
-      cell: (action) => (
-        <span className="tabular-nums text-muted-foreground">{action.sort_order}</span>
-      ),
+      cell: (action) => <span className="tabular-nums text-mute">{action.sort_order}</span>,
       className: "w-12",
     },
     {
@@ -230,7 +228,7 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
       key: "reason",
       header: "Reason",
       cell: (action) => {
-        if (!action.reason) return <span className="text-muted-foreground">—</span>
+        if (!action.reason) return <span className="text-mute">—</span>
         const described = describeBlockReason(action.reason)
         // Unknown reasons fall back to the raw snake_case string — keep the
         // Mono treatment for those; humanized text reads as a sentence.
@@ -317,7 +315,7 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
         <Panel title="Header" icon={ClipboardList} className="lg:col-span-2">
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <StatusBadge status={plan.status} />
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm text-mute">
               {plan.plan_type} · {formatTimestamp(plan.created_at)}
             </span>
           </div>
@@ -337,7 +335,7 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
         </Panel>
 
         <Panel title="Summary" icon={ListTree}>
-          <dl className="rounded-md border border-border px-3">
+          <dl className="rounded-md border border-hairline px-3">
             {Object.entries(plan.summary).map(([key, value]) => (
               <MetaRow key={key} label={key} value={value} />
             ))}

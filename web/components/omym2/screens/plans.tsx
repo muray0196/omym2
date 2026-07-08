@@ -125,9 +125,9 @@ function CreatePlanPanel() {
       icon={Plus}
       bodyClassName="flex flex-col gap-4"
       actions={
-        <div className="rounded-md border border-border bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-          <span className="mr-1">album_year_resolution</span>
-          <Mono className="text-foreground">{savedConfig.metadata.album_year_resolution}</Mono>
+        <div className="flex items-center gap-1.5 rounded-xs border border-hairline bg-surface-elevated px-2 py-1 text-xs text-on-dark-mute">
+          <span>album_year_resolution</span>
+          <Mono className="text-on-dark">{savedConfig.metadata.album_year_resolution}</Mono>
         </div>
       }
     >
@@ -137,7 +137,6 @@ function CreatePlanPanel() {
           options={CREATE_MODES}
           value={mode}
           onChange={setMode}
-          className="grid sm:grid-cols-3"
         />
 
         {mode === "add" ? (
@@ -210,21 +209,21 @@ function CreatePlanPanel() {
             </p>
             <dl className="grid gap-x-6 gap-y-1.5 sm:grid-cols-3">
               <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Root path</dt>
+                <dt className="text-xs uppercase tracking-wide text-mute">Root path</dt>
                 <dd>
-                  <Mono className="text-foreground" title={result.registration.library.root_path}>
+                  <Mono className="text-ink" title={result.registration.library.root_path}>
                     {result.registration.library.root_path}
                   </Mono>
                 </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Status</dt>
+                <dt className="text-xs uppercase tracking-wide text-mute">Status</dt>
                 <dd>
                   <StatusBadge status={result.registration.library.status} />
                 </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Tracks</dt>
+                <dt className="text-xs uppercase tracking-wide text-mute">Tracks</dt>
                 <dd className="tabular-nums">{result.registration.track_count}</dd>
               </div>
             </dl>
@@ -281,7 +280,7 @@ export function PlansScreen() {
       key: "plan_id",
       header: "Plan ID",
       cell: (plan) => (
-        <Mono className="text-foreground" title={plan.plan_id}>
+        <Mono className="text-ink" title={plan.plan_id}>
           {truncateMiddle(plan.plan_id, 22)}
         </Mono>
       ),
@@ -302,9 +301,7 @@ export function PlansScreen() {
       key: "actions",
       header: "Actions",
       cell: (plan) => (
-        <span className="tabular-nums text-muted-foreground">
-          {summaryNumber(plan, "action_count")}
-        </span>
+        <span className="tabular-nums text-mute">{summaryNumber(plan, "action_count")}</span>
       ),
       className: "w-20",
     },
@@ -312,9 +309,7 @@ export function PlansScreen() {
       key: "blocked",
       header: "Blocked",
       cell: (plan) => (
-        <span className="tabular-nums text-muted-foreground">
-          {summaryNumber(plan, "blocked_actions")}
-        </span>
+        <span className="tabular-nums text-mute">{summaryNumber(plan, "blocked_actions")}</span>
       ),
       className: "w-20",
     },
@@ -322,9 +317,7 @@ export function PlansScreen() {
       key: "created_at",
       header: "Created",
       cell: (plan) => (
-        <span className="whitespace-nowrap text-muted-foreground">
-          {formatTimestamp(plan.created_at)}
-        </span>
+        <span className="whitespace-nowrap text-mute">{formatTimestamp(plan.created_at)}</span>
       ),
       className: "w-40",
     },
@@ -352,7 +345,7 @@ export function PlansScreen() {
               {(id) => (
                 <div className="relative">
                   <Search
-                    className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                    className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-mute"
                     aria-hidden="true"
                   />
                   <TextInput

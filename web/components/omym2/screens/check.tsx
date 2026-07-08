@@ -112,36 +112,38 @@ function IssueCard({ issue }: { issue: CheckIssue }) {
   return (
     <li
       className={cn(
-        "rounded-md border border-border border-l-2 bg-card px-3 py-2.5",
+        "rounded-md border border-hairline border-l-2 bg-surface px-3.5 py-3",
         SEVERITY_META[severity].accentBorder,
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">{truncateLabel(issue.issue_type)}</span>
+        <span className="text-sm font-medium text-ink">{truncateLabel(issue.issue_type)}</span>
         <StatusBadge status={severity} />
-        <Mono className="text-xs text-muted-foreground" title={issue.library_id}>
+        <Mono className="text-xs text-mute" title={issue.library_id}>
           {truncateMiddle(issue.library_id, 14)}
         </Mono>
       </div>
       {issue.path ? (
         <div className="mt-1.5 flex items-center gap-1">
-          <Mono className="min-w-0 truncate text-foreground" title={issue.path}>
+          <Mono className="min-w-0 truncate text-ink" title={issue.path}>
             {truncateMiddle(issue.path, 64)}
           </Mono>
           <CopyButton value={issue.path} label="Copy path" />
         </div>
       ) : null}
-      {issue.detail ? <p className="mt-1 text-xs text-muted-foreground">{issue.detail}</p> : null}
+      {issue.detail ? (
+        <p className="mt-1 text-xs leading-relaxed text-mute">{issue.detail}</p>
+      ) : null}
       <CliCommand command={command} className="mt-2" />
       {issue.track_id || issue.plan_id ? (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           {issue.track_id ? (
-            <Mono className="text-xs text-muted-foreground" title={issue.track_id}>
+            <Mono className="text-xs text-mute" title={issue.track_id}>
               track: {truncateMiddle(issue.track_id, 14)}
             </Mono>
           ) : null}
           {issue.plan_id ? (
-            <Mono className="text-xs text-muted-foreground" title={issue.plan_id}>
+            <Mono className="text-xs text-mute" title={issue.plan_id}>
               plan: {truncateMiddle(issue.plan_id, 14)}
             </Mono>
           ) : null}
@@ -265,10 +267,10 @@ export function CheckScreen() {
                 <section key={severity} aria-label={meta.label}>
                   <div className="mb-2 flex items-center gap-2">
                     <Icon className={cn("size-4", meta.accentText)} aria-hidden="true" />
-                    <h3 className="text-sm font-semibold">{meta.label}</h3>
+                    <h3 className="text-sm font-medium tracking-[0.2px] text-ink">{meta.label}</h3>
                     <span
                       className={cn(
-                        "rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums",
+                        "rounded-full bg-surface-elevated px-2 py-0.5 text-xs font-medium tabular-nums",
                         meta.accentText,
                       )}
                     >

@@ -89,7 +89,7 @@ export function RunDetailScreen({ runId }: { runId: string }) {
     {
       key: "seq",
       header: "#",
-      cell: (e) => <span className="tabular-nums text-muted-foreground">{e.sequence_no}</span>,
+      cell: (e) => <span className="tabular-nums text-mute">{e.sequence_no}</span>,
       className: "w-10",
     },
     {
@@ -113,9 +113,7 @@ export function RunDetailScreen({ runId }: { runId: string }) {
       key: "started",
       header: "Started",
       cell: (e) => (
-        <span className="whitespace-nowrap text-muted-foreground">
-          {formatTimestamp(e.started_at)}
-        </span>
+        <span className="whitespace-nowrap text-mute">{formatTimestamp(e.started_at)}</span>
       ),
     },
     {
@@ -125,10 +123,10 @@ export function RunDetailScreen({ runId }: { runId: string }) {
         e.error_code ? (
           <div className="max-w-xs">
             <Mono className="text-danger">{e.error_code}</Mono>
-            <p className="text-xs text-muted-foreground">{e.error_message}</p>
+            <p className="text-xs text-mute">{e.error_message}</p>
           </div>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-mute">—</span>
         ),
     },
   ]
@@ -149,7 +147,7 @@ export function RunDetailScreen({ runId }: { runId: string }) {
         <Panel title="Summary" className={anomalyEvents.length > 0 ? "lg:col-span-2" : undefined}>
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <StatusBadge status={run.status} />
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm text-mute">
               Duration {formatDuration(run.started_at, run.completed_at)}
             </span>
           </div>

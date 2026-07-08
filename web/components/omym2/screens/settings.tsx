@@ -19,6 +19,7 @@ import { previewSettings } from "../api-client"
 import { TEMPLATE_TOKENS, configHash, diffConfig, validateConfig } from "../lib"
 import type { AppConfig } from "../types"
 import { Button, Mono, Notice, Panel, SegmentedControl, StatusBadge } from "../primitives"
+import { PillTab } from "../command-kit"
 import { Field, Select, TextArea, TextInput, Toggle } from "../forms"
 import { ChangeDiff, PathPreview } from "../widgets"
 import { PageHeading } from "./page-heading"
@@ -220,7 +221,7 @@ export function SettingsScreen() {
             options={SECTIONS}
             value={section}
             onChange={setSection}
-            className="sticky top-0 z-10 -mx-1 overflow-x-auto"
+            className="sticky top-0 z-10 -mx-1 overflow-x-auto bg-surface-canvas px-1 py-1.5"
           />
 
           {section === "paths" ? (
@@ -360,19 +361,19 @@ export function SettingsScreen() {
                   )}
                 </Field>
                 <div>
-                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                  <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-mute">
                     Allowed tokens (click to insert)
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {TEMPLATE_TOKENS.map((token) => (
-                      <button
+                      <PillTab
                         key={token}
-                        type="button"
                         onClick={() => appendToken(token)}
-                        className="rounded-md border border-border bg-muted px-2 py-1 font-mono text-xs text-foreground transition-colors hover:border-primary hover:bg-accent"
+                        ariaLabel={`Insert ${token}`}
+                        className="border border-hairline bg-surface-elevated font-mono text-xs text-body hover:bg-surface-card hover:text-on-dark"
                       >
                         {token}
-                      </button>
+                      </PillTab>
                     ))}
                   </div>
                 </div>
@@ -558,19 +559,19 @@ export function SettingsScreen() {
                       {settingsErrors.join(" ") || "The local API rejected the request."}
                     </Notice>
                   ) : null}
-                  <div className="overflow-hidden rounded-md border border-border">
-                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,11rem)] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="overflow-hidden rounded-md border border-hairline">
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,11rem)] gap-2 border-b border-hairline bg-surface-elevated px-3 py-2 text-xs font-semibold uppercase tracking-wide text-mute">
                       <span>Artist</span>
                       <span>ID</span>
                     </div>
                     {artistEntries.length > 0 ? (
-                      <div className="divide-y divide-border">
+                      <div className="divide-y divide-hairline">
                         {artistEntries.map(([sourceArtist, artistId]) => (
                           <div
                             key={sourceArtist}
-                            className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,11rem)] gap-2 px-3 py-2"
+                            className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,11rem)] items-center gap-2 px-3 py-2"
                           >
-                            <Mono className="truncate text-foreground" title={sourceArtist}>
+                            <Mono className="truncate text-ink" title={sourceArtist}>
                               {sourceArtist}
                             </Mono>
                             <TextInput
@@ -583,9 +584,7 @@ export function SettingsScreen() {
                         ))}
                       </div>
                     ) : (
-                      <div className="px-3 py-4 text-sm text-muted-foreground">
-                        No artist IDs saved.
-                      </div>
+                      <div className="px-3 py-4 text-sm text-mute">No artist IDs saved.</div>
                     )}
                   </div>
                 </div>
@@ -642,7 +641,10 @@ export function SettingsScreen() {
 
               <Panel title="UI" icon={SlidersHorizontal}>
                 <div className="flex flex-col gap-4">
-                  <Field label="Theme">
+                  <Field
+                    label="Theme"
+                    help="This console is dark-only; light and system render as dark."
+                  >
                     {(id) => (
                       <Select
                         id={id}
@@ -675,10 +677,8 @@ export function SettingsScreen() {
                 {validated ? <span className="text-xs text-success">Validated</span> : null}
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Config hash</p>
-                <Mono className="break-all text-xs text-foreground">
-                  {validation.config_hash ?? hash}
-                </Mono>
+                <p className="text-xs uppercase tracking-wide text-mute">Config hash</p>
+                <Mono className="break-all text-xs text-ink">{validation.config_hash ?? hash}</Mono>
               </div>
               {validationErrors.length > 0 ? (
                 <Notice tone="danger" title="Validation errors">
@@ -735,13 +735,11 @@ export function SettingsScreen() {
                 {saveState === "saving" ? "Saving…" : "Save settings"}
               </Button>
               {!validation.valid ? (
-                <p className="text-center text-xs text-muted-foreground">
+                <p className="text-center text-xs text-mute">
                   Resolve validation errors before saving.
                 </p>
               ) : diff.length === 0 ? (
-                <p className="text-center text-xs text-muted-foreground">
-                  No pending changes to save.
-                </p>
+                <p className="text-center text-xs text-mute">No pending changes to save.</p>
               ) : null}
             </div>
           </Panel>

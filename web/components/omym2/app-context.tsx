@@ -391,24 +391,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [csrfToken, recordCreatedPlan],
   )
 
-  // Apply theme to <html>.
+  // Apply theme to <html>. This console is dark-only: `:root` is always the
+  // Raycast dark palette, so "light" and "system" both render as dark. The
+  // only real variant is "oled", which layers pure-black surfaces on top.
   useEffect(() => {
-    const root = document.documentElement
-    const theme = draftConfig.ui.theme
-    const apply = (dark: boolean) => {
-      root.classList.toggle("dark", dark)
-      root.classList.toggle("light", !dark)
-      // OLED layers pure-black surfaces on top of the dark palette.
-      root.classList.toggle("oled", theme === "oled")
-    }
-    if (theme === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)")
-      apply(mq.matches)
-      const onChange = (e: MediaQueryListEvent) => apply(e.matches)
-      mq.addEventListener("change", onChange)
-      return () => mq.removeEventListener("change", onChange)
-    }
-    apply(theme === "dark" || theme === "oled")
+    document.documentElement.classList.toggle("oled", draftConfig.ui.theme === "oled")
   }, [draftConfig.ui.theme])
 
   const value = useMemo<AppContextValue>(

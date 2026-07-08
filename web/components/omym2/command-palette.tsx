@@ -15,8 +15,9 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useApp, type Route } from "./app-context"
+import { CommandRow, Keycap } from "./command-kit"
 import { cn, formatTimestamp, truncateMiddle } from "./lib"
-import { TONE_DOT_CLASSES, toneForStatus, type Tone } from "./primitives"
+import { toneForStatus, type Tone } from "./primitives"
 
 interface PaletteItem {
   id: string
@@ -223,11 +224,15 @@ export function CommandPalette() {
     }
   }
 
-  // Keep the active option in view.
+  // Keep the active option in view. CommandRow (role="option") stamps the
+  // same `palette-item-<id>` id used for aria-activedescendant, so we can
+  // look the active row up directly instead of a data-index attribute.
   useEffect(() => {
-    const el = listRef.current?.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`)
+    const item = filtered[activeIndex]
+    if (!item) return
+    const el = document.getElementById(`palette-item-${item.id}`)
     el?.scrollIntoView({ block: "nearest" })
-  }, [activeIndex])
+  }, [activeIndex, filtered])
 
   if (!open) return null
 
@@ -235,7 +240,7 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/30 px-4 pt-[12vh] backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 pt-[12vh]"
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) close()
@@ -246,10 +251,10 @@ export function CommandPalette() {
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
-        className="w-full max-w-lg overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl"
+        className="w-full max-w-lg overflow-hidden rounded-xl border border-hairline bg-surface text-on-dark"
       >
-        <div className="flex items-center gap-2.5 border-b border-border px-3.5">
-          <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <div className="flex items-center gap-2.5 border-b border-hairline px-3.5">
+          <Search className="size-4 shrink-0 text-mute" aria-hidden="true" />
           <input
             ref={inputRef}
             type="text"
@@ -259,15 +264,13 @@ export function CommandPalette() {
             aria-activedescendant={
               filtered[activeIndex] ? `palette-item-${filtered[activeIndex].id}` : undefined
             }
-            className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-12 w-full bg-transparent text-sm text-on-dark outline-none placeholder:text-mute"
             placeholder="Search screens, runs, CLI commands…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onInputKeyDown}
           />
-          <kbd className="hidden shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[0.625rem] text-muted-foreground sm:block">
-            esc
-          </kbd>
+          <Keycap className="hidden shrink-0 sm:inline-flex">Esc</Keycap>
         </div>
         <div
           id="command-palette-list"
@@ -277,69 +280,67 @@ export function CommandPalette() {
           className="max-h-[50vh] overflow-y-auto p-1.5"
         >
           {filtered.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm text-muted-foreground">No results.</p>
+            <p className="px-3 py-8 text-center text-sm text-mute">No results.</p>
           ) : (
             filtered.map((item, index) => {
               const showHeader = item.group !== lastGroup
               lastGroup = item.group
-              const Icon = item.icon
               const isActive = index === activeIndex
               const isCopied = copiedId === item.id
+              const isRun = item.group === "Runs"
+              const isCli = item.group === "CLI commands"
               return (
                 <div key={item.id}>
                   {showHeader ? (
-                    <p className="px-3 pb-1 pt-2.5 text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <p className="px-3 pb-1 pt-2.5 text-[0.625rem] font-semibold uppercase tracking-wider text-mute">
                       {item.group}
                     </p>
                   ) : null}
-                  <button
-                    type="button"
-                    id={`palette-item-${item.id}`}
-                    role="option"
-                    aria-selected={isActive}
-                    data-index={index}
-                    onMouseEnter={() => setActiveIndex(index)}
-                    onClick={() => runItem(item)}
-                    className={cn(
-                      "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                      isActive ? "bg-accent text-accent-foreground" : "text-foreground",
-                    )}
-                  >
-                    <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span
-                      className={cn(
-                        "min-w-0 flex-1 truncate",
-                        item.group !== "Navigate" && "font-mono text-[0.8125rem]",
-                      )}
-                    >
-                      {item.label}
-                    </span>
-                    {item.tone ? (
-                      <span
-                        className={cn("size-2 shrink-0 rounded-full", TONE_DOT_CLASSES[item.tone])}
-                        aria-hidden="true"
-                      />
-                    ) : null}
-                    {isCopied ? (
-                      <span className="flex shrink-0 items-center gap-1 text-xs text-success">
-                        <Check className="size-3.5" aria-hidden="true" /> Copied
-                      </span>
-                    ) : item.hint ? (
-                      <span className="shrink-0 text-xs text-muted-foreground">{item.hint}</span>
-                    ) : null}
-                  </button>
+                  <div onMouseEnter={() => setActiveIndex(index)}>
+                    <CommandRow
+                      role="option"
+                      id={`palette-item-${item.id}`}
+                      icon={isRun ? undefined : item.icon}
+                      tone={item.tone}
+                      label={
+                        <span
+                          className={cn(item.group !== "Navigate" && "font-mono text-[0.8125rem]")}
+                        >
+                          {item.label}
+                        </span>
+                      }
+                      active={isActive}
+                      hint={
+                        isCopied ? (
+                          <span className="flex items-center gap-1 text-success">
+                            <Check className="size-3.5" aria-hidden="true" /> Copied
+                          </span>
+                        ) : (
+                          item.hint
+                        )
+                      }
+                      keys={isCli && !isCopied ? ["Enter"] : undefined}
+                      onSelect={() => runItem(item)}
+                    />
+                  </div>
                 </div>
               )
             })
           )}
         </div>
-        <div className="flex items-center gap-3 border-t border-border px-3.5 py-2 text-[0.6875rem] text-muted-foreground">
-          <span>
-            <kbd className="rounded border border-border bg-muted px-1 font-mono">↑↓</kbd> navigate
+        <div className="flex items-center gap-4 border-t border-hairline px-3.5 py-2.5 text-xs text-mute">
+          <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1">
+              <Keycap>↑</Keycap>
+              <Keycap>↓</Keycap>
+            </span>
+            Navigate
           </span>
-          <span>
-            <kbd className="rounded border border-border bg-muted px-1 font-mono">↵</kbd> select /
-            copy
+          <span className="flex items-center gap-1.5">
+            <Keycap>Enter</Keycap> Select
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Keycap>Esc</Keycap> Close
           </span>
         </div>
       </div>
@@ -347,7 +348,9 @@ export function CommandPalette() {
   )
 }
 
-/** Header trigger for the palette (also usable on touch devices). */
+/** Header trigger for the palette (also usable on touch devices). Styled as
+ * DESIGN.md's store-search-bar: surface-elevated fill, hairline border,
+ * rounded-md, Ctrl K keycap hint at the trailing edge. */
 export function CommandPaletteTrigger({ className }: { className?: string }) {
   return (
     <button
@@ -357,15 +360,18 @@ export function CommandPaletteTrigger({ className }: { className?: string }) {
           new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }),
         )
       }}
-      aria-label="Search"
+      aria-label="Search commands"
       className={cn(
-        "inline-flex h-8 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        "inline-flex h-9 items-center gap-2.5 rounded-md border border-hairline bg-surface-elevated px-3 text-sm text-mute transition-colors hover:border-hairline-strong hover:text-on-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:h-11 sm:px-4",
         className,
       )}
     >
-      <Search className="size-3.5" aria-hidden="true" />
-      <span className="hidden sm:inline">Search</span>
-      <kbd className="rounded border border-border bg-muted px-1 font-mono text-[0.625rem]">⌘K</kbd>
+      <Search className="size-4 shrink-0" aria-hidden="true" />
+      <span className="hidden truncate sm:inline">Search commands…</span>
+      <span className="ml-auto hidden items-center gap-1 sm:flex">
+        <Keycap>Ctrl</Keycap>
+        <Keycap>K</Keycap>
+      </span>
     </button>
   )
 }

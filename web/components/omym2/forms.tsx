@@ -20,17 +20,20 @@ export function Field({
   const id = htmlFor ?? generated
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={id} className="text-sm font-medium text-foreground">
+      <label htmlFor={id} className="text-sm font-medium text-ink">
         {label}
       </label>
       {children(id)}
-      {help ? <p className="text-xs leading-relaxed text-muted-foreground">{help}</p> : null}
+      {help ? <p className="text-xs leading-relaxed text-mute">{help}</p> : null}
     </div>
   )
 }
 
+// text-input: surface-elevated fill, hairline border, hairline-strong on
+// focus plus a visible accent-blue ring (deliberate a11y exception to the
+// border-brighten-only focus idiom elsewhere in the system).
 const controlClasses =
-  "w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring/40"
+  "w-full rounded-md border border-hairline bg-surface-elevated px-3 py-2 text-sm text-on-dark transition-colors placeholder:text-mute focus-visible:border-hairline-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
 export function TextInput({
   className,
@@ -92,12 +95,12 @@ export function Toggle({
   const generated = useId()
   const id = providedId ?? generated
   return (
-    <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-background px-3 py-2.5">
+    <div className="flex items-start justify-between gap-4 rounded-md border border-hairline bg-surface-elevated px-3 py-2.5">
       <div className="min-w-0">
-        <label htmlFor={id} className="text-sm font-medium">
+        <label htmlFor={id} className="text-sm font-medium text-on-dark">
           {label}
         </label>
-        {help ? <p className="mt-0.5 text-xs text-muted-foreground">{help}</p> : null}
+        {help ? <p className="mt-0.5 text-xs text-mute">{help}</p> : null}
       </div>
       <button
         type="button"
@@ -107,13 +110,14 @@ export function Toggle({
         onClick={() => onChange(!checked)}
         className={cn(
           "relative mt-0.5 inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-          checked ? "border-primary bg-primary" : "border-input bg-muted",
+          checked ? "border-primary bg-primary" : "border-hairline bg-surface-card",
         )}
       >
+        {/* No shadow on the knob — elevation comes from the surface ladder. */}
         <span
           className={cn(
-            "inline-block size-4 transform rounded-full bg-background shadow transition-transform",
-            checked ? "translate-x-4" : "translate-x-0.5",
+            "inline-block size-4 transform rounded-full transition-transform",
+            checked ? "translate-x-4 bg-primary-foreground" : "translate-x-0.5 bg-on-dark",
           )}
         />
       </button>

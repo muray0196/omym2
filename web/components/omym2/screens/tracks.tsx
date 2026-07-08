@@ -17,6 +17,7 @@ import {
   type Column,
 } from "../primitives"
 import { Field, Select, TextInput, Toggle } from "../forms"
+import { AppIconTile } from "../command-kit"
 import { PageHeading } from "./page-heading"
 
 const STATUS_OPTIONS = [
@@ -42,15 +43,20 @@ function TrackDetail({ track }: { track: TrackSummary }) {
   const album = metadataText(m.album)
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="text-xs text-muted-foreground">
-          {artist} · {album}
-        </p>
+      <div className="flex items-center gap-3">
+        <AppIconTile icon={Music} size={40} />
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-medium text-ink" title={title}>
+            {title}
+          </h3>
+          <p className="truncate text-xs text-mute" title={`${artist} · ${album}`}>
+            {artist} · {album}
+          </p>
+        </div>
       </div>
 
       {mismatch ? (
-        <div className="rounded-md border border-warning/40 bg-warning-muted p-2.5">
+        <div className="rounded-md bg-warning-muted px-3 py-2.5">
           <p className="flex items-center gap-1.5 text-xs font-medium text-warning">
             <TriangleAlert className="size-3.5" aria-hidden="true" />
             Current path differs from canonical path
@@ -58,10 +64,10 @@ function TrackDetail({ track }: { track: TrackSummary }) {
         </div>
       ) : null}
 
-      <dl className="rounded-md border border-border px-3">
+      <dl className="rounded-md border border-hairline px-3">
         <MetaRow label="Current path" responsive>
           <span className="flex items-start gap-1">
-            <Mono className={cn("break-all", mismatch ? "text-warning" : "text-foreground")}>
+            <Mono className={cn("break-all", mismatch ? "text-warning" : "text-ink")}>
               {track.current_path}
             </Mono>
             <CopyButton value={track.current_path} label="Copy current path" />
@@ -69,7 +75,7 @@ function TrackDetail({ track }: { track: TrackSummary }) {
         </MetaRow>
         <MetaRow label="Canonical path" responsive>
           <span className="flex items-start gap-1">
-            <Mono className="break-all text-foreground">{track.canonical_path}</Mono>
+            <Mono className="break-all text-ink">{track.canonical_path}</Mono>
             <CopyButton value={track.canonical_path} label="Copy canonical path" />
           </span>
         </MetaRow>
@@ -92,18 +98,16 @@ function TrackDetail({ track }: { track: TrackSummary }) {
           </span>
         </MetaRow>
         <MetaRow label="first_seen_at" responsive>
-          <Mono className="text-muted-foreground">{track.first_seen_at}</Mono>
+          <Mono className="text-mute">{track.first_seen_at}</Mono>
         </MetaRow>
         <MetaRow label="last_seen_at" responsive>
-          <Mono className="text-muted-foreground">{track.last_seen_at}</Mono>
+          <Mono className="text-mute">{track.last_seen_at}</Mono>
         </MetaRow>
       </dl>
 
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Metadata
-        </p>
-        <dl className="rounded-md border border-border px-3">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-mute">Metadata</p>
+        <dl className="rounded-md border border-hairline px-3">
           <MetaRow label="Album artist" responsive>
             {metadataText(m.album_artist)}
           </MetaRow>
@@ -163,17 +167,17 @@ export function TracksScreen() {
     {
       key: "title",
       header: "Title",
-      cell: (t) => <span className="font-medium">{metadataText(t.metadata.title)}</span>,
+      cell: (t) => <span className="font-medium text-ink">{metadataText(t.metadata.title)}</span>,
     },
     {
       key: "artist",
       header: "Artist",
-      cell: (t) => <span className="text-muted-foreground">{metadataText(t.metadata.artist)}</span>,
+      cell: (t) => <span className="text-mute">{metadataText(t.metadata.artist)}</span>,
     },
     {
       key: "album",
       header: "Album",
-      cell: (t) => <span className="text-muted-foreground">{metadataText(t.metadata.album)}</span>,
+      cell: (t) => <span className="text-mute">{metadataText(t.metadata.album)}</span>,
     },
     {
       key: "status",
@@ -189,10 +193,7 @@ export function TracksScreen() {
         return (
           <span className="flex flex-col gap-0.5">
             <span className="flex items-center gap-1.5">
-              <Mono
-                className={mismatch ? "text-warning" : "text-foreground"}
-                title={t.current_path}
-              >
+              <Mono className={mismatch ? "text-warning" : "text-ink"} title={t.current_path}>
                 {truncatePathTail(t.current_path, 56)}
               </Mono>
               {mismatch ? (
@@ -203,7 +204,7 @@ export function TracksScreen() {
               ) : null}
             </span>
             {mismatch ? (
-              <Mono className="text-xs text-muted-foreground" title={t.canonical_path}>
+              <Mono className="text-xs text-mute" title={t.canonical_path}>
                 → {truncatePathTail(t.canonical_path, 54)}
               </Mono>
             ) : null}
@@ -215,9 +216,7 @@ export function TracksScreen() {
     {
       key: "updated_at",
       header: "Updated",
-      cell: (t) => (
-        <span className="whitespace-nowrap text-muted-foreground">{t.updated_at.slice(0, 10)}</span>
-      ),
+      cell: (t) => <span className="whitespace-nowrap text-mute">{t.updated_at.slice(0, 10)}</span>,
     },
   ]
 
@@ -236,7 +235,7 @@ export function TracksScreen() {
                 {(id) => (
                   <div className="relative">
                     <Search
-                      className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                      className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-mute"
                       aria-hidden="true"
                     />
                     <TextInput
@@ -287,6 +286,7 @@ export function TracksScreen() {
               getRowKey={(t) => t.track_id}
               onRowClick={(t) => selectTrack(t.track_id)}
               rowIsActive={(t) => t.track_id === selectedId}
+              rowActiveClassName="bg-surface-active"
               caption="Managed tracks"
               empty={
                 <EmptyState

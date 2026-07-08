@@ -19,12 +19,18 @@ import { cn, truncateMiddle } from "./lib"
 
 export type Tone = "success" | "info" | "warning" | "danger" | "neutral"
 
+/**
+ * badge-info-soft pattern: soft 15%-alpha accent fill + saturated accent
+ * text (the only place saturated accent color appears on chrome). Neutral
+ * uses the badge-pro pattern instead: surface-elevated fill + mute text +
+ * hairline border.
+ */
 const TONE_CLASSES: Record<Tone, string> = {
-  success: "bg-success-muted text-success border-success/30",
-  info: "bg-info-muted text-info border-info/30",
-  warning: "bg-warning-muted text-warning border-warning/40",
-  danger: "bg-danger-muted text-danger border-danger/30",
-  neutral: "bg-neutral-muted text-muted-foreground border-border",
+  success: "bg-success-muted text-success border-transparent",
+  info: "bg-info-muted text-info border-transparent",
+  warning: "bg-warning-muted text-warning border-transparent",
+  danger: "bg-danger-muted text-danger border-transparent",
+  neutral: "bg-surface-elevated text-mute border-hairline",
 }
 
 const STATUS_TONE: Record<string, Tone> = {
@@ -63,7 +69,7 @@ export const TONE_DOT_CLASSES: Record<Tone, string> = {
   info: "bg-info",
   warning: "bg-warning",
   danger: "bg-danger",
-  neutral: "bg-muted-foreground",
+  neutral: "bg-mute",
 }
 
 /** Bordered tone dot (e.g. timeline status markers). */
@@ -72,7 +78,7 @@ export const TONE_MARKER_CLASSES: Record<Tone, string> = {
   info: "border-info bg-info",
   warning: "border-warning bg-warning",
   danger: "border-danger bg-danger",
-  neutral: "border-border bg-muted-foreground",
+  neutral: "border-hairline bg-mute",
 }
 
 /** Humanize a snake_case status/label for display. */
@@ -170,7 +176,7 @@ export function CopyButton({
       type="button"
       onClick={handleCopy}
       className={cn(
-        "inline-flex size-7 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        "inline-flex size-7 items-center justify-center rounded-md border border-transparent text-mute transition-colors hover:border-hairline hover:bg-surface-elevated hover:text-on-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         className,
       )}
       aria-label={copied ? `${label}: copied` : label}
@@ -220,8 +226,8 @@ export function PathDisplay({
 }) {
   return (
     <span className={cn("inline-flex max-w-full items-center gap-1.5", className)}>
-      {prefix ? <span className="text-xs text-muted-foreground">{prefix}</span> : null}
-      <Mono className="truncate text-foreground">
+      {prefix ? <span className="text-xs text-mute">{prefix}</span> : null}
+      <Mono className="truncate text-ink">
         <span title={value}>{truncateMiddle(value, max)}</span>
       </Mono>
       {copy ? <CopyButton value={value} label="Copy path" /> : null}
@@ -240,11 +246,11 @@ export function PathArrow({
 }) {
   return (
     <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-      <Mono className="truncate text-muted-foreground">
+      <Mono className="truncate text-mute">
         <span title={source}>{source ? truncateMiddle(source, max) : "—"}</span>
       </Mono>
-      <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <Mono className="truncate text-foreground">
+      <ArrowRight className="size-3.5 shrink-0 text-mute" aria-hidden="true" />
+      <Mono className="truncate text-ink">
         <span title={target}>{target ? truncateMiddle(target, max) : "—"}</span>
       </Mono>
     </div>
@@ -281,16 +287,16 @@ export function MetaRow({
   return (
     <div
       className={cn(
-        "border-b border-border py-2 last:border-0",
+        "border-b border-hairline py-2 last:border-0",
         responsive
           ? "flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
           : "flex items-center justify-between gap-3",
       )}
     >
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-xs uppercase tracking-wide text-mute">{label}</dt>
       {value !== undefined ? (
         <dd className="flex min-w-0 items-center gap-1">
-          <Mono className="truncate text-foreground" title={value}>
+          <Mono className="truncate text-ink" title={value}>
             {truncateMiddle(value, max)}
           </Mono>
           {copy ? <CopyButton value={value} label={`Copy ${label}`} /> : null}
@@ -324,29 +330,20 @@ export function Panel({
   bodyClassName?: string
 }) {
   return (
-    <section
-      className={cn(
-        "rounded-lg border border-border bg-card text-card-foreground shadow-sm",
-        className,
-      )}
-    >
+    <section className={cn("rounded-lg border border-hairline bg-surface text-ink", className)}>
       {(title || actions) && (
-        <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+        <header className="flex items-start justify-between gap-3 border-b border-hairline px-5 py-3.5">
           <div className="flex items-start gap-2.5">
-            {Icon ? (
-              <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            ) : null}
+            {Icon ? <Icon className="mt-0.5 size-4 shrink-0 text-mute" aria-hidden="true" /> : null}
             <div>
               {title ? <h2 className="text-sm font-semibold leading-tight">{title}</h2> : null}
-              {description ? (
-                <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-              ) : null}
+              {description ? <p className="mt-0.5 text-xs text-mute">{description}</p> : null}
             </div>
           </div>
           {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
         </header>
       )}
-      <div className={cn("px-4 py-4", bodyClassName)}>{children}</div>
+      <div className={cn("px-5 py-5", bodyClassName)}>{children}</div>
     </section>
   )
 }
@@ -370,7 +367,7 @@ export function MetricCard({
 }) {
   const accent =
     tone === "neutral"
-      ? "text-foreground"
+      ? "text-ink"
       : tone === "success"
         ? "text-success"
         : tone === "info"
@@ -379,13 +376,13 @@ export function MetricCard({
             ? "text-warning"
             : "text-danger"
   return (
-    <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+    <div className="rounded-lg border border-hairline bg-surface p-5">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-mute">{label}</p>
         {Icon ? <Icon className={cn("size-4", accent)} aria-hidden="true" /> : null}
       </div>
       <p className={cn("mt-2 text-2xl font-semibold tabular-nums leading-none", accent)}>{value}</p>
-      {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="mt-1.5 text-xs text-mute">{hint}</p> : null}
     </div>
   )
 }
@@ -449,12 +446,12 @@ export function EmptyState({
   children?: ReactNode
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border px-6 py-10 text-center">
-      <div className="flex size-10 items-center justify-center rounded-full bg-muted">
-        <Icon className="size-5 text-muted-foreground" aria-hidden="true" />
+    <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-hairline px-6 py-10 text-center">
+      <div className="flex size-10 items-center justify-center rounded-full bg-surface-card">
+        <Icon className="size-5 text-mute" aria-hidden="true" />
       </div>
-      <p className="text-sm font-medium">{title}</p>
-      {description ? <p className="max-w-md text-sm text-muted-foreground">{description}</p> : null}
+      <p className="text-sm font-medium text-ink">{title}</p>
+      {description ? <p className="max-w-md text-sm text-mute">{description}</p> : null}
       {children}
     </div>
   )
@@ -474,11 +471,16 @@ export function Button({
   size?: "sm" | "md"
 }) {
   const variants = {
-    default: "bg-primary text-primary-foreground hover:bg-primary/90 border-transparent",
-    secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/70 border-transparent",
-    outline: "bg-transparent text-foreground hover:bg-muted border-border",
+    // button-primary — the one white pill per fold.
+    default:
+      "bg-primary text-primary-foreground hover:bg-primary-pressed active:bg-primary-pressed border-transparent",
+    // button-tertiary — soft surface fill.
+    secondary: "bg-surface-elevated text-on-dark hover:bg-surface-card border-transparent",
+    // install-button — transparent + hairline-strong border.
+    outline: "bg-transparent text-on-dark border-hairline-strong hover:bg-surface-elevated",
+    // button-secondary — transparent text button.
     ghost:
-      "bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground border-transparent",
+      "bg-transparent text-mute hover:bg-surface-elevated hover:text-on-dark border-transparent",
   }
   const sizes = { sm: "h-8 px-2.5 text-xs", md: "h-9 px-3.5 text-sm" }
   return (
@@ -505,8 +507,9 @@ export interface SegmentedOption<T extends string> {
 }
 
 /**
- * Shared segmented button-group. Two flavors share one visual language
- * (bg-muted p-0.5 track, active = bg-card text-foreground shadow-sm):
+ * Shared segmented button-group, styled as a row of pill-tab chips (rounded
+ * full, transparent default, active = surface-elevated fill + on-dark text).
+ * Two flavors share this one visual language:
  *  - "picker" (default): a value picker — renders aria-pressed on a
  *    role="group" container. Use for mutually-exclusive view/mode toggles.
  *  - "nav": in-page navigation between sections — renders aria-current on
@@ -531,7 +534,7 @@ export function SegmentedControl<T extends string>({
 }) {
   const sizeClasses = size === "sm" ? "gap-1.5 px-2.5 py-1 text-xs" : "min-h-9 gap-1.5 px-3 text-sm"
   const iconSize = size === "sm" ? "size-3.5" : "size-4"
-  const trackClassName = cn("flex rounded-md border border-border bg-muted p-0.5", className)
+  const trackClassName = cn("flex flex-wrap items-center gap-1", className)
 
   const items = options.map((option) => {
     const active = option.value === value
@@ -544,11 +547,9 @@ export function SegmentedControl<T extends string>({
         aria-pressed={variant === "picker" ? active : undefined}
         aria-current={variant === "nav" ? (active ? "true" : undefined) : undefined}
         className={cn(
-          "flex items-center justify-center whitespace-nowrap rounded font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+          "flex items-center justify-center whitespace-nowrap rounded-full font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
           sizeClasses,
-          active
-            ? "bg-card text-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground",
+          active ? "bg-surface-active text-on-dark" : "text-body hover:text-on-dark",
         )}
       >
         {Icon ? <Icon className={cn(iconSize, "shrink-0")} aria-hidden="true" /> : null}
@@ -591,6 +592,7 @@ export function DataTable<T>({
   getRowKey,
   onRowClick,
   rowIsActive,
+  rowActiveClassName = "bg-accent",
   empty,
   caption,
 }: {
@@ -599,6 +601,13 @@ export function DataTable<T>({
   getRowKey: (row: T, index: number) => string
   onRowClick?: (row: T) => void
   rowIsActive?: (row: T) => boolean
+  /**
+   * Fill applied when `rowIsActive(row)` is true. Defaults to the existing
+   * status-highlight tone (e.g. blocked/failed rows) — pass "bg-surface-active"
+   * for genuine row-selection use cases (e.g. the currently viewed track) so
+   * selection reads brighter than a status tone.
+   */
+  rowActiveClassName?: string
   empty?: ReactNode
   caption?: string
 }) {
@@ -668,7 +677,7 @@ export function DataTable<T>({
     return <>{empty}</>
   }
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
+    <div className="overflow-x-auto rounded-md border border-hairline">
       <table className="border-collapse text-sm" style={{ tableLayout: "fixed", width: "100%" }}>
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         <colgroup>
@@ -681,14 +690,14 @@ export function DataTable<T>({
           )}
         </colgroup>
         <thead>
-          <tr className="border-b border-border bg-muted/60">
+          <tr className="border-b border-hairline bg-surface-elevated">
             {columns.map((col, i) => (
               <th
                 key={col.key}
                 scope="col"
                 data-col-key={col.key}
                 className={cn(
-                  "relative whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground overflow-hidden",
+                  "relative whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-mute overflow-hidden",
                   col.headerClassName,
                 )}
                 style={colWidths[col.key] ? { width: colWidths[col.key] } : undefined}
@@ -704,7 +713,7 @@ export function DataTable<T>({
                     onPointerCancel={onHandlePointerUp}
                     className="absolute inset-y-0 right-0 w-3 cursor-col-resize select-none flex items-center justify-center group"
                   >
-                    <div className="h-4 w-px bg-border group-hover:bg-primary/60 group-active:bg-primary transition-colors" />
+                    <div className="h-4 w-px bg-hairline-strong group-hover:bg-primary/60 group-active:bg-primary transition-colors" />
                   </div>
                 )}
               </th>
@@ -731,10 +740,10 @@ export function DataTable<T>({
                 tabIndex={interactive ? 0 : undefined}
                 role={interactive ? "button" : undefined}
                 className={cn(
-                  "border-b border-border last:border-0",
+                  "border-b border-hairline last:border-0",
                   interactive &&
-                    "cursor-pointer transition-colors hover:bg-muted/50 focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
-                  rowIsActive?.(row) && "bg-accent/60",
+                    "cursor-pointer transition-colors hover:bg-surface-card/60 focus-visible:bg-surface-card focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+                  rowIsActive?.(row) && rowActiveClassName,
                 )}
               >
                 {columns.map((col) => (
