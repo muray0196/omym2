@@ -6,9 +6,12 @@ Why: Protects diagnostics and recovery without direct file mutation.
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
+
+import pytest
 
 from omym2.adapters.config.default_config import default_app_config
 from omym2.domain.models.check_issue import CheckIssueType
@@ -34,7 +37,12 @@ from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.undo.dto import CreateUndoPlanRequest
 from omym2.features.undo.ports import CreateUndoPlanPorts
-from omym2.features.undo.usecases.create_undo_plan import CreateUndoPlanUseCase
+from omym2.features.undo.usecases.create_undo_plan import (
+    RUN_NOT_TERMINAL_MESSAGE,
+    RUN_REFRESH_METADATA_UNSUPPORTED_MESSAGE,
+    CreateUndoPlanUseCase,
+    UndoPlanError,
+)
 from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
@@ -188,6 +196,76 @@ def test_undo_creates_plan_from_succeeded_events_in_reverse_order() -> None:
     assert tuple(action.track_id for action in plan.actions) == (TRACK_ID, SECOND_TRACK_ID)
     assert all(action.status == ActionStatus.PLANNED for action in plan.actions)
     assert uow.plans.get(UNDO_PLAN_ID) == plan
+
+
+def test_undo_rejects_refresh_metadata_only_run_without_creating_empty_plan() -> None:
+    """undo rejects DB-only refresh history because no reversible FileEvents exist."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plan_actions.save(
+        replace(_source_action(), action_type=ActionType.REFRESH_METADATA, status=ActionStatus.APPLIED)
+    )
+    uow.runs.save(_run(status=RunStatus.SUCCEEDED))
+    ports = _undo_ports(uow, id_generator=SequenceIdGenerator(plan_ids=deque((UNDO_PLAN_ID,))))
+
+    with pytest.raises(UndoPlanError, match=RUN_REFRESH_METADATA_UNSUPPORTED_MESSAGE):
+        _ = CreateUndoPlanUseCase(ports).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert uow.plans.get(UNDO_PLAN_ID) is None
+
+
+def test_undo_rejects_run_that_includes_refresh_metadata_even_with_file_events() -> None:
+    """undo rejects mixed refresh history instead of creating an incomplete file-only plan."""
+    uow = _uow_with_applied_run(second_event=False)
+    uow.plan_actions.save(
+        replace(
+            _source_action(action_id=UNDO_ACTION_ID),
+            action_type=ActionType.REFRESH_METADATA,
+            status=ActionStatus.APPLIED,
+        )
+    )
+    ports = _undo_ports(
+        uow,
+        id_generator=SequenceIdGenerator(plan_ids=deque((UNDO_PLAN_ID,)), action_ids=deque((UNDO_ACTION_ID,))),
+    )
+
+    with pytest.raises(UndoPlanError, match=RUN_REFRESH_METADATA_UNSUPPORTED_MESSAGE):
+        _ = CreateUndoPlanUseCase(ports).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert uow.plans.get(UNDO_PLAN_ID) is None
+
+
+def test_undo_rejects_running_run_before_planning_from_partial_history() -> None:
+    """undo rejects in-progress Runs before reading a stale FileEvent snapshot."""
+    uow = _uow_with_applied_run(second_event=False)
+    uow.runs.save(_run(status=RunStatus.RUNNING))
+    ports = _undo_ports(
+        uow,
+        id_generator=SequenceIdGenerator(plan_ids=deque((UNDO_PLAN_ID,)), action_ids=deque((UNDO_ACTION_ID,))),
+    )
+
+    with pytest.raises(UndoPlanError, match=RUN_NOT_TERMINAL_MESSAGE):
+        _ = CreateUndoPlanUseCase(ports).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert uow.plans.get(UNDO_PLAN_ID) is None
+
+
+@pytest.mark.parametrize("run_status", [RunStatus.FAILED, RunStatus.PARTIAL_FAILED])
+def test_undo_allows_terminal_unsuccessful_runs_with_succeeded_file_events(run_status: RunStatus) -> None:
+    """undo can still reverse confirmed file moves from terminal unsuccessful Runs."""
+    uow = _uow_with_applied_run(second_event=False)
+    uow.runs.save(_run(status=run_status))
+    ports = _undo_ports(
+        uow,
+        id_generator=SequenceIdGenerator(plan_ids=deque((UNDO_PLAN_ID,)), action_ids=deque((UNDO_ACTION_ID,))),
+    )
+
+    plan = CreateUndoPlanUseCase(ports).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert len(plan.actions) == 1
+    assert plan.actions[0].status == ActionStatus.PLANNED
 
 
 def test_apply_persists_generated_track_id_on_add_action_for_later_undo() -> None:
