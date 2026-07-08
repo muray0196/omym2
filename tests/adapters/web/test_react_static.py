@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from omym2.config import (
     CONFIG_FILE_ENCODING,
+    WEB_API_NOT_FOUND_MESSAGE,
     WEB_API_PREFIX,
     WEB_API_SETTINGS_ROUTE,
     WEB_CHECK_ROUTE,
@@ -20,6 +21,7 @@ from omym2.config import (
     WEB_PATH_POLICY_ROUTE,
     WEB_ROOT_ROUTE,
     WEB_SETTINGS_ROUTE,
+    WEB_STATIC_ASSET_NOT_FOUND_MESSAGE,
     WEB_STATIC_EXPORT_MISSING_MESSAGE,
     WEB_TRACKS_ROUTE,
 )
@@ -105,10 +107,37 @@ def test_api_routes_do_not_fall_through_to_spa(tmp_path: Path) -> None:
     static_dist = _static_dist(tmp_path)
     client = TestClient(create_web_app(tmp_path / "config.toml", tmp_path / "omym2.sqlite3", static_dist))
 
-    response = client.get(f"{WEB_API_PREFIX}/not-real")
+    for method in ("GET", "POST"):
+        response = client.request(method, f"{WEB_API_PREFIX}/not-real")
+
+        assert response.status_code == NOT_FOUND_STATUS_CODE
+        assert response.headers["content-type"].startswith("application/json")
+        assert response.json() == {"detail": None, "errors": [WEB_API_NOT_FOUND_MESSAGE]}
+        assert "OMYM2 React Test Shell" not in response.text
+
+
+def test_known_api_route_method_errors_stay_unchanged(tmp_path: Path) -> None:
+    """Known API routes still report unsupported methods as framework JSON."""
+    static_dist = _static_dist(tmp_path)
+    client = TestClient(create_web_app(tmp_path / "config.toml", tmp_path / "omym2.sqlite3", static_dist))
+
+    response = client.post(WEB_API_SETTINGS_ROUTE)
+
+    assert response.status_code == POST_REMOVED_STATUS_CODE
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {"detail": "Method Not Allowed"}
+
+
+def test_unknown_non_api_routes_fall_back_to_static_text_404(tmp_path: Path) -> None:
+    """Unknown browser paths still use the plain-text static asset fallback."""
+    static_dist = _static_dist(tmp_path)
+    client = TestClient(create_web_app(tmp_path / "config.toml", tmp_path / "omym2.sqlite3", static_dist))
+
+    response = client.get("/not-real")
 
     assert response.status_code == NOT_FOUND_STATUS_CODE
-    assert "OMYM2 React Test Shell" not in response.text
+    assert response.headers["content-type"].startswith("text/plain")
+    assert response.text == WEB_STATIC_ASSET_NOT_FOUND_MESSAGE
 
 
 def test_missing_react_build_returns_503_without_breaking_api(tmp_path: Path) -> None:

@@ -48,6 +48,7 @@ WEB_NEXT_STATIC_DIRECTORY_NAME: Final = "_next/static"  # Next export static dir
 WEB_STATIC_EXPORT_INDEX_FILE_NAME: Final = "index.html"  # Web UI entry document
 WEB_STATIC_EXPORT_MISSING_MESSAGE: Final = "Web UI build is unavailable."  # missing Web UI build response text
 WEB_STATIC_ASSET_NOT_FOUND_MESSAGE: Final = "Web UI static asset was not found."  # missing static asset text
+WEB_API_NOT_FOUND_MESSAGE: Final = "Web API endpoint was not found."  # unknown API endpoint response text
 WEB_URL_SCHEME: Final = "http"  # scheme used for the local Web UI browser URL
 LOGICAL_PATH_SEPARATOR: Final = "/"
 PARENT_DIRECTORY_REFERENCE: Final = ".."
