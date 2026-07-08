@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useApp, type Route } from "./app-context"
 import { cn, formatTimestamp, truncateMiddle } from "./lib"
-import { toneForStatus, type Tone } from "./primitives"
+import { TONE_DOT_CLASSES, toneForStatus, type Tone } from "./primitives"
 
 interface PaletteItem {
   id: string
@@ -72,13 +72,9 @@ const CLI_ENTRIES: { command: string; description: string }[] = [
   { command: "omym2 history", description: "Review runs and events" },
 ]
 
-const TONE_DOT: Record<Tone, string> = {
-  success: "bg-success",
-  info: "bg-info",
-  warning: "bg-warning",
-  danger: "bg-danger",
-  neutral: "bg-muted-foreground",
-}
+/** Elements a hand-rolled focus trap should cycle between inside the dialog. */
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 export function CommandPalette() {
   const { navigate, runs } = useApp()
@@ -88,6 +84,8 @@ export function CommandPalette() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
 
   const close = useCallback(() => {
     setOpen(false)
@@ -96,7 +94,9 @@ export function CommandPalette() {
     setCopiedId(null)
   }, [])
 
-  // Global shortcut.
+  // Global shortcut, close-on-escape, and a focus trap while the dialog is open:
+  // Tab/Shift+Tab cycle between the dialog's first and last focusable elements
+  // instead of escaping to the page behind it.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -104,13 +104,33 @@ export function CommandPalette() {
         setOpen((prev) => !prev)
       }
       if (e.key === "Escape") close()
+      if (open && e.key === "Tab") {
+        const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+        if (!focusable || focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [close])
+  }, [close, open])
 
+  // Move focus into the dialog on open; restore it to whatever was focused
+  // before opening (e.g. the trigger button) once it closes.
   useEffect(() => {
-    if (open) inputRef.current?.focus()
+    if (!open) return
+    previousFocusRef.current = document.activeElement as HTMLElement | null
+    inputRef.current?.focus()
+    return () => {
+      previousFocusRef.current?.focus()
+    }
   }, [open])
 
   const items = useMemo<PaletteItem[]>(() => {
@@ -222,6 +242,7 @@ export function CommandPalette() {
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
@@ -295,7 +316,7 @@ export function CommandPalette() {
                     </span>
                     {item.tone ? (
                       <span
-                        className={cn("size-2 shrink-0 rounded-full", TONE_DOT[item.tone])}
+                        className={cn("size-2 shrink-0 rounded-full", TONE_DOT_CLASSES[item.tone])}
                         aria-hidden="true"
                       />
                     ) : null}
@@ -336,6 +357,7 @@ export function CommandPaletteTrigger({ className }: { className?: string }) {
           new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }),
         )
       }}
+      aria-label="Search"
       className={cn(
         "inline-flex h-8 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         className,

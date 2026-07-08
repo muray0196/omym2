@@ -9,6 +9,7 @@ import {
   CopyButton,
   DataTable,
   EmptyState,
+  MetaRow,
   Mono,
   Notice,
   Panel,
@@ -31,15 +32,6 @@ function hasMissingMetadata(t: TrackSummary): boolean {
 
 function metadataText(value: string | null): string {
   return value?.trim() || "—"
-}
-
-function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-0.5 border-b border-border py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-sm">{children}</dd>
-    </div>
-  )
 }
 
 function TrackDetail({ track }: { track: TrackSummary }) {
@@ -67,44 +59,44 @@ function TrackDetail({ track }: { track: TrackSummary }) {
       ) : null}
 
       <dl className="rounded-md border border-border px-3">
-        <DetailRow label="Current path">
+        <MetaRow label="Current path" responsive>
           <span className="flex items-start gap-1">
             <Mono className={cn("break-all", mismatch ? "text-warning" : "text-foreground")}>
               {track.current_path}
             </Mono>
             <CopyButton value={track.current_path} label="Copy current path" />
           </span>
-        </DetailRow>
-        <DetailRow label="Canonical path">
+        </MetaRow>
+        <MetaRow label="Canonical path" responsive>
           <span className="flex items-start gap-1">
             <Mono className="break-all text-foreground">{track.canonical_path}</Mono>
             <CopyButton value={track.canonical_path} label="Copy canonical path" />
           </span>
-        </DetailRow>
-        <DetailRow label="track_id">
+        </MetaRow>
+        <MetaRow label="track_id" responsive>
           <span className="flex items-center gap-1">
             <Mono title={track.track_id}>{truncateMiddle(track.track_id, 20)}</Mono>
             <CopyButton value={track.track_id} label="Copy track id" />
           </span>
-        </DetailRow>
-        <DetailRow label="content_hash">
+        </MetaRow>
+        <MetaRow label="content_hash" responsive>
           <span className="flex items-center gap-1">
             <Mono title={track.content_hash}>{truncateMiddle(track.content_hash, 24)}</Mono>
             <CopyButton value={track.content_hash} label="Copy content hash" />
           </span>
-        </DetailRow>
-        <DetailRow label="metadata_hash">
+        </MetaRow>
+        <MetaRow label="metadata_hash" responsive>
           <span className="flex items-center gap-1">
             <Mono title={track.metadata_hash}>{truncateMiddle(track.metadata_hash, 24)}</Mono>
             <CopyButton value={track.metadata_hash} label="Copy metadata hash" />
           </span>
-        </DetailRow>
-        <DetailRow label="first_seen_at">
+        </MetaRow>
+        <MetaRow label="first_seen_at" responsive>
           <Mono className="text-muted-foreground">{track.first_seen_at}</Mono>
-        </DetailRow>
-        <DetailRow label="last_seen_at">
+        </MetaRow>
+        <MetaRow label="last_seen_at" responsive>
           <Mono className="text-muted-foreground">{track.last_seen_at}</Mono>
-        </DetailRow>
+        </MetaRow>
       </dl>
 
       <div>
@@ -112,15 +104,21 @@ function TrackDetail({ track }: { track: TrackSummary }) {
           Metadata
         </p>
         <dl className="rounded-md border border-border px-3">
-          <DetailRow label="Album artist">{metadataText(m.album_artist)}</DetailRow>
-          <DetailRow label="Genre">{metadataText(m.genre)}</DetailRow>
-          <DetailRow label="Year">{m.year ?? "—"}</DetailRow>
-          <DetailRow label="Track">
+          <MetaRow label="Album artist" responsive>
+            {metadataText(m.album_artist)}
+          </MetaRow>
+          <MetaRow label="Genre" responsive>
+            {metadataText(m.genre)}
+          </MetaRow>
+          <MetaRow label="Year" responsive>
+            {m.year ?? "—"}
+          </MetaRow>
+          <MetaRow label="Track" responsive>
             {m.track_number ?? "—"} / {m.track_total ?? "—"}
-          </DetailRow>
-          <DetailRow label="Disc">
+          </MetaRow>
+          <MetaRow label="Disc" responsive>
             {m.disc_number ?? "—"} / {m.disc_total ?? "—"}
-          </DetailRow>
+          </MetaRow>
         </dl>
       </div>
     </div>
@@ -128,12 +126,18 @@ function TrackDetail({ track }: { track: TrackSummary }) {
 }
 
 export function TracksScreen() {
-  const { trackErrors, tracks, tracksLoaded } = useApp()
+  const { navigate, route, trackErrors, tracks, tracksLoaded } = useApp()
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState("all")
   const [mismatchOnly, setMismatchOnly] = useState(false)
   const [missingOnly, setMissingOnly] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Selection lives in the URL (?track=<id>) rather than local state so it
+  // survives a refresh, matching Plans/Runs which use real routes for their
+  // master-detail selection. Selecting is not navigating, though: replace
+  // the history entry so back leaves the screen in one press no matter how
+  // many rows were inspected.
+  const selectedId = route.name === "tracks" ? (route.trackId ?? null) : null
+  const selectTrack = (trackId: string) => navigate({ name: "tracks", trackId }, { replace: true })
 
   const filtered = useMemo(() => {
     return tracks
@@ -154,15 +158,6 @@ export function TracksScreen() {
   }, [missingOnly, mismatchOnly, query, status, tracks])
 
   const selected = filtered.find((t) => t.track_id === selectedId) ?? null
-  const libraryOptions = useMemo(
-    () =>
-      Array.from(new Set(tracks.map((track) => track.library_id))).map((libraryId) => ({
-        value: libraryId,
-        label: truncateMiddle(libraryId, 20),
-      })),
-    [tracks],
-  )
-  const libraryValue = libraryOptions[0]?.value ?? "all"
 
   const columns: Column<TrackSummary>[] = [
     {
@@ -254,32 +249,16 @@ export function TracksScreen() {
                   </div>
                 )}
               </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Status">
-                  {(id) => (
-                    <Select
-                      id={id}
-                      options={STATUS_OPTIONS}
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value)}
-                    />
-                  )}
-                </Field>
-                <Field label="Library">
-                  {(id) => (
-                    <Select
-                      id={id}
-                      options={
-                        libraryOptions.length > 0
-                          ? libraryOptions
-                          : [{ value: "all", label: "All libraries" }]
-                      }
-                      value={libraryValue}
-                      disabled
-                    />
-                  )}
-                </Field>
-              </div>
+              <Field label="Status">
+                {(id) => (
+                  <Select
+                    id={id}
+                    options={STATUS_OPTIONS}
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                  />
+                )}
+              </Field>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               <Toggle
@@ -306,7 +285,7 @@ export function TracksScreen() {
               columns={columns}
               rows={filtered}
               getRowKey={(t) => t.track_id}
-              onRowClick={(t) => setSelectedId(t.track_id)}
+              onRowClick={(t) => selectTrack(t.track_id)}
               rowIsActive={(t) => t.track_id === selectedId}
               caption="Managed tracks"
               empty={

@@ -1,18 +1,22 @@
 "use client"
 
-import { ChevronRight, GanttChart, ListChecks, Search, Table2 } from "lucide-react"
+import { ChevronRight, GanttChart, ListChecks, RefreshCw, Search, Table2 } from "lucide-react"
 import { useMemo, useState } from "react"
 import { useApp } from "../app-context"
 import { cn, formatDuration, formatTimestamp, truncateMiddle } from "../lib"
 import type { RunStatus, RunSummary } from "../types"
 import {
+  Button,
   DataTable,
   EmptyState,
   MetricCard,
   Mono,
   Notice,
   Panel,
+  SegmentedControl,
   StatusBadge,
+  TONE_MARKER_CLASSES,
+  toneForStatus,
   type Column,
 } from "../primitives"
 import { Field, Select, TextInput } from "../forms"
@@ -26,12 +30,12 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "failed", label: "Failed" },
 ]
 
-const STATUS_MARKER: Record<RunStatus, string> = {
-  succeeded: "border-success bg-success",
-  running: "border-info bg-info",
-  partial_failed: "border-warning bg-warning",
-  failed: "border-danger bg-danger",
-}
+type ViewMode = "timeline" | "table"
+
+const VIEW_MODE_OPTIONS: { value: ViewMode; label: string; icon: typeof GanttChart }[] = [
+  { value: "timeline", label: "Timeline", icon: GanttChart },
+  { value: "table", label: "Table", icon: Table2 },
+]
 
 /** Group runs by started date (UTC), newest first. */
 function groupRunsByDay(runs: RunSummary[]): { day: string; runs: RunSummary[] }[] {
@@ -77,7 +81,7 @@ function RunsTimeline({
                     <span
                       className={cn(
                         "mt-2.5 size-3 shrink-0 rounded-full border-2",
-                        STATUS_MARKER[run.status],
+                        TONE_MARKER_CLASSES[toneForStatus(run.status)],
                       )}
                       aria-hidden="true"
                     />
@@ -121,12 +125,12 @@ function RunsTimeline({
 }
 
 export function RunsScreen() {
-  const { historyErrors, historyLoaded, navigate, runs } = useApp()
+  const { historyErrors, historyLoaded, loadHistory, navigate, runs } = useApp()
   const [status, setStatus] = useState("all")
   const [query, setQuery] = useState("")
   const [from, setFrom] = useState("")
   const [to, setTo] = useState("")
-  const [view, setView] = useState<"timeline" | "table">("timeline")
+  const [view, setView] = useState<ViewMode>("timeline")
 
   const counts = useMemo(() => {
     const base: Record<RunStatus | "total", number> = {
@@ -230,6 +234,16 @@ export function RunsScreen() {
       <PageHeading
         title="Runs"
         description="Execution history for apply attempts. Select a run to diagnose its file events."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Refresh run history"
+            onClick={() => void loadHistory()}
+          >
+            <RefreshCw className="size-4" aria-hidden="true" /> Refresh
+          </Button>
+        }
       />
 
       <section
@@ -249,40 +263,13 @@ export function RunsScreen() {
         className="mb-2"
         bodyClassName="flex flex-col gap-4"
         actions={
-          <div
-            role="group"
-            aria-label="View mode"
-            className="flex rounded-md border border-border bg-muted p-0.5"
-          >
-            <button
-              type="button"
-              onClick={() => setView("timeline")}
-              aria-pressed={view === "timeline"}
-              className={cn(
-                "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-                view === "timeline"
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <GanttChart className="size-3.5" aria-hidden="true" />
-              Timeline
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("table")}
-              aria-pressed={view === "table"}
-              className={cn(
-                "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-                view === "table"
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Table2 className="size-3.5" aria-hidden="true" />
-              Table
-            </button>
-          </div>
+          <SegmentedControl
+            ariaLabel="View mode"
+            options={VIEW_MODE_OPTIONS}
+            value={view}
+            onChange={setView}
+            size="sm"
+          />
         }
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

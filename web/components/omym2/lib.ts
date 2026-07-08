@@ -176,11 +176,24 @@ export function savedArtistIdEntries(entries: ArtistIdGenerationEntry[]): Record
   )
 }
 
-export function cn(...classes: Array<string | false | null | undefined>): string {
-  return classes.filter(Boolean).join(" ")
-}
+export { cn } from "@/lib/utils"
 
-/** Map backend check issue types to display-only severity badges. */
+/**
+ * Map backend check issue types to display-only severity badges.
+ *
+ * The real API never emits a `severity` field (see `serialize_check_issue`
+ * in api_serializers.py) — this is the client-side fallback used whenever
+ * `issue.severity` is absent, which today is always.
+ *
+ * Mapping rationale:
+ *  - error: data is gone or provably wrong (file missing, content hash
+ *    drifted) — the CLI needs to act before anything else.
+ *  - info: passive drift that doesn't put data at risk (metadata-only hash
+ *    change, a library simply not refreshed recently).
+ *  - warning (default): everything else — unmanaged files, path mismatches,
+ *    duplicates, pending events, and library registration states. Real but
+ *    not urgent; review when convenient.
+ */
 export function severityForIssue(issueType: CheckIssueType): IssueSeverity {
   if (issueType === "db_file_missing" || issueType === "content_hash_changed") {
     return "error"
@@ -189,4 +202,25 @@ export function severityForIssue(issueType: CheckIssueType): IssueSeverity {
     return "info"
   }
   return "warning"
+}
+
+/**
+ * Humanize a PlanAction blocked `reason`.
+ *
+ * The closed set of reasons is defined in
+ * docs/contracts/status-reason-catalog.md ("PlanAction Reason"). Any value
+ * outside that set falls back to the raw string unchanged, so callers can
+ * detect the fallback case by comparing the return value to the input.
+ */
+const BLOCK_REASON_DESCRIPTIONS: Record<string, string> = {
+  target_exists: "A file already exists at the target path.",
+  missing_required_metadata: "Required metadata is missing from the source file.",
+  invalid_path: "The generated target path is invalid.",
+  source_missing: "The source file could not be found.",
+  source_changed: "The source file changed after this Plan was created.",
+  duplicate_hash: "Another tracked file already has this same content.",
+}
+
+export function describeBlockReason(reason: string): string {
+  return BLOCK_REASON_DESCRIPTIONS[reason] ?? reason
 }

@@ -18,7 +18,7 @@ import { useApp } from "../app-context"
 import { previewSettings } from "../api-client"
 import { TEMPLATE_TOKENS, configHash, diffConfig, validateConfig } from "../lib"
 import type { AppConfig } from "../types"
-import { Button, Mono, Notice, Panel, StatusBadge } from "../primitives"
+import { Button, Mono, Notice, Panel, SegmentedControl, StatusBadge } from "../primitives"
 import { Field, Select, TextArea, TextInput, Toggle } from "../forms"
 import { ChangeDiff, PathPreview } from "../widgets"
 import { PageHeading } from "./page-heading"
@@ -44,12 +44,12 @@ type SaveState = "idle" | "saving" | "success" | "error"
 
 type SectionKey = "paths" | "behavior" | "path-policy" | "metadata" | "rules"
 
-const SECTIONS: { key: SectionKey; label: string }[] = [
-  { key: "paths", label: "Paths" },
-  { key: "behavior", label: "Behavior" },
-  { key: "path-policy", label: "Path policy" },
-  { key: "metadata", label: "Metadata & IDs" },
-  { key: "rules", label: "Rules & UI" },
+const SECTIONS: { value: SectionKey; label: string }[] = [
+  { value: "paths", label: "Paths" },
+  { value: "behavior", label: "Behavior" },
+  { value: "path-policy", label: "Path policy" },
+  { value: "metadata", label: "Metadata & IDs" },
+  { value: "rules", label: "Rules & UI" },
 ]
 
 export function SettingsScreen() {
@@ -214,26 +214,14 @@ export function SettingsScreen() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         {/* Left: grouped editor with section tabs */}
         <div className="flex min-w-0 flex-col gap-6">
-          <nav
-            aria-label="Settings sections"
-            className="sticky top-0 z-10 -mx-1 flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1"
-          >
-            {SECTIONS.map((s) => (
-              <button
-                key={s.key}
-                type="button"
-                onClick={() => setSection(s.key)}
-                aria-current={section === s.key ? "true" : undefined}
-                className={
-                  section === s.key
-                    ? "whitespace-nowrap rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground"
-                    : "whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                }
-              >
-                {s.label}
-              </button>
-            ))}
-          </nav>
+          <SegmentedControl
+            ariaLabel="Settings sections"
+            variant="nav"
+            options={SECTIONS}
+            value={section}
+            onChange={setSection}
+            className="sticky top-0 z-10 -mx-1 overflow-x-auto"
+          />
 
           {section === "paths" ? (
             <Panel
@@ -730,8 +718,8 @@ export function SettingsScreen() {
                 </Notice>
               ) : null}
               {saveState === "error" ? (
-                <Notice tone="danger" title="Save failed (HTTP 403)">
-                  CSRF token rejected by the local API. Reload the console and try again.
+                <Notice tone="danger" title="Save failed">
+                  {settingsErrors.join(" ") || "The local API rejected the request."}
                 </Notice>
               ) : null}
               <Button variant="outline" onClick={handleValidate} className="w-full">

@@ -4,7 +4,15 @@ import { ArrowRight, FolderTree } from "lucide-react"
 import type { ConfigDiffRow } from "./lib"
 import { cn, formatTimestamp } from "./lib"
 import type { FileEvent } from "./types"
-import { CopyButton, EmptyState, Mono, Notice, StatusBadge } from "./primitives"
+import {
+  CopyButton,
+  EmptyState,
+  Mono,
+  Notice,
+  StatusBadge,
+  TONE_MARKER_CLASSES,
+  toneForStatus,
+} from "./primitives"
 
 /* ChangeDiff: before/after table of changed config fields. */
 export function ChangeDiff({ rows }: { rows: ConfigDiffRow[] }) {
@@ -145,18 +153,13 @@ export function RunTimeline({ events }: { events: FileEvent[] }) {
   return (
     <ol className="relative flex flex-col gap-0 pl-1">
       {events.map((event, index) => {
-        const tone =
-          event.status === "succeeded"
-            ? "border-success bg-success"
-            : event.status === "failed"
-              ? "border-danger bg-danger"
-              : "border-info bg-info"
+        const markerClass = TONE_MARKER_CLASSES[toneForStatus(event.status)]
         const isLast = index === events.length - 1
         return (
           <li key={event.event_id} className="flex gap-3">
             <div className="flex flex-col items-center">
               <span
-                className={cn("mt-1 size-3 shrink-0 rounded-full border-2", tone)}
+                className={cn("mt-1 size-3 shrink-0 rounded-full border-2", markerClass)}
                 aria-hidden="true"
               />
               {!isLast ? <span className="w-px flex-1 bg-border" aria-hidden="true" /> : null}

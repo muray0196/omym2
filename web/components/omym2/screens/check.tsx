@@ -15,6 +15,7 @@ import {
   StatusBadge,
   truncateLabel,
 } from "../primitives"
+import { CliCommand } from "../widgets"
 import { Field, Select } from "../forms"
 
 import { PageHeading } from "./page-heading"
@@ -124,32 +125,28 @@ function IssueCard({ issue }: { issue: CheckIssue }) {
       </div>
       {issue.path ? (
         <div className="mt-1.5 flex items-center gap-1">
-          <Mono className="min-w-0 truncate text-[0.8125rem] text-foreground" title={issue.path}>
+          <Mono className="min-w-0 truncate text-foreground" title={issue.path}>
             {truncateMiddle(issue.path, 64)}
           </Mono>
           <CopyButton value={issue.path} label="Copy path" />
         </div>
       ) : null}
       {issue.detail ? <p className="mt-1 text-xs text-muted-foreground">{issue.detail}</p> : null}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="flex min-w-0 items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1">
-          <span className="select-none font-mono text-xs text-muted-foreground">$</span>
-          <Mono className="min-w-0 truncate text-xs text-foreground" title={command}>
-            {command}
-          </Mono>
-          <CopyButton value={command} label="Copy remediation command" />
-        </span>
-        {issue.track_id ? (
-          <Mono className="text-xs text-muted-foreground" title={issue.track_id}>
-            track: {truncateMiddle(issue.track_id, 14)}
-          </Mono>
-        ) : null}
-        {issue.plan_id ? (
-          <Mono className="text-xs text-muted-foreground" title={issue.plan_id}>
-            plan: {truncateMiddle(issue.plan_id, 14)}
-          </Mono>
-        ) : null}
-      </div>
+      <CliCommand command={command} className="mt-2" />
+      {issue.track_id || issue.plan_id ? (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {issue.track_id ? (
+            <Mono className="text-xs text-muted-foreground" title={issue.track_id}>
+              track: {truncateMiddle(issue.track_id, 14)}
+            </Mono>
+          ) : null}
+          {issue.plan_id ? (
+            <Mono className="text-xs text-muted-foreground" title={issue.plan_id}>
+              plan: {truncateMiddle(issue.plan_id, 14)}
+            </Mono>
+          ) : null}
+        </div>
+      ) : null}
     </li>
   )
 }
@@ -181,16 +178,6 @@ export function CheckScreen() {
     for (const issue of filtered) buckets[issueSeverity(issue)].push(issue)
     return buckets
   }, [filtered])
-
-  const libraryOptions = useMemo(
-    () =>
-      Array.from(new Set(checkIssues.map((issue) => issue.library_id))).map((libraryId) => ({
-        value: libraryId,
-        label: truncateMiddle(libraryId, 24),
-      })),
-    [checkIssues],
-  )
-  const libraryValue = libraryOptions[0]?.value ?? "all"
 
   return (
     <>
@@ -236,32 +223,16 @@ export function CheckScreen() {
       </section>
 
       <Panel title="Triage" icon={ShieldCheck} bodyClassName="flex flex-col gap-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Issue type">
-            {(id) => (
-              <Select
-                id={id}
-                options={ISSUE_TYPE_OPTIONS}
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-              />
-            )}
-          </Field>
-          <Field label="Library">
-            {(id) => (
-              <Select
-                id={id}
-                options={
-                  libraryOptions.length > 0
-                    ? libraryOptions
-                    : [{ value: "all", label: "All libraries" }]
-                }
-                value={libraryValue}
-                disabled
-              />
-            )}
-          </Field>
-        </div>
+        <Field label="Issue type" className="sm:max-w-xs">
+          {(id) => (
+            <Select
+              id={id}
+              options={ISSUE_TYPE_OPTIONS}
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+            />
+          )}
+        </Field>
 
         {checkErrors.length > 0 ? (
           <Notice tone="warning" title="Check data is incomplete">

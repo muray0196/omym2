@@ -155,7 +155,9 @@ export const mockPlans: PlanSummary[] = [
     plan_type: "add",
     status: "ready",
     created_at: "2026-06-29T10:12:03Z",
-    summary: { action_count: "3", move_actions: "3", blocked_actions: "0" },
+    // One action is blocked (target_exists) so this "ready" Plan also
+    // exercises the blocked-actions summary strip on its detail screen.
+    summary: { action_count: "4", move_actions: "4", blocked_actions: "1" },
   },
   {
     plan_id: "plan_b98c2f10-5d4a-4e7b-8c61-3a0f9d2e1c44",
@@ -171,7 +173,43 @@ export const mockPlans: PlanSummary[] = [
     plan_type: "organize",
     status: "applied",
     created_at: "2026-06-27T08:31:11Z",
-    summary: { action_count: "5", planned_actions: "5", blocked_actions: "0" },
+    // Matches the single applied action row below; its apply Run is
+    // run_9c4f7a35 (succeeded), exercising the "View run" cross-link
+    // for the applied status.
+    summary: { action_count: "1", applied_actions: "1", blocked_actions: "0" },
+  },
+  {
+    plan_id: "plan_9e2c6b41-8a37-4d19-b5f0-2c7e4a9d1f66",
+    library_id: LIBRARY_ID,
+    plan_type: "organize",
+    status: "partial_failed",
+    // Created shortly before its apply Run (run_7c1a5e90, started
+    // 2026-06-28T20:02:11Z) — a Run cannot precede its Plan.
+    created_at: "2026-06-28T19:40:05Z",
+    // Matches the action rows below: 3 applied + 1 failed + 2 blocked.
+    summary: {
+      action_count: "6",
+      applied_actions: "3",
+      failed_actions: "1",
+      blocked_actions: "2",
+    },
+  },
+  {
+    plan_id: "plan_2f8a4d17-6c93-4b52-9e0d-8b1f3c6a7e29",
+    library_id: LIBRARY_ID,
+    plan_type: "add",
+    status: "failed",
+    created_at: "2026-06-26T14:05:31Z",
+    // Matches the action rows below: apply aborted, all 4 moves failed.
+    summary: { action_count: "4", move_actions: "4", failed_actions: "4", blocked_actions: "0" },
+  },
+  {
+    plan_id: "plan_6b3d9f52-1e74-4a86-9c2f-5d0a8e1b3c47",
+    library_id: LIBRARY_ID,
+    plan_type: "refresh",
+    status: "cancelled",
+    created_at: "2026-06-25T09:47:12Z",
+    summary: { action_count: "3", move_actions: "2", metadata_actions: "1", blocked_actions: "0" },
   },
 ]
 
@@ -219,6 +257,20 @@ const mockPlanActions: Record<string, PlanAction[]> = {
       reason: null,
       sort_order: 3,
     },
+    {
+      action_id: "act_004",
+      plan_id: "plan_d54b1a09-3c8e-4f2b-a6d7-1e9c0b4a7f55",
+      library_id: LIBRARY_ID,
+      track_id: null,
+      action_type: "move",
+      source_path: "/music/incoming/Aimer - Insane Dream.flac",
+      target_path: "Aimer/2021_Insane-Dream/1-04_Insane-Dream.flac",
+      content_hash_at_plan: "sha256:mock-content-004",
+      metadata_hash_at_plan: "sha256:mock-metadata-004",
+      status: "blocked",
+      reason: "target_exists",
+      sort_order: 4,
+    },
   ],
   "plan_b98c2f10-5d4a-4e7b-8c61-3a0f9d2e1c44": [
     {
@@ -264,6 +316,198 @@ const mockPlanActions: Record<string, PlanAction[]> = {
       status: "applied",
       reason: null,
       sort_order: 1,
+    },
+  ],
+  // partial_failed: 3 applied + 1 failed + 2 blocked, matching its summary.
+  "plan_9e2c6b41-8a37-4d19-b5f0-2c7e4a9d1f66": [
+    {
+      action_id: "act_301",
+      plan_id: "plan_9e2c6b41-8a37-4d19-b5f0-2c7e4a9d1f66",
+      library_id: LIBRARY_ID,
+      track_id: "trk_organize_101",
+      action_type: "move",
+      source_path: "Loose/Aimer - Torches.flac",
+      target_path: "Aimer/2019_Torches/1-01_Torches.flac",
+      content_hash_at_plan: "sha256:mock-content-301",
+      metadata_hash_at_plan: "sha256:mock-metadata-301",
+      status: "applied",
+      reason: null,
+      sort_order: 1,
+    },
+    {
+      action_id: "act_302",
+      plan_id: "plan_9e2c6b41-8a37-4d19-b5f0-2c7e4a9d1f66",
+      library_id: LIBRARY_ID,
+      track_id: "trk_organize_102",
+      action_type: "move",
+      source_path: "Loose/Aimer - Ref-rain.flac",
+      target_path: "Aimer/2018_Ref-rain/1-01_Ref-rain.flac",
+      content_hash_at_plan: "sha256:mock-content-302",
+      metadata_hash_at_plan: "sha256:mock-metadata-302",
+      status: "applied",
+      reason: null,
+      sort_order: 2,
+    },
+    {
+      action_id: "act_303",
+      plan_id: "plan_9e2c6b41-8a37-4d19-b5f0-2c7e4a9d1f66",
+      library_id: LIBRARY_ID,
+      track_id: "trk_organize_103",
+      action_type: "move",
+      source_path: "Loose/Aimer - Black Bird.flac",
+      target_path: "Aimer/2018_Black-Bird/1-01_Black-Bird.flac",
+      content_hash_at_plan: "sha256:mock-content-303",
+      metadata_hash_at_plan: "sha256:mock-metadata-303",
+      status: "applied",
+      reason: null,
+      sort_order: 3,
+    },
+    {
+      // Apply-time precondition failure (source changed after planning).
+      action_id: "act_304",
+      plan_id: "plan_9e2c6b41-8a37-4d19-b5f0-2c7e4a9d1f66",
+      library_id: LIBRARY_ID,
+      track_id: "trk_organize_104",
+      action_type: "move",
+      source_path: "Loose/Aimer - Zankyosanka.flac",
+      target_path: "Aimer/2022_Zankyosanka/1-01_Zankyosanka.flac",
+      content_hash_at_plan: "sha256:mock-content-304",
+      metadata_hash_at_plan: "sha256:mock-metadata-304",
+      status: "failed",
+      reason: "source_changed",
+      sort_order: 4,
+    },
+    {
+      action_id: "act_305",
+      plan_id: "plan_9e2c6b41-8a37-4d19-b5f0-2c7e4a9d1f66",
+      library_id: LIBRARY_ID,
+      track_id: "trk_organize_105",
+      action_type: "move",
+      source_path: "Loose/Unknown - Untitled.flac",
+      target_path: null,
+      content_hash_at_plan: "sha256:mock-content-305",
+      metadata_hash_at_plan: "sha256:mock-metadata-305",
+      status: "blocked",
+      reason: "missing_required_metadata",
+      sort_order: 5,
+    },
+    {
+      action_id: "act_306",
+      plan_id: "plan_9e2c6b41-8a37-4d19-b5f0-2c7e4a9d1f66",
+      library_id: LIBRARY_ID,
+      track_id: "trk_organize_106",
+      action_type: "move",
+      source_path: "Loose/Aimer - Torches (copy).flac",
+      target_path: "Aimer/2019_Torches/1-01_Torches.flac",
+      content_hash_at_plan: "sha256:mock-content-301",
+      metadata_hash_at_plan: "sha256:mock-metadata-306",
+      status: "blocked",
+      reason: "duplicate_hash",
+      sort_order: 6,
+    },
+  ],
+  // failed: the run aborted before any mutation, all 4 moves failed.
+  "plan_2f8a4d17-6c93-4b52-9e0d-8b1f3c6a7e29": [
+    {
+      action_id: "act_401",
+      plan_id: "plan_2f8a4d17-6c93-4b52-9e0d-8b1f3c6a7e29",
+      library_id: LIBRARY_ID,
+      track_id: null,
+      action_type: "move",
+      source_path: "/music/incoming/Yorushika - Haru Dorobou.flac",
+      target_path: "Yorushika/2020_Haru-Dorobou/1-01_Haru-Dorobou.flac",
+      content_hash_at_plan: "sha256:mock-content-401",
+      metadata_hash_at_plan: "sha256:mock-metadata-401",
+      status: "failed",
+      reason: null,
+      sort_order: 1,
+    },
+    {
+      action_id: "act_402",
+      plan_id: "plan_2f8a4d17-6c93-4b52-9e0d-8b1f3c6a7e29",
+      library_id: LIBRARY_ID,
+      track_id: null,
+      action_type: "move",
+      source_path: "/music/incoming/Yorushika - Itte.flac",
+      target_path: "Yorushika/2017_Natsukusa/1-01_Itte.flac",
+      content_hash_at_plan: "sha256:mock-content-402",
+      metadata_hash_at_plan: "sha256:mock-metadata-402",
+      status: "failed",
+      reason: null,
+      sort_order: 2,
+    },
+    {
+      action_id: "act_403",
+      plan_id: "plan_2f8a4d17-6c93-4b52-9e0d-8b1f3c6a7e29",
+      library_id: LIBRARY_ID,
+      track_id: null,
+      action_type: "move",
+      source_path: "/music/incoming/Yorushika - Tada Kimi ni Hare.flac",
+      target_path: "Yorushika/2018_Makeinu/1-01_Tada-Kimi-ni-Hare.flac",
+      content_hash_at_plan: "sha256:mock-content-403",
+      metadata_hash_at_plan: "sha256:mock-metadata-403",
+      status: "failed",
+      reason: null,
+      sort_order: 3,
+    },
+    {
+      action_id: "act_404",
+      plan_id: "plan_2f8a4d17-6c93-4b52-9e0d-8b1f3c6a7e29",
+      library_id: LIBRARY_ID,
+      track_id: null,
+      action_type: "move",
+      source_path: "/music/incoming/Yorushika - Say It.flac",
+      target_path: "Yorushika/2019_Elma/1-02_Say-It.flac",
+      content_hash_at_plan: "sha256:mock-content-404",
+      metadata_hash_at_plan: "sha256:mock-metadata-404",
+      status: "failed",
+      reason: null,
+      sort_order: 4,
+    },
+  ],
+  // cancelled: never applied, actions remain planned (2 moves + 1 metadata).
+  "plan_6b3d9f52-1e74-4a86-9c2f-5d0a8e1b3c47": [
+    {
+      action_id: "act_501",
+      plan_id: "plan_6b3d9f52-1e74-4a86-9c2f-5d0a8e1b3c47",
+      library_id: LIBRARY_ID,
+      track_id: "trk_refresh_101",
+      action_type: "move",
+      source_path: "Kenshi Yonezu/BOOTLEG/04 Lemon.flac",
+      target_path: "Kenshi Yonezu/2018_BOOTLEG/1-04_Lemon.flac",
+      content_hash_at_plan: "sha256:mock-content-501",
+      metadata_hash_at_plan: "sha256:mock-metadata-501",
+      status: "planned",
+      reason: null,
+      sort_order: 1,
+    },
+    {
+      action_id: "act_502",
+      plan_id: "plan_6b3d9f52-1e74-4a86-9c2f-5d0a8e1b3c47",
+      library_id: LIBRARY_ID,
+      track_id: "trk_refresh_102",
+      action_type: "move",
+      source_path: "Kenshi Yonezu/BOOTLEG/05 Uchiage Hanabi.flac",
+      target_path: "Kenshi Yonezu/2018_BOOTLEG/1-05_Uchiage-Hanabi.flac",
+      content_hash_at_plan: "sha256:mock-content-502",
+      metadata_hash_at_plan: "sha256:mock-metadata-502",
+      status: "planned",
+      reason: null,
+      sort_order: 2,
+    },
+    {
+      action_id: "act_503",
+      plan_id: "plan_6b3d9f52-1e74-4a86-9c2f-5d0a8e1b3c47",
+      library_id: LIBRARY_ID,
+      track_id: "trk_refresh_103",
+      action_type: "refresh_metadata",
+      source_path: "Kenshi Yonezu/2018_BOOTLEG/1-06_Loser.flac",
+      target_path: "Kenshi Yonezu/2018_BOOTLEG/1-06_Loser.flac",
+      content_hash_at_plan: "sha256:mock-content-503",
+      metadata_hash_at_plan: "sha256:mock-metadata-503",
+      status: "planned",
+      reason: null,
+      sort_order: 3,
     },
   ],
 }
@@ -347,7 +591,12 @@ export const mockRuns: RunSummary[] = [
   },
   {
     run_id: "run_7c1a5e90-2d63-4f18-bb47-9a0e3c6d5f10",
-    plan_id: "plan_d54b1a09-3c8e-4f2b-a6d7-1e9c0b4a7f55",
+    // Points at plan_9e2c6b41 (status partial_failed below) rather than a
+    // "ready" Plan: Plans are single-use snapshots, so a Plan referenced by
+    // a completed Run must itself carry that Run's terminal status. This
+    // also exercises the Plan detail "View run" cross-link for a
+    // partial_failed Plan (see mock coverage notes on mockPlans).
+    plan_id: "plan_9e2c6b41-8a37-4d19-b5f0-2c7e4a9d1f66",
     library_id: LIBRARY_ID,
     status: "partial_failed",
     started_at: "2026-06-28T20:02:11Z",
@@ -356,7 +605,9 @@ export const mockRuns: RunSummary[] = [
   },
   {
     run_id: "run_1e8f4b22-9a07-4c5d-8b3e-6f2a1d0c9e88",
-    plan_id: "plan_b98c2f10-5d4a-4e7b-8c61-3a0f9d2e1c44",
+    // Points at plan_2f8a4d17 (status failed below) for the same reason as
+    // run_7c1a5e90 above.
+    plan_id: "plan_2f8a4d17-6c93-4b52-9e0d-8b1f3c6a7e29",
     library_id: LIBRARY_ID,
     status: "failed",
     started_at: "2026-06-27T11:48:55Z",
@@ -365,7 +616,12 @@ export const mockRuns: RunSummary[] = [
   },
   {
     run_id: "run_5a2d9c71-6b40-4e83-a1f9-8c7b0e2d3a99",
-    plan_id: "plan_f31e7a08-2b6c-4d90-8a5e-1c4f0b9d7e22",
+    // No matching Plan in mockPlans on purpose: an in-progress ("running")
+    // Run cannot reference an already-"applied" Plan (that Plan's apply
+    // Run would already be terminal), so this simulates a Run for a Plan
+    // outside the currently loaded Plans list rather than reusing
+    // plan_f31e7a08 (which is "applied").
+    plan_id: "plan_7f3e9c21-4a68-4d91-b0f3-8d6e2c9a1b57",
     library_id: LIBRARY_ID,
     status: "running",
     started_at: "2026-06-29T10:31:20Z",
@@ -379,6 +635,18 @@ export const mockRuns: RunSummary[] = [
     status: "succeeded",
     started_at: "2026-06-26T18:20:07Z",
     completed_at: "2026-06-26T18:20:51Z",
+    error_summary: null,
+  },
+  {
+    run_id: "run_9c4f7a35-8d12-4b6e-a97f-1e5c3d8b0a44",
+    // The apply Run for plan_f31e7a08 (status "applied" in mockPlans), so
+    // the Plan detail "View run" cross-link is exercised for the applied
+    // status in mock mode.
+    plan_id: "plan_f31e7a08-2b6c-4d90-8a5e-1c4f0b9d7e22",
+    library_id: LIBRARY_ID,
+    status: "succeeded",
+    started_at: "2026-06-27T08:45:10Z",
+    completed_at: "2026-06-27T08:45:41Z",
     error_summary: null,
   },
 ]
@@ -496,6 +764,25 @@ export const mockFileEvents: Record<string, FileEvent[]> = {
   ],
   // A run with no recorded file events (empty state).
   "run_1e8f4b22-9a07-4c5d-8b3e-6f2a1d0c9e88": [],
+  // Apply Run for plan_f31e7a08: one move event mirroring its single
+  // applied action (act_201).
+  "run_9c4f7a35-8d12-4b6e-a97f-1e5c3d8b0a44": [
+    {
+      event_id: "evt_9c4f7a35-0001",
+      library_id: LIBRARY_ID,
+      run_id: "run_9c4f7a35-8d12-4b6e-a97f-1e5c3d8b0a44",
+      plan_action_id: "act_201",
+      event_type: "move",
+      source_path: "Loose/Track.flac",
+      target_path: "Aimer/2019_Sun-Dance/1-01_Track.flac",
+      status: "succeeded",
+      started_at: "2026-06-27T08:45:11Z",
+      completed_at: "2026-06-27T08:45:12Z",
+      error_code: null,
+      error_message: null,
+      sequence_no: 1,
+    },
+  ],
 }
 
 export const mockHistoryResponse: HistoryResponse = {
@@ -517,12 +804,20 @@ export function mockRunDetailResponse(runId: string): RunDetailResponse {
   }
 }
 
+// A former/candidate library referenced only by library-state issues below —
+// distinct from LIBRARY_ID (the single actively registered library that
+// Plans/Runs/Tracks fixtures point to) so registered-vs-unregistered issue
+// types don't contradict each other for the same library.
+const CANDIDATE_LIBRARY_ID = "lib_5c2e8f91-6a34-4b7d-8e01-9f3a2b6d4c88"
+const BLOCKED_LIBRARY_ID = "lib_7d4f1a63-2b95-4e18-a706-3c8d5f0b9e21"
+
 // Static previews use this fixture when the FastAPI backend is unavailable.
+// Note: `severity` and `issue_id` are intentionally omitted — the real
+// serializer (serialize_check_issue) never emits them, so mock issues must
+// exercise the same client-side severityForIssue() derivation as production.
 export const mockIssues: CheckIssue[] = [
   {
-    issue_id: "iss_0001",
     issue_type: "db_file_missing",
-    severity: "error",
     library_id: LIBRARY_ID,
     path: "Sawano Hiroyuki/2019_R∃/1-12_Into the Sky.flac",
     track_id: "trk_4a1b2c3d-0009",
@@ -530,9 +825,7 @@ export const mockIssues: CheckIssue[] = [
     detail: "Tracked file is recorded in the DB but no longer exists on disk.",
   },
   {
-    issue_id: "iss_0002",
     issue_type: "unmanaged_file_exists",
-    severity: "warning",
     library_id: LIBRARY_ID,
     path: "Misc/_unsorted/random-download.mp3",
     track_id: null,
@@ -540,9 +833,7 @@ export const mockIssues: CheckIssue[] = [
     detail: "File exists under the library root but is not tracked in the DB.",
   },
   {
-    issue_id: "iss_0003",
     issue_type: "current_path_differs_from_canonical_path",
-    severity: "warning",
     library_id: LIBRARY_ID,
     path: "Aimer/Open a Door/03 Example Song.flac",
     track_id: "trk_4a1b2c3d-0002",
@@ -550,9 +841,7 @@ export const mockIssues: CheckIssue[] = [
     detail: "Current path does not match the canonical path produced by the active path policy.",
   },
   {
-    issue_id: "iss_0004",
     issue_type: "content_hash_changed",
-    severity: "error",
     library_id: LIBRARY_ID,
     path: "Kenshi Yonezu/2018_BOOTLEG/1-04_Lemon.flac",
     track_id: "trk_4a1b2c3d-0005",
@@ -560,9 +849,7 @@ export const mockIssues: CheckIssue[] = [
     detail: "Content hash differs from the recorded value; file may have been re-encoded.",
   },
   {
-    issue_id: "iss_0005",
     issue_type: "metadata_hash_changed",
-    severity: "info",
     library_id: LIBRARY_ID,
     path: "Kenshi Yonezu/2018_BOOTLEG/1-04_Lemon.flac",
     track_id: "trk_4a1b2c3d-0005",
@@ -570,9 +857,7 @@ export const mockIssues: CheckIssue[] = [
     detail: "Embedded metadata changed since last scan; canonical path may need refresh.",
   },
   {
-    issue_id: "iss_0006",
     issue_type: "duplicate_candidate",
-    severity: "warning",
     library_id: LIBRARY_ID,
     path: "Various Artists/2013_Deemo/2-05_Anima.mp3",
     track_id: "trk_4a1b2c3d-0011",
@@ -580,9 +865,7 @@ export const mockIssues: CheckIssue[] = [
     detail: "Another tracked file shares the same content hash.",
   },
   {
-    issue_id: "iss_0007",
     issue_type: "pending_file_event_exists",
-    severity: "warning",
     library_id: LIBRARY_ID,
     path: "Aimer/2024_Open α Door/1-03_Example Song.flac",
     track_id: null,
@@ -590,14 +873,38 @@ export const mockIssues: CheckIssue[] = [
     detail: "A file event from an interrupted run is still pending; recovery recommended.",
   },
   {
-    issue_id: "iss_0008",
     issue_type: "library_stale",
-    severity: "info",
     library_id: LIBRARY_ID,
     path: "/music/library",
     track_id: null,
     plan_id: null,
     detail: "Library has not been refreshed in over 14 days.",
+  },
+  {
+    issue_type: "plan_source_changed",
+    library_id: LIBRARY_ID,
+    path: "Aimer/Open a Door/03 Example Song.flac",
+    track_id: "trk_4a1b2c3d-0002",
+    plan_id: "plan_b98c2f10-5d4a-4e7b-8c61-3a0f9d2e1c44",
+    detail: "The tracked file changed after this Plan was created; re-plan before applying.",
+  },
+  {
+    issue_type: "library_unregistered",
+    library_id: CANDIDATE_LIBRARY_ID,
+    path: "/music/archive",
+    track_id: null,
+    plan_id: null,
+    detail:
+      "This library root was scanned but has no matching registration; run `omym2 organize` to register it.",
+  },
+  {
+    issue_type: "library_blocked",
+    library_id: BLOCKED_LIBRARY_ID,
+    path: "/music/blocked-import",
+    track_id: null,
+    plan_id: null,
+    detail:
+      "Library registration is blocked pending manual review; CLI commands targeting it will be rejected.",
   },
 ]
 

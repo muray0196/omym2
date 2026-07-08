@@ -1,15 +1,15 @@
 "use client"
 
-import { ArrowLeft, Clock, FileWarning } from "lucide-react"
+import { ArrowLeft, FileWarning, TriangleAlert } from "lucide-react"
 import { useEffect } from "react"
 import { useApp } from "../app-context"
-import { formatDuration, formatTimestamp, truncateMiddle } from "../lib"
+import { cn, formatDuration, formatTimestamp } from "../lib"
 import type { FileEvent } from "../types"
 import {
   Button,
-  CopyButton,
   DataTable,
   EmptyState,
+  MetaRow,
   Mono,
   Notice,
   Panel,
@@ -19,20 +19,6 @@ import {
 } from "../primitives"
 import { RunTimeline } from "../widgets"
 import { PageHeading } from "./page-heading"
-
-function MetaRow({ label, value, copy }: { label: string; value: string; copy?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-border py-2 last:border-0">
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="flex min-w-0 items-center gap-1">
-        <Mono className="truncate text-foreground" title={value}>
-          {truncateMiddle(value, 28)}
-        </Mono>
-        {copy ? <CopyButton value={value} label={`Copy ${label}`} /> : null}
-      </dd>
-    </div>
-  )
-}
 
 export function RunDetailScreen({ runId }: { runId: string }) {
   const { loadRunDetail, navigate, runDetailErrors, runDetailLoading, runDetails, runs } = useApp()
@@ -47,6 +33,17 @@ export function RunDetailScreen({ runId }: { runId: string }) {
   const isLoading = runDetailLoading[runId] ?? false
   const run = detail?.run ?? runs.find((r) => r.run_id === runId)
   const events = detail?.file_events ?? []
+
+  // "running" is the only non-terminal RunStatus. Poll this run's detail on
+  // a short cadence while it's in progress, and stop once it lands on a
+  // terminal status (succeeded/partial_failed/failed).
+  useEffect(() => {
+    if (run?.status !== "running") return
+    const interval = setInterval(() => {
+      void loadRunDetail(runId)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [loadRunDetail, run?.status, runId])
 
   if (!run) {
     if (!isLoaded || isLoading) {
@@ -83,6 +80,10 @@ export function RunDetailScreen({ runId }: { runId: string }) {
 
   const failedCount = events.filter((e) => e.status === "failed").length
   const succeededCount = events.filter((e) => e.status === "succeeded").length
+  // The File events table below is the single authoritative full list — this
+  // digest only surfaces events that still need attention (failed/pending),
+  // so it never duplicates the table's content.
+  const anomalyEvents = events.filter((e) => e.status === "failed" || e.status === "pending")
 
   const columns: Column<FileEvent>[] = [
     {
@@ -144,8 +145,8 @@ export function RunDetailScreen({ runId }: { runId: string }) {
         }
       />
 
-      <div className="mb-6 grid gap-6 lg:grid-cols-3">
-        <Panel title="Summary" className="lg:col-span-2">
+      <div className={cn("mb-6 grid gap-6", anomalyEvents.length > 0 && "lg:grid-cols-3")}>
+        <Panel title="Summary" className={anomalyEvents.length > 0 ? "lg:col-span-2" : undefined}>
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <StatusBadge status={run.status} />
             <span className="text-sm text-muted-foreground">
@@ -153,12 +154,16 @@ export function RunDetailScreen({ runId }: { runId: string }) {
             </span>
           </div>
           <dl className="grid gap-x-8 sm:grid-cols-2">
-            <MetaRow label="run_id" value={run.run_id} copy />
-            <MetaRow label="plan_id" value={run.plan_id} copy />
-            <MetaRow label="library_id" value={run.library_id} copy />
-            <MetaRow label="started_at" value={formatTimestamp(run.started_at)} />
-            <MetaRow label="completed_at" value={formatTimestamp(run.completed_at)} />
-            <MetaRow label="events" value={`${succeededCount} ok / ${failedCount} failed`} />
+            <MetaRow label="run_id" value={run.run_id} max={28} copy />
+            <MetaRow label="plan_id" value={run.plan_id} max={28} copy />
+            <MetaRow label="library_id" value={run.library_id} max={28} copy />
+            <MetaRow label="started_at" value={formatTimestamp(run.started_at)} max={28} />
+            <MetaRow label="completed_at" value={formatTimestamp(run.completed_at)} max={28} />
+            <MetaRow
+              label="events"
+              value={`${succeededCount} ok / ${failedCount} failed`}
+              max={28}
+            />
           </dl>
           {run.error_summary ? (
             <Notice
@@ -176,9 +181,15 @@ export function RunDetailScreen({ runId }: { runId: string }) {
           ) : null}
         </Panel>
 
-        <Panel title="Execution timeline" icon={Clock}>
-          <RunTimeline events={events} />
-        </Panel>
+        {anomalyEvents.length > 0 ? (
+          <Panel
+            title="Failures"
+            icon={TriangleAlert}
+            description="Failed and pending file events that need attention."
+          >
+            <RunTimeline events={anomalyEvents} />
+          </Panel>
+        ) : null}
       </div>
 
       <Panel

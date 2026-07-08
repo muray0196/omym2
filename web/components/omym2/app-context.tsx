@@ -53,7 +53,7 @@ export type Route =
   | { name: "runs" }
   | { name: "run-detail"; runId: string }
   | { name: "check" }
-  | { name: "tracks" }
+  | { name: "tracks"; trackId?: string }
 
 export type NavKey =
   "dashboard" | "settings" | "path-policy" | "plans" | "runs" | "check" | "tracks"
@@ -66,7 +66,13 @@ export interface PlanFilters {
 
 interface AppContextValue {
   route: Route
-  navigate: (route: Route) => void
+  /**
+   * Move to a route. `replace: true` swaps the current history entry
+   * instead of pushing a new one — use it for in-screen selection changes
+   * (e.g. picking a track row) so browsing N items doesn't require N
+   * back-presses to leave the screen. Navigation between screens pushes.
+   */
+  navigate: (route: Route, options?: { replace?: boolean }) => void
   /** The currently persisted (saved) configuration. */
   savedConfig: AppConfig
   /** The in-progress draft being edited. */
@@ -80,6 +86,7 @@ interface AppContextValue {
   checkLoaded: boolean
   historyErrors: string[]
   historyLoaded: boolean
+  loadHistory: () => Promise<void>
   createAddPlan: (sourcePath: string | null) => Promise<PlanCreateResult>
   createOrganizePlan: (libraryRoot: string | null) => Promise<PlanCreateResult>
   createRefreshPlan: (targetPath: string | null, includeAll: boolean) => Promise<PlanCreateResult>
@@ -99,6 +106,7 @@ interface AppContextValue {
   settingsChoices: SettingsChoices
   settingsChanges: SettingsChange[]
   settingsErrors: string[]
+  settingsLoaded: boolean
   settingsLoadError: string | null
   settingsPreview: PathPreview
   settingsValidation: ValidationResult
@@ -123,6 +131,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settingsChoices, setSettingsChoices] = useState<SettingsChoices>(mockSettingsState.choices)
   const [settingsChanges, setSettingsChanges] = useState<SettingsChange[]>([])
   const [settingsErrors, setSettingsErrors] = useState<string[]>([])
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null)
   const [settingsPreview, setSettingsPreview] = useState<PathPreview>(mockSettingsState.preview)
   const [settingsValidation, setSettingsValidation] = useState<ValidationResult>(
@@ -150,7 +159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     function syncRouteFromLocation() {
-      setRoute(routeFromPath(window.location.pathname))
+      setRoute(routeFromPath(window.location.pathname, window.location.search))
     }
 
     syncRouteFromLocation()
@@ -172,10 +181,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSettingsPreview(state.preview)
         setSettingsValidation(state.validation)
         setCsrfToken(state.csrf_token)
+        setSettingsLoaded(true)
       })
       .catch((error: unknown) => {
         if (cancelled) return
         setSettingsLoadError(error instanceof Error ? error.message : "Settings failed to load.")
+        // Loading is finished either way; consumers must treat
+        // (settingsLoaded && settingsLoadError) as "unavailable" rather
+        // than falling back to the fabricated default config values.
+        setSettingsLoaded(true)
       })
 
     return () => {
@@ -250,6 +264,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setRunDetailLoading((current) => ({ ...current, [runId]: false }))
     }
   }, [])
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const result = await getHistory()
+      setRuns(result.runs)
+      setHistoryErrors(result.errors)
+    } catch (error: unknown) {
+      setHistoryErrors([errorMessage(error, "Run history failed to load.")])
+    } finally {
+      setHistoryLoaded(true)
+    }
+  }, [])
+
+  // Runs list has no polling by default. While any run is "running" (the
+  // only non-terminal RunStatus), refetch history on a short cadence so
+  // in-progress apply attempts eventually show up as succeeded/failed
+  // without a manual refresh. Stops as soon as no run is running.
+  const hasRunningRun = runs.some((run) => run.status === "running")
+  useEffect(() => {
+    if (!hasRunningRun) return
+    const interval = setInterval(() => {
+      void loadHistory()
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [hasRunningRun, loadHistory])
 
   const loadPlans = useCallback(async (filters: PlanFilters = {}) => {
     try {
@@ -375,9 +414,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppContextValue>(
     () => ({
       route,
-      navigate: (next) => {
+      navigate: (next, options) => {
         setRoute(next)
-        window.history.pushState({}, "", routeToPath(next))
+        const path = routeToPath(next)
+        if (options?.replace) {
+          // Selection, not navigation: keep the history entry (and scroll
+          // position) so one back-press still leaves the screen.
+          window.history.replaceState({}, "", path)
+          return
+        }
+        window.history.pushState({}, "", path)
         window.scrollTo({ top: 0 })
       },
       savedConfig,
@@ -450,6 +496,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createRefreshPlan,
       historyErrors,
       historyLoaded,
+      loadHistory,
       loadPlanDetail,
       loadPlans,
       planDetailErrors,
@@ -466,6 +513,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       settingsChoices,
       settingsChanges,
       settingsErrors,
+      settingsLoaded,
       settingsLoadError,
       settingsPreview,
       settingsValidation,
@@ -503,6 +551,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       draftConfig,
       historyErrors,
       historyLoaded,
+      loadHistory,
       loadPlanDetail,
       loadPlans,
       loadRunDetail,
@@ -521,6 +570,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       settingsChanges,
       settingsChoices,
       settingsErrors,
+      settingsLoaded,
       settingsLoadError,
       settingsPreview,
       settingsValidation,
@@ -533,7 +583,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }
 
-function routeFromPath(pathname: string): Route {
+function routeFromPath(pathname: string, search = ""): Route {
   if (pathname === "/settings") return { name: "settings" }
   if (pathname === "/path-policy") return { name: "path-policy" }
   if (pathname === "/plans") return { name: "plans" }
@@ -545,7 +595,10 @@ function routeFromPath(pathname: string): Route {
     return { name: "run-detail", runId: decodeURIComponent(pathname.replace("/history/", "")) }
   }
   if (pathname === "/check") return { name: "check" }
-  if (pathname === "/tracks") return { name: "tracks" }
+  if (pathname === "/tracks") {
+    const trackId = new URLSearchParams(search).get("track")
+    return { name: "tracks", trackId: trackId ?? undefined }
+  }
   return { name: "dashboard" }
 }
 
@@ -566,7 +619,7 @@ function routeToPath(route: Route): string {
     case "check":
       return "/check"
     case "tracks":
-      return "/tracks"
+      return route.trackId ? `/tracks?track=${encodeURIComponent(route.trackId)}` : "/tracks"
     case "dashboard":
     default:
       return "/"

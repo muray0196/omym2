@@ -11,7 +11,7 @@ import {
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { useApp, type PlanFilters } from "../app-context"
-import { cn, diffConfig, formatTimestamp, truncateMiddle } from "../lib"
+import { diffConfig, formatTimestamp, truncateMiddle } from "../lib"
 import type { PlanCreateResult, PlanStatus, PlanSummary, PlanType } from "../types"
 import { Field, Select, TextInput, Toggle } from "../forms"
 import {
@@ -22,6 +22,7 @@ import {
   Mono,
   Notice,
   Panel,
+  SegmentedControl,
   StatusBadge,
   type Column,
 } from "../primitives"
@@ -75,35 +76,6 @@ function summaryNumber(plan: PlanSummary, key: string): number {
 function optionalPath(value: string): string | null {
   const trimmed = value.trim()
   return trimmed === "" ? null : trimmed
-}
-
-function CreateModeButton({
-  active,
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  active: boolean
-  icon: typeof Plus
-  label: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "flex min-h-9 items-center justify-center gap-1.5 rounded px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-        active
-          ? "bg-card text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      <Icon className="size-4" aria-hidden="true" />
-      {label}
-    </button>
-  )
 }
 
 function CreatePlanPanel() {
@@ -160,21 +132,13 @@ function CreatePlanPanel() {
       }
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
-        <div
-          role="group"
-          aria-label="Plan type"
-          className="grid rounded-md border border-border bg-muted p-0.5 sm:grid-cols-3"
-        >
-          {CREATE_MODES.map((entry) => (
-            <CreateModeButton
-              key={entry.value}
-              active={mode === entry.value}
-              icon={entry.icon}
-              label={entry.label}
-              onClick={() => setMode(entry.value)}
-            />
-          ))}
-        </div>
+        <SegmentedControl
+          ariaLabel="Plan type"
+          options={CREATE_MODES}
+          value={mode}
+          onChange={setMode}
+          className="grid sm:grid-cols-3"
+        />
 
         {mode === "add" ? (
           <Field label="Source path" help="Blank uses the saved Incoming path.">
@@ -240,8 +204,30 @@ function CreatePlanPanel() {
         ) : null}
 
         {result?.registration && !result.detail ? (
-          <Notice tone="success" title="Library registered">
-            {result.registration.track_count} tracks recorded.
+          <Notice tone="success" title="Library registered — no plan needed">
+            <p className="mb-2">
+              This registration did not produce a Plan; there is nothing to apply.
+            </p>
+            <dl className="grid gap-x-6 gap-y-1.5 sm:grid-cols-3">
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Root path</dt>
+                <dd>
+                  <Mono className="text-foreground" title={result.registration.library.root_path}>
+                    {result.registration.library.root_path}
+                  </Mono>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Status</dt>
+                <dd>
+                  <StatusBadge status={result.registration.library.status} />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Tracks</dt>
+                <dd className="tabular-nums">{result.registration.track_count}</dd>
+              </div>
+            </dl>
           </Notice>
         ) : null}
 

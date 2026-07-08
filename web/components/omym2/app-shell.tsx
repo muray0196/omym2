@@ -8,18 +8,19 @@ import {
   ListChecks,
   Menu,
   Music,
+  Plus,
   Route as RouteIcon,
   Settings,
   ShieldCheck,
   ClipboardList,
   type LucideIcon,
 } from "lucide-react"
-import { type ReactNode, useState } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 import { useApp, type NavKey, type Route } from "./app-context"
 import { CommandPalette, CommandPaletteTrigger } from "./command-palette"
 import { cn } from "./lib"
 import { validateConfig } from "./lib"
-import { Mono, StatusBadge } from "./primitives"
+import { Button, Mono, StatusBadge } from "./primitives"
 
 const NAV_ITEMS: { key: NavKey; label: string; icon: LucideIcon; route: Route }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, route: { name: "dashboard" } },
@@ -145,17 +146,25 @@ function PathSummary({
   label,
   icon: Icon,
   value,
+  unavailable = false,
 }: {
   label: string
   icon: LucideIcon
   value: string | null
+  /**
+   * Settings have not resolved (still loading) or failed to load — show a
+   * muted placeholder instead of "not set" or fabricated default paths.
+   */
+  unavailable?: boolean
 }) {
   return (
     <div className="hidden items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 xl:flex">
       <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="leading-tight">
         <p className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">{label}</p>
-        {value ? (
+        {unavailable ? (
+          <span className="text-xs text-muted-foreground">—</span>
+        ) : value ? (
           <Mono className="text-xs text-foreground" title={value}>
             {value}
           </Mono>
@@ -168,8 +177,12 @@ function PathSummary({
 }
 
 function Header() {
-  const { savedConfig } = useApp()
+  const { navigate, savedConfig, settingsLoaded, settingsLoadError } = useApp()
   const validation = validateConfig(savedConfig)
+  // Three settings states, not two: loading, failed ("unavailable" — never
+  // show fabricated default config values as if they were real), and ready.
+  const settingsFailed = settingsLoadError !== null
+  const settingsReady = settingsLoaded && !settingsFailed
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur lg:px-6">
       <div className="flex items-center gap-2 lg:hidden">
@@ -180,23 +193,81 @@ function Header() {
       </div>
       <div className="flex flex-1 flex-wrap items-center justify-end gap-2 lg:gap-3">
         <CommandPaletteTrigger />
-        <PathSummary label="Library" icon={Database} value={savedConfig.paths.library} />
-        <PathSummary label="Incoming" icon={FolderTree} value={savedConfig.paths.incoming} />
+        <Button variant="default" size="sm" onClick={() => navigate({ name: "plans" })}>
+          <Plus className="size-4" aria-hidden="true" /> New plan
+        </Button>
+        <PathSummary
+          label="Library"
+          icon={Database}
+          value={savedConfig.paths.library}
+          unavailable={!settingsReady}
+        />
+        <PathSummary
+          label="Incoming"
+          icon={FolderTree}
+          value={savedConfig.paths.incoming}
+          unavailable={!settingsReady}
+        />
         <StatusBadge
-          status={validation.valid ? "valid" : "invalid"}
-          label={validation.valid ? "Config valid" : "Config invalid"}
+          status={
+            settingsReady
+              ? validation.valid
+                ? "valid"
+                : "invalid"
+              : settingsFailed
+                ? "unavailable"
+                : "loading"
+          }
+          label={
+            settingsReady
+              ? validation.valid
+                ? "Config valid"
+                : "Config invalid"
+              : settingsFailed
+                ? "Config unavailable"
+                : "Loading"
+          }
+          tone={settingsReady ? undefined : settingsFailed ? "danger" : "neutral"}
         />
       </div>
     </header>
   )
 }
 
+const SIDEBAR_COLLAPSED_KEY = "omym2.sidebar-collapsed"
+
 export function AppShell({ children }: { children: ReactNode }) {
+  // Initialize to the non-collapsed default on first render (matches the
+  // server-rendered markup) and apply any stored preference in a mount
+  // effect, avoiding a hydration mismatch. Same pattern as the theme effect
+  // in app-context.tsx.
   const [collapsed, setCollapsed] = useState(false)
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
+      if (stored !== null) setCollapsed(stored === "true")
+    } catch {
+      // Ignore: localStorage can be unavailable (e.g. private browsing).
+    }
+  }, [])
+
+  function toggleCollapsed() {
+    setCollapsed((current) => {
+      const next = !current
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next))
+      } catch {
+        // Ignore: localStorage can be unavailable (e.g. private browsing).
+      }
+      return next
+    })
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <CommandPalette />
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
+      <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header />
         <MobileNav />

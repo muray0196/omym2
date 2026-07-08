@@ -6,6 +6,7 @@ import { formatTimestamp, severityForIssue, truncateMiddle, validateConfig } fro
 import {
   Button,
   DataTable,
+  EmptyState,
   MetricCard,
   Mono,
   Notice,
@@ -22,14 +23,25 @@ export function DashboardScreen() {
   const {
     checkErrors,
     checkIssues,
+    checkLoaded,
     historyErrors,
+    historyLoaded,
     navigate,
     runs,
     savedConfig,
+    settingsLoaded,
+    settingsLoadError,
     trackErrors,
     tracks,
+    tracksLoaded,
   } = useApp()
   const validation = validateConfig(savedConfig)
+  // "Ready" means actually loaded from the backend. When loading finished
+  // via failure, keep the placeholder values — never present the fabricated
+  // default config paths as if they were the user's real settings.
+  const settingsFailed = settingsLoadError !== null
+  const settingsReady = settingsLoaded && !settingsFailed
+  const settingsPendingHint = settingsFailed ? "Failed to load" : "Loading settings..."
   const libraryConfigured = Boolean(savedConfig.paths.library)
   const incomingConfigured = Boolean(savedConfig.paths.incoming)
   const lastRun = runs
@@ -97,52 +109,88 @@ export function DashboardScreen() {
       >
         <MetricCard
           label="Settings"
-          value={validation.valid ? "Valid" : "Invalid"}
-          tone={validation.valid ? "success" : "danger"}
-          hint={validation.valid ? "All checks passed" : `${validation.errors.length} error(s)`}
+          value={settingsReady ? (validation.valid ? "Valid" : "Invalid") : "—"}
+          tone={settingsReady ? (validation.valid ? "success" : "danger") : "neutral"}
+          hint={
+            settingsReady
+              ? validation.valid
+                ? "All checks passed"
+                : `${validation.errors.length} error(s)`
+              : settingsPendingHint
+          }
           icon={ShieldCheck}
         />
         <MetricCard
           label="Library"
-          value={libraryConfigured ? "Configured" : "Missing"}
-          tone={libraryConfigured ? "success" : "danger"}
-          hint={libraryConfigured ? truncateMiddle(savedConfig.paths.library!, 24) : "Set a path"}
+          value={settingsReady ? (libraryConfigured ? "Configured" : "Missing") : "—"}
+          tone={settingsReady ? (libraryConfigured ? "success" : "danger") : "neutral"}
+          hint={
+            settingsReady
+              ? libraryConfigured
+                ? truncateMiddle(savedConfig.paths.library!, 24)
+                : "Set a path"
+              : settingsPendingHint
+          }
           icon={Database}
         />
         <MetricCard
           label="Incoming"
-          value={incomingConfigured ? "Configured" : "Missing"}
-          tone={incomingConfigured ? "success" : "warning"}
-          hint={incomingConfigured ? truncateMiddle(savedConfig.paths.incoming!, 24) : "Set a path"}
+          value={settingsReady ? (incomingConfigured ? "Configured" : "Missing") : "—"}
+          tone={settingsReady ? (incomingConfigured ? "success" : "warning") : "neutral"}
+          hint={
+            settingsReady
+              ? incomingConfigured
+                ? truncateMiddle(savedConfig.paths.incoming!, 24)
+                : "Set a path"
+              : settingsPendingHint
+          }
           icon={FolderTree}
         />
         <MetricCard
           label="Last run"
-          value={lastRun ? truncateLabel(lastRun.status) : "None"}
+          value={historyLoaded ? (lastRun ? truncateLabel(lastRun.status) : "None") : "—"}
           tone={
-            lastRun?.status === "succeeded"
-              ? "success"
-              : lastRun?.status === "failed"
-                ? "danger"
-                : lastRun?.status === "partial_failed"
-                  ? "warning"
-                  : "neutral"
+            !historyLoaded
+              ? "neutral"
+              : lastRun?.status === "succeeded"
+                ? "success"
+                : lastRun?.status === "failed"
+                  ? "danger"
+                  : lastRun?.status === "partial_failed"
+                    ? "warning"
+                    : "neutral"
           }
-          hint={lastRun ? formatTimestamp(lastRun.started_at) : "No runs yet"}
+          hint={
+            historyLoaded
+              ? lastRun
+                ? formatTimestamp(lastRun.started_at)
+                : "No runs yet"
+              : "Loading runs..."
+          }
           icon={ListChecks}
         />
         <MetricCard
           label="Check issues"
-          value={issueCount}
-          tone={errorIssues > 0 ? "danger" : warningIssues > 0 ? "warning" : "success"}
-          hint={`${errorIssues} error · ${warningIssues} warning`}
+          value={checkLoaded ? issueCount : "—"}
+          tone={
+            !checkLoaded
+              ? "neutral"
+              : errorIssues > 0
+                ? "danger"
+                : warningIssues > 0
+                  ? "warning"
+                  : "success"
+          }
+          hint={
+            checkLoaded ? `${errorIssues} error · ${warningIssues} warning` : "Loading checks..."
+          }
           icon={ShieldCheck}
         />
         <MetricCard
           label="Managed tracks"
-          value={tracks.filter((t) => t.status === "active").length}
+          value={tracksLoaded ? tracks.filter((t) => t.status === "active").length : "—"}
           tone="neutral"
-          hint={`${tracks.length} total records`}
+          hint={tracksLoaded ? `${tracks.length} total records` : "Loading tracks..."}
           icon={Music}
         />
       </section>
@@ -191,13 +239,23 @@ export function DashboardScreen() {
               getRowKey={(r) => r.run_id}
               onRowClick={(r) => navigate({ name: "run-detail", runId: r.run_id })}
               caption="Most recent runs"
+              empty={
+                <EmptyState
+                  icon={ListChecks}
+                  title={historyLoaded ? "No runs recorded yet." : "Loading runs..."}
+                />
+              }
             />
           </Panel>
         </div>
 
         <div className="flex flex-col gap-6">
           <Panel title="Check issue summary" icon={ShieldCheck}>
-            {issueCount === 0 ? (
+            {!checkLoaded ? (
+              <Notice tone="info" title="Loading issue summary">
+                Consistency diagnostics are still loading.
+              </Notice>
+            ) : issueCount === 0 ? (
               <Notice tone="success" title="No issues found">
                 DB and filesystem state appear consistent.
               </Notice>
@@ -233,7 +291,27 @@ export function DashboardScreen() {
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-muted-foreground">Status</dt>
                 <dd>
-                  <StatusBadge status={libraryConfigured ? "configured" : "missing"} />
+                  <StatusBadge
+                    status={
+                      settingsReady
+                        ? libraryConfigured
+                          ? "configured"
+                          : "missing"
+                        : settingsFailed
+                          ? "unavailable"
+                          : "loading"
+                    }
+                    label={settingsReady ? undefined : settingsFailed ? "Unavailable" : "Loading"}
+                    tone={
+                      settingsReady
+                        ? libraryConfigured
+                          ? "success"
+                          : "danger"
+                        : settingsFailed
+                          ? "danger"
+                          : "neutral"
+                    }
+                  />
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-2">
@@ -250,7 +328,7 @@ export function DashboardScreen() {
               </div>
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-muted-foreground">Active runs</dt>
-                <dd className="font-medium tabular-nums">{runningCount}</dd>
+                <dd className="font-medium tabular-nums">{historyLoaded ? runningCount : "—"}</dd>
               </div>
             </dl>
           </Panel>

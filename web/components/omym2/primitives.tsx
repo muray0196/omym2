@@ -57,6 +57,24 @@ export function toneForStatus(status: string): Tone {
   return STATUS_TONE[status] ?? "neutral"
 }
 
+/** Solid tone dot, no border (e.g. command palette result markers). */
+export const TONE_DOT_CLASSES: Record<Tone, string> = {
+  success: "bg-success",
+  info: "bg-info",
+  warning: "bg-warning",
+  danger: "bg-danger",
+  neutral: "bg-muted-foreground",
+}
+
+/** Bordered tone dot (e.g. timeline status markers). */
+export const TONE_MARKER_CLASSES: Record<Tone, string> = {
+  success: "border-success bg-success",
+  info: "border-info bg-info",
+  warning: "border-warning bg-warning",
+  danger: "border-danger bg-danger",
+  neutral: "border-border bg-muted-foreground",
+}
+
 /** Humanize a snake_case status/label for display. */
 export function truncateLabel(value: string): string {
   return value.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())
@@ -229,6 +247,57 @@ export function PathArrow({
       <Mono className="truncate text-foreground">
         <span title={target}>{target ? truncateMiddle(target, max) : "—"}</span>
       </Mono>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* MetaRow                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One label/value row inside a <dl>. Pass `value` for the common case (a
+ * mono, middle-truncated, optionally copyable string). Pass `children`
+ * instead when the caller needs full control over the value cell (e.g.
+ * break-all paths, composed numbers) rather than truncation.
+ * `responsive` stacks label above value below `sm` — used by detail lists
+ * that read better full-width on narrow screens.
+ */
+export function MetaRow({
+  label,
+  value,
+  children,
+  copy = false,
+  max = 36,
+  responsive = false,
+}: {
+  label: string
+  value?: string
+  children?: ReactNode
+  copy?: boolean
+  max?: number
+  responsive?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        "border-b border-border py-2 last:border-0",
+        responsive
+          ? "flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+          : "flex items-center justify-between gap-3",
+      )}
+    >
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+      {value !== undefined ? (
+        <dd className="flex min-w-0 items-center gap-1">
+          <Mono className="truncate text-foreground" title={value}>
+            {truncateMiddle(value, max)}
+          </Mono>
+          {copy ? <CopyButton value={value} label={`Copy ${label}`} /> : null}
+        </dd>
+      ) : (
+        <dd className="min-w-0 text-sm">{children}</dd>
+      )}
     </div>
   )
 }
@@ -422,6 +491,83 @@ export function Button({
       )}
       {...props}
     />
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* SegmentedControl                                                    */
+/* ------------------------------------------------------------------ */
+
+export interface SegmentedOption<T extends string> {
+  value: T
+  label: ReactNode
+  icon?: typeof Info
+}
+
+/**
+ * Shared segmented button-group. Two flavors share one visual language
+ * (bg-muted p-0.5 track, active = bg-card text-foreground shadow-sm):
+ *  - "picker" (default): a value picker — renders aria-pressed on a
+ *    role="group" container. Use for mutually-exclusive view/mode toggles.
+ *  - "nav": in-page navigation between sections — renders aria-current on
+ *    a <nav> landmark instead of aria-pressed on a group.
+ */
+export function SegmentedControl<T extends string>({
+  ariaLabel,
+  options,
+  value,
+  onChange,
+  variant = "picker",
+  size = "md",
+  className,
+}: {
+  ariaLabel: string
+  options: SegmentedOption<T>[]
+  value: T
+  onChange: (value: T) => void
+  variant?: "picker" | "nav"
+  size?: "sm" | "md"
+  className?: string
+}) {
+  const sizeClasses = size === "sm" ? "gap-1.5 px-2.5 py-1 text-xs" : "min-h-9 gap-1.5 px-3 text-sm"
+  const iconSize = size === "sm" ? "size-3.5" : "size-4"
+  const trackClassName = cn("flex rounded-md border border-border bg-muted p-0.5", className)
+
+  const items = options.map((option) => {
+    const active = option.value === value
+    const Icon = option.icon
+    return (
+      <button
+        key={option.value}
+        type="button"
+        onClick={() => onChange(option.value)}
+        aria-pressed={variant === "picker" ? active : undefined}
+        aria-current={variant === "nav" ? (active ? "true" : undefined) : undefined}
+        className={cn(
+          "flex items-center justify-center whitespace-nowrap rounded font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+          sizeClasses,
+          active
+            ? "bg-card text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {Icon ? <Icon className={cn(iconSize, "shrink-0")} aria-hidden="true" /> : null}
+        {option.label}
+      </button>
+    )
+  })
+
+  if (variant === "nav") {
+    return (
+      <nav aria-label={ariaLabel} className={trackClassName}>
+        {items}
+      </nav>
+    )
+  }
+  return (
+    <div role="group" aria-label={ariaLabel} className={trackClassName}>
+      {items}
+    </div>
   )
 }
 
