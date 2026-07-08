@@ -41,3 +41,18 @@ def test_settings_web_app_factory_uses_config_and_database_overrides(
 
     assert isinstance(app, FastAPI)
     assert captured_args == [(config_path, database_path, None)]
+
+
+def test_path_normalizer_is_injected_to_path_consuming_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The CLI composition should inject shared CLI path normalization into add/organize/refresh."""
+
+    def fake_normalize(path: object) -> str:
+        return f"normalized:{path}"
+
+    monkeypatch.setattr("omym2.platform.cli_composition.normalize_cli_path", fake_normalize)
+
+    dependencies = build_command_dependencies()
+
+    assert dependencies.add.normalize_source_path is fake_normalize
+    assert dependencies.organize.normalize_library_root is fake_normalize
+    assert dependencies.refresh.normalize_target_path is fake_normalize

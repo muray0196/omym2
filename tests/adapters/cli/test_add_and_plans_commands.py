@@ -8,41 +8,87 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, cast, override
 from uuid import UUID
 
+from omym2.adapters.cli.commands.add import AddCommandDependencies, run_add_command
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.default_config import default_app_config
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.library import Library, LibraryStatus
-from omym2.domain.models.plan import PlanStatus, PlanType
+from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType
 from omym2.domain.models.run import RunStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
+from omym2.features.add.dto import CreateAddPlanRequest
 from omym2.platform.cli_entry_point import run_cli as main
-from omym2.shared.ids import LibraryId
+from omym2.shared.ids import LibraryId, PlanId
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
 
+    from omym2.features.add.ports import CreateAddPlanPorts
+    from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+CONFIG_HASH = "config-hash"
 EXPECTED_CANONICAL_PATH = "Artist/2026_Album/1-02_Title.flac"
 ERROR_EXIT_CODE = 1
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
+LIBRARY_ROOT = "/library"
+NORMALIZED_SOURCE_PATH = "normalized:incoming"
+PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
+RAW_SOURCE_PATH = "incoming"
 SUCCESS_EXIT_CODE = 0
 TITLE = "Title"
 TRACK_ALBUM = "Album"
 TRACK_ARTIST = "Artist"
 UNEXPECTED_STDIN_READ_MESSAGE = "stdin should not be read"
 YEAR = 2026
+
+
+def test_add_command_passes_normalized_source_path_to_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """add delegates source normalization before creating the usecase request."""
+    captured_requests: list[CreateAddPlanRequest] = []
+
+    class CapturingCreateAddPlanUseCase:
+        """Usecase test double that records the inbound request."""
+
+        def __init__(self, ports: object) -> None:
+            """Accept the injected ports without using them."""
+            del ports
+
+        def execute(self, request: CreateAddPlanRequest) -> Plan:
+            """Capture the request and return an empty add Plan."""
+            captured_requests.append(request)
+            return _empty_plan(PlanType.ADD)
+
+    monkeypatch.setattr("omym2.adapters.cli.commands.add.CreateAddPlanUseCase", CapturingCreateAddPlanUseCase)
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = run_add_command(
+        [RAW_SOURCE_PATH],
+        stdout,
+        stderr,
+        AddCommandDependencies(
+            create_add_plan_ports_factory=_stub_create_add_plan_ports,
+            apply_plan_ports_factory=_stub_apply_plan_ports,
+            normalize_source_path=lambda path: f"normalized:{path}",
+        ),
+    )
+
+    assert exit_code == SUCCESS_EXIT_CODE
+    assert captured_requests == [CreateAddPlanRequest(source_path=NORMALIZED_SOURCE_PATH)]
 
 
 def test_add_command_creates_plan_and_plans_command_displays_it(
@@ -342,6 +388,26 @@ class UnreadableInput(StringIO):
         """Raise when a --yes command tries to read confirmation."""
         del size
         raise AssertionError(UNEXPECTED_STDIN_READ_MESSAGE)
+
+
+def _empty_plan(plan_type: PlanType) -> Plan:
+    return Plan(
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        plan_type=plan_type,
+        status=PlanStatus.READY,
+        created_at=BASE_TIME,
+        config_hash=CONFIG_HASH,
+        library_root_at_plan=LIBRARY_ROOT,
+    )
+
+
+def _stub_create_add_plan_ports() -> CreateAddPlanPorts:
+    return cast("CreateAddPlanPorts", object())
+
+
+def _stub_apply_plan_ports() -> ApplyPlanPorts:
+    return cast("ApplyPlanPorts", object())
 
 
 def _register_library(database_file: Path, library_root: str) -> None:

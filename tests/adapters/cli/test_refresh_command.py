@@ -8,16 +8,17 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
+from omym2.adapters.cli.commands.refresh import RefreshCommandDependencies, run_refresh_command
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.default_config import default_app_config
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.library import Library, LibraryStatus
-from omym2.domain.models.plan import PlanStatus, PlanType
+from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus
 from omym2.domain.models.run import RunStatus
 from omym2.domain.models.track import Track, TrackStatus
@@ -25,23 +26,31 @@ from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
+from omym2.features.refresh.dto import CreateRefreshPlanRequest
 from omym2.platform.cli_entry_point import run_cli as main
-from omym2.shared.ids import LibraryId, TrackId
+from omym2.shared.ids import LibraryId, PlanId, TrackId
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
 
+    from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath
+    from omym2.features.refresh.ports import CreateRefreshPlanPorts
 
 AUDIO_CONTENT = b"fake audio bytes"
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+CONFIG_HASH = "config-hash"
 CONTENT_HASH = calculate_content_fingerprint(AUDIO_CONTENT)
 ERROR_EXIT_CODE = 1
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
+LIBRARY_ROOT = "/library"
+NORMALIZED_TARGET_PATH = "normalized:target.flac"
 NEW_PATH = "Artist/2026_Album/1-02_New-Title.flac"
 OLD_PATH = "Artist/2026_Album/1-02_Old-Title.flac"
+PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
+RAW_TARGET_PATH = "target.flac"
 SECOND_NEW_PATH = "Artist/2026_Album/1-03_Second-New.flac"
 SECOND_OLD_PATH = "Artist/2026_Album/1-03_Second-Old.flac"
 SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
@@ -82,6 +91,45 @@ SECOND_NEW_METADATA = TrackMetadata(
     track_number=3,
     disc_number=1,
 )
+
+
+def test_refresh_command_passes_normalized_target_path_to_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """refresh delegates target normalization before creating the usecase request."""
+    captured_requests: list[CreateRefreshPlanRequest] = []
+
+    class CapturingCreateRefreshPlanUseCase:
+        """Usecase test double that records the inbound request."""
+
+        def __init__(self, ports: object) -> None:
+            """Accept the injected ports without using them."""
+            del ports
+
+        def execute(self, request: CreateRefreshPlanRequest) -> Plan:
+            """Capture the request and return an empty refresh Plan."""
+            captured_requests.append(request)
+            return _empty_plan()
+
+    monkeypatch.setattr(
+        "omym2.adapters.cli.commands.refresh.CreateRefreshPlanUseCase", CapturingCreateRefreshPlanUseCase
+    )
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = run_refresh_command(
+        [RAW_TARGET_PATH],
+        stdout,
+        stderr,
+        RefreshCommandDependencies(
+            create_refresh_plan_ports_factory=_stub_create_refresh_plan_ports,
+            apply_plan_ports_factory=_stub_apply_plan_ports,
+            normalize_target_path=lambda path: f"normalized:{path}",
+        ),
+    )
+
+    assert exit_code == SUCCESS_EXIT_CODE
+    assert captured_requests == [CreateRefreshPlanRequest(target_path=NORMALIZED_TARGET_PATH, include_all=False)]
 
 
 def test_refresh_command_creates_plan_for_managed_file(
@@ -340,6 +388,26 @@ def _register_library_and_tracks(database_file: Path, library_root: str, *tracks
         for track in tracks:
             uow.tracks.save(track)
         uow.commit()
+
+
+def _empty_plan() -> Plan:
+    return Plan(
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        plan_type=PlanType.REFRESH,
+        status=PlanStatus.READY,
+        created_at=BASE_TIME,
+        config_hash=CONFIG_HASH,
+        library_root_at_plan=LIBRARY_ROOT,
+    )
+
+
+def _stub_create_refresh_plan_ports() -> CreateRefreshPlanPorts:
+    return cast("CreateRefreshPlanPorts", object())
+
+
+def _stub_apply_plan_ports() -> ApplyPlanPorts:
+    return cast("ApplyPlanPorts", object())
 
 
 def _track(

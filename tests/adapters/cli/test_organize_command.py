@@ -6,34 +6,91 @@ Why: Verifies Library registration and organize apply orchestration.
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+from uuid import UUID
 
+from omym2.adapters.cli.commands.organize import OrganizeCommandDependencies, run_organize_command
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
 from omym2.domain.models.file_event import FileEventStatus
-from omym2.domain.models.library import LibraryStatus
+from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import PlanStatus
 from omym2.domain.models.run import RunStatus
 from omym2.domain.models.track_metadata import TrackMetadata
+from omym2.features.organize.dto import CreateOrganizePlanRequest, OrganizeLibraryResult
 from omym2.platform.cli_entry_point import run_cli as main
+from omym2.shared.ids import LibraryId
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
 
+    from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath
+    from omym2.features.organize.ports import CreateOrganizePlanPorts
 
 AUDIO_CONTENT = b"fake audio bytes"
+BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+CONFIG_HASH = "config-hash"
 EXPECTED_CANONICAL_PATH = "Artist/2026_Album/1-02_Title.flac"
+LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
+NORMALIZED_LIBRARY_ROOT = "normalized:library"
+RAW_LIBRARY_ROOT = "library"
 SUCCESS_EXIT_CODE = 0
 TITLE = "Title"
 TRACK_ALBUM = "Album"
 TRACK_ARTIST = "Artist"
 USAGE_EXIT_CODE = 2
 YEAR = 2026
+
+
+def test_organize_command_passes_normalized_library_root_to_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """organize delegates Library-root normalization before creating the request."""
+    captured_requests: list[CreateOrganizePlanRequest] = []
+
+    class CapturingCreateOrganizePlanUseCase:
+        """Usecase test double that records the inbound request."""
+
+        def __init__(self, ports: object) -> None:
+            """Accept the injected ports without using them."""
+            del ports
+
+        def execute(self, request: CreateOrganizePlanRequest) -> OrganizeLibraryResult:
+            """Capture the request and return a clean registration result."""
+            captured_requests.append(request)
+            return OrganizeLibraryResult(
+                library=_library(NORMALIZED_LIBRARY_ROOT),
+                plan=None,
+                actions=(),
+                track_count=0,
+            )
+
+    monkeypatch.setattr(
+        "omym2.adapters.cli.commands.organize.CreateOrganizePlanUseCase",
+        CapturingCreateOrganizePlanUseCase,
+    )
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = run_organize_command(
+        ["--library", RAW_LIBRARY_ROOT],
+        stdout,
+        stderr,
+        OrganizeCommandDependencies(
+            create_organize_plan_ports_factory=_stub_create_organize_plan_ports,
+            apply_plan_ports_factory=_stub_apply_plan_ports,
+            normalize_library_root=lambda path: f"normalized:{path}",
+        ),
+    )
+
+    assert exit_code == SUCCESS_EXIT_CODE
+    assert captured_requests == [CreateOrganizePlanRequest(library_root=NORMALIZED_LIBRARY_ROOT)]
 
 
 def test_organize_command_registers_clean_library(
@@ -162,3 +219,23 @@ def test_organize_command_apply_moves_file_and_registers_library(
         tracks = uow.tracks.list_by_library(library.library_id)
         assert len(tracks) == 1
         assert tracks[0].current_path == EXPECTED_CANONICAL_PATH
+
+
+def _library(root_path: str) -> Library:
+    return Library(
+        library_id=LIBRARY_ID,
+        root_path=root_path,
+        path_policy_hash=CONFIG_HASH,
+        registered_at=BASE_TIME,
+        status=LibraryStatus.REGISTERED,
+        created_at=BASE_TIME,
+        updated_at=BASE_TIME,
+    )
+
+
+def _stub_create_organize_plan_ports() -> CreateOrganizePlanPorts:
+    return cast("CreateOrganizePlanPorts", object())
+
+
+def _stub_apply_plan_ports() -> ApplyPlanPorts:
+    return cast("ApplyPlanPorts", object())

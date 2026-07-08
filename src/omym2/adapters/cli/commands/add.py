@@ -6,7 +6,6 @@ Why: Exposes incoming import Plan creation and optional apply orchestration.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.apply_execution import confirm_and_apply_plan
@@ -44,6 +43,7 @@ class AddCommandDependencies:
 
     create_add_plan_ports_factory: Callable[[], CreateAddPlanPorts]
     apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
+    normalize_source_path: Callable[[FileSystemPath], str]
 
 
 def run_add_command(
@@ -68,10 +68,12 @@ def _run_add(
     stderr: TextIO,
     dependencies: AddCommandDependencies,
 ) -> int:
+    source_path = dependencies.normalize_source_path(options.source_path) if options.source_path is not None else None
     ports = dependencies.create_add_plan_ports_factory()
 
     try:
-        plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=options.source_path))
+        # Keep the normalization decision in platform wiring, not command adapters.
+        plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=source_path))
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
         return ERROR_EXIT_CODE
@@ -118,7 +120,7 @@ def _parse_args(args: Sequence[str]) -> _AddCommandOptions:
         elif arg == YES_FLAG:
             yes = True
         elif not arg.startswith("-") and source_path is None:
-            source_path = _normalize_source_path(arg)
+            source_path = arg
         else:
             raise ValueError(ADD_USAGE_MESSAGE)
 
@@ -126,10 +128,6 @@ def _parse_args(args: Sequence[str]) -> _AddCommandOptions:
         raise ValueError(ADD_USAGE_MESSAGE)
 
     return _AddCommandOptions(source_path=source_path, should_apply=should_apply, yes=yes)
-
-
-def _normalize_source_path(raw_path: FileSystemPath) -> str:
-    return str(Path(raw_path).expanduser().resolve(strict=False))
 
 
 def _write_result(stdout: TextIO, plan: Plan) -> None:

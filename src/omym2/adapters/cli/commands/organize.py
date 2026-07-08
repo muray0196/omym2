@@ -6,7 +6,6 @@ Why: Exposes Library registration, review-plan creation, and optional apply.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.apply_execution import confirm_and_apply_plan
@@ -43,6 +42,7 @@ class OrganizeCommandDependencies:
 
     create_organize_plan_ports_factory: Callable[[], CreateOrganizePlanPorts]
     apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
+    normalize_library_root: Callable[[FileSystemPath], str]
 
 
 def run_organize_command(
@@ -67,10 +67,16 @@ def _run_organize(
     stderr: TextIO,
     dependencies: OrganizeCommandDependencies,
 ) -> int:
+    # Normalize the library root in platform composition, then pass only values onward.
+    normalized_library_root = (
+        dependencies.normalize_library_root(options.library_root) if options.library_root is not None else None
+    )
     ports = dependencies.create_organize_plan_ports_factory()
 
     try:
-        result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(library_root=options.library_root))
+        result = CreateOrganizePlanUseCase(ports).execute(
+            CreateOrganizePlanRequest(library_root=normalized_library_root)
+        )
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
         return ERROR_EXIT_CODE
@@ -120,17 +126,13 @@ def _parse_args(args: Sequence[str]) -> _OrganizeCommandOptions:
         if arg == LIBRARY_OPTION:
             if library_root is not None or index + 1 >= len(args):
                 raise ValueError(ORGANIZE_USAGE_MESSAGE)
-            library_root = _normalize_library_root(args[index + 1])
+            library_root = args[index + 1]
             index += LIBRARY_OPTION_ARG_COUNT
             continue
 
         raise ValueError(ORGANIZE_USAGE_MESSAGE)
 
     return _OrganizeCommandOptions(library_root=library_root, should_apply=should_apply)
-
-
-def _normalize_library_root(raw_path: FileSystemPath) -> str:
-    return str(Path(raw_path).expanduser().resolve(strict=False))
 
 
 def _write_result(stdout: TextIO, result: OrganizeLibraryResult) -> None:
