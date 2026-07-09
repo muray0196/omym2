@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.library import Library
-    from omym2.domain.models.plan import Plan
-    from omym2.domain.models.plan_action import PlanAction
+    from omym2.domain.models.plan import Plan, PlanStatus, PlanType
+    from omym2.domain.models.plan_action import ActionStatus, PlanAction
     from omym2.domain.models.run import Run
     from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
     from omym2.domain.models.track_metadata import TrackMetadata
@@ -131,6 +131,21 @@ class PlanRepository(Protocol):
         """Persist a Plan header and summary."""
         ...
 
+    def query_page(
+        self,
+        library_id: LibraryId | None,
+        *,
+        status: PlanStatus | None,
+        plan_type: PlanType | None,
+        page: PageRequest,
+    ) -> Page[Plan]:
+        """Return one keyset page of Plans, ordered (created_at DESC, plan_id DESC).
+
+        `library_id=None` scopes across every known Library. `page.total`
+        counts rows matching the filters, ignoring the cursor.
+        """
+        ...
+
 
 class PlanActionRepository(Protocol):
     """Persistence contract for recorded PlanActions."""
@@ -145,6 +160,31 @@ class PlanActionRepository(Protocol):
 
     def save(self, action: PlanAction) -> None:
         """Persist a PlanAction without recalculating target paths."""
+        ...
+
+    def query_page(
+        self,
+        plan_id: PlanId,
+        *,
+        status: ActionStatus | None,
+        page: PageRequest,
+    ) -> Page[PlanAction]:
+        """Return one keyset page of a Plan's actions, ordered (sort_order, action_id).
+
+        `page.total` counts rows matching the filters, ignoring the cursor.
+        """
+        ...
+
+    def status_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+        """Return PlanAction status facets for one Plan, ordered count DESC then value ASC."""
+        ...
+
+    def action_type_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+        """Return PlanAction type facets for one Plan, ordered count DESC then value ASC."""
+        ...
+
+    def list_target_paths(self, plan_id: PlanId) -> Sequence[str]:
+        """Return the non-null target_path values recorded for one Plan's actions."""
         ...
 
 

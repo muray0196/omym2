@@ -22,6 +22,7 @@ from omym2.shared.pagination import (
     clamp_limit,
     decode_cursor,
     encode_cursor,
+    paginate_group_counts,
 )
 
 MID_RANGE_LIMIT = 50
@@ -132,3 +133,49 @@ def test_group_count_and_facet_value_are_plain_field_holders() -> None:
 
     assert (group.key, group.label, group.count) == ("artist-a", "Artist A", 3)
     assert (facet.value, facet.count) == ("active", 7)
+
+
+def test_paginate_group_counts_orders_count_desc_then_key_asc_without_requiring_pre_sort() -> None:
+    """paginate_group_counts sorts unsorted input by (count DESC, key ASC)."""
+    groups = [
+        GroupCount(key="b", label="B", count=1),
+        GroupCount(key="a", label="A", count=5),
+        GroupCount(key="c", label="C", count=5),
+    ]
+
+    page = paginate_group_counts(groups, PageRequest())
+
+    assert [group.key for group in page.items] == ["a", "c", "b"]
+    assert page.total == PAGE_ITEM_COUNT + 1
+    assert page.next_cursor_key is None
+
+
+def test_paginate_group_counts_walks_every_group_once_with_keyset_cursor() -> None:
+    """A limit=1 keyset walk over 3 groups visits every group once, in order, then terminates."""
+    groups = [
+        GroupCount(key="a", label="A", count=5),
+        GroupCount(key="c", label="C", count=5),
+        GroupCount(key="b", label="B", count=1),
+    ]
+
+    visited: list[str] = []
+    cursor: tuple[str, ...] | None = None
+    for _ in range(len(groups) + 1):
+        page = paginate_group_counts(groups, PageRequest(limit=1, cursor_key=cursor))
+        visited.extend(group.key for group in page.items)
+        assert page.total == len(groups)
+        if page.next_cursor_key is None:
+            break
+        cursor = page.next_cursor_key
+
+    assert visited == ["a", "c", "b"]
+
+
+def test_paginate_group_counts_rejects_malformed_cursor_key() -> None:
+    """A cursor key that is not a 2-tuple or has a non-integer count raises CursorDecodeError."""
+    groups = [GroupCount(key="a", label="A", count=1)]
+
+    with pytest.raises(CursorDecodeError):
+        _ = paginate_group_counts(groups, PageRequest(cursor_key=("only-one",)))
+    with pytest.raises(CursorDecodeError):
+        _ = paginate_group_counts(groups, PageRequest(cursor_key=("not-an-int", "a")))

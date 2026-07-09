@@ -1,6 +1,6 @@
 """
-Summary: Implements reviewed Plan listing with filter, sort, and limit.
-Why: Lets users inspect and narrow down created Plans before apply exists.
+Summary: Implements reviewed Plan listing as one keyset page.
+Why: Lets users browse created Plans at scale before apply exists.
 """
 
 from __future__ import annotations
@@ -12,38 +12,26 @@ if TYPE_CHECKING:
     from omym2.domain.models.plan import Plan
     from omym2.features.plans.dto import ListPlansRequest
     from omym2.features.plans.ports import PlanQueryPorts
+    from omym2.shared.pagination import Page
 
 
 @dataclass(frozen=True, slots=True)
 class ListPlansUseCase:
-    """List reviewed Plan headers, optionally filtered and limited."""
+    """List reviewed Plan headers as one keyset page, newest first."""
 
     ports: PlanQueryPorts
 
-    def execute(self, request: ListPlansRequest) -> tuple[Plan, ...]:
-        """Return Plans for the selected scope: filter, then sort newest-first, then limit.
+    def execute(self, request: ListPlansRequest) -> Page[Plan]:
+        """Return one page of Plans for the requested scope, status, and plan_type filters.
 
-        Fetch is per-Library when request.library_id is set, otherwise
-        concatenated across all known Libraries. The pipeline order is
-        strict: filter by status/plan_type, sort by (created_at,
-        plan_id) descending, then apply limit last.
+        Ordered (created_at DESC, plan_id DESC). Fetch is per-Library when
+        request.library_id is set, otherwise scoped across every known
+        Library.
         """
         with self.ports.uow as uow:
-            if request.library_id is not None:
-                plans: list[Plan] = list(uow.plans.list_by_library(request.library_id))
-            else:
-                plans = []
-                for library in uow.libraries.list_all():
-                    plans.extend(uow.plans.list_by_library(library.library_id))
-
-            if request.status is not None:
-                plans = [plan for plan in plans if plan.status == request.status]
-            if request.plan_type is not None:
-                plans = [plan for plan in plans if plan.plan_type == request.plan_type]
-
-            plans.sort(key=lambda plan: (plan.created_at, str(plan.plan_id)), reverse=True)
-
-            if request.limit is not None:
-                plans = plans[: request.limit]
-
-            return tuple(plans)
+            return uow.plans.query_page(
+                request.library_id,
+                status=request.status,
+                plan_type=request.plan_type,
+                page=request.page,
+            )

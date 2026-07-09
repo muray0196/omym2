@@ -36,7 +36,7 @@ LIKE_ESCAPE_CHAR = "\\"  # escape character used for LIKE search patterns
 UNSUPPORTED_TRACK_GROUPING_MESSAGE = "Unsupported Track grouping"
 UNKNOWN_TRACK_GROUP_LABEL = "(unknown)"
 TRACK_GROUP_LABEL_SEPARATOR = " — "  # em dash joiner between group artist and group album labels
-KEYSET_CURSOR_KEY_LENGTH = 2  # every Track/Track-group cursor key is a 2-tuple
+KEYSET_CURSOR_KEY_LENGTH = 2  # every keyset cursor key in this module is a 2-tuple
 
 TRACK_SEARCH_WHERE_CLAUSE = f"""(
                 LOWER(json_extract(metadata_json, '$.title')) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
@@ -71,6 +71,26 @@ TRACK_SELECT_FROM = """
 RUN_SELECT_FROM = """
             SELECT run_id, plan_id, library_id, status, started_at, completed_at, error_summary
             FROM runs
+"""
+PLAN_SELECT_FROM = """
+            SELECT plan_id, library_id, plan_type, status, created_at, config_hash, library_root_at_plan, summary_json
+            FROM plans
+"""
+PLAN_ACTION_SELECT_FROM = """
+            SELECT
+                action_id,
+                plan_id,
+                library_id,
+                track_id,
+                action_type,
+                source_path,
+                target_path,
+                content_hash_at_plan,
+                metadata_hash_at_plan,
+                status,
+                reason,
+                sort_order
+            FROM plan_actions
 """
 
 
@@ -371,9 +391,8 @@ class SQLitePlanRepository(_SQLiteRepository):
         """Return one Plan by ID."""
         row = _fetch_one(
             self._connection,
-            """
-            SELECT plan_id, library_id, plan_type, status, created_at, config_hash, library_root_at_plan, summary_json
-            FROM plans
+            PLAN_SELECT_FROM
+            + """
             WHERE plan_id = ?
             """,
             (str(plan_id),),
@@ -384,15 +403,48 @@ class SQLitePlanRepository(_SQLiteRepository):
         """Return Plans owned by one Library."""
         rows = _fetch_all(
             self._connection,
-            """
-            SELECT plan_id, library_id, plan_type, status, created_at, config_hash, library_root_at_plan, summary_json
-            FROM plans
+            PLAN_SELECT_FROM
+            + """
             WHERE library_id = ?
             ORDER BY created_at, plan_id
             """,
             (str(library_id),),
         )
         return tuple(_plan_from_row(row) for row in rows)
+
+    def query_page(
+        self,
+        library_id: LibraryId | None,
+        *,
+        status: PlanStatus | None,
+        plan_type: PlanType | None,
+        page: PageRequest,
+    ) -> Page[Plan]:
+        """Return one keyset page of Plans ordered (created_at DESC, plan_id DESC)."""
+        where_sql, where_params = _plan_filter_where(library_id, status, plan_type)
+        # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
+        count_sql = f"SELECT COUNT(*) FROM plans{where_sql}"  # noqa: S608
+        total = _scalar_int(self._connection, count_sql, tuple(where_params))
+
+        cursor_sql, cursor_params = _plan_cursor_clause(where_sql, page.cursor_key)
+        rows = _fetch_all(
+            self._connection,
+            PLAN_SELECT_FROM
+            + f"""
+            {where_sql}{cursor_sql}
+            ORDER BY created_at DESC, plan_id DESC
+            LIMIT ?
+            """,
+            (*where_params, *cursor_params, page.limit + 1),
+        )
+
+        plans = tuple(_plan_from_row(row) for row in rows)
+        page_items = plans[: page.limit]
+        has_more = len(plans) > page.limit
+        next_cursor_key = (
+            (_row_text(rows[page.limit - 1], "created_at"), str(page_items[-1].plan_id)) if has_more else None
+        )
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
     def save(self, plan: Plan) -> None:
         """Persist a Plan header and summary."""
@@ -438,21 +490,8 @@ class SQLitePlanActionRepository(_SQLiteRepository):
         """Return one PlanAction by ID."""
         row = _fetch_one(
             self._connection,
-            """
-            SELECT
-                action_id,
-                plan_id,
-                library_id,
-                track_id,
-                action_type,
-                source_path,
-                target_path,
-                content_hash_at_plan,
-                metadata_hash_at_plan,
-                status,
-                reason,
-                sort_order
-            FROM plan_actions
+            PLAN_ACTION_SELECT_FROM
+            + """
             WHERE action_id = ?
             """,
             (str(action_id),),
@@ -463,27 +502,89 @@ class SQLitePlanActionRepository(_SQLiteRepository):
         """Return the actions recorded for a Plan in apply order."""
         rows = _fetch_all(
             self._connection,
-            """
-            SELECT
-                action_id,
-                plan_id,
-                library_id,
-                track_id,
-                action_type,
-                source_path,
-                target_path,
-                content_hash_at_plan,
-                metadata_hash_at_plan,
-                status,
-                reason,
-                sort_order
-            FROM plan_actions
+            PLAN_ACTION_SELECT_FROM
+            + """
             WHERE plan_id = ?
             ORDER BY sort_order, action_id
             """,
             (str(plan_id),),
         )
         return tuple(_plan_action_from_row(row) for row in rows)
+
+    def query_page(
+        self,
+        plan_id: PlanId,
+        *,
+        status: ActionStatus | None,
+        page: PageRequest,
+    ) -> Page[PlanAction]:
+        """Return one keyset page of a Plan's actions ordered (sort_order, action_id)."""
+        where_sql, where_params = _plan_action_filter_where(plan_id, status)
+        # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
+        count_sql = f"SELECT COUNT(*) FROM plan_actions{where_sql}"  # noqa: S608
+        total = _scalar_int(self._connection, count_sql, tuple(where_params))
+
+        cursor_sql, cursor_params = _plan_action_cursor_clause(where_sql, page.cursor_key)
+        rows = _fetch_all(
+            self._connection,
+            PLAN_ACTION_SELECT_FROM
+            + f"""
+            {where_sql}{cursor_sql}
+            ORDER BY sort_order, action_id
+            LIMIT ?
+            """,
+            (*where_params, *cursor_params, page.limit + 1),
+        )
+
+        actions = tuple(_plan_action_from_row(row) for row in rows)
+        page_items = actions[: page.limit]
+        has_more = len(actions) > page.limit
+        next_cursor_key = (str(page_items[-1].sort_order), str(page_items[-1].action_id)) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def status_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+        """Return PlanAction status facets for one Plan, ordered count DESC then value ASC."""
+        rows = _fetch_all(
+            self._connection,
+            """
+            SELECT status, COUNT(*) AS count
+            FROM plan_actions
+            WHERE plan_id = ?
+            GROUP BY status
+            ORDER BY count DESC, status ASC
+            """,
+            (str(plan_id),),
+        )
+        return tuple(FacetValue(value=_row_text(row, "status"), count=_row_int(row, "count")) for row in rows)
+
+    def action_type_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+        """Return PlanAction type facets for one Plan, ordered count DESC then value ASC."""
+        rows = _fetch_all(
+            self._connection,
+            """
+            SELECT action_type, COUNT(*) AS count
+            FROM plan_actions
+            WHERE plan_id = ?
+            GROUP BY action_type
+            ORDER BY count DESC, action_type ASC
+            """,
+            (str(plan_id),),
+        )
+        return tuple(FacetValue(value=_row_text(row, "action_type"), count=_row_int(row, "count")) for row in rows)
+
+    def list_target_paths(self, plan_id: PlanId) -> tuple[str, ...]:
+        """Return the non-null target_path values recorded for one Plan's actions."""
+        rows = _fetch_all(
+            self._connection,
+            """
+            SELECT target_path
+            FROM plan_actions
+            WHERE plan_id = ? AND target_path IS NOT NULL
+            ORDER BY sort_order, action_id
+            """,
+            (str(plan_id),),
+        )
+        return tuple(_row_text(row, "target_path") for row in rows)
 
     def save(self, action: PlanAction) -> None:
         """Persist a PlanAction without recalculating target paths."""
@@ -906,6 +1007,60 @@ def _track_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | None) -> 
         raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
     prefix = " AND " if where_sql else " WHERE "
     return f"{prefix}(current_path, track_id) > (?, ?)", list(cursor_key)
+
+
+def _plan_filter_where(
+    library_id: LibraryId | None,
+    status: PlanStatus | None,
+    plan_type: PlanType | None,
+) -> tuple[str, list[object]]:
+    clauses: list[str] = []
+    params: list[object] = []
+    if library_id is not None:
+        clauses.append("library_id = ?")
+        params.append(str(library_id))
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status.value)
+    if plan_type is not None:
+        clauses.append("plan_type = ?")
+        params.append(plan_type.value)
+    if not clauses:
+        return "", params
+    return " WHERE " + " AND ".join(clauses), params
+
+
+def _plan_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:
+    if cursor_key is None:
+        return "", []
+    if len(cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+    prefix = " AND " if where_sql else " WHERE "
+    # DESC ordering: rows strictly "after" the cursor in (created_at DESC, plan_id DESC) order compare `<`.
+    return f"{prefix}(created_at, plan_id) < (?, ?)", list(cursor_key)
+
+
+def _plan_action_filter_where(plan_id: PlanId, status: ActionStatus | None) -> tuple[str, list[object]]:
+    clauses: list[str] = ["plan_id = ?"]
+    params: list[object] = [str(plan_id)]
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status.value)
+    return " WHERE " + " AND ".join(clauses), params
+
+
+def _plan_action_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:
+    if cursor_key is None:
+        return "", []
+    if len(cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+    sort_order_text, action_id_text = cursor_key
+    try:
+        sort_order_value = int(sort_order_text)
+    except ValueError as error:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
+    prefix = " AND " if where_sql else " WHERE "
+    return f"{prefix}(sort_order, action_id) > (?, ?)", [sort_order_value, action_id_text]
 
 
 def _track_group_cursor_clause(cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:

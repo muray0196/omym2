@@ -1,6 +1,6 @@
 """
 Summary: Tests Web Plan review JSON API routes.
-Why: Verifies browser Plan creation and inspection without apply wiring.
+Why: Verifies browser Plan creation plus paged Plan/action browsing, facets, and groups.
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ from omym2.domain.services.content_fingerprint import calculate_content_fingerpr
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.platform.web_composition import build_web_app as create_web_app
 from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
+from omym2.shared.pagination import MAX_PAGE_LIMIT
 
 if TYPE_CHECKING:
     import pytest
@@ -55,11 +56,18 @@ LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 MISSING_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345699"))
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 SECOND_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
+THIRD_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
+THIRD_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567f"))
 SUCCESS_STATUS_CODE = 200
 NOT_FOUND_STATUS_CODE = 404
 SEEDED_ACTION_COUNT = 2
+SEEDED_PLAN_COUNT = 3
 TARGET_PATH = "Artist/2026_Album/1-02_Title.flac"
+TARGET_DIRECTORY = "Artist/2026_Album"
+ROOT_GROUP_LABEL = "(root)"
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
+ONE_ITEM_LIMIT = 1
+CLAMPED_LIMIT_REQUEST = 1000
 
 ADD_OLD_TARGET = "Artist/1998_Album/1-01_Old-Title.flac"
 ADD_NEW_TARGET = "Artist/1998_Album/1-02_New-Title.flac"
@@ -114,63 +122,113 @@ class _JsonResponse(Protocol):
     def json(self) -> object: ...
 
 
-def test_plans_api_lists_plans_with_filters(tmp_path: Path) -> None:
-    """Plans API returns newest-first rows and applies status/type/limit filters."""
+def test_plans_api_paginates_newest_first_with_keyset_cursor_and_terminates(tmp_path: Path) -> None:
+    """A limit=1 walk over 3 Plans visits every Plan once, newest first, then next_cursor is null."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     library_root.mkdir()
-    with SQLiteUnitOfWork(app_paths.database_file) as uow:
-        uow.libraries.save(_library(str(library_root)))
-        uow.plans.save(_plan(str(library_root), plan_type=PlanType.ADD, status=PlanStatus.READY))
-        uow.plans.save(
-            _plan(
-                str(library_root),
-                plan_id=SECOND_PLAN_ID,
-                plan_type=PlanType.REFRESH,
-                status=PlanStatus.APPLIED,
-                created_at=datetime(2026, 1, 2, tzinfo=UTC),
-            )
-        )
-        uow.commit()
+    _seed_plan_pages(app_paths.database_file, str(library_root))
     client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
 
-    response = client.get(WEB_API_PLANS_ROUTE, params={"status": "ready", "type": "add", "limit": "1"})
+    visited: list[str] = []
+    cursor: str | None = None
+    last_page: dict[str, object] | None = None
+    for _ in range(SEEDED_PLAN_COUNT + 1):
+        params = {"limit": str(ONE_ITEM_LIMIT)} | ({"cursor": cursor} if cursor else {})
+        response = client.get(WEB_API_PLANS_ROUTE, params=params)
+        assert response.status_code == SUCCESS_STATUS_CODE
+        payload = _json_payload(response)
+        items = _object_list_payload(payload, "items")
+        page = _object_payload(payload, "page")
+        visited.extend(cast("str", item["plan_id"]) for item in items)
+        assert page["total"] == SEEDED_PLAN_COUNT
+        assert page["limit"] == ONE_ITEM_LIMIT
+        last_page = page
+        next_cursor = page["next_cursor"]
+        if next_cursor is None:
+            break
+        cursor = cast("str", next_cursor)
+
+    assert visited == [str(THIRD_PLAN_ID), str(SECOND_PLAN_ID), str(PLAN_ID)]
+    assert len(visited) == len(set(visited))
+    assert last_page is not None
+    assert last_page["next_cursor"] is None
+
+
+def test_plans_api_filters_by_status_and_type(tmp_path: Path) -> None:
+    """The status and type filters combine as AND; page.total counts the filtered rows."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_pages(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(WEB_API_PLANS_ROUTE, params={"status": "ready", "type": "add"})
 
     assert response.status_code == SUCCESS_STATUS_CODE
     payload = _json_payload(response)
-    rows = _object_list_payload(payload, "plans")
+    items = _object_list_payload(payload, "items")
+    page = _object_payload(payload, "page")
     assert payload["errors"] == []
-    assert len(rows) == 1
-    assert rows[0]["plan_id"] == str(PLAN_ID)
-    assert rows[0]["plan_type"] == PlanType.ADD.value
-    assert rows[0]["status"] == PlanStatus.READY.value
-    assert rows[0]["summary"] == {"action_count": "2"}
+    assert [item["plan_id"] for item in items] == [str(PLAN_ID)]
+    assert items[0]["plan_type"] == PlanType.ADD.value
+    assert items[0]["status"] == PlanStatus.READY.value
+    assert items[0]["summary"] == {"action_count": "2"}
+    assert page["total"] == 1
 
 
-def test_plan_detail_api_returns_actions_and_filters_by_action_status(tmp_path: Path) -> None:
-    """Plan detail returns recorded target paths and can narrow actions by status."""
+def test_plans_api_rejects_invalid_cursor_status_and_low_limit(tmp_path: Path) -> None:
+    """Malformed cursors, unknown statuses, and limit=0 return the documented 400 envelope."""
+    app_paths = default_application_paths(tmp_path)
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    cursor_response = client.get(WEB_API_PLANS_ROUTE, params={"cursor": "not-valid-base64url!!"})
+    status_response = client.get(WEB_API_PLANS_ROUTE, params={"status": "not-a-status"})
+    limit_response = client.get(WEB_API_PLANS_ROUTE, params={"limit": "0"})
+
+    assert cursor_response.status_code == ERROR_STATUS_CODE
+    assert cursor_response.json() == {"items": [], "page": None, "errors": ["Invalid cursor."]}
+    assert status_response.status_code == ERROR_STATUS_CODE
+    assert status_response.json() == {
+        "items": [],
+        "page": None,
+        "errors": ["Invalid plan status filter: not-a-status"],
+    }
+    assert limit_response.status_code == ERROR_STATUS_CODE
+    assert limit_response.json()["page"] is None
+
+
+def test_plans_api_clamps_limit_above_maximum(tmp_path: Path) -> None:
+    """A limit above 500 is clamped down to 500, not rejected."""
+    app_paths = default_application_paths(tmp_path)
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(WEB_API_PLANS_ROUTE, params={"limit": str(CLAMPED_LIMIT_REQUEST)})
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    page = _object_payload(_json_payload(response), "page")
+    assert page["limit"] == MAX_PAGE_LIMIT
+
+
+def test_plan_detail_api_returns_header_only(tmp_path: Path) -> None:
+    """Plan detail returns the header without an embedded actions array or total_action_count."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     library_root.mkdir()
     _seed_plan_detail(app_paths.database_file, str(library_root))
     client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
 
-    response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}", params={"actions": "blocked"})
+    response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}")
 
     assert response.status_code == SUCCESS_STATUS_CODE
     payload = _json_payload(response)
     detail = _object_payload(payload, "detail")
     plan = _object_payload(detail, "plan")
-    actions = _object_list_payload(detail, "actions")
     assert payload["errors"] == []
+    assert set(detail) == {"plan"}
     assert plan["plan_id"] == str(PLAN_ID)
     assert plan["config_hash"] == calculate_config_fingerprint(AppConfig())
-    assert detail["total_action_count"] == SEEDED_ACTION_COUNT
-    assert len(actions) == 1
-    assert actions[0]["action_id"] == str(BLOCKED_ACTION_ID)
-    assert actions[0]["status"] == ActionStatus.BLOCKED.value
-    assert actions[0]["reason"] == PlanActionReason.TARGET_EXISTS.value
-    assert actions[0]["target_path"] == TARGET_PATH
+    assert plan["library_root_at_plan"] == str(library_root)
 
 
 def test_plan_detail_api_returns_not_found_for_missing_or_invalid_plan(tmp_path: Path) -> None:
@@ -187,19 +245,225 @@ def test_plan_detail_api_returns_not_found_for_missing_or_invalid_plan(tmp_path:
     assert invalid_response.json() == {"detail": None, "errors": ["Plan was not found."]}
 
 
-def test_plan_detail_api_rejects_invalid_action_filter(tmp_path: Path) -> None:
-    """Plan detail validates action-status query filters before loading actions."""
+def test_plan_actions_api_paginates_with_keyset_cursor_and_terminates(tmp_path: Path) -> None:
+    """A limit=1 walk over a Plan's actions visits every action once, in review order."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     library_root.mkdir()
     _seed_plan_detail(app_paths.database_file, str(library_root))
     client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
 
-    response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}", params={"actions": "moved"})
+    visited: list[str] = []
+    cursor: str | None = None
+    for _ in range(SEEDED_ACTION_COUNT + 1):
+        params = {"limit": str(ONE_ITEM_LIMIT)} | ({"cursor": cursor} if cursor else {})
+        response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/actions", params=params)
+        assert response.status_code == SUCCESS_STATUS_CODE
+        payload = _json_payload(response)
+        items = _object_list_payload(payload, "items")
+        page = _object_payload(payload, "page")
+        visited.extend(cast("str", item["action_id"]) for item in items)
+        assert page["total"] == SEEDED_ACTION_COUNT
+        next_cursor = page["next_cursor"]
+        if next_cursor is None:
+            break
+        cursor = cast("str", next_cursor)
 
-    assert response.status_code == ERROR_STATUS_CODE
-    assert response.json()["detail"] is None
-    assert response.json()["errors"] == ["Invalid action status filter: moved"]
+    assert visited == [str(ACTION_ID), str(BLOCKED_ACTION_ID)]
+
+
+def test_plan_actions_api_filters_by_status(tmp_path: Path) -> None:
+    """The status filter only returns actions with a matching status; total matches the filter."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_detail(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/actions", params={"status": "blocked"})
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    items = _object_list_payload(payload, "items")
+    page = _object_payload(payload, "page")
+    assert [item["action_id"] for item in items] == [str(BLOCKED_ACTION_ID)]
+    assert items[0]["status"] == ActionStatus.BLOCKED.value
+    assert items[0]["reason"] == PlanActionReason.TARGET_EXISTS.value
+    assert items[0]["target_path"] == TARGET_PATH
+    assert page["total"] == 1
+
+
+def test_plan_actions_api_rejects_invalid_status_and_cursor(tmp_path: Path) -> None:
+    """Unknown status filters and malformed cursors return the documented 400 envelope."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_detail(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    status_response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/actions", params={"status": "moved"})
+    cursor_response = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/actions",
+        params={"cursor": "not-valid-base64url!!"},
+    )
+
+    assert status_response.status_code == ERROR_STATUS_CODE
+    assert status_response.json() == {
+        "items": [],
+        "page": None,
+        "errors": ["Invalid action status filter: moved"],
+    }
+    assert cursor_response.status_code == ERROR_STATUS_CODE
+    assert cursor_response.json() == {"items": [], "page": None, "errors": ["Invalid cursor."]}
+
+
+def test_plan_actions_api_returns_not_found_for_unknown_plan(tmp_path: Path) -> None:
+    """An unknown Plan ID returns a 404 list envelope."""
+    app_paths = default_application_paths(tmp_path)
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(f"{WEB_API_PLANS_ROUTE}/{MISSING_PLAN_ID}/actions")
+
+    assert response.status_code == NOT_FOUND_STATUS_CODE
+    assert response.json() == {"items": [], "page": None, "errors": ["Plan was not found."]}
+
+
+def test_plan_facets_api_returns_status_and_action_type_counts(tmp_path: Path) -> None:
+    """Facets carry both status and action_type breakdowns plus the unfiltered action total."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_detail(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/facets")
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    facets = _object_payload(payload, "facets")
+    assert facets["status"] == [
+        {"value": ActionStatus.BLOCKED.value, "count": 1},
+        {"value": ActionStatus.PLANNED.value, "count": 1},
+    ]
+    assert facets["action_type"] == [{"value": ActionType.MOVE.value, "count": 2}]
+    assert payload["total"] == SEEDED_ACTION_COUNT
+    assert payload["errors"] == []
+
+
+def test_plan_facets_api_returns_not_found_for_unknown_plan(tmp_path: Path) -> None:
+    """An unknown Plan ID returns a 404 facet envelope with total null."""
+    app_paths = default_application_paths(tmp_path)
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(f"{WEB_API_PLANS_ROUTE}/{MISSING_PLAN_ID}/facets")
+
+    assert response.status_code == NOT_FOUND_STATUS_CODE
+    assert response.json() == {"facets": {}, "total": None, "errors": ["Plan was not found."]}
+
+
+def test_plan_groups_api_returns_target_directory_groups_with_root_label(tmp_path: Path) -> None:
+    """Groups map each target path to its parent directory; root-level targets become '(root)'."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_groups(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/groups", params={"group_by": "target_directory"})
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    assert payload["group_by"] == "target_directory"
+    items = _object_list_payload(payload, "items")
+    assert items == [
+        {"key": TARGET_DIRECTORY, "label": TARGET_DIRECTORY, "count": 2},
+        {"key": ROOT_GROUP_LABEL, "label": ROOT_GROUP_LABEL, "count": 1},
+    ]
+    page = _object_payload(payload, "page")
+    assert page["total"] == SEEDED_ACTION_COUNT
+    assert page["next_cursor"] is None
+
+
+def test_plan_groups_api_paginates_with_count_then_key_keyset(tmp_path: Path) -> None:
+    """A limit=1 keyset walk over target-directory groups visits every group exactly once."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_groups(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    first_response = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/groups",
+        params={"group_by": "target_directory", "limit": str(ONE_ITEM_LIMIT)},
+    )
+    first_payload = _json_payload(first_response)
+    first_page = _object_payload(first_payload, "page")
+    next_cursor = first_page["next_cursor"]
+    assert next_cursor is not None
+    second_response = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/groups",
+        params={"group_by": "target_directory", "limit": str(ONE_ITEM_LIMIT), "cursor": cast("str", next_cursor)},
+    )
+
+    assert first_response.status_code == SUCCESS_STATUS_CODE
+    assert _object_list_payload(first_payload, "items") == [
+        {"key": TARGET_DIRECTORY, "label": TARGET_DIRECTORY, "count": 2}
+    ]
+    assert second_response.status_code == SUCCESS_STATUS_CODE
+    second_payload = _json_payload(second_response)
+    assert _object_list_payload(second_payload, "items") == [
+        {"key": ROOT_GROUP_LABEL, "label": ROOT_GROUP_LABEL, "count": 1}
+    ]
+    assert _object_payload(second_payload, "page")["next_cursor"] is None
+
+
+def test_plan_groups_api_rejects_missing_or_invalid_group_by(tmp_path: Path) -> None:
+    """A missing or unknown group_by value returns the documented 400 group envelope."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_detail(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    missing_response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/groups")
+    invalid_response = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/groups",
+        params={"group_by": "not-a-grouping"},
+    )
+
+    assert missing_response.status_code == ERROR_STATUS_CODE
+    assert missing_response.json() == {
+        "group_by": None,
+        "items": [],
+        "page": None,
+        "errors": ["Query parameter group_by is required."],
+    }
+    assert invalid_response.status_code == ERROR_STATUS_CODE
+    assert invalid_response.json() == {
+        "group_by": None,
+        "items": [],
+        "page": None,
+        "errors": ["Invalid group_by filter: not-a-grouping"],
+    }
+
+
+def test_plan_groups_api_returns_not_found_for_unknown_plan(tmp_path: Path) -> None:
+    """An unknown Plan ID returns a 404 group envelope."""
+    app_paths = default_application_paths(tmp_path)
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{MISSING_PLAN_ID}/groups",
+        params={"group_by": "target_directory"},
+    )
+
+    assert response.status_code == NOT_FOUND_STATUS_CODE
+    assert response.json() == {
+        "group_by": None,
+        "items": [],
+        "page": None,
+        "errors": ["Plan was not found."],
+    }
 
 
 def test_create_add_plan_uses_persisted_album_year_resolution(
@@ -393,6 +657,69 @@ def _seed_plan_detail(database_file: Path, library_root: str) -> None:
         uow.commit()
 
 
+def _seed_plan_pages(database_file: Path, library_root: str) -> None:
+    """Seed three Plans with distinct statuses/types/timestamps for paging and filter tests."""
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(library_root))
+        uow.plans.save(_plan(library_root, plan_type=PlanType.ADD, status=PlanStatus.READY))
+        uow.plans.save(
+            _plan(
+                library_root,
+                plan_id=SECOND_PLAN_ID,
+                plan_type=PlanType.REFRESH,
+                status=PlanStatus.APPLIED,
+                created_at=datetime(2026, 1, 2, tzinfo=UTC),
+            )
+        )
+        uow.plans.save(
+            _plan(
+                library_root,
+                plan_id=THIRD_PLAN_ID,
+                plan_type=PlanType.ORGANIZE,
+                status=PlanStatus.READY,
+                created_at=datetime(2026, 1, 3, tzinfo=UTC),
+            )
+        )
+        uow.commit()
+
+
+def _seed_plan_groups(database_file: Path, library_root: str) -> None:
+    """Seed one Plan with two same-directory targets, one root-level target, and one null target."""
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(library_root))
+        uow.plans.save(_plan(library_root))
+        uow.plan_actions.save(_action(action_id=ACTION_ID, status=ActionStatus.PLANNED, reason=None))
+        uow.plan_actions.save(
+            _action(
+                action_id=BLOCKED_ACTION_ID,
+                status=ActionStatus.PLANNED,
+                reason=None,
+                sort_order=2,
+                target_path="Artist/2026_Album/1-03_Title.flac",
+            )
+        )
+        uow.plan_actions.save(
+            _action(
+                action_id=THIRD_ACTION_ID,
+                status=ActionStatus.PLANNED,
+                reason=None,
+                sort_order=3,
+                target_path="Loose.flac",
+            )
+        )
+        uow.plan_actions.save(
+            _action(
+                action_id=ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680")),
+                status=ActionStatus.PLANNED,
+                reason=None,
+                sort_order=4,
+                action_type=ActionType.SKIP,
+                target_path=None,
+            )
+        )
+        uow.commit()
+
+
 def _json_payload(response: _JsonResponse) -> dict[str, object]:
     return cast("dict[str, object]", response.json())
 
@@ -524,21 +851,23 @@ def _plan(
     )
 
 
-def _action(
+def _action(  # noqa: PLR0913 - test fixture spans the paging/facet/grouping action variation matrix.
     *,
     action_id: ActionId,
     status: ActionStatus,
     reason: PlanActionReason | None,
     sort_order: int = 1,
+    action_type: ActionType = ActionType.MOVE,
+    target_path: str | None = TARGET_PATH,
 ) -> PlanAction:
     return PlanAction(
         action_id=action_id,
         plan_id=PLAN_ID,
         library_id=LIBRARY_ID,
         track_id=None,
-        action_type=ActionType.MOVE,
+        action_type=action_type,
         source_path="/incoming/Title.flac",
-        target_path=TARGET_PATH,
+        target_path=target_path,
         content_hash_at_plan=CONTENT_HASH,
         metadata_hash_at_plan=calculate_metadata_fingerprint(METADATA),
         status=status,

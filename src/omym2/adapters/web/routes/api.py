@@ -24,8 +24,9 @@ from omym2.adapters.web.routes.api_serializers import (
     serialize_organize_registration,
     serialize_page_info,
     serialize_path_preview,
-    serialize_plan_detail,
+    serialize_plan_action,
     serialize_plan_detail_parts,
+    serialize_plan_header_response,
     serialize_plan_row,
     serialize_run_detail,
     serialize_run_summary,
@@ -49,8 +50,11 @@ from omym2.config import (
     WEB_API_ARTIST_IDS_GENERATE_ROUTE,
     WEB_API_CHECK_ROUTE,
     WEB_API_HISTORY_ROUTE,
+    WEB_API_PLAN_ACTIONS_ROUTE,
     WEB_API_PLAN_ADD_ROUTE,
     WEB_API_PLAN_DETAIL_ROUTE,
+    WEB_API_PLAN_FACETS_ROUTE,
+    WEB_API_PLAN_GROUPS_ROUTE,
     WEB_API_PLAN_ORGANIZE_ROUTE,
     WEB_API_PLAN_REFRESH_ROUTE,
     WEB_API_PLANS_ROUTE,
@@ -88,8 +92,17 @@ from omym2.features.organize.usecases.create_organize_plan import (
     CreateOrganizePlanUseCase,
     OrganizeLibrarySelectionError,
 )
-from omym2.features.plans.dto import GetPlanDetailRequest, ListPlansRequest
-from omym2.features.plans.usecases.get_plan_detail import GetPlanDetailUseCase, PlanNotFoundError
+from omym2.features.plans.dto import (
+    GetPlanHeaderRequest,
+    GroupPlanActionsRequest,
+    ListPlanActionsRequest,
+    ListPlansRequest,
+    PlanActionFacetsRequest,
+)
+from omym2.features.plans.usecases.get_plan_action_facets import GetPlanActionFacetsUseCase
+from omym2.features.plans.usecases.get_plan_header import GetPlanHeaderUseCase, PlanNotFoundError
+from omym2.features.plans.usecases.group_plan_actions import GroupPlanActionsUseCase
+from omym2.features.plans.usecases.list_plan_actions import ListPlanActionsUseCase
 from omym2.features.plans.usecases.list_plans import ListPlansUseCase
 from omym2.features.refresh.dto import CreateRefreshPlanRequest
 from omym2.features.refresh.usecases.create_refresh_plan import (
@@ -141,6 +154,7 @@ INSPECTION_ERROR_PREFIX = "Inspection failed"
 PLAN_CREATION_ERROR_PREFIX = "Plan creation failed"
 PLAN_PATH_NOT_DIRECTORY_MESSAGE = "Plan path must be a directory"
 PLAN_PATH_NOT_FOUND_MESSAGE = "Plan path was not found"
+PLAN_ACTIONS_GROUP_BY_TARGET_DIRECTORY = "target_directory"  # only supported plan-action group_by value
 
 type CheckPortsFactory = Callable[[], "CheckLibraryPorts"]
 type HistoryPortsFactory = Callable[[], "HistoryPorts"]
@@ -216,8 +230,17 @@ def _register_plan_routes(router: APIRouter, context: ApiRouteContext) -> None:
     def get_plans(request: Request) -> JSONResponse:
         return _get_plans(context, request)
 
-    def get_plan_detail(plan_id: str, request: Request) -> JSONResponse:
-        return _get_plan_detail(context, plan_id, request)
+    def get_plan_detail(plan_id: str) -> JSONResponse:
+        return _get_plan_detail(context, plan_id)
+
+    def get_plan_actions(plan_id: str, request: Request) -> JSONResponse:
+        return _get_plan_actions(context, plan_id, request)
+
+    def get_plan_facets(plan_id: str) -> JSONResponse:
+        return _get_plan_facets(context, plan_id)
+
+    def get_plan_groups(plan_id: str, request: Request) -> JSONResponse:
+        return _get_plan_groups(context, plan_id, request)
 
     async def create_add_plan(request: Request) -> JSONResponse:
         return await _create_add_plan(context, request)
@@ -230,6 +253,9 @@ def _register_plan_routes(router: APIRouter, context: ApiRouteContext) -> None:
 
     router.add_api_route(WEB_API_PLANS_ROUTE, get_plans, methods=["GET"])
     router.add_api_route(WEB_API_PLAN_DETAIL_ROUTE, get_plan_detail, methods=["GET"])
+    router.add_api_route(WEB_API_PLAN_ACTIONS_ROUTE, get_plan_actions, methods=["GET"])
+    router.add_api_route(WEB_API_PLAN_FACETS_ROUTE, get_plan_facets, methods=["GET"])
+    router.add_api_route(WEB_API_PLAN_GROUPS_ROUTE, get_plan_groups, methods=["GET"])
     router.add_api_route(WEB_API_PLAN_ADD_ROUTE, create_add_plan, methods=["POST"])
     router.add_api_route(WEB_API_PLAN_ORGANIZE_ROUTE, create_organize_plan, methods=["POST"])
     router.add_api_route(WEB_API_PLAN_REFRESH_ROUTE, create_refresh_plan, methods=["POST"])
@@ -424,42 +450,53 @@ def _get_run_detail(context: ApiRouteContext, run_id: str) -> JSONResponse:
 
 
 def _get_plans(context: ApiRouteContext, request: Request) -> JSONResponse:
+    cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
+    if cursor_errors:
+        return _list_error_response(cursor_errors)
+
     status, status_errors = _plan_status_from_query(request.query_params.get("status"))
     plan_type, type_errors = _plan_type_from_query(request.query_params.get("type"))
-    limit, limit_errors = _positive_int_from_query(request.query_params.get("limit"), field_name="limit")
+    limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
     filter_errors = status_errors + type_errors + limit_errors
     if filter_errors:
-        return JSONResponse({"plans": [], "errors": list(filter_errors)}, status_code=ERROR_STATUS_CODE)
+        return _list_error_response(filter_errors)
+
+    effective_limit = cast("int", limit)
 
     try:
-        plans = ListPlansUseCase(context.plan_query_ports_factory()).execute(
-            ListPlansRequest(status=status, plan_type=plan_type, limit=limit)
+        page = ListPlansUseCase(context.plan_query_ports_factory()).execute(
+            ListPlansRequest(
+                status=status,
+                plan_type=plan_type,
+                page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
+            )
         )
+    except CursorDecodeError:
+        return _list_error_response((INVALID_CURSOR_MESSAGE,))
     except sqlite3.DatabaseError as exc:
         return JSONResponse(
-            {"plans": [], "errors": list(_inspection_errors(exc))},
+            {"items": [], "page": None, "errors": list(_inspection_errors(exc))},
             status_code=SERVER_ERROR_STATUS_CODE,
         )
 
     return JSONResponse(
-        {"plans": [serialize_plan_row(plan) for plan in plans], "errors": []},
+        _list_envelope(
+            [serialize_plan_row(plan) for plan in page.items],
+            limit=effective_limit,
+            next_cursor_key=page.next_cursor_key,
+            total=page.total,
+        ),
         status_code=SUCCESS_STATUS_CODE,
     )
 
 
-def _get_plan_detail(context: ApiRouteContext, plan_id: str, request: Request) -> JSONResponse:
+def _get_plan_detail(context: ApiRouteContext, plan_id: str) -> JSONResponse:
     parsed_plan_id = _plan_id_from_text(plan_id)
     if parsed_plan_id is None:
         return _plan_detail_error(PLAN_NOT_FOUND_MESSAGE)
 
-    action_status, action_errors = _action_status_from_query(request.query_params.get("actions"))
-    if action_errors:
-        return JSONResponse({"detail": None, "errors": list(action_errors)}, status_code=ERROR_STATUS_CODE)
-
     try:
-        detail = GetPlanDetailUseCase(context.plan_query_ports_factory()).execute(
-            GetPlanDetailRequest(parsed_plan_id, action_status=action_status)
-        )
+        plan = GetPlanHeaderUseCase(context.plan_query_ports_factory()).execute(GetPlanHeaderRequest(parsed_plan_id))
     except PlanNotFoundError:
         return _plan_detail_error(PLAN_NOT_FOUND_MESSAGE)
     except sqlite3.DatabaseError as exc:
@@ -469,7 +506,123 @@ def _get_plan_detail(context: ApiRouteContext, plan_id: str, request: Request) -
         )
 
     return JSONResponse(
-        {"detail": serialize_plan_detail(detail), "errors": []},
+        {"detail": serialize_plan_header_response(plan), "errors": []},
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+def _get_plan_actions(context: ApiRouteContext, plan_id: str, request: Request) -> JSONResponse:
+    parsed_plan_id = _plan_id_from_text(plan_id)
+    if parsed_plan_id is None:
+        return _list_error_response((PLAN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
+
+    cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
+    status, status_errors = _action_status_from_query(request.query_params.get("status"))
+    limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
+    request_errors = cursor_errors + status_errors + limit_errors
+    if request_errors:
+        return _list_error_response(request_errors)
+
+    effective_limit = cast("int", limit)
+
+    try:
+        page = ListPlanActionsUseCase(context.plan_query_ports_factory()).execute(
+            ListPlanActionsRequest(
+                plan_id=parsed_plan_id,
+                status=status,
+                page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
+            )
+        )
+    except PlanNotFoundError:
+        return _list_error_response((PLAN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
+    except CursorDecodeError:
+        return _list_error_response((INVALID_CURSOR_MESSAGE,))
+    except sqlite3.DatabaseError as exc:
+        return JSONResponse(
+            {"items": [], "page": None, "errors": list(_inspection_errors(exc))},
+            status_code=SERVER_ERROR_STATUS_CODE,
+        )
+
+    return JSONResponse(
+        _list_envelope(
+            [serialize_plan_action(action) for action in page.items],
+            limit=effective_limit,
+            next_cursor_key=page.next_cursor_key,
+            total=page.total,
+        ),
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+def _get_plan_facets(context: ApiRouteContext, plan_id: str) -> JSONResponse:
+    parsed_plan_id = _plan_id_from_text(plan_id)
+    if parsed_plan_id is None:
+        return _facet_error_response((PLAN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
+
+    try:
+        result = GetPlanActionFacetsUseCase(context.plan_query_ports_factory()).execute(
+            PlanActionFacetsRequest(parsed_plan_id)
+        )
+    except PlanNotFoundError:
+        return _facet_error_response((PLAN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
+    except sqlite3.DatabaseError as exc:
+        return JSONResponse(
+            {"facets": {}, "total": None, "errors": list(_inspection_errors(exc))},
+            status_code=SERVER_ERROR_STATUS_CODE,
+        )
+
+    return JSONResponse(
+        _facet_envelope(
+            {
+                "status": [serialize_facet_value(facet) for facet in result.status_facets],
+                "action_type": [serialize_facet_value(facet) for facet in result.action_type_facets],
+            },
+            total=result.total,
+        ),
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+def _get_plan_groups(context: ApiRouteContext, plan_id: str, request: Request) -> JSONResponse:
+    parsed_plan_id = _plan_id_from_text(plan_id)
+    if parsed_plan_id is None:
+        return _group_error_response((PLAN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
+
+    cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
+    grouping, grouping_errors = _plan_action_grouping_from_query(request.query_params.get("group_by"))
+    limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
+    request_errors = cursor_errors + grouping_errors + limit_errors
+    if request_errors:
+        return _group_error_response(request_errors)
+
+    effective_limit = cast("int", limit)
+    effective_grouping = cast("str", grouping)
+
+    try:
+        page = GroupPlanActionsUseCase(context.plan_query_ports_factory()).execute(
+            GroupPlanActionsRequest(
+                plan_id=parsed_plan_id,
+                page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
+            )
+        )
+    except PlanNotFoundError:
+        return _group_error_response((PLAN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
+    except CursorDecodeError:
+        return _group_error_response((INVALID_CURSOR_MESSAGE,))
+    except sqlite3.DatabaseError as exc:
+        return JSONResponse(
+            {"group_by": None, "items": [], "page": None, "errors": list(_inspection_errors(exc))},
+            status_code=SERVER_ERROR_STATUS_CODE,
+        )
+
+    return JSONResponse(
+        _group_envelope(
+            effective_grouping,
+            [serialize_group_count(group) for group in page.items],
+            limit=effective_limit,
+            next_cursor_key=page.next_cursor_key,
+            total=page.total,
+        ),
         status_code=SUCCESS_STATUS_CODE,
     )
 
@@ -806,7 +959,7 @@ def _plan_type_from_query(raw_value: str | None) -> tuple[PlanType | None, tuple
 
 
 def _action_status_from_query(raw_value: str | None) -> tuple[ActionStatus | None, tuple[str, ...]]:
-    if raw_value is None or raw_value in {"", "all"}:
+    if raw_value is None or raw_value == "":
         return None, ()
     try:
         return ActionStatus(raw_value), ()
@@ -814,16 +967,12 @@ def _action_status_from_query(raw_value: str | None) -> tuple[ActionStatus | Non
         return None, (f"Invalid action status filter: {raw_value}",)
 
 
-def _positive_int_from_query(raw_value: str | None, *, field_name: str) -> tuple[int | None, tuple[str, ...]]:
+def _plan_action_grouping_from_query(raw_value: str | None) -> tuple[str | None, tuple[str, ...]]:
     if raw_value is None or raw_value == "":
-        return None, ()
-    try:
-        value = int(raw_value)
-    except ValueError:
-        return None, (f"Query parameter {field_name} must be a positive integer.",)
-    if value <= 0:
-        return None, (f"Query parameter {field_name} must be a positive integer.",)
-    return value, ()
+        return None, ("Query parameter group_by is required.",)
+    if raw_value != PLAN_ACTIONS_GROUP_BY_TARGET_DIRECTORY:
+        return None, (f"Invalid group_by filter: {raw_value}",)
+    return raw_value, ()
 
 
 def _library_id_from_query(raw_value: str | None) -> tuple[LibraryId | None, tuple[str, ...]]:
@@ -924,22 +1073,22 @@ def _facet_envelope(facets: dict[str, list[dict[str, object]]], *, total: int) -
     return {"facets": facets, "total": total, "errors": []}
 
 
-def _list_error_response(errors: tuple[str, ...]) -> JSONResponse:
-    """Build the shared 400 error envelope for list endpoints (items/page emptied)."""
-    return JSONResponse({"items": [], "page": None, "errors": list(errors)}, status_code=ERROR_STATUS_CODE)
+def _list_error_response(errors: tuple[str, ...], *, status_code: int = ERROR_STATUS_CODE) -> JSONResponse:
+    """Build the shared error envelope for list endpoints (items/page emptied); 400 unless overridden."""
+    return JSONResponse({"items": [], "page": None, "errors": list(errors)}, status_code=status_code)
 
 
-def _group_error_response(errors: tuple[str, ...]) -> JSONResponse:
-    """Build the shared 400 error envelope for group endpoints (group_by/items/page emptied)."""
+def _group_error_response(errors: tuple[str, ...], *, status_code: int = ERROR_STATUS_CODE) -> JSONResponse:
+    """Build the shared error envelope for group endpoints (group_by/items/page emptied); 400 unless overridden."""
     return JSONResponse(
         {"group_by": None, "items": [], "page": None, "errors": list(errors)},
-        status_code=ERROR_STATUS_CODE,
+        status_code=status_code,
     )
 
 
-def _facet_error_response(errors: tuple[str, ...]) -> JSONResponse:
-    """Build the shared 400 error envelope for facet endpoints (facets/total emptied)."""
-    return JSONResponse({"facets": {}, "total": None, "errors": list(errors)}, status_code=ERROR_STATUS_CODE)
+def _facet_error_response(errors: tuple[str, ...], *, status_code: int = ERROR_STATUS_CODE) -> JSONResponse:
+    """Build the shared error envelope for facet endpoints (facets/total emptied); 400 unless overridden."""
+    return JSONResponse({"facets": {}, "total": None, "errors": list(errors)}, status_code=status_code)
 
 
 def _optional_string_field(payload: object, field_name: str) -> tuple[str | None, tuple[str, ...]]:

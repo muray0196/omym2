@@ -10,15 +10,22 @@ from typing import TYPE_CHECKING, Self
 
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.track import TrackGrouping
-from omym2.shared.pagination import INVALID_CURSOR_MESSAGE, CursorDecodeError, FacetValue, GroupCount, Page
+from omym2.shared.pagination import (
+    INVALID_CURSOR_MESSAGE,
+    CursorDecodeError,
+    FacetValue,
+    GroupCount,
+    Page,
+    paginate_group_counts,
+)
 
 if TYPE_CHECKING:
     from types import TracebackType
 
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.library import Library
-    from omym2.domain.models.plan import Plan
-    from omym2.domain.models.plan_action import PlanAction
+    from omym2.domain.models.plan import Plan, PlanStatus, PlanType
+    from omym2.domain.models.plan_action import ActionStatus, PlanAction
     from omym2.domain.models.run import Run
     from omym2.domain.models.track import Track, TrackStatus
     from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
@@ -151,27 +158,7 @@ class InMemoryTrackRepository:
             )
             for (group_artist, group_album), count in counts.items()
         ]
-        groups.sort(key=lambda group: (-group.count, group.key))
-        total = len(groups)
-
-        if page.cursor_key is not None:
-            if len(page.cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
-                raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
-            cursor_count_text, cursor_key_text = page.cursor_key
-            try:
-                cursor_count = int(cursor_count_text)
-            except ValueError as error:
-                raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
-            groups = [
-                group
-                for group in groups
-                if group.count < cursor_count or (group.count == cursor_count and group.key > cursor_key_text)
-            ]
-
-        page_items = tuple(groups[: page.limit])
-        has_more = len(groups) > page.limit
-        next_cursor_key = (str(page_items[-1].count), page_items[-1].key) if has_more else None
-        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+        return paginate_group_counts(groups, page)
 
 
 def _track_matches_search(track: Track, search: str) -> bool:
@@ -204,6 +191,40 @@ class InMemoryPlanRepository:
         """Store or replace one Plan."""
         self.records[plan.plan_id] = plan
 
+    def query_page(
+        self,
+        library_id: LibraryId | None,
+        *,
+        status: PlanStatus | None,
+        plan_type: PlanType | None,
+        page: PageRequest,
+    ) -> Page[Plan]:
+        """Return one keyset page of Plans ordered (created_at DESC, plan_id DESC)."""
+        plans = [
+            plan
+            for plan in self.records.values()
+            if (library_id is None or plan.library_id == library_id)
+            and (status is None or plan.status == status)
+            and (plan_type is None or plan.plan_type == plan_type)
+        ]
+        plans.sort(key=lambda plan: (plan.created_at, str(plan.plan_id)), reverse=True)
+        total = len(plans)
+
+        if page.cursor_key is not None:
+            if len(page.cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+                raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+            cursor_created_at, cursor_plan_id = page.cursor_key
+            plans = [
+                plan
+                for plan in plans
+                if (plan.created_at.isoformat(), str(plan.plan_id)) < (cursor_created_at, cursor_plan_id)
+            ]
+
+        page_items = tuple(plans[: page.limit])
+        has_more = len(plans) > page.limit
+        next_cursor_key = (page_items[-1].created_at.isoformat(), str(page_items[-1].plan_id)) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
 
 @dataclass(slots=True)
 class InMemoryPlanActionRepository:
@@ -227,6 +248,69 @@ class InMemoryPlanActionRepository:
     def save(self, action: PlanAction) -> None:
         """Store or replace one PlanAction."""
         self.records[action.action_id] = action
+
+    def query_page(
+        self,
+        plan_id: PlanId,
+        *,
+        status: ActionStatus | None,
+        page: PageRequest,
+    ) -> Page[PlanAction]:
+        """Return one keyset page of a Plan's actions ordered (sort_order, action_id)."""
+        actions = [
+            action
+            for action in self.records.values()
+            if action.plan_id == plan_id and (status is None or action.status == status)
+        ]
+        actions.sort(key=lambda action: (action.sort_order, str(action.action_id)))
+        total = len(actions)
+
+        if page.cursor_key is not None:
+            if len(page.cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+                raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+            cursor_sort_order_text, cursor_action_id = page.cursor_key
+            try:
+                cursor_sort_order = int(cursor_sort_order_text)
+            except ValueError as error:
+                raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
+            actions = [
+                action
+                for action in actions
+                if (action.sort_order, str(action.action_id)) > (cursor_sort_order, cursor_action_id)
+            ]
+
+        page_items = tuple(actions[: page.limit])
+        has_more = len(actions) > page.limit
+        next_cursor_key = (str(page_items[-1].sort_order), str(page_items[-1].action_id)) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def status_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+        """Return PlanAction status facets for one Plan, ordered count DESC then value ASC."""
+        counts: dict[str, int] = {}
+        for action in self.records.values():
+            if action.plan_id != plan_id:
+                continue
+            counts[action.status.value] = counts.get(action.status.value, 0) + 1
+        ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        return tuple(FacetValue(value=value, count=count) for value, count in ordered)
+
+    def action_type_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+        """Return PlanAction type facets for one Plan, ordered count DESC then value ASC."""
+        counts: dict[str, int] = {}
+        for action in self.records.values():
+            if action.plan_id != plan_id:
+                continue
+            counts[action.action_type.value] = counts.get(action.action_type.value, 0) + 1
+        ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        return tuple(FacetValue(value=value, count=count) for value, count in ordered)
+
+    def list_target_paths(self, plan_id: PlanId) -> tuple[str, ...]:
+        """Return the non-null target_path values recorded for one Plan's actions."""
+        actions = sorted(
+            (action for action in self.records.values() if action.plan_id == plan_id),
+            key=lambda action: (action.sort_order, str(action.action_id)),
+        )
+        return tuple(action.target_path for action in actions if action.target_path is not None)
 
 
 @dataclass(slots=True)

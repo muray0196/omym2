@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from omym2.domain.models.track_metadata import TrackMetadata
     from omym2.features.artist_ids.dto import GenerateArtistIdsResult
     from omym2.features.organize.dto import OrganizeLibraryResult
-    from omym2.features.plans.dto import PlanDetail
     from omym2.features.settings.dto import PathPolicyPreviewResult, ValidateSettingsResult
     from omym2.shared.pagination import FacetValue, GroupCount
 
@@ -263,13 +262,9 @@ def serialize_plan_action(action: PlanAction) -> dict[str, object]:
     }
 
 
-def serialize_plan_detail(detail: PlanDetail) -> dict[str, object]:
-    """Return a JSON-safe Plan detail payload."""
-    return serialize_plan_detail_parts(
-        detail.plan,
-        detail.actions,
-        total_action_count=detail.total_action_count,
-    )
+def serialize_plan_header_response(plan: Plan) -> dict[str, object]:
+    """Return a JSON-safe header-only Plan detail payload (no actions, no total_action_count)."""
+    return {"plan": serialize_plan_header(plan)}
 
 
 def serialize_plan_detail_parts(

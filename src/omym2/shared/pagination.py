@@ -10,11 +10,15 @@ import base64
 import binascii
 import json
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 DEFAULT_PAGE_LIMIT = 100
 MAX_PAGE_LIMIT = 500
 MIN_PAGE_LIMIT = 1
+GROUP_CURSOR_KEY_LENGTH = 2  # a group-by cursor key is always a (count, key) 2-tuple
 
 INVALID_CURSOR_MESSAGE = "Invalid cursor."
 LIMIT_TOO_LOW_MESSAGE = f"limit must be >= {MIN_PAGE_LIMIT}"
@@ -98,6 +102,38 @@ def decode_cursor(text: str) -> tuple[str, ...]:
         raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
 
     return tuple(cast("list[str]", parsed_items))
+
+
+def paginate_group_counts(groups: Sequence[GroupCount], page: PageRequest) -> Page[GroupCount]:
+    """Paginate an in-memory sequence of GroupCounts with (count DESC, key ASC) keyset semantics.
+
+    Mirrors the SQL group-by keyset contract (see `docs/contracts/web-api.md`
+    Group Envelope) for callers that must compute groups in Python instead of
+    SQL, e.g. because deriving the group key is a business rule. `groups` is
+    sorted internally; callers do not need to pre-sort it. Raises
+    `CursorDecodeError` for a malformed or wrong-arity `page.cursor_key`.
+    """
+    ordered = sorted(groups, key=lambda group: (-group.count, group.key))
+    total = len(ordered)
+
+    if page.cursor_key is not None:
+        if len(page.cursor_key) != GROUP_CURSOR_KEY_LENGTH:
+            raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+        cursor_count_text, cursor_key_text = page.cursor_key
+        try:
+            cursor_count = int(cursor_count_text)
+        except ValueError as error:
+            raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
+        ordered = [
+            group
+            for group in ordered
+            if group.count < cursor_count or (group.count == cursor_count and group.key > cursor_key_text)
+        ]
+
+    page_items = tuple(ordered[: page.limit])
+    has_more = len(ordered) > page.limit
+    next_cursor_key = (str(page_items[-1].count), page_items[-1].key) if has_more else None
+    return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
 
 def clamp_limit(raw: int | None) -> int:
