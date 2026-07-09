@@ -73,6 +73,8 @@ REQUIRED_TABLES = {
 }
 
 REQUIRED_BROWSING_INDEXES = {
+    "idx_plans_created",
+    "idx_plans_library_created",
     "idx_tracks_current_path",
     "idx_tracks_status",
     "idx_plan_actions_status",
@@ -91,7 +93,7 @@ def test_sqlite_migrations_create_required_tables(tmp_path: Path) -> None:
 
 
 def test_sqlite_migrations_create_browsing_indexes(tmp_path: Path) -> None:
-    """The browsing-indexes migration creates every Track/PlanAction/Run browsing index."""
+    """Browsing migrations create every Plan/Track/PlanAction/Run browsing index."""
     database_file = default_application_paths(tmp_path).database_file
 
     migrate_database(database_file)

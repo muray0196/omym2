@@ -188,6 +188,7 @@ export function CheckScreen() {
   const [issueTypeCounts, setIssueTypeCounts] = useState<Partial<Record<CheckIssueType, number>>>(
     {},
   )
+  const [checkedAt, setCheckedAt] = useState<string | null | undefined>(undefined)
   const [facetTotal, setFacetTotal] = useState<number | null>(null)
   const [facetErrors, setFacetErrors] = useState<string[]>([])
 
@@ -197,6 +198,7 @@ export function CheckScreen() {
       .then((response) => {
         if (cancelled) return
         setIssueTypeCounts(issueFacetCounts(response.facets))
+        setCheckedAt(response.checked_at)
         setFacetTotal(response.total)
         setFacetErrors(response.errors)
       })
@@ -212,12 +214,15 @@ export function CheckScreen() {
   }, [])
 
   const loadIssuesPage = useCallback(
-    (cursor?: string) =>
-      getCheckPage({
+    async (cursor?: string) => {
+      const response = await getCheckPage({
         cursor,
         issueType: typeFilter,
         limit: CHECK_PAGE_LIMIT,
-      }),
+      })
+      setCheckedAt(response.checked_at)
+      return response
+    },
     [typeFilter],
   )
   const issuesPage = usePagedList({
@@ -227,6 +232,9 @@ export function CheckScreen() {
   const checkIssues = issuesPage.items
   const checkErrors = [...issuesPage.errors, ...facetErrors]
   const checkLoaded = issuesPage.loaded
+  const checkHasRun = checkedAt !== null && checkedAt !== undefined
+  const checkNeverRan = checkLoaded && checkedAt === null
+  const checkDataUnavailable = checkLoaded && checkErrors.length > 0 && checkedAt === undefined
 
   const counts = useMemo(() => {
     return {
@@ -259,7 +267,7 @@ export function CheckScreen() {
         <MetricCard
           label="Total issues"
           value={counts.total}
-          tone={counts.total ? "warning" : "success"}
+          tone={counts.total ? "warning" : checkHasRun ? "success" : "neutral"}
         />
         <MetricCard
           label="Missing files"
@@ -307,14 +315,26 @@ export function CheckScreen() {
         ) : null}
 
         {checkIssues.length === 0 ? (
-          typeFilter === "all" && counts.total === 0 ? (
+          checkNeverRan || checkDataUnavailable || (typeFilter === "all" && counts.total === 0) ? (
             <EmptyState
               icon={ShieldCheck}
-              title={checkLoaded ? "No issues found." : "Loading issues..."}
+              title={
+                !checkLoaded
+                  ? "Loading issues..."
+                  : checkNeverRan
+                    ? "No check has run yet."
+                    : checkDataUnavailable
+                      ? "Check data unavailable."
+                      : "No issues found."
+              }
               description={
-                checkLoaded
-                  ? "DB and filesystem state appear consistent."
-                  : "Current diagnostics will appear here once they are loaded."
+                !checkLoaded
+                  ? "Current diagnostics will appear here once they are loaded."
+                  : checkNeverRan
+                    ? "Run omym2 check to persist DB and filesystem diagnostics."
+                    : checkDataUnavailable
+                      ? "The check API response did not include a completed check timestamp."
+                      : "DB and filesystem state appear consistent."
               }
             />
           ) : (

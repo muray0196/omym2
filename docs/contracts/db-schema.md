@@ -3,7 +3,7 @@ type: Contract
 title: DB Schema Contract
 description: Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events, check_runs, check_issues), migrations, indexes, stored JSON fields, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-10T09:00:00+09:00
+timestamp: 2026-07-10T01:53:50+09:00
 ---
 
 # DB Schema Contract
@@ -241,6 +241,11 @@ Indexes exist to keep the Web API's list, facet, and group-by endpoints (authori
 `202607090002_check_results.sql` adds:
 
 * `idx_check_issues_library_type` on `check_issues (library_id, issue_type, issue_seq)` — backs CheckIssue Library/issue_type filtering, ordering, and keyset pagination (`GET /api/check`).
+
+`202607100001_plan_browsing_index.sql` adds:
+
+* `idx_plans_created` on `plans (created_at, plan_id)` — backs Plan list ordering and keyset pagination (`GET /api/plans`).
+* `idx_plans_library_created` on `plans (library_id, created_at, plan_id)` — backs Library-scoped Plan ordering and keyset pagination.
 
 ## Stored JSON Fields
 
