@@ -25,9 +25,10 @@ if TYPE_CHECKING:
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
     from omym2.domain.models.run import Run
-    from omym2.domain.models.track import Track
+    from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
     from omym2.domain.models.track_metadata import TrackMetadata
     from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
+    from omym2.shared.pagination import FacetValue, GroupCount, Page, PageRequest
 
 type FileSystemPath = str | PathLike[str]
 
@@ -82,6 +83,36 @@ class TrackRepository(Protocol):
 
     def save(self, track: Track) -> None:
         """Persist a Track without recalculating identity or paths."""
+        ...
+
+    def query_page(
+        self,
+        library_id: LibraryId | None,
+        *,
+        search: str | None,
+        status: TrackStatus | None,
+        page: PageRequest,
+    ) -> Page[Track]:
+        """Return one keyset page of Tracks, ordered (current_path, track_id).
+
+        `library_id=None` scopes across every known Library. `search` matches
+        title, artist, album, current_path, or track_id, case-insensitive
+        substring. `page.total` counts rows matching the filters, ignoring
+        the cursor.
+        """
+        ...
+
+    def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+        """Return Track status value/count facets, ordered count DESC then value ASC."""
+        ...
+
+    def group_page(
+        self,
+        library_id: LibraryId | None,
+        grouping: TrackGrouping,
+        page: PageRequest,
+    ) -> Page[GroupCount]:
+        """Return one keyset page of Track groups, ordered count DESC then key ASC."""
         ...
 
 

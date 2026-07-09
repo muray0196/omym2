@@ -17,6 +17,7 @@ from omym2.config import (
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     ALLOWED_UI_THEMES,
 )
+from omym2.shared.pagination import encode_cursor
 
 if TYPE_CHECKING:
     from omym2.adapters.web.schemas.settings_changes import SettingsChange
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     from omym2.features.organize.dto import OrganizeLibraryResult
     from omym2.features.plans.dto import PlanDetail
     from omym2.features.settings.dto import PathPolicyPreviewResult, ValidateSettingsResult
+    from omym2.shared.pagination import FacetValue, GroupCount
 
 
 def serialize_app_config(config: AppConfig) -> dict[str, object]:
@@ -184,6 +186,25 @@ def serialize_track_summary(track: Track) -> dict[str, object]:
         "first_seen_at": track.first_seen_at.isoformat(),
         "last_seen_at": track.last_seen_at.isoformat(),
         "updated_at": track.updated_at.isoformat(),
+    }
+
+
+def serialize_facet_value(facet: FacetValue) -> dict[str, object]:
+    """Return a JSON-safe FacetValue payload."""
+    return {"value": facet.value, "count": facet.count}
+
+
+def serialize_group_count(group: GroupCount) -> dict[str, object]:
+    """Return a JSON-safe GroupCount payload."""
+    return {"key": group.key, "label": group.label, "count": group.count}
+
+
+def serialize_page_info(*, limit: int, next_cursor_key: tuple[str, ...] | None, total: int) -> dict[str, object]:
+    """Return a JSON-safe page-info payload for keyset-paginated list endpoints."""
+    return {
+        "limit": limit,
+        "next_cursor": None if next_cursor_key is None else encode_cursor(next_cursor_key),
+        "total": total,
     }
 
 

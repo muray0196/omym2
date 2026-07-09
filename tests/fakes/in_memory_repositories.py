@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
 from omym2.domain.models.file_event import FileEventStatus
+from omym2.domain.models.track import TrackGrouping
+from omym2.shared.pagination import INVALID_CURSOR_MESSAGE, CursorDecodeError, FacetValue, GroupCount, Page
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -18,8 +20,14 @@ if TYPE_CHECKING:
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
     from omym2.domain.models.run import Run
-    from omym2.domain.models.track import Track
+    from omym2.domain.models.track import Track, TrackStatus
     from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
+    from omym2.shared.pagination import PageRequest
+
+UNKNOWN_TRACK_GROUP_LABEL = "(unknown)"
+TRACK_GROUP_LABEL_SEPARATOR = " — "  # em dash joiner, matching SQLiteTrackRepository.group_page
+UNSUPPORTED_TRACK_GROUPING_MESSAGE = "Unsupported Track grouping"
+KEYSET_CURSOR_KEY_LENGTH = 2  # every Track/Track-group cursor key is a 2-tuple
 
 
 @dataclass(slots=True)
@@ -73,6 +81,109 @@ class InMemoryTrackRepository:
     def save(self, track: Track) -> None:
         """Store or replace one Track."""
         self.records[track.track_id] = track
+
+    def query_page(
+        self,
+        library_id: LibraryId | None,
+        *,
+        search: str | None,
+        status: TrackStatus | None,
+        page: PageRequest,
+    ) -> Page[Track]:
+        """Return one keyset page of Tracks ordered (current_path, track_id)."""
+        tracks = [
+            track
+            for track in self.records.values()
+            if (library_id is None or track.library_id == library_id)
+            and (status is None or track.status == status)
+            and (not search or _track_matches_search(track, search))
+        ]
+        tracks.sort(key=lambda track: (track.current_path, str(track.track_id)))
+        total = len(tracks)
+
+        if page.cursor_key is not None:
+            if len(page.cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+                raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+            cursor_path, cursor_track_id = page.cursor_key
+            tracks = [
+                track for track in tracks if (track.current_path, str(track.track_id)) > (cursor_path, cursor_track_id)
+            ]
+
+        page_items = tuple(tracks[: page.limit])
+        has_more = len(tracks) > page.limit
+        next_cursor_key = (page_items[-1].current_path, str(page_items[-1].track_id)) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+        """Return Track status facet counts, ordered count DESC then value ASC."""
+        counts: dict[str, int] = {}
+        for track in self.records.values():
+            if library_id is not None and track.library_id != library_id:
+                continue
+            counts[track.status.value] = counts.get(track.status.value, 0) + 1
+        ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        return tuple(FacetValue(value=value, count=count) for value, count in ordered)
+
+    def group_page(
+        self,
+        library_id: LibraryId | None,
+        grouping: TrackGrouping,
+        page: PageRequest,
+    ) -> Page[GroupCount]:
+        """Return one keyset page of Track groups ordered count DESC then key ASC."""
+        if grouping is not TrackGrouping.ARTIST_ALBUM:
+            unsupported_grouping_message = f"{UNSUPPORTED_TRACK_GROUPING_MESSAGE}: {grouping}"
+            raise ValueError(unsupported_grouping_message)  # pyright: ignore[reportUnreachable]
+
+        counts: dict[tuple[str, str], int] = {}
+        for track in self.records.values():
+            if library_id is not None and track.library_id != library_id:
+                continue
+            group_artist = track.metadata.album_artist or track.metadata.artist or UNKNOWN_TRACK_GROUP_LABEL
+            group_album = track.metadata.album or UNKNOWN_TRACK_GROUP_LABEL
+            counts[(group_artist, group_album)] = counts.get((group_artist, group_album), 0) + 1
+
+        groups = [
+            GroupCount(
+                key=f"{group_artist}\x1f{group_album}",
+                label=f"{group_artist}{TRACK_GROUP_LABEL_SEPARATOR}{group_album}",
+                count=count,
+            )
+            for (group_artist, group_album), count in counts.items()
+        ]
+        groups.sort(key=lambda group: (-group.count, group.key))
+        total = len(groups)
+
+        if page.cursor_key is not None:
+            if len(page.cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+                raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+            cursor_count_text, cursor_key_text = page.cursor_key
+            try:
+                cursor_count = int(cursor_count_text)
+            except ValueError as error:
+                raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
+            groups = [
+                group
+                for group in groups
+                if group.count < cursor_count or (group.count == cursor_count and group.key > cursor_key_text)
+            ]
+
+        page_items = tuple(groups[: page.limit])
+        has_more = len(groups) > page.limit
+        next_cursor_key = (str(page_items[-1].count), page_items[-1].key) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+
+def _track_matches_search(track: Track, search: str) -> bool:
+    needle = search.lower()
+    haystacks = (
+        track.metadata.title,
+        track.metadata.artist,
+        track.metadata.album,
+        track.current_path,
+        str(track.track_id),
+    )
+    return any(haystack is not None and needle in haystack.lower() for haystack in haystacks)
 
 
 @dataclass(slots=True)

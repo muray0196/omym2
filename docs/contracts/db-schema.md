@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events), migrations, stored JSON fields, and timestamp policy.
+description: Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events), migrations, indexes, stored JSON fields, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-07T00:39:14+09:00
+timestamp: 2026-07-09T18:00:00+09:00
 ---
 
 # DB Schema Contract
@@ -193,6 +193,18 @@ Every schema change needs tests for:
   script and the insert in one `BEGIN`/`commit`, rolling back on
   `sqlite3.DatabaseError`), so a migration is never recorded as applied
   unless it fully succeeded; there are no silent partial migrations.
+
+## Indexes
+
+Indexes exist to keep the Web API's list, facet, and group-by endpoints (authoritative in [web-api.md](web-api.md)) fast at scale. They are persistence details: they change lookup cost, never table responsibilities or stored data.
+
+`202607090001_browsing_indexes.sql` adds:
+
+* `idx_tracks_current_path` on `tracks (current_path, track_id)` — backs Track list ordering and keyset pagination (`GET /api/tracks`).
+* `idx_tracks_status` on `tracks (library_id, status)` — backs Track status filtering and status facet counts scoped to one Library.
+* `idx_plan_actions_status` on `plan_actions (plan_id, status)` — backs PlanAction status filtering within one Plan.
+* `idx_plan_actions_type` on `plan_actions (plan_id, action_type)` — backs PlanAction type filtering within one Plan.
+* `idx_runs_started` on `runs (started_at, run_id)` — backs Run history ordering and keyset pagination.
 
 ## Stored JSON Fields
 

@@ -19,7 +19,10 @@ from omym2.adapters.web.routes.api_serializers import (
     serialize_app_config,
     serialize_artist_id_generation,
     serialize_check_issue,
+    serialize_facet_value,
+    serialize_group_count,
     serialize_organize_registration,
+    serialize_page_info,
     serialize_path_preview,
     serialize_plan_detail,
     serialize_plan_detail_parts,
@@ -56,12 +59,15 @@ from omym2.config import (
     WEB_API_SETTINGS_ROUTE,
     WEB_API_SETTINGS_SAVE_ROUTE,
     WEB_API_SETTINGS_VALIDATE_ROUTE,
+    WEB_API_TRACKS_FACETS_ROUTE,
+    WEB_API_TRACKS_GROUPS_ROUTE,
     WEB_API_TRACKS_ROUTE,
     WEB_CSRF_HEADER_NAME,
 )
 from omym2.domain.models.app_config import AppConfig
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus
+from omym2.domain.models.track import TrackGrouping, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.features.add.dto import CreateAddPlanRequest
 from omym2.features.add.usecases.create_add_plan import (
@@ -101,9 +107,12 @@ from omym2.features.settings.usecases.load_settings import LoadSettingsUseCase
 from omym2.features.settings.usecases.preview_path_policy import PreviewPathPolicyUseCase
 from omym2.features.settings.usecases.save_settings import SaveSettingsUseCase
 from omym2.features.settings.usecases.validate_settings import ValidateSettingsUseCase
-from omym2.features.tracks.dto import ListTracksRequest
+from omym2.features.tracks.dto import GroupTracksRequest, ListTracksRequest, TrackStatusFacetsRequest
+from omym2.features.tracks.usecases.get_track_status_facets import GetTrackStatusFacetsUseCase
+from omym2.features.tracks.usecases.group_tracks import GroupTracksUseCase
 from omym2.features.tracks.usecases.list_tracks import ListTracksUseCase
-from omym2.shared.ids import PlanId, RunId, parse_uuid
+from omym2.shared.ids import LibraryId, PlanId, RunId, parse_uuid
+from omym2.shared.pagination import INVALID_CURSOR_MESSAGE, CursorDecodeError, PageRequest, clamp_limit, decode_cursor
 
 if TYPE_CHECKING:
     from omym2.features.add.ports import CreateAddPlanPorts
@@ -230,11 +239,19 @@ def _register_inspection_routes(router: APIRouter, context: ApiRouteContext) -> 
     def get_check() -> JSONResponse:
         return _get_check(context)
 
-    def get_tracks() -> JSONResponse:
-        return _get_tracks(context)
+    def get_tracks(request: Request) -> JSONResponse:
+        return _get_tracks(context, request)
+
+    def get_track_facets(request: Request) -> JSONResponse:
+        return _get_track_facets(context, request)
+
+    def get_track_groups(request: Request) -> JSONResponse:
+        return _get_track_groups(context, request)
 
     router.add_api_route(WEB_API_CHECK_ROUTE, get_check, methods=["GET"])
     router.add_api_route(WEB_API_TRACKS_ROUTE, get_tracks, methods=["GET"])
+    router.add_api_route(WEB_API_TRACKS_FACETS_ROUTE, get_track_facets, methods=["GET"])
+    router.add_api_route(WEB_API_TRACKS_GROUPS_ROUTE, get_track_groups, methods=["GET"])
 
 
 def _get_settings(context: ApiRouteContext) -> JSONResponse:
@@ -551,17 +568,112 @@ def _get_check(context: ApiRouteContext) -> JSONResponse:
     )
 
 
-def _get_tracks(context: ApiRouteContext) -> JSONResponse:
+def _get_tracks(context: ApiRouteContext, request: Request) -> JSONResponse:
+    cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
+    if cursor_errors:
+        return _list_error_response(cursor_errors)
+
+    library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    status, status_errors = _track_status_from_query(request.query_params.get("status"))
+    limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
+    filter_errors = library_errors + status_errors + limit_errors
+    if filter_errors:
+        return _list_error_response(filter_errors)
+
+    effective_limit = cast("int", limit)
+    search = _optional_query_text(request.query_params.get("query"))
+
     try:
-        tracks = ListTracksUseCase(context.tracks_ports_factory()).execute(ListTracksRequest())
+        page = ListTracksUseCase(context.tracks_ports_factory()).execute(
+            ListTracksRequest(
+                library_id=library_id,
+                search=search,
+                status=status,
+                page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
+            )
+        )
+    except CursorDecodeError:
+        return _list_error_response((INVALID_CURSOR_MESSAGE,))
     except sqlite3.DatabaseError as exc:
         return JSONResponse(
-            {"tracks": [], "errors": list(_inspection_errors(exc))},
+            {"items": [], "page": None, "errors": list(_inspection_errors(exc))},
             status_code=SERVER_ERROR_STATUS_CODE,
         )
 
     return JSONResponse(
-        {"tracks": [serialize_track_summary(track) for track in tracks], "errors": []},
+        _list_envelope(
+            [serialize_track_summary(track) for track in page.items],
+            limit=effective_limit,
+            next_cursor_key=page.next_cursor_key,
+            total=page.total,
+        ),
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+def _get_track_facets(context: ApiRouteContext, request: Request) -> JSONResponse:
+    library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    if library_errors:
+        return _facet_error_response(library_errors)
+
+    try:
+        result = GetTrackStatusFacetsUseCase(context.tracks_ports_factory()).execute(
+            TrackStatusFacetsRequest(library_id=library_id)
+        )
+    except sqlite3.DatabaseError as exc:
+        return JSONResponse(
+            {"facets": {}, "total": None, "errors": list(_inspection_errors(exc))},
+            status_code=SERVER_ERROR_STATUS_CODE,
+        )
+
+    return JSONResponse(
+        _facet_envelope(
+            {"status": [serialize_facet_value(facet) for facet in result.facets]},
+            total=result.total,
+        ),
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+def _get_track_groups(context: ApiRouteContext, request: Request) -> JSONResponse:
+    cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
+    if cursor_errors:
+        return _group_error_response(cursor_errors)
+
+    grouping, grouping_errors = _track_grouping_from_query(request.query_params.get("group_by"))
+    library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
+    filter_errors = grouping_errors + library_errors + limit_errors
+    if filter_errors:
+        return _group_error_response(filter_errors)
+
+    effective_limit = cast("int", limit)
+    effective_grouping = cast("TrackGrouping", grouping)
+
+    try:
+        page = GroupTracksUseCase(context.tracks_ports_factory()).execute(
+            GroupTracksRequest(
+                grouping=effective_grouping,
+                library_id=library_id,
+                page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
+            )
+        )
+    except CursorDecodeError:
+        return _group_error_response((INVALID_CURSOR_MESSAGE,))
+    except sqlite3.DatabaseError as exc:
+        return JSONResponse(
+            {"group_by": None, "items": [], "page": None, "errors": list(_inspection_errors(exc))},
+            status_code=SERVER_ERROR_STATUS_CODE,
+        )
+
+    return JSONResponse(
+        _group_envelope(
+            effective_grouping.value,
+            [serialize_group_count(group) for group in page.items],
+            limit=effective_limit,
+            next_cursor_key=page.next_cursor_key,
+            total=page.total,
+        ),
         status_code=SUCCESS_STATUS_CODE,
     )
 
@@ -712,6 +824,122 @@ def _positive_int_from_query(raw_value: str | None, *, field_name: str) -> tuple
     if value <= 0:
         return None, (f"Query parameter {field_name} must be a positive integer.",)
     return value, ()
+
+
+def _library_id_from_query(raw_value: str | None) -> tuple[LibraryId | None, tuple[str, ...]]:
+    """Parse an optional `library_id` filter shared by every browsing endpoint."""
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return LibraryId(parse_uuid(raw_value)), ()
+    except ValueError:
+        return None, (f"Invalid library_id filter: {raw_value}",)
+
+
+def _limit_from_query(raw_value: str | None) -> tuple[int | None, tuple[str, ...]]:
+    """Parse and clamp the shared `limit` query parameter per shared.pagination.clamp_limit."""
+    if raw_value is None or raw_value == "":
+        return clamp_limit(None), ()
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        return None, ("Query parameter limit must be an integer.",)
+    try:
+        return clamp_limit(parsed), ()
+    except ValueError as exc:
+        return None, (str(exc),)
+
+
+def _cursor_key_from_query(raw_value: str | None) -> tuple[tuple[str, ...] | None, tuple[str, ...]]:
+    """Decode the shared opaque `cursor` query parameter into a keyset key."""
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return decode_cursor(raw_value), ()
+    except CursorDecodeError:
+        return None, (INVALID_CURSOR_MESSAGE,)
+
+
+def _optional_query_text(raw_value: str | None) -> str | None:
+    """Return a free-text query parameter, treating an empty string as absent."""
+    if raw_value is None or raw_value == "":
+        return None
+    return raw_value
+
+
+def _track_status_from_query(raw_value: str | None) -> tuple[TrackStatus | None, tuple[str, ...]]:
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return TrackStatus(raw_value), ()
+    except ValueError:
+        return None, (f"Invalid track status filter: {raw_value}",)
+
+
+def _track_grouping_from_query(raw_value: str | None) -> tuple[TrackGrouping | None, tuple[str, ...]]:
+    if raw_value is None or raw_value == "":
+        return None, ("Query parameter group_by is required.",)
+    try:
+        return TrackGrouping(raw_value), ()
+    except ValueError:
+        return None, (f"Invalid group_by filter: {raw_value}",)
+
+
+def _list_envelope(
+    items: list[dict[str, object]],
+    *,
+    limit: int,
+    next_cursor_key: tuple[str, ...] | None,
+    total: int,
+) -> dict[str, object]:
+    """Build the shared list-endpoint envelope: items + page + errors.
+
+    Reusable across every keyset-paginated list endpoint (Tracks now; Plans,
+    History, and Check in later dispatches).
+    """
+    return {
+        "items": items,
+        "page": serialize_page_info(limit=limit, next_cursor_key=next_cursor_key, total=total),
+        "errors": [],
+    }
+
+
+def _group_envelope(
+    group_by: str,
+    items: list[dict[str, object]],
+    *,
+    limit: int,
+    next_cursor_key: tuple[str, ...] | None,
+    total: int,
+) -> dict[str, object]:
+    """Build the shared group-endpoint envelope: group_by + items + page + errors."""
+    return {
+        "group_by": group_by,
+        **_list_envelope(items, limit=limit, next_cursor_key=next_cursor_key, total=total),
+    }
+
+
+def _facet_envelope(facets: dict[str, list[dict[str, object]]], *, total: int) -> dict[str, object]:
+    """Build the shared facet-endpoint envelope: facets + total + errors."""
+    return {"facets": facets, "total": total, "errors": []}
+
+
+def _list_error_response(errors: tuple[str, ...]) -> JSONResponse:
+    """Build the shared 400 error envelope for list endpoints (items/page emptied)."""
+    return JSONResponse({"items": [], "page": None, "errors": list(errors)}, status_code=ERROR_STATUS_CODE)
+
+
+def _group_error_response(errors: tuple[str, ...]) -> JSONResponse:
+    """Build the shared 400 error envelope for group endpoints (group_by/items/page emptied)."""
+    return JSONResponse(
+        {"group_by": None, "items": [], "page": None, "errors": list(errors)},
+        status_code=ERROR_STATUS_CODE,
+    )
+
+
+def _facet_error_response(errors: tuple[str, ...]) -> JSONResponse:
+    """Build the shared 400 error envelope for facet endpoints (facets/total emptied)."""
+    return JSONResponse({"facets": {}, "total": None, "errors": list(errors)}, status_code=ERROR_STATUS_CODE)
 
 
 def _optional_string_field(payload: object, field_name: str) -> tuple[str | None, tuple[str, ...]]:

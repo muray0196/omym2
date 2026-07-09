@@ -12,24 +12,21 @@ if TYPE_CHECKING:
     from omym2.domain.models.track import Track
     from omym2.features.tracks.dto import ListTracksRequest
     from omym2.features.tracks.ports import TracksPorts
+    from omym2.shared.pagination import Page
 
 
 @dataclass(frozen=True, slots=True)
 class ListTracksUseCase:
-    """List managed Tracks in deterministic display order."""
+    """List managed Tracks as one keyset page in deterministic display order."""
 
     ports: TracksPorts
 
-    def execute(self, request: ListTracksRequest) -> tuple[Track, ...]:
-        """Return Tracks for the requested Library scope."""
+    def execute(self, request: ListTracksRequest) -> Page[Track]:
+        """Return one page of Tracks for the requested scope, search, and status filters."""
         with self.ports.uow as uow:
-            if request.library_id is not None:
-                tracks = tuple(uow.tracks.list_by_library(request.library_id))
-            else:
-                tracks = tuple(
-                    track
-                    for library in uow.libraries.list_all()
-                    for track in uow.tracks.list_by_library(library.library_id)
-                )
-
-        return tuple(sorted(tracks, key=lambda track: (str(track.library_id), track.current_path, str(track.track_id))))
+            return uow.tracks.query_page(
+                request.library_id,
+                search=request.search,
+                status=request.status,
+                page=request.page,
+            )

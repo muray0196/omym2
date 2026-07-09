@@ -1,6 +1,6 @@
 """
 Summary: Tests Web inspection JSON API routes.
-Why: Verifies history, check, and Tracks data for the React UI.
+Why: Verifies history and check data for the React UI. Tracks browsing is covered in test_api_tracks.py.
 """
 
 from __future__ import annotations
@@ -18,18 +18,15 @@ from omym2.config import (
     CONFIG_FILE_ENCODING,
     WEB_API_CHECK_ROUTE,
     WEB_API_HISTORY_ROUTE,
-    WEB_API_TRACKS_ROUTE,
 )
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.run import Run, RunStatus
-from omym2.domain.models.track import Track, TrackStatus
-from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.platform.web_composition import build_web_app as create_web_app
-from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
+from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -50,12 +47,6 @@ NOT_FOUND_STATUS_CODE = 404
 SERVER_ERROR_STATUS_CODE = 500
 SOURCE_PATH = "/incoming/Imported.flac"
 TARGET_PATH = "Artist/2026_Album/1-02_Title.flac"
-TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
-TRACK_ALBUM = "Album"
-TRACK_ARTIST = "Artist"
-TRACK_TITLE = "Title"
-
-METADATA = TrackMetadata(title=TRACK_TITLE, artist=TRACK_ARTIST, album=TRACK_ALBUM, year=2026, track_number=2)
 
 
 class _JsonResponse(Protocol):
@@ -178,53 +169,6 @@ def test_check_api_returns_issues_and_config_errors(tmp_path: Path) -> None:
     assert "Invalid TOML" in invalid_response.json()["errors"][0]
 
 
-def test_tracks_api_returns_empty_and_managed_tracks(tmp_path: Path) -> None:
-    """Tracks API returns managed Track state without checking the filesystem."""
-    app_paths = default_application_paths(tmp_path)
-    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
-
-    empty_response = client.get(WEB_API_TRACKS_ROUTE)
-
-    assert empty_response.status_code == SUCCESS_STATUS_CODE
-    assert empty_response.json() == {"tracks": [], "errors": []}
-
-    library_root = tmp_path / "library"
-    library_root.mkdir()
-    with SQLiteUnitOfWork(app_paths.database_file) as uow:
-        uow.libraries.save(_library(str(library_root)))
-        uow.tracks.save(_track())
-        uow.commit()
-
-    response = client.get(WEB_API_TRACKS_ROUTE)
-
-    assert response.status_code == SUCCESS_STATUS_CODE
-    payload = _json_payload(response)
-    first_track = _object_list_payload(payload, "tracks")[0]
-    metadata = _object_payload(first_track, "metadata")
-    assert payload["errors"] == []
-    assert first_track["track_id"] == str(TRACK_ID)
-    assert first_track["library_id"] == str(LIBRARY_ID)
-    assert first_track["status"] == TrackStatus.ACTIVE.value
-    assert first_track["current_path"] == TARGET_PATH
-    assert metadata["title"] == TRACK_TITLE
-    assert metadata["artist"] == TRACK_ARTIST
-    assert metadata["album"] == TRACK_ALBUM
-
-
-def test_tracks_api_reports_database_errors(tmp_path: Path) -> None:
-    """Tracks API reports database startup errors as JSON."""
-    app_paths = default_application_paths(tmp_path)
-    invalid_database_path = tmp_path / "not-a-database"
-    invalid_database_path.mkdir()
-    client = TestClient(create_web_app(app_paths.config_file, invalid_database_path))
-
-    response = client.get(WEB_API_TRACKS_ROUTE)
-
-    assert response.status_code == SERVER_ERROR_STATUS_CODE
-    assert response.json()["tracks"] == []
-    assert "Inspection failed" in response.json()["errors"][0]
-
-
 def _seed_run_history(database_file: Path, library_root: str) -> None:
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library(library_root))
@@ -262,22 +206,6 @@ def _library(library_root: str, *, status: LibraryStatus = LibraryStatus.REGISTE
         registered_at=BASE_TIME,
         status=status,
         created_at=BASE_TIME,
-        updated_at=BASE_TIME,
-    )
-
-
-def _track() -> Track:
-    return Track(
-        track_id=TRACK_ID,
-        library_id=LIBRARY_ID,
-        current_path=TARGET_PATH,
-        canonical_path=TARGET_PATH,
-        content_hash=CONTENT_HASH,
-        metadata_hash=METADATA_HASH,
-        metadata=METADATA,
-        status=TrackStatus.ACTIVE,
-        first_seen_at=BASE_TIME,
-        last_seen_at=BASE_TIME,
         updated_at=BASE_TIME,
     )
 

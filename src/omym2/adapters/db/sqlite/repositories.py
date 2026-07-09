@@ -15,20 +15,43 @@ from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.run import Run, RunStatus
-from omym2.domain.models.track import Track, TrackStatus
+from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId, parse_uuid
+from omym2.shared.pagination import INVALID_CURSOR_MESSAGE, CursorDecodeError, FacetValue, GroupCount, Page
 from omym2.shared.time import as_utc
 
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Mapping
 
+    from omym2.shared.pagination import PageRequest
+
 INVALID_JSON_OBJECT_MESSAGE = "Persisted JSON payload must be an object."
 INVALID_METADATA_VALUE_MESSAGE = "Persisted metadata JSON contains an unsupported value."
 INVALID_ROW_TEXT_MESSAGE = "Expected SQLite text value."
 INVALID_ROW_INTEGER_MESSAGE = "Expected SQLite integer value."
 INVALID_SUMMARY_VALUE_MESSAGE = "Persisted summary JSON must contain string values."
+LIKE_ESCAPE_CHAR = "\\"  # escape character used for LIKE search patterns
+UNSUPPORTED_TRACK_GROUPING_MESSAGE = "Unsupported Track grouping"
+UNKNOWN_TRACK_GROUP_LABEL = "(unknown)"
+TRACK_GROUP_LABEL_SEPARATOR = " — "  # em dash joiner between group artist and group album labels
+KEYSET_CURSOR_KEY_LENGTH = 2  # every Track/Track-group cursor key is a 2-tuple
+
+TRACK_SEARCH_WHERE_CLAUSE = f"""(
+                LOWER(json_extract(metadata_json, '$.title')) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
+                LOWER(json_extract(metadata_json, '$.artist')) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
+                LOWER(json_extract(metadata_json, '$.album')) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
+                LOWER(current_path) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
+                LOWER(track_id) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}'
+            )"""
+TRACK_GROUP_SOURCE_SELECT = """
+            SELECT
+                COALESCE(json_extract(metadata_json, '$.album_artist'), json_extract(metadata_json, '$.artist'), ?)
+                    AS group_artist,
+                COALESCE(json_extract(metadata_json, '$.album'), ?) AS group_album
+            FROM tracks
+"""
 
 TRACK_SELECT_FROM = """
             SELECT
@@ -219,6 +242,126 @@ class SQLiteTrackRepository(_SQLiteRepository):
                 _timestamp_to_text(track.updated_at),
             ),
         )
+
+    def query_page(
+        self,
+        library_id: LibraryId | None,
+        *,
+        search: str | None,
+        status: TrackStatus | None,
+        page: PageRequest,
+    ) -> Page[Track]:
+        """Return one keyset page of Tracks ordered (current_path, track_id)."""
+        where_sql, where_params = _track_filter_where(library_id, status, search)
+        # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
+        count_sql = f"SELECT COUNT(*) FROM tracks{where_sql}"  # noqa: S608
+        total = _scalar_int(self._connection, count_sql, tuple(where_params))
+
+        cursor_sql, cursor_params = _track_cursor_clause(where_sql, page.cursor_key)
+        rows = _fetch_all(
+            self._connection,
+            TRACK_SELECT_FROM
+            + f"""
+            {where_sql}{cursor_sql}
+            ORDER BY current_path, track_id
+            LIMIT ?
+            """,
+            (*where_params, *cursor_params, page.limit + 1),
+        )
+
+        tracks = tuple(_track_from_row(row) for row in rows)
+        page_items = tracks[: page.limit]
+        has_more = len(tracks) > page.limit
+        next_cursor_key = (page_items[-1].current_path, str(page_items[-1].track_id)) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+        """Return Track status facet counts, ordered count DESC then value ASC."""
+        where_sql, where_params = _optional_library_clause(library_id)
+        rows = _fetch_all(
+            self._connection,
+            # SQL-injection safety note: where_sql is a static clause template bound with `?`; never raw input.
+            f"""
+            SELECT status, COUNT(*) AS count
+            FROM tracks
+            {where_sql}
+            GROUP BY status
+            ORDER BY count DESC, status ASC
+            """,  # noqa: S608
+            tuple(where_params),
+        )
+        return tuple(FacetValue(value=_row_text(row, "status"), count=_row_int(row, "count")) for row in rows)
+
+    def group_page(
+        self,
+        library_id: LibraryId | None,
+        grouping: TrackGrouping,
+        page: PageRequest,
+    ) -> Page[GroupCount]:
+        """Return one keyset page of Track groups ordered count DESC then key ASC."""
+        if grouping is not TrackGrouping.ARTIST_ALBUM:
+            unsupported_grouping_message = f"{UNSUPPORTED_TRACK_GROUPING_MESSAGE}: {grouping}"
+            raise ValueError(unsupported_grouping_message)  # pyright: ignore[reportUnreachable]
+
+        library_where, library_params = _optional_library_clause(library_id)
+        source_params = [UNKNOWN_TRACK_GROUP_LABEL, UNKNOWN_TRACK_GROUP_LABEL, *library_params]
+
+        # SQL-injection safety note: TRACK_GROUP_SOURCE_SELECT and library_where are static templates bound with `?`.
+        total = _scalar_int(
+            self._connection,
+            f"""
+            SELECT COUNT(*) FROM (
+                SELECT 1
+                FROM (
+                    {TRACK_GROUP_SOURCE_SELECT}
+                    {library_where}
+                )
+                GROUP BY group_artist, group_album
+            )
+            """,  # noqa: S608
+            tuple(source_params),
+        )
+
+        cursor_sql, cursor_params = _track_group_cursor_clause(page.cursor_key)
+        # SQL-injection safety note: TRACK_GROUP_SOURCE_SELECT, library_where, and cursor_sql are static templates
+        # bound with `?`; never raw input.
+        rows = _fetch_all(
+            self._connection,
+            f"""
+            SELECT key, label, count
+            FROM (
+                SELECT
+                    group_artist || char(31) || group_album AS key,
+                    group_artist || ? || group_album AS label,
+                    COUNT(*) AS count
+                FROM (
+                    {TRACK_GROUP_SOURCE_SELECT}
+                    {library_where}
+                )
+                GROUP BY group_artist, group_album
+            )
+            {cursor_sql}
+            ORDER BY count DESC, key ASC
+            LIMIT ?
+            """,  # noqa: S608
+            (
+                TRACK_GROUP_LABEL_SEPARATOR,
+                UNKNOWN_TRACK_GROUP_LABEL,
+                UNKNOWN_TRACK_GROUP_LABEL,
+                *library_params,
+                *cursor_params,
+                page.limit + 1,
+            ),
+        )
+
+        groups = tuple(
+            GroupCount(key=_row_text(row, "key"), label=_row_text(row, "label"), count=_row_int(row, "count"))
+            for row in rows
+        )
+        page_items = groups[: page.limit]
+        has_more = len(groups) > page.limit
+        next_cursor_key = (str(page_items[-1].count), page_items[-1].key) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
 
 class SQLitePlanRepository(_SQLiteRepository):
@@ -707,6 +850,75 @@ def _fetch_all(
 ) -> tuple[sqlite3.Row, ...]:
     rows = cast("list[object]", connection.execute(sql, parameters).fetchall())
     return tuple(cast("sqlite3.Row", row) for row in rows)
+
+
+def _scalar_int(connection: sqlite3.Connection, sql: str, parameters: tuple[object, ...] = ()) -> int:
+    row = cast("tuple[object, ...] | None", connection.execute(sql, parameters).fetchone())
+    if row is None:
+        return 0
+    value = row[0]
+    if isinstance(value, int):
+        return value
+    raise TypeError(INVALID_ROW_INTEGER_MESSAGE)
+
+
+def _optional_library_clause(library_id: LibraryId | None) -> tuple[str, list[object]]:
+    if library_id is None:
+        return "", []
+    return " WHERE library_id = ?", [str(library_id)]
+
+
+def _like_pattern(term: str) -> str:
+    """Escape LIKE wildcards in user input and wrap for substring match."""
+    escaped = (
+        term.replace(LIKE_ESCAPE_CHAR, LIKE_ESCAPE_CHAR * 2)
+        .replace("%", f"{LIKE_ESCAPE_CHAR}%")
+        .replace("_", f"{LIKE_ESCAPE_CHAR}_")
+    )
+    return f"%{escaped}%"
+
+
+def _track_filter_where(
+    library_id: LibraryId | None,
+    status: TrackStatus | None,
+    search: str | None,
+) -> tuple[str, list[object]]:
+    clauses: list[str] = []
+    params: list[object] = []
+    if library_id is not None:
+        clauses.append("library_id = ?")
+        params.append(str(library_id))
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status.value)
+    if search:
+        clauses.append(TRACK_SEARCH_WHERE_CLAUSE)
+        params.extend([_like_pattern(search)] * 5)
+    if not clauses:
+        return "", params
+    return " WHERE " + " AND ".join(clauses), params
+
+
+def _track_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:
+    if cursor_key is None:
+        return "", []
+    if len(cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+    prefix = " AND " if where_sql else " WHERE "
+    return f"{prefix}(current_path, track_id) > (?, ?)", list(cursor_key)
+
+
+def _track_group_cursor_clause(cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:
+    if cursor_key is None:
+        return "", []
+    if len(cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+    cursor_count_text, cursor_key_text = cursor_key
+    try:
+        cursor_count = int(cursor_count_text)
+    except ValueError as error:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
+    return " WHERE (count < ?) OR (count = ? AND key > ?)", [cursor_count, cursor_count, cursor_key_text]
 
 
 def _row_text(row: sqlite3.Row, key: str) -> str:
