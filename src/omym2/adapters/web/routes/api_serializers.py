@@ -135,9 +135,9 @@ def serialize_run_summary(run: Run) -> dict[str, object]:
     }
 
 
-def serialize_run_detail(run: Run, file_events: tuple[FileEvent, ...]) -> dict[str, object]:
-    """Return a JSON-safe Run detail payload."""
-    return {"run": serialize_run_summary(run), "file_events": [serialize_file_event(event) for event in file_events]}
+def serialize_run_header_response(run: Run) -> dict[str, object]:
+    """Return a JSON-safe header-only Run detail payload (no embedded file_events)."""
+    return {"run": serialize_run_summary(run)}
 
 
 def serialize_file_event(event: FileEvent) -> dict[str, object]:

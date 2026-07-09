@@ -92,6 +92,23 @@ PLAN_ACTION_SELECT_FROM = """
                 sort_order
             FROM plan_actions
 """
+FILE_EVENT_SELECT_FROM = """
+            SELECT
+                event_id,
+                library_id,
+                run_id,
+                plan_action_id,
+                event_type,
+                source_path,
+                target_path,
+                status,
+                started_at,
+                completed_at,
+                error_code,
+                error_message,
+                sequence_no
+            FROM file_events
+"""
 
 
 class _SQLiteRepository:
@@ -709,6 +726,56 @@ class SQLiteRunRepository(_SQLiteRepository):
             ),
         )
 
+    def query_page(
+        self,
+        library_id: LibraryId | None,
+        *,
+        status: RunStatus | None,
+        page: PageRequest,
+    ) -> Page[Run]:
+        """Return one keyset page of Runs ordered (started_at DESC, run_id DESC)."""
+        where_sql, where_params = _run_filter_where(library_id, status)
+        # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
+        count_sql = f"SELECT COUNT(*) FROM runs{where_sql}"  # noqa: S608
+        total = _scalar_int(self._connection, count_sql, tuple(where_params))
+
+        cursor_sql, cursor_params = _run_cursor_clause(where_sql, page.cursor_key)
+        rows = _fetch_all(
+            self._connection,
+            RUN_SELECT_FROM
+            + f"""
+            {where_sql}{cursor_sql}
+            ORDER BY started_at DESC, run_id DESC
+            LIMIT ?
+            """,
+            (*where_params, *cursor_params, page.limit + 1),
+        )
+
+        runs = tuple(_run_from_row(row) for row in rows)
+        page_items = runs[: page.limit]
+        has_more = len(runs) > page.limit
+        next_cursor_key = (
+            (_row_text(rows[page.limit - 1], "started_at"), str(page_items[-1].run_id)) if has_more else None
+        )
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+        """Return Run status facet counts, ordered count DESC then value ASC."""
+        where_sql, where_params = _optional_library_clause(library_id)
+        rows = _fetch_all(
+            self._connection,
+            # SQL-injection safety note: where_sql is a static clause template bound with `?`; never raw input.
+            f"""
+            SELECT status, COUNT(*) AS count
+            FROM runs
+            {where_sql}
+            GROUP BY status
+            ORDER BY count DESC, status ASC
+            """,  # noqa: S608
+            tuple(where_params),
+        )
+        return tuple(FacetValue(value=_row_text(row, "status"), count=_row_int(row, "count")) for row in rows)
+
 
 class SQLiteFileEventRepository(_SQLiteRepository):
     """SQLite implementation of FileEventRepository."""
@@ -717,22 +784,8 @@ class SQLiteFileEventRepository(_SQLiteRepository):
         """Return one FileEvent by ID."""
         row = _fetch_one(
             self._connection,
-            """
-            SELECT
-                event_id,
-                library_id,
-                run_id,
-                plan_action_id,
-                event_type,
-                source_path,
-                target_path,
-                status,
-                started_at,
-                completed_at,
-                error_code,
-                error_message,
-                sequence_no
-            FROM file_events
+            FILE_EVENT_SELECT_FROM
+            + """
             WHERE event_id = ?
             """,
             (str(event_id),),
@@ -743,22 +796,8 @@ class SQLiteFileEventRepository(_SQLiteRepository):
         """Return FileEvents recorded for one Run in sequence order."""
         rows = _fetch_all(
             self._connection,
-            """
-            SELECT
-                event_id,
-                library_id,
-                run_id,
-                plan_action_id,
-                event_type,
-                source_path,
-                target_path,
-                status,
-                started_at,
-                completed_at,
-                error_code,
-                error_message,
-                sequence_no
-            FROM file_events
+            FILE_EVENT_SELECT_FROM
+            + """
             WHERE run_id = ?
             ORDER BY sequence_no, event_id
             """,
@@ -770,28 +809,45 @@ class SQLiteFileEventRepository(_SQLiteRepository):
         """Return PENDING FileEvents for one Library in sequence order."""
         rows = _fetch_all(
             self._connection,
-            """
-            SELECT
-                event_id,
-                library_id,
-                run_id,
-                plan_action_id,
-                event_type,
-                source_path,
-                target_path,
-                status,
-                started_at,
-                completed_at,
-                error_code,
-                error_message,
-                sequence_no
-            FROM file_events
+            FILE_EVENT_SELECT_FROM
+            + """
             WHERE library_id = ? AND status = ?
             ORDER BY sequence_no, event_id
             """,
             (str(library_id), FileEventStatus.PENDING.value),
         )
         return tuple(_file_event_from_row(row) for row in rows)
+
+    def query_page(
+        self,
+        run_id: RunId,
+        *,
+        status: FileEventStatus | None,
+        page: PageRequest,
+    ) -> Page[FileEvent]:
+        """Return one keyset page of a Run's FileEvents ordered (sequence_no, event_id)."""
+        where_sql, where_params = _file_event_filter_where(run_id, status)
+        # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
+        count_sql = f"SELECT COUNT(*) FROM file_events{where_sql}"  # noqa: S608
+        total = _scalar_int(self._connection, count_sql, tuple(where_params))
+
+        cursor_sql, cursor_params = _file_event_cursor_clause(where_sql, page.cursor_key)
+        rows = _fetch_all(
+            self._connection,
+            FILE_EVENT_SELECT_FROM
+            + f"""
+            {where_sql}{cursor_sql}
+            ORDER BY sequence_no, event_id
+            LIMIT ?
+            """,
+            (*where_params, *cursor_params, page.limit + 1),
+        )
+
+        events = tuple(_file_event_from_row(row) for row in rows)
+        page_items = events[: page.limit]
+        has_more = len(events) > page.limit
+        next_cursor_key = (str(page_items[-1].sequence_no), str(page_items[-1].event_id)) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
     def save(self, event: FileEvent) -> None:
         """Persist a FileEvent before or after a filesystem mutation."""
@@ -1061,6 +1117,56 @@ def _plan_action_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | Non
         raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
     prefix = " AND " if where_sql else " WHERE "
     return f"{prefix}(sort_order, action_id) > (?, ?)", [sort_order_value, action_id_text]
+
+
+def _run_filter_where(
+    library_id: LibraryId | None,
+    status: RunStatus | None,
+) -> tuple[str, list[object]]:
+    clauses: list[str] = []
+    params: list[object] = []
+    if library_id is not None:
+        clauses.append("library_id = ?")
+        params.append(str(library_id))
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status.value)
+    if not clauses:
+        return "", params
+    return " WHERE " + " AND ".join(clauses), params
+
+
+def _run_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:
+    if cursor_key is None:
+        return "", []
+    if len(cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+    prefix = " AND " if where_sql else " WHERE "
+    # DESC ordering: rows strictly "after" the cursor in (started_at DESC, run_id DESC) order compare `<`.
+    return f"{prefix}(started_at, run_id) < (?, ?)", list(cursor_key)
+
+
+def _file_event_filter_where(run_id: RunId, status: FileEventStatus | None) -> tuple[str, list[object]]:
+    clauses: list[str] = ["run_id = ?"]
+    params: list[object] = [str(run_id)]
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status.value)
+    return " WHERE " + " AND ".join(clauses), params
+
+
+def _file_event_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:
+    if cursor_key is None:
+        return "", []
+    if len(cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+    sequence_no_text, event_id_text = cursor_key
+    try:
+        sequence_no_value = int(sequence_no_text)
+    except ValueError as error:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
+    prefix = " AND " if where_sql else " WHERE "
+    return f"{prefix}(sequence_no, event_id) > (?, ?)", [sequence_no_value, event_id_text]
 
 
 def _track_group_cursor_clause(cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:

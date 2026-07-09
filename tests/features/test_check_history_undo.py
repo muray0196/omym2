@@ -31,9 +31,10 @@ from omym2.features.apply.usecases.apply_plan import ApplyPlanUseCase
 from omym2.features.check.dto import CheckLibraryRequest
 from omym2.features.check.ports import CheckLibraryPorts
 from omym2.features.check.usecases.check_library import CheckLibraryUseCase
-from omym2.features.history.dto import GetRunDetailRequest, ListRunsRequest
+from omym2.features.history.dto import GetRunHeaderRequest, ListRunEventsRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
-from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
+from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase
+from omym2.features.history.usecases.list_run_events import ListRunEventsUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.undo.dto import CreateUndoPlanRequest
 from omym2.features.undo.ports import CreateUndoPlanPorts
@@ -170,11 +171,12 @@ def test_history_lists_runs_newest_first_and_loads_detail() -> None:
     ports = HistoryPorts(uow)
 
     runs = ListRunsUseCase(ports).execute(ListRunsRequest())
-    detail = GetRunDetailUseCase(ports).execute(GetRunDetailRequest(RUN_ID))
+    header = GetRunHeaderUseCase(ports).execute(GetRunHeaderRequest(RUN_ID))
+    events = ListRunEventsUseCase(ports).execute(ListRunEventsRequest(run_id=RUN_ID))
 
-    assert tuple(run.run_id for run in runs) == (SECOND_RUN_ID, RUN_ID)
-    assert detail.run.run_id == RUN_ID
-    assert tuple(event.event_id for event in detail.file_events) == (EVENT_ID,)
+    assert tuple(run.run_id for run in runs.items) == (SECOND_RUN_ID, RUN_ID)
+    assert header.run_id == RUN_ID
+    assert tuple(event.event_id for event in events.items) == (EVENT_ID,)
 
 
 def test_undo_creates_plan_from_succeeded_events_in_reverse_order() -> None:

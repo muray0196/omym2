@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.library import Library
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
     from omym2.domain.models.plan_action import ActionStatus, PlanAction
-    from omym2.domain.models.run import Run
+    from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackStatus
     from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
     from omym2.shared.pagination import PageRequest
@@ -335,6 +335,47 @@ class InMemoryRunRepository:
         """Store or replace one Run."""
         self.records[run.run_id] = run
 
+    def query_page(
+        self,
+        library_id: LibraryId | None,
+        *,
+        status: RunStatus | None,
+        page: PageRequest,
+    ) -> Page[Run]:
+        """Return one keyset page of Runs ordered (started_at DESC, run_id DESC)."""
+        runs = [
+            run
+            for run in self.records.values()
+            if (library_id is None or run.library_id == library_id) and (status is None or run.status == status)
+        ]
+        runs.sort(key=lambda run: (run.started_at, str(run.run_id)), reverse=True)
+        total = len(runs)
+
+        if page.cursor_key is not None:
+            if len(page.cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+                raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+            cursor_started_at, cursor_run_id = page.cursor_key
+            runs = [
+                run
+                for run in runs
+                if (run.started_at.isoformat(), str(run.run_id)) < (cursor_started_at, cursor_run_id)
+            ]
+
+        page_items = tuple(runs[: page.limit])
+        has_more = len(runs) > page.limit
+        next_cursor_key = (page_items[-1].started_at.isoformat(), str(page_items[-1].run_id)) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+        """Return Run status facet counts, ordered count DESC then value ASC."""
+        counts: dict[str, int] = {}
+        for run in self.records.values():
+            if library_id is not None and run.library_id != library_id:
+                continue
+            counts[run.status.value] = counts.get(run.status.value, 0) + 1
+        ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        return tuple(FacetValue(value=value, count=count) for value, count in ordered)
+
 
 @dataclass(slots=True)
 class InMemoryFileEventRepository:
@@ -371,6 +412,41 @@ class InMemoryFileEventRepository:
     def save(self, event: FileEvent) -> None:
         """Store or replace one FileEvent."""
         self.records[event.event_id] = event
+
+    def query_page(
+        self,
+        run_id: RunId,
+        *,
+        status: FileEventStatus | None,
+        page: PageRequest,
+    ) -> Page[FileEvent]:
+        """Return one keyset page of a Run's FileEvents ordered (sequence_no, event_id)."""
+        events = [
+            event
+            for event in self.records.values()
+            if event.run_id == run_id and (status is None or event.status == status)
+        ]
+        events.sort(key=lambda event: (event.sequence_no, str(event.event_id)))
+        total = len(events)
+
+        if page.cursor_key is not None:
+            if len(page.cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+                raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+            cursor_sequence_no_text, cursor_event_id = page.cursor_key
+            try:
+                cursor_sequence_no = int(cursor_sequence_no_text)
+            except ValueError as error:
+                raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
+            events = [
+                event
+                for event in events
+                if (event.sequence_no, str(event.event_id)) > (cursor_sequence_no, cursor_event_id)
+            ]
+
+        page_items = tuple(events[: page.limit])
+        has_more = len(events) > page.limit
+        next_cursor_key = (str(page_items[-1].sequence_no), str(page_items[-1].event_id)) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
 
 @dataclass(slots=True)

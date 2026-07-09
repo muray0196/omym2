@@ -36,9 +36,10 @@ from omym2.features.add.usecases.create_add_plan import CreateAddPlanUseCase
 from omym2.features.apply.dto import ApplyOptions, ApplyPlanRequest
 from omym2.features.apply.ports import ApplyPlanPorts
 from omym2.features.apply.usecases.apply_plan import ApplyPlanUseCase
-from omym2.features.history.dto import GetRunDetailRequest, ListRunsRequest
+from omym2.features.history.dto import GetRunHeaderRequest, ListRunEventsRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
-from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
+from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase
+from omym2.features.history.usecases.list_run_events import ListRunEventsUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.inspect.dto import InspectFileRequest
 from omym2.features.inspect.ports import InspectFilePorts
@@ -113,11 +114,12 @@ def test_inspect_plan_apply_and_history_use_recorded_paths_with_concrete_adapter
 
     history_ports = HistoryPorts(SQLiteUnitOfWork(setup.database_file))
     runs = ListRunsUseCase(history_ports).execute(ListRunsRequest())
-    detail = GetRunDetailUseCase(history_ports).execute(GetRunDetailRequest(run.run_id))
+    header = GetRunHeaderUseCase(history_ports).execute(GetRunHeaderRequest(run.run_id))
+    event_page = ListRunEventsUseCase(history_ports).execute(ListRunEventsRequest(run_id=run.run_id))
 
-    assert tuple(item.run_id for item in runs) == (run.run_id,)
-    assert detail.run.status == RunStatus.SUCCEEDED
-    assert tuple(event.event_id for event in detail.file_events) == (EVENT_ID,)
+    assert tuple(item.run_id for item in runs.items) == (run.run_id,)
+    assert header.status == RunStatus.SUCCEEDED
+    assert tuple(event.event_id for event in event_page.items) == (EVENT_ID,)
 
 
 def test_apply_precondition_failure_records_no_file_event_with_concrete_adapters(tmp_path: Path) -> None:

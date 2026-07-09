@@ -18,13 +18,13 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from omym2.domain.models.app_config import AppConfig
-    from omym2.domain.models.file_event import FileEvent
+    from omym2.domain.models.file_event import FileEvent, FileEventStatus
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.library import Library
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
     from omym2.domain.models.plan_action import ActionStatus, PlanAction
-    from omym2.domain.models.run import Run
+    from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
     from omym2.domain.models.track_metadata import TrackMetadata
     from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
@@ -207,6 +207,24 @@ class RunRepository(Protocol):
         """Persist Run state transitions."""
         ...
 
+    def query_page(
+        self,
+        library_id: LibraryId | None,
+        *,
+        status: RunStatus | None,
+        page: PageRequest,
+    ) -> Page[Run]:
+        """Return one keyset page of Runs, ordered (started_at DESC, run_id DESC).
+
+        `library_id=None` scopes across every known Library. `page.total`
+        counts rows matching the filters, ignoring the cursor.
+        """
+        ...
+
+    def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+        """Return Run status facets, ordered count DESC then value ASC."""
+        ...
+
 
 class FileEventRepository(Protocol):
     """Persistence contract for durable Library music file events."""
@@ -225,6 +243,19 @@ class FileEventRepository(Protocol):
 
     def save(self, event: FileEvent) -> None:
         """Persist a FileEvent before or after a filesystem mutation."""
+        ...
+
+    def query_page(
+        self,
+        run_id: RunId,
+        *,
+        status: FileEventStatus | None,
+        page: PageRequest,
+    ) -> Page[FileEvent]:
+        """Return one keyset page of a Run's FileEvents, ordered (sequence_no, event_id).
+
+        `page.total` counts rows matching the filters, ignoring the cursor.
+        """
         ...
 
 
