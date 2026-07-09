@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Authoritative reference for the Next.js web/ frontend layout, its audited static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
 tags: [web-frontend, nextjs, static-export, api-boundary]
-timestamp: 2026-07-07T14:00:00+09:00
+timestamp: 2026-07-09T15:00:00+09:00
 ---
 
 # Web Frontend
@@ -58,6 +58,8 @@ copy matches the source before runtime or package verification. Do not commit
 `static_dist/`; package builds include it from the generated local copy.
 
 ## Frontend / Backend Boundary
+
+The JSON envelope, pagination/cursor, facet, and group-by contract for the browsing endpoints (`/api/tracks`, `/api/plans`, `/api/check`, `/api/history`) is authoritative in [../contracts/web-api.md](../contracts/web-api.md).
 
 The frontend talks to the backend only through the JSON API:
 
