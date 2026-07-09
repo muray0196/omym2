@@ -1,23 +1,37 @@
 import type {
   AppConfig,
-  CheckResponse,
+  CheckFacetsResponse,
   CheckIssue,
+  CheckIssueType,
+  CheckPageResponse,
+  CheckResponse,
+  CheckRunResponse,
+  FacetsResponse,
+  FacetValue,
   FileEvent,
+  FileEventStatus,
+  GroupCount,
+  GroupsResponse,
   HistoryResponse,
+  PagedResponse,
   PlanAction,
+  PlanActionStatus,
   PlanCreateResult,
   PlanDetail,
   PlanDetailResponse,
   PlansResponse,
+  PlanStatus,
   PlanSummary,
   PlanType,
   RunDetailResponse,
+  RunStatus,
   RunSummary,
   SettingsPreviewResult,
   SettingsSaveResult,
   SettingsState,
   SettingsValidateResult,
   TracksResponse,
+  TrackStatus,
   TrackSummary,
   ArtistIdGenerationResult,
 } from "./types"
@@ -1039,4 +1053,421 @@ export const mockTracks: TrackSummary[] = [
 export const mockTracksResponse: TracksResponse = {
   tracks: mockTracks,
   errors: [],
+}
+
+// --- Paginated Web API mocks (D6) -------------------------------------------
+// Pure paging/faceting/grouping helpers plus a mock branch for every new
+// api-client.ts method (getTracksPage, getTrackFacets, getTrackGroups,
+// getPlansPage, getPlanActionsPage, getPlanFacets, getPlanGroups,
+// getCheckPage, getCheckFacets, getCheckGroups, runCheck, getHistoryPage,
+// getHistoryFacets, getRunEventsPage). Matches the server envelope shapes in
+// types.ts (PagedResponse/FacetsResponse/GroupsResponse) exactly so screens
+// added in later dispatches can switch between mock and live data freely.
+
+const DEFAULT_PAGE_LIMIT = 100
+
+// Cursors are opaque to callers; the mock encodes them as a base64url string
+// over the UTF-8 bytes of the decimal row index. This is a mock-only
+// encoding — it has no relationship to the real server's cursor format.
+const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+function encodeCursor(index: number): string {
+  const bytes = new TextEncoder().encode(String(index))
+  let output = ""
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i] ?? 0
+    const b1 = bytes[i + 1]
+    const b2 = bytes[i + 2]
+    const triplet = (b0 << 16) | ((b1 ?? 0) << 8) | (b2 ?? 0)
+    output += BASE64URL_ALPHABET[(triplet >> 18) & 0x3f]
+    output += BASE64URL_ALPHABET[(triplet >> 12) & 0x3f]
+    output += b1 === undefined ? "" : BASE64URL_ALPHABET[(triplet >> 6) & 0x3f]
+    output += b2 === undefined ? "" : BASE64URL_ALPHABET[triplet & 0x3f]
+  }
+  return output
+}
+
+function decodeCursor(cursor: string): number {
+  const bytes: number[] = []
+  let buffer = 0
+  let bitsCollected = 0
+  for (const ch of cursor) {
+    const value = BASE64URL_ALPHABET.indexOf(ch)
+    if (value < 0) {
+      continue
+    }
+    buffer = (buffer << 6) | value
+    bitsCollected += 6
+    if (bitsCollected >= 8) {
+      bitsCollected -= 8
+      bytes.push((buffer >> bitsCollected) & 0xff)
+    }
+  }
+  const text = new TextDecoder().decode(new Uint8Array(bytes))
+  const parsed = Number.parseInt(text, 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
+}
+
+/**
+ * Filters `rows` with `predicate` (if given), then pages the result.
+ * `page.total` is the filtered count (not the unfiltered fixture size).
+ * Behaves sanely when `limit` exceeds the number of remaining rows: the
+ * page simply contains everything left and `next_cursor` is null.
+ */
+export function pageMock<T>(
+  rows: T[],
+  opts: { limit?: number; cursor?: string; predicate?: (row: T) => boolean } = {},
+): PagedResponse<T> {
+  const filtered = opts.predicate ? rows.filter(opts.predicate) : rows.slice()
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_PAGE_LIMIT
+  const requestedStart = opts.cursor ? decodeCursor(opts.cursor) : 0
+  const start =
+    Number.isFinite(requestedStart) && requestedStart >= 0
+      ? Math.min(requestedStart, filtered.length)
+      : 0
+  const items = filtered.slice(start, start + limit)
+  const nextIndex = start + items.length
+  const nextCursor = nextIndex < filtered.length ? encodeCursor(nextIndex) : null
+  return {
+    items,
+    page: { limit, next_cursor: nextCursor, total: filtered.length },
+    errors: [],
+  }
+}
+
+/** Counts each extractor's values over `rows`; order is count DESC, value ASC. */
+export function facetsMock<T>(
+  rows: T[],
+  extractors: Record<string, (row: T) => string | null | undefined>,
+): FacetsResponse {
+  const facets: Record<string, FacetValue[]> = {}
+  for (const [field, extractor] of Object.entries(extractors)) {
+    const counts = new Map<string, number>()
+    for (const row of rows) {
+      const value = extractor(row)
+      if (value === null || value === undefined || value === "") {
+        continue
+      }
+      counts.set(value, (counts.get(value) ?? 0) + 1)
+    }
+    facets[field] = Array.from(counts.entries())
+      .map(([value, count]): FacetValue => ({ value, count }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+  }
+  return { facets, total: rows.length, errors: [] }
+}
+
+/** Groups `rows` by `keyFn`, counts each group, then pages the group list. */
+export function groupsMock<T>(
+  groupBy: string,
+  rows: T[],
+  keyFn: (row: T) => string,
+  options: {
+    labelFn?: (row: T) => string
+    limit?: number
+    cursor?: string
+  } = {},
+): GroupsResponse {
+  const counts = new Map<string, { label: string; count: number }>()
+  for (const row of rows) {
+    const key = keyFn(row)
+    const label = options.labelFn ? options.labelFn(row) : key
+    const existing = counts.get(key)
+    if (existing) {
+      existing.count += 1
+    } else {
+      counts.set(key, { label, count: 1 })
+    }
+  }
+  const allItems: GroupCount[] = Array.from(counts.entries())
+    .map(([key, { label, count }]): GroupCount => ({ key, label, count }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+  const paged = pageMock(allItems, { limit: options.limit, cursor: options.cursor })
+  return { group_by: groupBy, items: paged.items, page: paged.page, errors: [] }
+}
+
+// --- Filter predicates mirroring server semantics (see filterPlanRows above)
+
+function buildTrackPredicate(options: {
+  query?: string
+  status?: TrackStatus | "all"
+  libraryId?: string
+}): (row: TrackSummary) => boolean {
+  const query = options.query?.trim().toLowerCase()
+  return (row) => {
+    if (options.libraryId && row.library_id !== options.libraryId) {
+      return false
+    }
+    if (options.status && options.status !== "all" && row.status !== options.status) {
+      return false
+    }
+    if (query) {
+      const haystack = [
+        row.metadata.title,
+        row.metadata.artist,
+        row.metadata.album,
+        row.current_path,
+        row.track_id,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(" ")
+        .toLowerCase()
+      if (!haystack.includes(query)) {
+        return false
+      }
+    }
+    return true
+  }
+}
+
+function buildPlanPredicate(options: {
+  status?: PlanStatus | "all"
+  type?: PlanType | "all"
+}): (row: PlanSummary) => boolean {
+  return (row) => {
+    if (options.status && options.status !== "all" && row.status !== options.status) {
+      return false
+    }
+    if (options.type && options.type !== "all" && row.plan_type !== options.type) {
+      return false
+    }
+    return true
+  }
+}
+
+function buildPlanActionPredicate(options: {
+  status?: PlanActionStatus | "all"
+}): (row: PlanAction) => boolean {
+  return (row) => {
+    if (options.status && options.status !== "all" && row.status !== options.status) {
+      return false
+    }
+    return true
+  }
+}
+
+function buildCheckPredicate(options: {
+  issueType?: CheckIssueType | "all"
+  libraryId?: string
+}): (row: CheckIssue) => boolean {
+  return (row) => {
+    if (options.libraryId && row.library_id !== options.libraryId) {
+      return false
+    }
+    if (options.issueType && options.issueType !== "all" && row.issue_type !== options.issueType) {
+      return false
+    }
+    return true
+  }
+}
+
+function buildRunPredicate(options: {
+  status?: RunStatus | "all"
+  libraryId?: string
+}): (row: RunSummary) => boolean {
+  return (row) => {
+    if (options.libraryId && row.library_id !== options.libraryId) {
+      return false
+    }
+    if (options.status && options.status !== "all" && row.status !== options.status) {
+      return false
+    }
+    return true
+  }
+}
+
+function buildFileEventPredicate(options: {
+  status?: FileEventStatus | "all"
+}): (row: FileEvent) => boolean {
+  return (row) => {
+    if (options.status && options.status !== "all" && row.status !== options.status) {
+      return false
+    }
+    return true
+  }
+}
+
+function targetDirectoryOf(path: string | null): string {
+  if (!path) {
+    return "(unresolved)"
+  }
+  const segments = path.split("/")
+  segments.pop()
+  return segments.length > 0 ? segments.join("/") : "(root)"
+}
+
+// --- Tracks ------------------------------------------------------------------
+
+export function mockGetTracksPage(
+  options: {
+    query?: string
+    status?: TrackStatus | "all"
+    libraryId?: string
+    limit?: number
+    cursor?: string
+  } = {},
+): PagedResponse<TrackSummary> {
+  return pageMock(mockTracks, {
+    limit: options.limit,
+    cursor: options.cursor,
+    predicate: buildTrackPredicate(options),
+  })
+}
+
+export function mockGetTrackFacets(options: { libraryId?: string } = {}): FacetsResponse {
+  const rows = options.libraryId
+    ? mockTracks.filter((track) => track.library_id === options.libraryId)
+    : mockTracks
+  return facetsMock(rows, { status: (track) => track.status })
+}
+
+export function mockGetTrackGroups(
+  options: { libraryId?: string; limit?: number; cursor?: string } = {},
+): GroupsResponse {
+  const rows = options.libraryId
+    ? mockTracks.filter((track) => track.library_id === options.libraryId)
+    : mockTracks
+  return groupsMock(
+    "artist_album",
+    rows,
+    (track) =>
+      `${track.metadata.artist ?? defaultConfig.path_policy.unknown_artist}::${
+        track.metadata.album ?? defaultConfig.path_policy.unknown_album
+      }`,
+    {
+      labelFn: (track) =>
+        `${track.metadata.artist ?? defaultConfig.path_policy.unknown_artist} – ${
+          track.metadata.album ?? defaultConfig.path_policy.unknown_album
+        }`,
+      limit: options.limit,
+      cursor: options.cursor,
+    },
+  )
+}
+
+// --- Plans / plan actions -----------------------------------------------------
+
+export function mockGetPlansPage(
+  options: {
+    status?: PlanStatus | "all"
+    type?: PlanType | "all"
+    limit?: number
+    cursor?: string
+  } = {},
+): PagedResponse<PlanSummary> {
+  return pageMock(mockPlans, {
+    limit: options.limit,
+    cursor: options.cursor,
+    predicate: buildPlanPredicate(options),
+  })
+}
+
+export function mockGetPlanActionsPage(
+  planId: string,
+  options: { status?: PlanActionStatus | "all"; limit?: number; cursor?: string } = {},
+): PagedResponse<PlanAction> {
+  const rows = mockPlanActions[planId] ?? []
+  return pageMock(rows, {
+    limit: options.limit,
+    cursor: options.cursor,
+    predicate: buildPlanActionPredicate(options),
+  })
+}
+
+export function mockGetPlanFacets(planId: string): FacetsResponse {
+  const rows = mockPlanActions[planId] ?? []
+  return facetsMock(rows, {
+    status: (action) => action.status,
+    action_type: (action) => action.action_type,
+  })
+}
+
+export function mockGetPlanGroups(
+  planId: string,
+  options: { limit?: number; cursor?: string } = {},
+): GroupsResponse {
+  const rows = mockPlanActions[planId] ?? []
+  return groupsMock("target_directory", rows, (action) => targetDirectoryOf(action.target_path), {
+    limit: options.limit,
+    cursor: options.cursor,
+  })
+}
+
+// --- Check ---------------------------------------------------------------------
+
+// Static previews use this fixture as the "last check run" timestamp for
+// getCheckPage/getCheckFacets/runCheck — it has no relationship to any
+// individual issue's detection time.
+export const MOCK_CHECKED_AT = "2026-06-29T10:05:00Z"
+
+export function mockGetCheckPage(
+  options: {
+    issueType?: CheckIssueType | "all"
+    libraryId?: string
+    limit?: number
+    cursor?: string
+  } = {},
+): CheckPageResponse {
+  const paged = pageMock(mockIssues, {
+    limit: options.limit,
+    cursor: options.cursor,
+    predicate: buildCheckPredicate(options),
+  })
+  return { ...paged, checked_at: MOCK_CHECKED_AT }
+}
+
+export function mockGetCheckFacets(options: { libraryId?: string } = {}): CheckFacetsResponse {
+  const rows = options.libraryId
+    ? mockIssues.filter((issue) => issue.library_id === options.libraryId)
+    : mockIssues
+  const facets = facetsMock(rows, { issue_type: (issue) => issue.issue_type })
+  return { ...facets, checked_at: MOCK_CHECKED_AT }
+}
+
+export function mockGetCheckGroups(
+  options: { libraryId?: string; limit?: number; cursor?: string } = {},
+): GroupsResponse {
+  const rows = options.libraryId
+    ? mockIssues.filter((issue) => issue.library_id === options.libraryId)
+    : mockIssues
+  return groupsMock("issue_type", rows, (issue) => issue.issue_type, {
+    limit: options.limit,
+    cursor: options.cursor,
+  })
+}
+
+export function mockRunCheck(libraryId?: string): CheckRunResponse {
+  const rows = libraryId ? mockIssues.filter((issue) => issue.library_id === libraryId) : mockIssues
+  return { checked_at: MOCK_CHECKED_AT, total: rows.length, errors: [] }
+}
+
+// --- History / run events -------------------------------------------------------
+
+export function mockGetHistoryPage(
+  options: { status?: RunStatus | "all"; libraryId?: string; limit?: number; cursor?: string } = {},
+): PagedResponse<RunSummary> {
+  return pageMock(mockRuns, {
+    limit: options.limit,
+    cursor: options.cursor,
+    predicate: buildRunPredicate(options),
+  })
+}
+
+export function mockGetHistoryFacets(options: { libraryId?: string } = {}): FacetsResponse {
+  const rows = options.libraryId
+    ? mockRuns.filter((run) => run.library_id === options.libraryId)
+    : mockRuns
+  return facetsMock(rows, { status: (run) => run.status })
+}
+
+export function mockGetRunEventsPage(
+  runId: string,
+  options: { status?: FileEventStatus | "all"; limit?: number; cursor?: string } = {},
+): PagedResponse<FileEvent> {
+  const rows = mockFileEvents[runId] ?? []
+  return pageMock(rows, {
+    limit: options.limit,
+    cursor: options.cursor,
+    predicate: buildFileEventPredicate(options),
+  })
 }

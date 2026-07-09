@@ -298,6 +298,62 @@ export interface TracksResponse {
   errors: string[]
 }
 
+// --- Paginated Web API contracts (D6) --------------------------------------
+// Envelope types shared by the paginated list/facet/group endpoints under
+// /api/tracks, /api/plans/*, /api/check, and /api/history/*. Row payloads
+// reuse the existing TrackSummary/PlanSummary/PlanAction/CheckIssue/
+// RunSummary/FileEvent types above; these types are additive only.
+
+export interface PageInfo {
+  limit: number
+  next_cursor: string | null
+  total: number
+}
+
+export interface PagedResponse<T> {
+  items: T[]
+  page: PageInfo
+  errors: string[]
+}
+
+export interface FacetValue {
+  value: string
+  count: number
+}
+
+export interface FacetsResponse {
+  facets: Record<string, FacetValue[]>
+  total: number
+  errors: string[]
+}
+
+export interface GroupCount {
+  key: string
+  label: string
+  count: number
+}
+
+export interface GroupsResponse {
+  group_by: string
+  items: GroupCount[]
+  page: PageInfo
+  errors: string[]
+}
+
+export interface CheckPageResponse extends PagedResponse<CheckIssue> {
+  checked_at: string | null
+}
+
+export interface CheckFacetsResponse extends FacetsResponse {
+  checked_at: string | null
+}
+
+export interface CheckRunResponse {
+  checked_at: string
+  total: number
+  errors: string[]
+}
+
 export interface SampleMetadata {
   title: string
   artist: string
