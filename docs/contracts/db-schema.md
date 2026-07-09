@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events), migrations, indexes, stored JSON fields, and timestamp policy.
+description: Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events, check_runs, check_issues), migrations, indexes, stored JSON fields, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-09T18:00:00+09:00
+timestamp: 2026-07-10T09:00:00+09:00
 ---
 
 # DB Schema Contract
@@ -54,6 +54,8 @@ plans
 plan_actions
 runs
 file_events
+check_runs
+check_issues
 ```
 
 ### libraries
@@ -166,6 +168,36 @@ Minimum representative fields:
 
 FileEvents are used for run detail display, diagnosing partial failures, crash inspection, and undo plan creation.
 
+### check_runs
+
+Stores one row per Library for that Library's latest completed check run.
+
+Minimum representative fields:
+
+* `check_run_id`
+* `library_id`
+* `checked_at`
+* `total_count`
+
+A Library has at most one `check_runs` row at a time: each new check run for a Library replaces that Library's prior row and prior `check_issues` rows. Check findings are therefore persisted latest-run-only, never accumulated across runs.
+
+### check_issues
+
+Stores the findings of one check run.
+
+Minimum representative fields:
+
+* `issue_seq`
+* `check_run_id`
+* `library_id`
+* `issue_type`
+* `path` nullable
+* `track_id` nullable
+* `plan_id` nullable
+* `detail` nullable
+
+`issue_seq` is an auto-incrementing sequence that preserves the insertion order of one check run's findings and backs keyset pagination for check browsing. Rows are removed when their owning `check_runs` row is replaced or deleted.
+
 ## Migrations
 
 Migrations must preserve existing managed state or fail explicitly before partially changing schema state.
@@ -205,6 +237,10 @@ Indexes exist to keep the Web API's list, facet, and group-by endpoints (authori
 * `idx_plan_actions_status` on `plan_actions (plan_id, status)` — backs PlanAction status filtering within one Plan.
 * `idx_plan_actions_type` on `plan_actions (plan_id, action_type)` — backs PlanAction type filtering within one Plan.
 * `idx_runs_started` on `runs (started_at, run_id)` — backs Run history ordering and keyset pagination.
+
+`202607090002_check_results.sql` adds:
+
+* `idx_check_issues_library_type` on `check_issues (library_id, issue_type, issue_seq)` — backs CheckIssue Library/issue_type filtering, ordering, and keyset pagination (`GET /api/check`).
 
 ## Stored JSON Fields
 

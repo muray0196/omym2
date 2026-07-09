@@ -191,9 +191,11 @@ def test_diagnostics_and_recovery_usecases_handle_empty_repository_contracts() -
     id_generator = SequenceIdGenerator()
 
     assert (
-        CheckLibraryUseCase(CheckLibraryPorts(uow, scanner, snapshot_reader, config_store, path_resolver)).execute(
-            CheckLibraryRequest()
+        CheckLibraryUseCase(
+            CheckLibraryPorts(uow, scanner, snapshot_reader, config_store, path_resolver, clock, id_generator)
         )
+        .execute(CheckLibraryRequest())
+        .issues
         == ()
     )
     assert ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest()).items == ()

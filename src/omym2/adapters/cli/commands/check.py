@@ -46,7 +46,7 @@ def _run_check(
     stderr: TextIO,
 ) -> int:
     try:
-        issues = CheckLibraryUseCase(ports).execute(CheckLibraryRequest())
+        result = CheckLibraryUseCase(ports).execute(CheckLibraryRequest())
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
         return ERROR_EXIT_CODE
@@ -60,6 +60,7 @@ def _run_check(
         write_line(stderr, f"Check I/O error: {exc}")
         return ERROR_EXIT_CODE
 
+    issues = result.issues
     if len(issues) == 0:
         write_line(stdout, NO_ISSUES_MESSAGE)
         return SUCCESS_EXIT_CODE

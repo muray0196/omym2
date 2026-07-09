@@ -49,7 +49,10 @@ from omym2.config import (
     PATH_POLICY_PREVIEW_TRACK_NUMBER,
     PATH_POLICY_PREVIEW_YEAR,
     WEB_API_ARTIST_IDS_GENERATE_ROUTE,
+    WEB_API_CHECK_FACETS_ROUTE,
+    WEB_API_CHECK_GROUPS_ROUTE,
     WEB_API_CHECK_ROUTE,
+    WEB_API_CHECK_RUN_ROUTE,
     WEB_API_HISTORY_FACETS_ROUTE,
     WEB_API_HISTORY_ROUTE,
     WEB_API_PLAN_ACTIONS_ROUTE,
@@ -72,6 +75,7 @@ from omym2.config import (
     WEB_CSRF_HEADER_NAME,
 )
 from omym2.domain.models.app_config import AppConfig
+from omym2.domain.models.check_issue import CheckIssueType
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus
@@ -86,8 +90,16 @@ from omym2.features.add.usecases.create_add_plan import (
 )
 from omym2.features.artist_ids.dto import GenerateArtistIdsRequest
 from omym2.features.artist_ids.usecases.generate_artist_ids import GenerateArtistIdsUseCase
-from omym2.features.check.dto import CheckLibraryRequest
+from omym2.features.check.dto import (
+    CheckIssueFacetsRequest,
+    CheckLibraryRequest,
+    GroupCheckIssuesRequest,
+    ListCheckIssuesRequest,
+)
 from omym2.features.check.usecases.check_library import CheckLibraryError, CheckLibraryUseCase
+from omym2.features.check.usecases.get_check_issue_facets import GetCheckIssueFacetsUseCase
+from omym2.features.check.usecases.group_check_issues import GroupCheckIssuesUseCase
+from omym2.features.check.usecases.list_check_issues import ListCheckIssuesUseCase
 from omym2.features.common_ports import ConfigStoreValidationError, MetadataReadError
 from omym2.features.history.dto import (
     GetRunHeaderRequest,
@@ -140,9 +152,11 @@ from omym2.shared.ids import LibraryId, PlanId, RunId, parse_uuid
 from omym2.shared.pagination import INVALID_CURSOR_MESSAGE, CursorDecodeError, PageRequest, clamp_limit, decode_cursor
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from omym2.features.add.ports import CreateAddPlanPorts
     from omym2.features.artist_ids.ports import ArtistLanguageDetector, ArtistNameResolver
-    from omym2.features.check.ports import CheckLibraryPorts
+    from omym2.features.check.ports import CheckLibraryPorts, CheckQueryPorts
     from omym2.features.history.ports import HistoryPorts
     from omym2.features.organize.ports import CreateOrganizePlanPorts
     from omym2.features.plans.ports import PlanQueryPorts
@@ -162,13 +176,17 @@ RUN_NOT_FOUND_MESSAGE = "Run was not found."
 PLAN_NOT_FOUND_MESSAGE = "Plan was not found."
 SAVE_CSRF_ERROR_MESSAGE = "Settings save request failed CSRF validation."
 PLAN_CSRF_ERROR_MESSAGE = "Plan creation request failed CSRF validation."
+CHECK_RUN_CSRF_ERROR_MESSAGE = "Check run request failed CSRF validation."
 INSPECTION_ERROR_PREFIX = "Inspection failed"
+CHECK_RUN_ERROR_PREFIX = "Check run failed"
 PLAN_CREATION_ERROR_PREFIX = "Plan creation failed"
 PLAN_PATH_NOT_DIRECTORY_MESSAGE = "Plan path must be a directory"
 PLAN_PATH_NOT_FOUND_MESSAGE = "Plan path was not found"
 PLAN_ACTIONS_GROUP_BY_TARGET_DIRECTORY = "target_directory"  # only supported plan-action group_by value
+CHECK_ISSUES_GROUP_BY_ISSUE_TYPE = "issue_type"  # only supported check-issue group_by value
 
 type CheckPortsFactory = Callable[[], "CheckLibraryPorts"]
+type CheckQueryPortsFactory = Callable[[], "CheckQueryPorts"]
 type HistoryPortsFactory = Callable[[], "HistoryPorts"]
 type PlanQueryPortsFactory = Callable[[], "PlanQueryPorts"]
 type AddPlanPortsFactory = Callable[[], "CreateAddPlanPorts"]
@@ -182,6 +200,7 @@ class ApiRouteContext:
     """Concrete dependencies for JSON API routes."""
 
     check_ports_factory: CheckPortsFactory
+    check_query_ports_factory: CheckQueryPortsFactory
     csrf_token: str
     history_ports_factory: HistoryPortsFactory
     plan_query_ports_factory: PlanQueryPortsFactory
@@ -285,8 +304,17 @@ def _register_plan_routes(router: APIRouter, context: ApiRouteContext) -> None:
 
 
 def _register_inspection_routes(router: APIRouter, context: ApiRouteContext) -> None:
-    def get_check() -> JSONResponse:
-        return _get_check(context)
+    def get_check(request: Request) -> JSONResponse:
+        return _get_check(context, request)
+
+    def get_check_facets(request: Request) -> JSONResponse:
+        return _get_check_facets(context, request)
+
+    def get_check_groups(request: Request) -> JSONResponse:
+        return _get_check_groups(context, request)
+
+    async def run_check(request: Request) -> JSONResponse:
+        return await _run_check(context, request)
 
     def get_tracks(request: Request) -> JSONResponse:
         return _get_tracks(context, request)
@@ -298,6 +326,9 @@ def _register_inspection_routes(router: APIRouter, context: ApiRouteContext) -> 
         return _get_track_groups(context, request)
 
     router.add_api_route(WEB_API_CHECK_ROUTE, get_check, methods=["GET"])
+    router.add_api_route(WEB_API_CHECK_FACETS_ROUTE, get_check_facets, methods=["GET"])
+    router.add_api_route(WEB_API_CHECK_GROUPS_ROUTE, get_check_groups, methods=["GET"])
+    router.add_api_route(WEB_API_CHECK_RUN_ROUTE, run_check, methods=["POST"])
     router.add_api_route(WEB_API_TRACKS_ROUTE, get_tracks, methods=["GET"])
     router.add_api_route(WEB_API_TRACKS_FACETS_ROUTE, get_track_facets, methods=["GET"])
     router.add_api_route(WEB_API_TRACKS_GROUPS_ROUTE, get_track_groups, methods=["GET"])
@@ -817,22 +848,140 @@ async def _create_refresh_plan(context: ApiRouteContext, request: Request) -> JS
     return _created_plan_response(plan)
 
 
-def _get_check(context: ApiRouteContext) -> JSONResponse:
+def _get_check(context: ApiRouteContext, request: Request) -> JSONResponse:
+    cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
+    if cursor_errors:
+        return _list_error_response(cursor_errors)
+
+    library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    issue_type, issue_type_errors = _check_issue_type_from_query(request.query_params.get("issue_type"))
+    limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
+    filter_errors = library_errors + issue_type_errors + limit_errors
+    if filter_errors:
+        return _list_error_response(filter_errors)
+
+    effective_limit = cast("int", limit)
+
     try:
-        issues = CheckLibraryUseCase(context.check_ports_factory()).execute(CheckLibraryRequest())
-    except (ConfigStoreValidationError, CheckLibraryError) as exc:
-        return JSONResponse(
-            {"issues": [], "errors": list(_errors_from_client_error(exc))},
-            status_code=ERROR_STATUS_CODE,
+        result = ListCheckIssuesUseCase(context.check_query_ports_factory()).execute(
+            ListCheckIssuesRequest(
+                library_id=library_id,
+                issue_type=issue_type,
+                page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
+            )
         )
-    except (MetadataReadError, OSError, sqlite3.DatabaseError) as exc:
+    except CursorDecodeError:
+        return _list_error_response((INVALID_CURSOR_MESSAGE,))
+    except sqlite3.DatabaseError as exc:
         return JSONResponse(
-            {"issues": [], "errors": [f"Check failed: {exc}"]},
+            {"items": [], "page": None, "errors": list(_inspection_errors(exc))},
             status_code=SERVER_ERROR_STATUS_CODE,
         )
 
     return JSONResponse(
-        {"issues": [serialize_check_issue(issue) for issue in issues], "errors": []},
+        {
+            **_list_envelope(
+                [serialize_check_issue(issue) for issue in result.page.items],
+                limit=effective_limit,
+                next_cursor_key=result.page.next_cursor_key,
+                total=result.page.total,
+            ),
+            "checked_at": _optional_isoformat(result.checked_at),
+        },
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+def _get_check_facets(context: ApiRouteContext, request: Request) -> JSONResponse:
+    library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    if library_errors:
+        return _facet_error_response(library_errors)
+
+    try:
+        result = GetCheckIssueFacetsUseCase(context.check_query_ports_factory()).execute(
+            CheckIssueFacetsRequest(library_id=library_id)
+        )
+    except sqlite3.DatabaseError as exc:
+        return JSONResponse(
+            {"facets": {}, "total": None, "errors": list(_inspection_errors(exc))},
+            status_code=SERVER_ERROR_STATUS_CODE,
+        )
+
+    return JSONResponse(
+        {
+            **_facet_envelope(
+                {"issue_type": [serialize_facet_value(facet) for facet in result.facets]},
+                total=result.total,
+            ),
+            "checked_at": _optional_isoformat(result.checked_at),
+        },
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+def _get_check_groups(context: ApiRouteContext, request: Request) -> JSONResponse:
+    cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
+    if cursor_errors:
+        return _group_error_response(cursor_errors)
+
+    grouping, grouping_errors = _check_issue_grouping_from_query(request.query_params.get("group_by"))
+    library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
+    filter_errors = grouping_errors + library_errors + limit_errors
+    if filter_errors:
+        return _group_error_response(filter_errors)
+
+    effective_limit = cast("int", limit)
+    effective_grouping = cast("str", grouping)
+
+    try:
+        page = GroupCheckIssuesUseCase(context.check_query_ports_factory()).execute(
+            GroupCheckIssuesRequest(
+                library_id=library_id,
+                page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
+            )
+        )
+    except CursorDecodeError:
+        return _group_error_response((INVALID_CURSOR_MESSAGE,))
+    except sqlite3.DatabaseError as exc:
+        return JSONResponse(
+            {"group_by": None, "items": [], "page": None, "errors": list(_inspection_errors(exc))},
+            status_code=SERVER_ERROR_STATUS_CODE,
+        )
+
+    return JSONResponse(
+        _group_envelope(
+            effective_grouping,
+            [serialize_group_count(group) for group in page.items],
+            limit=effective_limit,
+            next_cursor_key=page.next_cursor_key,
+            total=page.total,
+        ),
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+async def _run_check(context: ApiRouteContext, request: Request) -> JSONResponse:
+    if not _has_valid_csrf_token(context, request):
+        return _check_run_error((CHECK_RUN_CSRF_ERROR_MESSAGE,), status_code=FORBIDDEN_STATUS_CODE)
+
+    payload, payload_errors = await _read_json_payload(request)
+    if payload_errors:
+        return _check_run_error(payload_errors)
+
+    library_id, library_errors = _library_id_from_payload(payload)
+    if library_errors:
+        return _check_run_error(library_errors)
+
+    try:
+        result = CheckLibraryUseCase(context.check_ports_factory()).execute(CheckLibraryRequest(library_id=library_id))
+    except (ConfigStoreValidationError, CheckLibraryError) as exc:
+        return _check_run_error(_errors_from_client_error(exc))
+    except (MetadataReadError, OSError, sqlite3.DatabaseError) as exc:
+        return _check_run_error((f"{CHECK_RUN_ERROR_PREFIX}: {exc}",), status_code=SERVER_ERROR_STATUS_CODE)
+
+    return JSONResponse(
+        {"checked_at": result.checked_at.isoformat(), "total": len(result.issues), "errors": []},
         status_code=SUCCESS_STATUS_CODE,
     )
 
@@ -1109,6 +1258,23 @@ def _plan_action_grouping_from_query(raw_value: str | None) -> tuple[str | None,
     return raw_value, ()
 
 
+def _check_issue_type_from_query(raw_value: str | None) -> tuple[CheckIssueType | None, tuple[str, ...]]:
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return CheckIssueType(raw_value), ()
+    except ValueError:
+        return None, (f"Invalid issue_type filter: {raw_value}",)
+
+
+def _check_issue_grouping_from_query(raw_value: str | None) -> tuple[str | None, tuple[str, ...]]:
+    if raw_value is None or raw_value == "":
+        return None, ("Query parameter group_by is required.",)
+    if raw_value != CHECK_ISSUES_GROUP_BY_ISSUE_TYPE:
+        return None, (f"Invalid group_by filter: {raw_value}",)
+    return raw_value, ()
+
+
 def _library_id_from_query(raw_value: str | None) -> tuple[LibraryId | None, tuple[str, ...]]:
     """Parse an optional `library_id` filter shared by every browsing endpoint."""
     if raw_value is None or raw_value == "":
@@ -1246,6 +1412,32 @@ def _optional_boolean_field(payload: object, field_name: str) -> tuple[bool, tup
     if not isinstance(raw_value, bool):
         return False, (f"Request body {field_name} must be a boolean.",)
     return raw_value, ()
+
+
+def _library_id_from_payload(payload: object) -> tuple[LibraryId | None, tuple[str, ...]]:
+    """Parse the optional `library_id` field of a POST /api/check/run request body."""
+    if not isinstance(payload, Mapping):
+        return None, (REQUEST_BODY_ERROR,)
+    payload_mapping = cast("Mapping[str, object]", payload)
+    raw_value = payload_mapping.get("library_id")
+    if raw_value is None:
+        return None, ()
+    if not isinstance(raw_value, str):
+        return None, ("Request body library_id must be a string or null.",)
+    try:
+        return LibraryId(parse_uuid(raw_value)), ()
+    except ValueError:
+        return None, (f"Invalid library_id: {raw_value}",)
+
+
+def _optional_isoformat(value: datetime | None) -> str | None:
+    """Return an ISO 8601 string for an optional timestamp."""
+    return None if value is None else value.isoformat()
+
+
+def _check_run_error(errors: tuple[str, ...], *, status_code: int = ERROR_STATUS_CODE) -> JSONResponse:
+    """Build the check-run error envelope: checked_at/total emptied; 400 unless overridden."""
+    return JSONResponse({"checked_at": None, "total": None, "errors": list(errors)}, status_code=status_code)
 
 
 def _run_detail_error(message: str) -> JSONResponse:

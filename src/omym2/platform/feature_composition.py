@@ -15,7 +15,7 @@ from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
 from omym2.adapters.fs.path_resolver import FilesystemPathResolver
 from omym2.features.add.ports import CreateAddPlanPorts
 from omym2.features.apply.ports import ApplyPlanPorts
-from omym2.features.check.ports import CheckLibraryPorts
+from omym2.features.check.ports import CheckLibraryPorts, CheckQueryPorts
 from omym2.features.common_ports import SystemClock, Uuid7IdGenerator
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.inspect.ports import InspectFilePorts
@@ -62,14 +62,21 @@ def build_apply_plan_ports(runtime: RuntimeContext) -> ApplyPlanPorts:
 
 
 def build_check_library_ports(runtime: RuntimeContext) -> CheckLibraryPorts:
-    """Build ports for check inspection."""
+    """Build ports for check inspection and persistence."""
     return CheckLibraryPorts(
         uow=SQLiteUnitOfWork(runtime.database_file),
         file_scanner=FilesystemFileScanner(),
         file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=runtime.metadata_reader),
         config_store=runtime.config_store,
         path_resolver=FilesystemPathResolver(),
+        clock=SystemClock(),
+        id_generator=Uuid7IdGenerator(),
     )
+
+
+def build_check_query_ports(runtime: RuntimeContext) -> CheckQueryPorts:
+    """Build ports for read-only browsing of persisted check findings, without filesystem ports."""
+    return CheckQueryPorts(uow=SQLiteUnitOfWork(runtime.database_file))
 
 
 def build_history_ports(runtime: RuntimeContext) -> HistoryPorts:

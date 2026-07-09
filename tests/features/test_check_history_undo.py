@@ -28,9 +28,17 @@ from omym2.domain.services.config_fingerprint import calculate_config_fingerprin
 from omym2.features.apply.dto import ApplyOptions, ApplyPlanRequest
 from omym2.features.apply.ports import ApplyPlanPorts
 from omym2.features.apply.usecases.apply_plan import ApplyPlanUseCase
-from omym2.features.check.dto import CheckLibraryRequest
-from omym2.features.check.ports import CheckLibraryPorts
+from omym2.features.check.dto import (
+    CheckIssueFacetsRequest,
+    CheckLibraryRequest,
+    GroupCheckIssuesRequest,
+    ListCheckIssuesRequest,
+)
+from omym2.features.check.ports import CheckLibraryPorts, CheckQueryPorts
 from omym2.features.check.usecases.check_library import CheckLibraryUseCase
+from omym2.features.check.usecases.get_check_issue_facets import GetCheckIssueFacetsUseCase
+from omym2.features.check.usecases.group_check_issues import GroupCheckIssuesUseCase
+from omym2.features.check.usecases.list_check_issues import ListCheckIssuesUseCase
 from omym2.features.history.dto import GetRunHeaderRequest, ListRunEventsRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase
@@ -44,7 +52,7 @@ from omym2.features.undo.usecases.create_undo_plan import (
     CreateUndoPlanUseCase,
     UndoPlanError,
 )
-from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
+from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
@@ -54,6 +62,8 @@ if TYPE_CHECKING:
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+CHECK_RUN_ID = CheckRunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568b"))
+SECOND_CHECK_RUN_ID = CheckRunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568c"))
 CHANGED_CONTENT_HASH = "changed-content"
 CHANGED_METADATA_HASH = "changed-metadata"
 CONFIG_HASH = calculate_config_fingerprint(default_app_config())
@@ -65,6 +75,8 @@ FILE_EXTENSION = ".flac"
 FILE_SIZE = 5
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 LIBRARY_ROOT = "/music/library"
+SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568d"))
+SECOND_LIBRARY_ROOT = "/music/second-library"
 METADATA_HASH = "metadata"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 RESTORE_PATH = "Restore/Imported.flac"
@@ -90,7 +102,7 @@ METADATA = TrackMetadata(title="Title", artist="Artist", album="Album", year=202
 
 
 def test_check_reports_db_filesystem_plan_and_pending_event_issues() -> None:
-    """check reports drift without mutating repositories."""
+    """check reports drift and commits its own findings without mutating other repositories."""
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library())
     uow.tracks.save(_track(canonical_path=RESTORE_PATH))
@@ -111,7 +123,7 @@ def test_check_reports_db_filesystem_plan_and_pending_event_issues() -> None:
         }
     )
 
-    issues = CheckLibraryUseCase(_check_ports(uow, scanner, snapshots)).execute(CheckLibraryRequest())
+    result = CheckLibraryUseCase(_check_ports(uow, scanner, snapshots)).execute(CheckLibraryRequest())
 
     assert {
         CheckIssueType.CONTENT_HASH_CHANGED,
@@ -121,8 +133,11 @@ def test_check_reports_db_filesystem_plan_and_pending_event_issues() -> None:
         CheckIssueType.DUPLICATE_CANDIDATE,
         CheckIssueType.PLAN_SOURCE_CHANGED,
         CheckIssueType.PENDING_FILE_EVENT_EXISTS,
-    } <= {issue.issue_type for issue in issues}
-    assert uow.commit_count == 0
+    } <= {issue.issue_type for issue in result.issues}
+    assert result.checked_at == BASE_TIME
+    assert uow.commit_count == 1
+    assert uow.tracks.get(TRACK_ID) is not None
+    assert uow.libraries.get(LIBRARY_ID) is not None
 
 
 def test_check_reports_missing_file_and_library_state() -> None:
@@ -132,11 +147,11 @@ def test_check_reports_missing_file_and_library_state() -> None:
     uow.tracks.save(_track())
     snapshots = MappingSnapshotReader({}, missing_paths={_absolute(TARGET_PATH)})
 
-    issues = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), snapshots)).execute(CheckLibraryRequest())
+    result = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), snapshots)).execute(CheckLibraryRequest())
 
-    assert CheckIssueType.DB_FILE_MISSING in {issue.issue_type for issue in issues}
-    assert CheckIssueType.LIBRARY_BLOCKED in {issue.issue_type for issue in issues}
-    assert CheckIssueType.LIBRARY_STALE in {issue.issue_type for issue in issues}
+    assert CheckIssueType.DB_FILE_MISSING in {issue.issue_type for issue in result.issues}
+    assert CheckIssueType.LIBRARY_BLOCKED in {issue.issue_type for issue in result.issues}
+    assert CheckIssueType.LIBRARY_STALE in {issue.issue_type for issue in result.issues}
 
 
 def test_check_orders_pending_event_issues_by_run_start_then_sequence() -> None:
@@ -149,16 +164,118 @@ def test_check_orders_pending_event_issues_by_run_start_then_sequence() -> None:
     uow.file_events.save(_pending_event(event_id=THIRD_EVENT_ID, run_id=SECOND_RUN_ID, target_path=SECOND_SOURCE_PATH))
     uow.file_events.save(_pending_event())
 
-    issues = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), MappingSnapshotReader({}))).execute(
+    result = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), MappingSnapshotReader({}))).execute(
         CheckLibraryRequest()
     )
 
-    pending_issues = tuple(issue for issue in issues if issue.issue_type == CheckIssueType.PENDING_FILE_EVENT_EXISTS)
+    pending_issues = tuple(
+        issue for issue in result.issues if issue.issue_type == CheckIssueType.PENDING_FILE_EVENT_EXISTS
+    )
     assert tuple((issue.plan_id, issue.path) for issue in pending_issues) == (
         (PLAN_ID, TARGET_PATH),
         (PLAN_ID, RESTORE_PATH),
         (SECOND_PLAN_ID, SECOND_SOURCE_PATH),
     )
+
+
+def test_check_replaces_prior_run_findings_wholesale_on_recheck() -> None:
+    """A second check for one Library replaces its persisted CheckRun and CheckIssues entirely."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(status=LibraryStatus.BLOCKED, path_policy_hash="old-policy"))
+    uow.tracks.save(_track())
+    dirty_snapshots = MappingSnapshotReader({}, missing_paths={_absolute(TARGET_PATH)})
+    first_id_generator = SequenceIdGenerator(check_run_ids=deque((CHECK_RUN_ID,)))
+
+    first = CheckLibraryUseCase(
+        _check_ports(uow, StaticScanner(()), dirty_snapshots, id_generator=first_id_generator)
+    ).execute(CheckLibraryRequest())
+
+    first_run = uow.check_runs.latest(LIBRARY_ID)
+    assert first_run is not None
+    assert first_run.check_run_id == CHECK_RUN_ID
+    assert first_run.total_count == len(first.issues) > 0
+    assert len(uow.check_issues.records) == len(first.issues)
+
+    uow.libraries.save(_library())  # Library becomes registered with the current path policy hash.
+    clean_snapshots = MappingSnapshotReader({_absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH))})
+    second_id_generator = SequenceIdGenerator(check_run_ids=deque((SECOND_CHECK_RUN_ID,)))
+
+    second = CheckLibraryUseCase(
+        _check_ports(uow, StaticScanner(()), clean_snapshots, id_generator=second_id_generator)
+    ).execute(CheckLibraryRequest())
+
+    assert second.issues == ()
+    second_run = uow.check_runs.latest(LIBRARY_ID)
+    assert second_run is not None
+    assert second_run.check_run_id == SECOND_CHECK_RUN_ID
+    assert second_run.total_count == 0
+    assert len(uow.check_issues.records) == 0
+
+
+def test_check_query_usecases_read_persisted_findings_and_resolve_checked_at() -> None:
+    """List/facet/group usecases read persisted CheckIssues and resolve checked_at per scope."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.libraries.save(_library(library_id=SECOND_LIBRARY_ID, root_path=SECOND_LIBRARY_ROOT))
+    dirty_snapshots = MappingSnapshotReader({}, missing_paths={_absolute(TARGET_PATH)})
+    uow.tracks.save(_track())
+
+    _ = CheckLibraryUseCase(
+        CheckLibraryPorts(
+            uow=uow,
+            file_scanner=StaticScanner(()),
+            file_snapshot_reader=dirty_snapshots,
+            config_store=StaticConfigStore(),
+            path_resolver=SimplePathResolver(),
+            clock=FixedClock(BASE_TIME),
+            id_generator=SequenceIdGenerator(check_run_ids=deque((CHECK_RUN_ID,))),
+        )
+    ).execute(CheckLibraryRequest(library_id=LIBRARY_ID))
+    _ = CheckLibraryUseCase(
+        CheckLibraryPorts(
+            uow=uow,
+            file_scanner=StaticScanner(()),
+            file_snapshot_reader=MappingSnapshotReader({}),
+            config_store=StaticConfigStore(),
+            path_resolver=SimplePathResolver(),
+            clock=FixedClock(BASE_TIME + timedelta(days=1)),
+            id_generator=SequenceIdGenerator(check_run_ids=deque((SECOND_CHECK_RUN_ID,))),
+        )
+    ).execute(CheckLibraryRequest(library_id=SECOND_LIBRARY_ID))
+
+    query_ports = CheckQueryPorts(uow)
+    per_library = ListCheckIssuesUseCase(query_ports).execute(ListCheckIssuesRequest(library_id=LIBRARY_ID))
+    other_library = ListCheckIssuesUseCase(query_ports).execute(ListCheckIssuesRequest(library_id=SECOND_LIBRARY_ID))
+    aggregate = ListCheckIssuesUseCase(query_ports).execute(ListCheckIssuesRequest())
+    facets = GetCheckIssueFacetsUseCase(query_ports).execute(CheckIssueFacetsRequest())
+    groups = GroupCheckIssuesUseCase(query_ports).execute(GroupCheckIssuesRequest())
+
+    assert len(per_library.page.items) > 0
+    assert per_library.checked_at == BASE_TIME
+    assert other_library.page.items == ()
+    assert other_library.checked_at == BASE_TIME + timedelta(days=1)
+    assert aggregate.page.total == per_library.page.total
+    assert aggregate.checked_at == BASE_TIME  # minimum across both Libraries' latest check runs
+    assert facets.checked_at == BASE_TIME
+    assert facets.total == per_library.page.total
+    assert sum(group.count for group in groups.items) == per_library.page.total
+
+
+def test_check_query_usecases_resolve_checked_at_none_when_never_checked() -> None:
+    """checked_at is null for a Library (or the aggregate scope) that has never been checked."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    query_ports = CheckQueryPorts(uow)
+
+    per_library = ListCheckIssuesUseCase(query_ports).execute(ListCheckIssuesRequest(library_id=LIBRARY_ID))
+    aggregate = ListCheckIssuesUseCase(query_ports).execute(ListCheckIssuesRequest())
+    facets = GetCheckIssueFacetsUseCase(query_ports).execute(CheckIssueFacetsRequest())
+
+    assert per_library.page.items == ()
+    assert per_library.checked_at is None
+    assert aggregate.page.items == ()
+    assert aggregate.checked_at is None
+    assert facets.checked_at is None
 
 
 def test_history_lists_runs_newest_first_and_loads_detail() -> None:
@@ -494,6 +611,8 @@ def _check_ports(
     uow: InMemoryUnitOfWork,
     scanner: StaticScanner,
     snapshot_reader: MappingSnapshotReader,
+    *,
+    id_generator: SequenceIdGenerator | None = None,
 ) -> CheckLibraryPorts:
     return CheckLibraryPorts(
         uow=uow,
@@ -501,6 +620,10 @@ def _check_ports(
         file_snapshot_reader=snapshot_reader,
         config_store=StaticConfigStore(),
         path_resolver=SimplePathResolver(),
+        clock=FixedClock(BASE_TIME),
+        id_generator=SequenceIdGenerator(check_run_ids=deque((CHECK_RUN_ID,)))
+        if id_generator is None
+        else id_generator,
     )
 
 
@@ -556,12 +679,14 @@ def _uow_with_applied_run(*, second_event: bool = True) -> InMemoryUnitOfWork:
 
 def _library(
     *,
+    library_id: LibraryId = LIBRARY_ID,
+    root_path: str = LIBRARY_ROOT,
     status: LibraryStatus = LibraryStatus.REGISTERED,
     path_policy_hash: str | None = None,
 ) -> Library:
     return Library(
-        library_id=LIBRARY_ID,
-        root_path=LIBRARY_ROOT,
+        library_id=library_id,
+        root_path=root_path,
         path_policy_hash=calculate_path_policy_fingerprint(
             default_app_config().path_policy,
             default_app_config().artist_ids,

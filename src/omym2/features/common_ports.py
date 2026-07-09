@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from omym2.domain.models.app_config import AppConfig
+    from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
+    from omym2.domain.models.check_run import CheckRun
     from omym2.domain.models.file_event import FileEvent, FileEventStatus
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
@@ -27,7 +29,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
     from omym2.domain.models.track_metadata import TrackMetadata
-    from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
+    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
     from omym2.shared.pagination import FacetValue, GroupCount, Page, PageRequest
 
 type FileSystemPath = str | PathLike[str]
@@ -44,6 +46,60 @@ class ConfigStoreValidationError(ValueError):
 
 class MetadataReadError(ValueError):
     """Raised when a metadata adapter cannot read a supported tag mapping."""
+
+
+class CheckRunRepository(Protocol):
+    """Persistence contract for one Library's latest completed check run."""
+
+    def save(self, check_run: CheckRun) -> None:
+        """Persist a CheckRun header without deciding business policy."""
+        ...
+
+    def latest(self, library_id: LibraryId) -> CheckRun | None:
+        """Return the latest CheckRun for one Library, if any."""
+        ...
+
+    def earliest_checked_at(self) -> datetime | None:
+        """Return the minimum checked_at across every Library's latest check run, or None if none exist."""
+        ...
+
+    def delete_for_library(self, library_id: LibraryId) -> None:
+        """Delete the CheckRun row for one Library, cascading its CheckIssues."""
+        ...
+
+
+class CheckIssueRepository(Protocol):
+    """Persistence contract for one check run's findings."""
+
+    def save_many(self, check_run_id: CheckRunId, issues: Sequence[CheckIssue]) -> None:
+        """Persist CheckIssues for one check run in insertion (issue_seq ASC) order."""
+        ...
+
+    def delete_for_library(self, library_id: LibraryId) -> None:
+        """Delete every persisted CheckIssue for one Library."""
+        ...
+
+    def query_page(
+        self,
+        library_id: LibraryId | None,
+        *,
+        issue_type: CheckIssueType | None,
+        page: PageRequest,
+    ) -> Page[CheckIssue]:
+        """Return one keyset page of CheckIssues, ordered issue_seq ASC.
+
+        `library_id=None` scopes across every Library's latest check run.
+        `page.total` counts rows matching the filters, ignoring the cursor.
+        """
+        ...
+
+    def issue_type_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+        """Return CheckIssue issue_type facets, ordered count DESC then value ASC."""
+        ...
+
+    def group_page(self, library_id: LibraryId | None, page: PageRequest) -> Page[GroupCount]:
+        """Return one keyset page of CheckIssue groups by issue_type, ordered count DESC then key ASC."""
+        ...
 
 
 class LibraryRepository(Protocol):
@@ -268,6 +324,16 @@ class UnitOfWork(Protocol):
         ...
 
     @property
+    def check_runs(self) -> CheckRunRepository:
+        """Repository for each Library's latest completed check run."""
+        ...
+
+    @property
+    def check_issues(self) -> CheckIssueRepository:
+        """Repository for the latest check run's findings."""
+        ...
+
+    @property
     def tracks(self) -> TrackRepository:
         """Repository for managed Track state."""
         ...
@@ -393,6 +459,10 @@ class IdGenerator(Protocol):
         """Create a Library ID."""
         ...
 
+    def new_check_run_id(self) -> CheckRunId:
+        """Create a check-run ID."""
+        ...
+
     def new_track_id(self) -> TrackId:
         """Create a Track ID."""
         ...
@@ -430,6 +500,10 @@ class Uuid7IdGenerator:
     def new_library_id(self) -> LibraryId:
         """Create a UUIDv7-backed Library ID."""
         return shared_ids.new_library_id()
+
+    def new_check_run_id(self) -> CheckRunId:
+        """Create a UUIDv7-backed check-run ID."""
+        return shared_ids.new_check_run_id()
 
     def new_track_id(self) -> TrackId:
         """Create a UUIDv7-backed Track ID."""

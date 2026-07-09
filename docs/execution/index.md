@@ -9,4 +9,4 @@ Use this file as the execution router. Read the focused file for the task.
 * [Refresh Execution](refresh.md) - Defines the refresh command for re-evaluating file/directory/all targets after external tag correction, including metadata reload, canonical path recalculation, move vs refresh_metadata plan action selection, and stable track_id preservation.
 * [Apply Execution](apply.md) - Defines the apply flow and the Plan, PlanAction, Run, and FileEvent state transitions, including library_root_at_plan checks and apply-time precondition failures.
 * [Undo Execution](undo.md) - Defines per-Run undo, terminal Run requirements, refresh_metadata rejection, reverse FileEvent tracing, restore-destination conflict handling, and external restore Track removal.
-* [Check Execution](check.md) - Defines the read-only check command that reports DB/filesystem inconsistencies, Library state, and CheckIssue scope without mutating anything.
+* [Check Execution](check.md) - Defines the check command that reports DB/filesystem inconsistencies, Library state, and CheckIssue scope, and persists its findings for browsing without mutating Library music files, Tracks, Plans, or Runs.

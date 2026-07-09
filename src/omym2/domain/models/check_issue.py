@@ -1,6 +1,7 @@
 """
 Summary: Defines consistency issues reported by check.
-Why: Keeps check findings separate from persisted Library state.
+Why: Findings are persisted as one Library's latest check run (see CheckRun) so
+browsing reads stored state instead of recomputing issues on every request.
 """
 
 from __future__ import annotations
