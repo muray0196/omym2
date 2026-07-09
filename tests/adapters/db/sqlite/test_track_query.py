@@ -51,6 +51,7 @@ def test_query_page_walks_every_track_exactly_once_with_keyset_cursor(tmp_path: 
         for _ in range(len(track_ids)):
             page = uow.tracks.query_page(
                 None,
+                track_id=None,
                 search=None,
                 status=None,
                 page=PageRequest(limit=TWO_ITEM_LIMIT, cursor_key=cursor),
@@ -78,6 +79,7 @@ def test_query_page_scopes_by_library(tmp_path: Path) -> None:
     with SQLiteUnitOfWork(database_file) as uow:
         page = uow.tracks.query_page(
             SECOND_LIBRARY_ID,
+            track_id=None,
             search=None,
             status=None,
             page=PageRequest(),
@@ -99,12 +101,35 @@ def test_query_page_filters_by_status(tmp_path: Path) -> None:
     with SQLiteUnitOfWork(database_file) as uow:
         page = uow.tracks.query_page(
             None,
+            track_id=None,
             search=None,
             status=TrackStatus.REMOVED,
             page=PageRequest(),
         )
 
     assert tuple(track.track_id for track in page.items) == (SECOND_TRACK_ID,)
+
+
+def test_query_page_filters_by_track_id(tmp_path: Path) -> None:
+    """query_page(track_id=...) returns only the exact Track ID match."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(LIBRARY_ID))
+        uow.tracks.save(_track(TRACK_ID, LIBRARY_ID, current_path="A/1.flac"))
+        uow.tracks.save(_track(SECOND_TRACK_ID, LIBRARY_ID, current_path="B/1.flac"))
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        page = uow.tracks.query_page(
+            None,
+            track_id=SECOND_TRACK_ID,
+            search=None,
+            status=None,
+            page=PageRequest(),
+        )
+
+    assert tuple(track.track_id for track in page.items) == (SECOND_TRACK_ID,)
+    assert page.total == 1
 
 
 def test_query_page_search_treats_like_wildcards_as_literal(tmp_path: Path) -> None:
@@ -133,12 +158,14 @@ def test_query_page_search_treats_like_wildcards_as_literal(tmp_path: Path) -> N
     with SQLiteUnitOfWork(database_file) as uow:
         literal_page = uow.tracks.query_page(
             None,
+            track_id=None,
             search="50% Off_Deal",
             status=None,
             page=PageRequest(),
         )
         wildcard_page = uow.tracks.query_page(
             None,
+            track_id=None,
             search="50X OffXDeal",
             status=None,
             page=PageRequest(),

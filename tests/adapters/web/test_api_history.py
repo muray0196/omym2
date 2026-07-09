@@ -41,6 +41,7 @@ LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 MISSING_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345699"))
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
+SECOND_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456d1"))
 SECOND_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456d2"))
 THIRD_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456d3"))
@@ -149,6 +150,30 @@ def test_history_api_filters_by_status_and_library(tmp_path: Path) -> None:
         WEB_API_HISTORY_ROUTE,
         params={"status": "succeeded", "library_id": str(LIBRARY_ID)},
     )
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    items = _object_list_payload(payload, "items")
+    page = _object_payload(payload, "page")
+    assert [item["run_id"] for item in items] == [str(RUN_ID)]
+    assert page["total"] == 1
+
+
+def test_history_api_filters_by_plan_id(tmp_path: Path) -> None:
+    """plan_id lets Plan detail find its Run without walking the full history."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    with SQLiteUnitOfWork(app_paths.database_file) as uow:
+        uow.libraries.save(_library(str(library_root)))
+        uow.plans.save(_plan(str(library_root)))
+        uow.plans.save(_plan(str(library_root), plan_id=SECOND_PLAN_ID))
+        uow.runs.save(_run(run_id=RUN_ID, started_at=BASE_TIME))
+        uow.runs.save(_run(run_id=SECOND_RUN_ID, started_at=BASE_TIME + timedelta(minutes=1), plan_id=SECOND_PLAN_ID))
+        uow.commit()
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(WEB_API_HISTORY_ROUTE, params={"plan_id": str(PLAN_ID)})
 
     assert response.status_code == SUCCESS_STATUS_CODE
     payload = _json_payload(response)
@@ -316,6 +341,50 @@ def test_run_events_api_filters_by_status(tmp_path: Path) -> None:
     assert page["total"] == 1
 
 
+def test_run_event_facets_api_returns_status_counts(tmp_path: Path) -> None:
+    """Run event facets return status value/count pairs for one Run."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_run_detail(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(f"{WEB_API_HISTORY_ROUTE}/{RUN_ID}/events/facets")
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    facets = _object_payload(payload, "facets")
+    assert facets["status"] == [
+        {"value": FileEventStatus.FAILED.value, "count": 1},
+        {"value": FileEventStatus.SUCCEEDED.value, "count": 1},
+    ]
+    assert payload["total"] == TWO_EVENT_TOTAL
+    assert payload["errors"] == []
+
+
+def test_run_event_groups_api_paginates_target_directory_groups(tmp_path: Path) -> None:
+    """Run event groups return paged target-directory counts ordered count DESC then key ASC."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_run_detail(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(
+        f"{WEB_API_HISTORY_ROUTE}/{RUN_ID}/events/groups",
+        params={"group_by": "target_directory", "limit": str(ONE_ITEM_LIMIT)},
+    )
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    items = _object_list_payload(payload, "items")
+    page = _object_payload(payload, "page")
+    assert payload["group_by"] == "target_directory"
+    assert items == [{"key": "Artist/2026_Album", "label": "Artist/2026_Album", "count": 2}]
+    assert page["total"] == 1
+    assert page["next_cursor"] is None
+
+
 def test_run_events_api_rejects_invalid_status_and_cursor(tmp_path: Path) -> None:
     """Unknown status filters and malformed cursors return the documented 400 envelope."""
     app_paths = default_application_paths(tmp_path)
@@ -338,6 +407,25 @@ def test_run_events_api_rejects_invalid_status_and_cursor(tmp_path: Path) -> Non
     }
     assert cursor_response.status_code == ERROR_STATUS_CODE
     assert cursor_response.json() == {"items": [], "page": None, "errors": ["Invalid cursor."]}
+
+
+def test_run_event_groups_api_rejects_invalid_group_by(tmp_path: Path) -> None:
+    """Unknown FileEvent group_by values return the documented 400 group envelope."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_run_detail(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(f"{WEB_API_HISTORY_ROUTE}/{RUN_ID}/events/groups", params={"group_by": "status"})
+
+    assert response.status_code == ERROR_STATUS_CODE
+    assert response.json() == {
+        "group_by": None,
+        "items": [],
+        "page": None,
+        "errors": ["Invalid group_by filter: status"],
+    }
 
 
 def test_run_events_api_returns_not_found_for_unknown_run(tmp_path: Path) -> None:
@@ -414,9 +502,9 @@ def _library(library_root: str, *, library_id: LibraryId = LIBRARY_ID) -> Librar
     )
 
 
-def _plan(library_root: str) -> Plan:
+def _plan(library_root: str, *, plan_id: PlanId = PLAN_ID) -> Plan:
     return Plan(
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         library_id=LIBRARY_ID,
         plan_type=PlanType.ADD,
         status=PlanStatus.APPLIED,
@@ -450,10 +538,11 @@ def _run(
     started_at: datetime,
     status: RunStatus = RunStatus.SUCCEEDED,
     library_id: LibraryId = LIBRARY_ID,
+    plan_id: PlanId = PLAN_ID,
 ) -> Run:
     return Run(
         run_id=run_id,
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         library_id=library_id,
         status=status,
         started_at=started_at,

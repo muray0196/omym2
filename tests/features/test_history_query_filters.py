@@ -16,18 +16,22 @@ from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.run import Run, RunStatus
 from omym2.features.history.dto import (
+    FileEventStatusFacetsRequest,
     GetRunHeaderRequest,
+    GroupRunEventsRequest,
     ListRunEventsRequest,
     ListRunsRequest,
     RunStatusFacetsRequest,
 )
 from omym2.features.history.ports import HistoryPorts
+from omym2.features.history.usecases.get_file_event_status_facets import GetFileEventStatusFacetsUseCase
 from omym2.features.history.usecases.get_run_header import (
     RUN_NOT_FOUND_MESSAGE,
     GetRunHeaderUseCase,
     RunNotFoundError,
 )
 from omym2.features.history.usecases.get_run_status_facets import GetRunStatusFacetsUseCase
+from omym2.features.history.usecases.group_run_events import GroupRunEventsUseCase
 from omym2.features.history.usecases.list_run_events import ListRunEventsUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId
@@ -56,6 +60,7 @@ TWO_ITEM_LIMIT = 2
 THREE_EVENTS = 3
 THREE_RUN_TOTAL = 3
 TWO_RUN_TOTAL = 2
+TWO_GROUP_TOTAL = 2
 FIVE_RUN_TOTAL = 5
 
 
@@ -72,6 +77,21 @@ def test_list_runs_filters_by_status() -> None:
 
     assert tuple(run.run_id for run in page.items) == (RUN_ID_3, RUN_ID_1)
     assert page.total == TWO_RUN_TOTAL
+
+
+def test_list_runs_filters_by_plan_id() -> None:
+    """Run browsing can locate the Run for one Plan without walking history pages."""
+    other_plan_id = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456a0"))
+    uow = InMemoryUnitOfWork()
+    uow.plans.save(_plan())
+    uow.plans.save(_plan(plan_id=other_plan_id))
+    uow.runs.save(_run(RUN_ID_1, started_at=BASE_TIME))
+    uow.runs.save(_run(RUN_ID_2, started_at=BASE_TIME + timedelta(minutes=1), plan_id=other_plan_id))
+
+    page = ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest(plan_id=PLAN_ID))
+
+    assert tuple(run.run_id for run in page.items) == (RUN_ID_1,)
+    assert page.total == 1
 
 
 def test_list_runs_orders_newest_first_by_default() -> None:
@@ -231,6 +251,52 @@ def test_get_run_status_facets_returns_breakdown_and_total() -> None:
     assert result.total == THREE_RUN_TOTAL
 
 
+def test_get_file_event_status_facets_returns_breakdown_and_total() -> None:
+    """FileEvent facets carry the status breakdown for one Run without loading event pages."""
+    uow = InMemoryUnitOfWork()
+    uow.runs.save(_run(RUN_ID_1, started_at=BASE_TIME))
+    uow.file_events.save(_event(EVENT_ID_1, sequence_no=1, status=FileEventStatus.SUCCEEDED))
+    uow.file_events.save(_event(EVENT_ID_2, sequence_no=2, status=FileEventStatus.FAILED))
+    uow.file_events.save(_event(EVENT_ID_3, sequence_no=3, status=FileEventStatus.SUCCEEDED))
+
+    result = GetFileEventStatusFacetsUseCase(HistoryPorts(uow)).execute(FileEventStatusFacetsRequest(run_id=RUN_ID_1))
+
+    assert [(facet.value, facet.count) for facet in result.facets] == [
+        (FileEventStatus.SUCCEEDED.value, 2),
+        (FileEventStatus.FAILED.value, 1),
+    ]
+    assert result.total == THREE_EVENTS
+
+
+def test_group_run_events_groups_by_target_directory() -> None:
+    """FileEvent grouping derives target-directory counts from recorded target_path values."""
+    uow = InMemoryUnitOfWork()
+    uow.runs.save(_run(RUN_ID_1, started_at=BASE_TIME))
+    uow.file_events.save(_event(EVENT_ID_1, sequence_no=1, target_path="Artist/Album/1.flac"))
+    uow.file_events.save(_event(EVENT_ID_2, sequence_no=2, target_path="Artist/Album/2.flac"))
+    uow.file_events.save(_event(EVENT_ID_3, sequence_no=3, target_path="Root.flac"))
+
+    page = GroupRunEventsUseCase(HistoryPorts(uow)).execute(
+        GroupRunEventsRequest(run_id=RUN_ID_1, page=PageRequest(limit=1))
+    )
+
+    assert [(group.key, group.count) for group in page.items] == [("Artist/Album", 2)]
+    assert page.next_cursor_key == ("2", "Artist/Album")
+    assert page.total == TWO_GROUP_TOTAL
+
+
+def test_file_event_summaries_raise_for_unknown_run() -> None:
+    """Facet and group summaries reject an unknown Run before querying events."""
+    uow = InMemoryUnitOfWork()
+
+    with pytest.raises(RunNotFoundError, match=RUN_NOT_FOUND_MESSAGE):
+        _ = GetFileEventStatusFacetsUseCase(HistoryPorts(uow)).execute(
+            FileEventStatusFacetsRequest(run_id=UNKNOWN_RUN_ID)
+        )
+    with pytest.raises(RunNotFoundError, match=RUN_NOT_FOUND_MESSAGE):
+        _ = GroupRunEventsUseCase(HistoryPorts(uow)).execute(GroupRunEventsRequest(run_id=UNKNOWN_RUN_ID))
+
+
 def _library() -> Library:
     return Library(
         library_id=LIBRARY_ID,
@@ -243,9 +309,9 @@ def _library() -> Library:
     )
 
 
-def _plan() -> Plan:
+def _plan(*, plan_id: PlanId = PLAN_ID) -> Plan:
     return Plan(
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         library_id=LIBRARY_ID,
         plan_type=PlanType.ADD,
         status=PlanStatus.APPLIED,
@@ -261,10 +327,11 @@ def _run(
     started_at: datetime,
     status: RunStatus = RunStatus.SUCCEEDED,
     library_id: LibraryId = LIBRARY_ID,
+    plan_id: PlanId = PLAN_ID,
 ) -> Run:
     return Run(
         run_id=run_id,
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         library_id=library_id,
         status=status,
         started_at=started_at,
@@ -277,6 +344,7 @@ def _event(
     *,
     sequence_no: int,
     status: FileEventStatus = FileEventStatus.SUCCEEDED,
+    target_path: str = "Target/Track.flac",
 ) -> FileEvent:
     return FileEvent(
         event_id=event_id,
@@ -285,7 +353,7 @@ def _event(
         plan_action_id=ACTION_ID,
         event_type=FileEventType.MOVE_FILE,
         source_path="Source/Track.flac",
-        target_path="Target/Track.flac",
+        target_path=target_path,
         status=status,
         started_at=BASE_TIME,
         completed_at=BASE_TIME,

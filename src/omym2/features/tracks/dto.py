@@ -12,7 +12,7 @@ from omym2.shared.pagination import PageRequest
 
 if TYPE_CHECKING:
     from omym2.domain.models.track import TrackGrouping, TrackStatus
-    from omym2.shared.ids import LibraryId
+    from omym2.shared.ids import LibraryId, TrackId
     from omym2.shared.pagination import FacetValue
 
 
@@ -21,6 +21,7 @@ class ListTracksRequest:
     """Request one keyset page of Tracks for a Library or every known Library."""
 
     library_id: LibraryId | None = None
+    track_id: TrackId | None = None
     search: str | None = None
     status: TrackStatus | None = None
     page: PageRequest = field(default_factory=PageRequest)

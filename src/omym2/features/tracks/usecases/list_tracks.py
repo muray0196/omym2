@@ -26,6 +26,7 @@ class ListTracksUseCase:
         with self.ports.uow as uow:
             return uow.tracks.query_page(
                 request.library_id,
+                track_id=request.track_id,
                 search=request.search,
                 status=request.status,
                 page=request.page,

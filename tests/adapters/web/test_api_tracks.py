@@ -107,6 +107,28 @@ def test_tracks_api_filters_by_status(tmp_path: Path) -> None:
     assert [item["track_id"] for item in items] == [str(SECOND_TRACK_ID)]
 
 
+def test_tracks_api_filters_by_track_id(tmp_path: Path) -> None:
+    """The track_id filter returns one exact Track without relying on loaded list pages."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    with SQLiteUnitOfWork(app_paths.database_file) as uow:
+        uow.libraries.save(_library(str(library_root)))
+        uow.tracks.save(_track(TRACK_ID, current_path="A/1.flac"))
+        uow.tracks.save(_track(SECOND_TRACK_ID, current_path="B/1.flac"))
+        uow.commit()
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(WEB_API_TRACKS_ROUTE, params={"track_id": str(SECOND_TRACK_ID)})
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    items = _object_list_payload(payload, "items")
+    page = _object_payload(payload, "page")
+    assert [item["track_id"] for item in items] == [str(SECOND_TRACK_ID)]
+    assert page["total"] == 1
+
+
 def test_tracks_api_search_escapes_like_wildcards(tmp_path: Path) -> None:
     """Search treats literal % and _ characters in the query as literal, not SQL wildcards."""
     app_paths = default_application_paths(tmp_path)

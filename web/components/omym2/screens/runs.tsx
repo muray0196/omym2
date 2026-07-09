@@ -1,10 +1,17 @@
+/*
+Summary: Renders paged Run history browsing.
+Why: Keeps execution history usable when stored run counts grow.
+*/
+
 "use client"
 
-import { ChevronRight, GanttChart, ListChecks, RefreshCw, Search, Table2 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { ChevronDown, ChevronRight, GanttChart, ListChecks, RefreshCw, Table2 } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { getHistoryFacets, getHistoryPage } from "../api-client"
 import { useApp } from "../app-context"
 import { cn, formatDuration, formatTimestamp, truncateMiddle } from "../lib"
 import type { RunStatus, RunSummary } from "../types"
+import { usePagedList } from "../use-paged-list"
 import {
   Button,
   DataTable,
@@ -19,10 +26,10 @@ import {
   toneForStatus,
   type Column,
 } from "../primitives"
-import { Field, Select, TextInput } from "../forms"
+import { Field, Select } from "../forms"
 import { PageHeading } from "./page-heading"
 
-const STATUS_OPTIONS: { value: string; label: string }[] = [
+const STATUS_OPTIONS: { value: RunStatus | "all"; label: string }[] = [
   { value: "all", label: "All statuses" },
   { value: "succeeded", label: "Succeeded" },
   { value: "running", label: "Running" },
@@ -30,12 +37,24 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "failed", label: "Failed" },
 ]
 
+const RUN_PAGE_LIMIT = 50
+
 type ViewMode = "timeline" | "table"
 
 const VIEW_MODE_OPTIONS: { value: ViewMode; label: string; icon: typeof GanttChart }[] = [
   { value: "timeline", label: "Timeline", icon: GanttChart },
   { value: "table", label: "Table", icon: Table2 },
 ]
+
+function statusFacetCounts(facets: Record<string, { value: string; count: number }[]>) {
+  return Object.fromEntries(
+    facets.status?.map((facet) => [facet.value, facet.count]) ?? [],
+  ) as Partial<Record<RunStatus, number>>
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
+}
 
 /** Group runs by started date (UTC), newest first. */
 function groupRunsByDay(runs: RunSummary[]): { day: string; runs: RunSummary[] }[] {
@@ -126,44 +145,59 @@ function RunsTimeline({
 }
 
 export function RunsScreen() {
-  const { historyErrors, historyLoaded, loadHistory, navigate, runs } = useApp()
-  const [status, setStatus] = useState("all")
-  const [query, setQuery] = useState("")
-  const [from, setFrom] = useState("")
-  const [to, setTo] = useState("")
+  const { navigate } = useApp()
+  const [status, setStatus] = useState<RunStatus | "all">("all")
   const [view, setView] = useState<ViewMode>("timeline")
+  const [statusCounts, setStatusCounts] = useState<Partial<Record<RunStatus, number>>>({})
+  const [facetErrors, setFacetErrors] = useState<string[]>([])
+
+  const loadRunFacets = useCallback(async () => {
+    try {
+      const response = await getHistoryFacets()
+      setStatusCounts(statusFacetCounts(response.facets))
+      setFacetErrors(response.errors)
+    } catch (error: unknown) {
+      setStatusCounts({})
+      setFacetErrors([errorMessage(error, "Run status summary failed to load.")])
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadRunFacets()
+  }, [loadRunFacets])
+
+  const loadRunsPage = useCallback(
+    (cursor?: string) =>
+      getHistoryPage({
+        cursor,
+        limit: RUN_PAGE_LIMIT,
+        status,
+      }),
+    [status],
+  )
+  const runsPage = usePagedList({
+    errorMessage: "Run history failed to load.",
+    loadPage: loadRunsPage,
+  })
 
   const counts = useMemo(() => {
-    const base: Record<RunStatus | "total", number> = {
-      total: runs.length,
-      succeeded: 0,
-      running: 0,
-      partial_failed: 0,
-      failed: 0,
+    const total = Object.values(statusCounts).reduce((sum, count) => sum + (count ?? 0), 0)
+    return {
+      total,
+      succeeded: statusCounts.succeeded ?? 0,
+      running: statusCounts.running ?? 0,
+      partial_failed: statusCounts.partial_failed ?? 0,
+      failed: statusCounts.failed ?? 0,
     }
-    for (const r of runs) base[r.status]++
-    return base
-  }, [runs])
+  }, [statusCounts])
 
-  const filtered = useMemo(() => {
-    return runs
-      .filter((r) => (status === "all" ? true : r.status === status))
-      .filter((r) => {
-        if (!query.trim()) return true
-        const q = query.toLowerCase()
-        return (
-          r.run_id.toLowerCase().includes(q) ||
-          r.plan_id.toLowerCase().includes(q) ||
-          r.library_id.toLowerCase().includes(q)
-        )
-      })
-      .filter((r) => {
-        if (from && r.started_at.slice(0, 10) < from) return false
-        if (to && r.started_at.slice(0, 10) > to) return false
-        return true
-      })
-      .sort((a, b) => b.started_at.localeCompare(a.started_at))
-  }, [from, query, runs, status, to])
+  const filtered = useMemo(
+    () => runsPage.items.slice().sort((a, b) => b.started_at.localeCompare(a.started_at)),
+    [runsPage.items],
+  )
+
+  const historyErrors = [...runsPage.errors, ...facetErrors]
+  const totalRows = runsPage.page?.total ?? runsPage.items.length
 
   const columns: Column<RunSummary>[] = [
     {
@@ -238,7 +272,10 @@ export function RunsScreen() {
             variant="outline"
             size="sm"
             aria-label="Refresh run history"
-            onClick={() => void loadHistory()}
+            onClick={() => {
+              void runsPage.reload()
+              void loadRunFacets()
+            }}
           >
             <RefreshCw className="size-4" aria-hidden="true" /> Refresh
           </Button>
@@ -272,46 +309,14 @@ export function RunsScreen() {
         }
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Search" help="Match run_id, plan_id, or library_id.">
-            {(id) => (
-              <div className="relative">
-                <Search
-                  className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-mute"
-                  aria-hidden="true"
-                />
-                <TextInput
-                  id={id}
-                  className="pl-8"
-                  placeholder="run_… / plan_… / lib_…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </div>
-            )}
-          </Field>
           <Field label="Status">
             {(id) => (
               <Select
                 id={id}
                 options={STATUS_OPTIONS}
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => setStatus(e.target.value as RunStatus | "all")}
               />
-            )}
-          </Field>
-          <Field label="From date">
-            {(id) => (
-              <TextInput
-                id={id}
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-            )}
-          </Field>
-          <Field label="To date">
-            {(id) => (
-              <TextInput id={id} type="date" value={to} onChange={(e) => setTo(e.target.value)} />
             )}
           </Field>
         </div>
@@ -325,10 +330,10 @@ export function RunsScreen() {
         {filtered.length === 0 ? (
           <EmptyState
             icon={ListChecks}
-            title={historyLoaded ? "No runs match your filters." : "Loading runs..."}
+            title={runsPage.loaded ? "No runs match this status." : "Loading runs..."}
             description={
-              historyLoaded
-                ? "Adjust the status, date range, or search query to see more results."
+              runsPage.loaded
+                ? "Adjust the status filter to see more results."
                 : "Run history will appear here once it is loaded."
             }
           />
@@ -344,8 +349,38 @@ export function RunsScreen() {
             getRowKey={(r) => r.run_id}
             onRowClick={(r) => navigate({ name: "run-detail", runId: r.run_id })}
             caption="Run history"
+            loadMore={{
+              hasMore: runsPage.hasMore,
+              loading: runsPage.loadingMore,
+              onLoadMore: runsPage.loadMore,
+              total: totalRows,
+            }}
           />
         )}
+        {view === "timeline" &&
+        (filtered.length > 0 || runsPage.hasMore || runsPage.loadingMore) ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-3">
+            <span className="text-xs tabular-nums text-mute">
+              {`${Math.min(runsPage.items.length, totalRows)} of ${totalRows} run${
+                totalRows === 1 ? "" : "s"
+              } loaded`}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!runsPage.hasMore || runsPage.loadingMore}
+              onClick={runsPage.loadMore}
+            >
+              <ChevronDown className="size-4" aria-hidden="true" />
+              {runsPage.loadingMore
+                ? "Loading..."
+                : runsPage.hasMore
+                  ? "Load more"
+                  : "All runs loaded"}
+            </Button>
+          </div>
+        ) : null}
       </Panel>
     </>
   )

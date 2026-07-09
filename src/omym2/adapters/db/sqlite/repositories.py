@@ -483,12 +483,13 @@ class SQLiteTrackRepository(_SQLiteRepository):
         self,
         library_id: LibraryId | None,
         *,
+        track_id: TrackId | None,
         search: str | None,
         status: TrackStatus | None,
         page: PageRequest,
     ) -> Page[Track]:
         """Return one keyset page of Tracks ordered (current_path, track_id)."""
-        where_sql, where_params = _track_filter_where(library_id, status, search)
+        where_sql, where_params = _track_filter_where(library_id, track_id, status, search)
         # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
         count_sql = f"SELECT COUNT(*) FROM tracks{where_sql}"  # noqa: S608
         total = _scalar_int(self._connection, count_sql, tuple(where_params))
@@ -929,11 +930,12 @@ class SQLiteRunRepository(_SQLiteRepository):
         self,
         library_id: LibraryId | None,
         *,
+        plan_id: PlanId | None,
         status: RunStatus | None,
         page: PageRequest,
     ) -> Page[Run]:
         """Return one keyset page of Runs ordered (started_at DESC, run_id DESC)."""
-        where_sql, where_params = _run_filter_where(library_id, status)
+        where_sql, where_params = _run_filter_where(library_id, plan_id, status)
         # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
         count_sql = f"SELECT COUNT(*) FROM runs{where_sql}"  # noqa: S608
         total = _scalar_int(self._connection, count_sql, tuple(where_params))
@@ -1047,6 +1049,35 @@ class SQLiteFileEventRepository(_SQLiteRepository):
         has_more = len(events) > page.limit
         next_cursor_key = (str(page_items[-1].sequence_no), str(page_items[-1].event_id)) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def status_facets(self, run_id: RunId) -> tuple[FacetValue, ...]:
+        """Return FileEvent status facets for one Run, ordered count DESC then value ASC."""
+        rows = _fetch_all(
+            self._connection,
+            """
+            SELECT status, COUNT(*) AS count
+            FROM file_events
+            WHERE run_id = ?
+            GROUP BY status
+            ORDER BY count DESC, status ASC
+            """,
+            (str(run_id),),
+        )
+        return tuple(FacetValue(value=_row_text(row, "status"), count=_row_int(row, "count")) for row in rows)
+
+    def list_target_paths(self, run_id: RunId) -> tuple[str, ...]:
+        """Return target_path values recorded for one Run's FileEvents."""
+        rows = _fetch_all(
+            self._connection,
+            """
+            SELECT target_path
+            FROM file_events
+            WHERE run_id = ?
+            ORDER BY sequence_no, event_id
+            """,
+            (str(run_id),),
+        )
+        return tuple(_row_text(row, "target_path") for row in rows)
 
     def save(self, event: FileEvent) -> None:
         """Persist a FileEvent before or after a filesystem mutation."""
@@ -1258,6 +1289,7 @@ def _like_pattern(term: str) -> str:
 
 def _track_filter_where(
     library_id: LibraryId | None,
+    track_id: TrackId | None,
     status: TrackStatus | None,
     search: str | None,
 ) -> tuple[str, list[object]]:
@@ -1266,6 +1298,9 @@ def _track_filter_where(
     if library_id is not None:
         clauses.append("library_id = ?")
         params.append(str(library_id))
+    if track_id is not None:
+        clauses.append("track_id = ?")
+        params.append(str(track_id))
     if status is not None:
         clauses.append("status = ?")
         params.append(status.value)
@@ -1373,6 +1408,7 @@ def _plan_action_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | Non
 
 def _run_filter_where(
     library_id: LibraryId | None,
+    plan_id: PlanId | None,
     status: RunStatus | None,
 ) -> tuple[str, list[object]]:
     clauses: list[str] = []
@@ -1380,6 +1416,9 @@ def _run_filter_where(
     if library_id is not None:
         clauses.append("library_id = ?")
         params.append(str(library_id))
+    if plan_id is not None:
+        clauses.append("plan_id = ?")
+        params.append(str(plan_id))
     if status is not None:
         clauses.append("status = ?")
         params.append(status.value)

@@ -29,6 +29,7 @@ LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456c0"))
 SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456c1"))
 LIBRARY_ROOT = "/music/library"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456d0"))
+SECOND_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456d1"))
 
 RUN_ID_1 = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456f1"))
 RUN_ID_2 = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456f2"))
@@ -62,6 +63,7 @@ def test_run_query_page_walks_every_run_newest_first_with_desc_keyset_cursor(tmp
         for _ in range(len(run_ids)):
             page = uow.runs.query_page(
                 None,
+                plan_id=None,
                 status=None,
                 page=PageRequest(limit=TWO_ITEM_LIMIT, cursor_key=cursor),
             )
@@ -92,6 +94,7 @@ def test_run_query_page_breaks_started_at_ties_by_run_id_desc(tmp_path: Path) ->
         for _ in range(len(run_ids)):
             page = uow.runs.query_page(
                 None,
+                plan_id=None,
                 status=None,
                 page=PageRequest(limit=1, cursor_key=cursor),
             )
@@ -123,7 +126,25 @@ def test_run_query_page_pushes_status_and_library_filters_into_sql(tmp_path: Pat
         uow.commit()
 
     with SQLiteUnitOfWork(database_file) as uow:
-        page = uow.runs.query_page(LIBRARY_ID, status=RunStatus.SUCCEEDED, page=PageRequest())
+        page = uow.runs.query_page(LIBRARY_ID, plan_id=None, status=RunStatus.SUCCEEDED, page=PageRequest())
+
+    assert tuple(run.run_id for run in page.items) == (RUN_ID_1,)
+    assert page.total == 1
+
+
+def test_run_query_page_filters_by_plan_id(tmp_path: Path) -> None:
+    """plan_id narrows Run browsing to one Plan without scanning pages client-side."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(LIBRARY_ID))
+        uow.plans.save(_plan())
+        uow.plans.save(_plan(plan_id=SECOND_PLAN_ID))
+        uow.runs.save(_run(RUN_ID_1, started_at=BASE_TIME))
+        uow.runs.save(_run(RUN_ID_2, started_at=BASE_TIME + timedelta(days=1), plan_id=SECOND_PLAN_ID))
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        page = uow.runs.query_page(None, plan_id=PLAN_ID, status=None, page=PageRequest())
 
     assert tuple(run.run_id for run in page.items) == (RUN_ID_1,)
     assert page.total == 1
@@ -199,6 +220,46 @@ def test_file_event_query_page_filters_by_status_in_sql(tmp_path: Path) -> None:
     assert page.total == 1
 
 
+def test_file_event_status_facets_order_count_desc_then_value_asc(tmp_path: Path) -> None:
+    """status_facets returns the FileEvent status breakdown for one Run."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(LIBRARY_ID))
+        uow.plans.save(_plan())
+        uow.plan_actions.save(_action())
+        uow.runs.save(_run(RUN_ID_1, started_at=BASE_TIME))
+        uow.file_events.save(_event(EVENT_ID_1, sequence_no=1, status=FileEventStatus.SUCCEEDED))
+        uow.file_events.save(_event(EVENT_ID_2, sequence_no=2, status=FileEventStatus.SUCCEEDED))
+        uow.file_events.save(_event(EVENT_ID_3, sequence_no=3, status=FileEventStatus.FAILED))
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        status_facets = uow.file_events.status_facets(RUN_ID_1)
+
+    assert [(facet.value, facet.count) for facet in status_facets] == [
+        (FileEventStatus.SUCCEEDED.value, 2),
+        (FileEventStatus.FAILED.value, 1),
+    ]
+
+
+def test_file_event_list_target_paths_returns_recorded_paths_in_sequence_order(tmp_path: Path) -> None:
+    """list_target_paths exposes recorded FileEvent target paths without deriving directories in SQL."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(LIBRARY_ID))
+        uow.plans.save(_plan())
+        uow.plan_actions.save(_action())
+        uow.runs.save(_run(RUN_ID_1, started_at=BASE_TIME))
+        uow.file_events.save(_event(EVENT_ID_2, sequence_no=2, target_path="Artist/Album/2.flac"))
+        uow.file_events.save(_event(EVENT_ID_1, sequence_no=1, target_path="Artist/Album/1.flac"))
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        target_paths = uow.file_events.list_target_paths(RUN_ID_1)
+
+    assert target_paths == ("Artist/Album/1.flac", "Artist/Album/2.flac")
+
+
 def _library(library_id: LibraryId) -> Library:
     return Library(
         library_id=library_id,
@@ -211,9 +272,9 @@ def _library(library_id: LibraryId) -> Library:
     )
 
 
-def _plan() -> Plan:
+def _plan(*, plan_id: PlanId = PLAN_ID) -> Plan:
     return Plan(
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         library_id=LIBRARY_ID,
         plan_type=PlanType.ADD,
         status=PlanStatus.APPLIED,
@@ -246,10 +307,11 @@ def _run(
     started_at: datetime,
     status: RunStatus = RunStatus.SUCCEEDED,
     library_id: LibraryId = LIBRARY_ID,
+    plan_id: PlanId = PLAN_ID,
 ) -> Run:
     return Run(
         run_id=run_id,
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         library_id=library_id,
         status=status,
         started_at=started_at,
@@ -262,6 +324,7 @@ def _event(
     *,
     sequence_no: int,
     status: FileEventStatus = FileEventStatus.SUCCEEDED,
+    target_path: str = "Target/Track.flac",
 ) -> FileEvent:
     return FileEvent(
         event_id=event_id,
@@ -270,7 +333,7 @@ def _event(
         plan_action_id=ACTION_ID,
         event_type=FileEventType.MOVE_FILE,
         source_path="Source/Track.flac",
-        target_path="Target/Track.flac",
+        target_path=target_path,
         status=status,
         started_at=BASE_TIME,
         completed_at=BASE_TIME,

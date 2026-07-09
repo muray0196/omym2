@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines the authoritative JSON envelope, pagination/cursor, facet, and group-by contract for OMYM2's local Web API browsing endpoints (tracks, plans, check, history).
 tags: [web-api, pagination, json, contract]
-timestamp: 2026-07-09T15:00:00+09:00
+timestamp: 2026-07-10T01:21:53+09:00
 ---
 
 # Web API Contract
@@ -83,7 +83,7 @@ Group rows are ordered `count DESC, key ASC`. `page.total` is the total number o
 
 Ordering: `current_path ASC, track_id ASC`.
 
-* `GET /api/tracks?query=&status=&library_id=&limit=&cursor=` — list envelope of `TrackSummary` items. `query` matches `title`, `artist`, `album`, `current_path`, or `track_id`, case-insensitive substring.
+* `GET /api/tracks?query=&status=&track_id=&library_id=&limit=&cursor=` — list envelope of `TrackSummary` items. `track_id` is an exact identity filter. `query` matches `title`, `artist`, `album`, `current_path`, or `track_id`, case-insensitive substring.
 * `GET /api/tracks/facets?library_id=` — facet envelope; facet field: `status`.
 * `GET /api/tracks/groups?group_by=artist_album&library_id=&limit=&cursor=` — group envelope.
 
@@ -112,10 +112,12 @@ Behavior change: `GET /api/check` no longer recomputes findings on every request
 
 Run ordering: `started_at DESC, run_id DESC`. Event ordering: `sequence_no ASC, event_id ASC`.
 
-* `GET /api/history?status=&library_id=&limit=&cursor=` — list envelope of `RunSummary` items.
+* `GET /api/history?status=&plan_id=&library_id=&limit=&cursor=` — list envelope of `RunSummary` items. `plan_id` is an exact Plan identity filter.
 * `GET /api/history/facets?library_id=` — facet envelope; facet field: `status`.
 * `GET /api/history/{run_id}` → `{ "detail": { "run": {...} }, "errors": [] }`. Header only: the previous embedded `file_events` array is REMOVED. Events are fetched separately (below).
 * `GET /api/history/{run_id}/events?status=&limit=&cursor=` — list envelope of `FileEvent` items.
+* `GET /api/history/{run_id}/events/facets` — facet envelope; facet field: `status`.
+* `GET /api/history/{run_id}/events/groups?group_by=target_directory&limit=&cursor=` — group envelope.
 
 ## Search Implementation
 

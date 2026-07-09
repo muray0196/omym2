@@ -1,3 +1,8 @@
+/*
+Summary: Defines shared UI primitives for the OMYM2 console.
+Why: Keeps table, panel, status, and control behavior consistent across screens.
+*/
+
 "use client"
 
 import {
@@ -5,6 +10,7 @@ import {
   CircleAlert,
   CircleCheck,
   CircleX,
+  ChevronDown,
   Copy,
   Info,
   LoaderCircle,
@@ -595,6 +601,7 @@ export function DataTable<T>({
   rowActiveClassName = "bg-accent",
   empty,
   caption,
+  loadMore,
 }: {
   columns: Column<T>[]
   rows: T[]
@@ -610,6 +617,12 @@ export function DataTable<T>({
   rowActiveClassName?: string
   empty?: ReactNode
   caption?: string
+  loadMore?: {
+    hasMore: boolean
+    loading?: boolean
+    onLoadMore: () => void
+    total?: number | null
+  }
 }) {
   const [colWidths, setColWidths] = useState<Record<string, number>>({})
   const drag = useRef<{
@@ -673,92 +686,128 @@ export function DataTable<T>({
     drag.current = null
   }, [])
 
+  const totalCount = loadMore?.total ?? null
+  const showingCount = totalCount === null ? rows.length : Math.min(rows.length, totalCount)
+  const loadMoreFooter = loadMore ? (
+    <div
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-3 bg-surface-elevated px-3 py-2.5",
+        rows.length === 0 ? "rounded-md border border-hairline" : "border-t border-hairline",
+      )}
+    >
+      <span className="text-xs tabular-nums text-mute">
+        {totalCount === null
+          ? `${showingCount} row${showingCount === 1 ? "" : "s"} loaded`
+          : `${showingCount} of ${totalCount} row${totalCount === 1 ? "" : "s"} loaded`}
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!loadMore.hasMore || loadMore.loading}
+        onClick={loadMore.onLoadMore}
+      >
+        <ChevronDown className="size-4" aria-hidden="true" />
+        {loadMore.loading ? "Loading..." : loadMore.hasMore ? "Load more" : "All rows loaded"}
+      </Button>
+    </div>
+  ) : null
+
   if (rows.length === 0 && empty) {
-    return <>{empty}</>
+    return (
+      <div className="flex flex-col gap-3">
+        {empty}
+        {loadMore?.hasMore || loadMore?.loading ? loadMoreFooter : null}
+      </div>
+    )
   }
+
   return (
-    <div className="overflow-x-auto rounded-md border border-hairline">
-      <table className="border-collapse text-sm" style={{ tableLayout: "fixed", width: "100%" }}>
-        {caption ? <caption className="sr-only">{caption}</caption> : null}
-        <colgroup>
-          {columns.map((col) =>
-            colWidths[col.key] ? (
-              <col key={col.key} style={{ width: colWidths[col.key] }} />
-            ) : (
-              <col key={col.key} />
-            ),
-          )}
-        </colgroup>
-        <thead>
-          <tr className="border-b border-hairline bg-surface-elevated">
-            {columns.map((col, i) => (
-              <th
-                key={col.key}
-                scope="col"
-                data-col-key={col.key}
-                className={cn(
-                  "relative whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-mute overflow-hidden",
-                  col.headerClassName,
-                )}
-                style={colWidths[col.key] ? { width: colWidths[col.key] } : undefined}
-              >
-                <span className="block truncate pr-3">{col.header}</span>
-                {/* resize handle — not shown on the last column */}
-                {i < columns.length - 1 && (
-                  <div
-                    aria-hidden="true"
-                    onPointerDown={(e) => onHandlePointerDown(e, col.key, columns[i + 1].key)}
-                    onPointerMove={onHandlePointerMove}
-                    onPointerUp={onHandlePointerUp}
-                    onPointerCancel={onHandlePointerUp}
-                    className="absolute inset-y-0 right-0 w-3 cursor-col-resize select-none flex items-center justify-center group"
-                  >
-                    <div className="h-4 w-px bg-hairline-strong group-hover:bg-primary/60 group-active:bg-primary transition-colors" />
-                  </div>
-                )}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => {
-            const interactive = Boolean(onRowClick)
-            return (
-              <tr
-                key={getRowKey(row, index)}
-                onClick={interactive ? () => onRowClick?.(row) : undefined}
-                onKeyDown={
-                  interactive
-                    ? (e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault()
-                          onRowClick?.(row)
+    <div className="overflow-hidden rounded-md border border-hairline">
+      <div className="overflow-x-auto">
+        <table className="border-collapse text-sm" style={{ tableLayout: "fixed", width: "100%" }}>
+          {caption ? <caption className="sr-only">{caption}</caption> : null}
+          <colgroup>
+            {columns.map((col) =>
+              colWidths[col.key] ? (
+                <col key={col.key} style={{ width: colWidths[col.key] }} />
+              ) : (
+                <col key={col.key} />
+              ),
+            )}
+          </colgroup>
+          <thead>
+            <tr className="border-b border-hairline bg-surface-elevated">
+              {columns.map((col, i) => (
+                <th
+                  key={col.key}
+                  scope="col"
+                  data-col-key={col.key}
+                  className={cn(
+                    "relative whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-mute overflow-hidden",
+                    col.headerClassName,
+                  )}
+                  style={colWidths[col.key] ? { width: colWidths[col.key] } : undefined}
+                >
+                  <span className="block truncate pr-3">{col.header}</span>
+                  {/* resize handle — not shown on the last column */}
+                  {i < columns.length - 1 && (
+                    <div
+                      aria-hidden="true"
+                      onPointerDown={(e) => onHandlePointerDown(e, col.key, columns[i + 1].key)}
+                      onPointerMove={onHandlePointerMove}
+                      onPointerUp={onHandlePointerUp}
+                      onPointerCancel={onHandlePointerUp}
+                      className="absolute inset-y-0 right-0 w-3 cursor-col-resize select-none flex items-center justify-center group"
+                    >
+                      <div className="h-4 w-px bg-hairline-strong group-hover:bg-primary/60 group-active:bg-primary transition-colors" />
+                    </div>
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => {
+              const interactive = Boolean(onRowClick)
+              return (
+                <tr
+                  key={getRowKey(row, index)}
+                  onClick={interactive ? () => onRowClick?.(row) : undefined}
+                  onKeyDown={
+                    interactive
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault()
+                            onRowClick?.(row)
+                          }
                         }
-                      }
-                    : undefined
-                }
-                tabIndex={interactive ? 0 : undefined}
-                role={interactive ? "button" : undefined}
-                className={cn(
-                  "border-b border-hairline last:border-0",
-                  interactive &&
-                    "cursor-pointer transition-colors hover:bg-surface-card/60 focus-visible:bg-surface-card focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
-                  rowIsActive?.(row) && rowActiveClassName,
-                )}
-              >
-                {columns.map((col) => (
-                  <td
-                    key={col.key}
-                    className={cn("overflow-hidden px-3 py-2.5 align-middle", col.className)}
-                  >
-                    {col.cell(row)}
-                  </td>
-                ))}
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+                      : undefined
+                  }
+                  tabIndex={interactive ? 0 : undefined}
+                  role={interactive ? "button" : undefined}
+                  className={cn(
+                    "border-b border-hairline last:border-0",
+                    interactive &&
+                      "cursor-pointer transition-colors hover:bg-surface-card/60 focus-visible:bg-surface-card focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+                    rowIsActive?.(row) && rowActiveClassName,
+                  )}
+                >
+                  {columns.map((col) => (
+                    <td
+                      key={col.key}
+                      className={cn("overflow-hidden px-3 py-2.5 align-middle", col.className)}
+                    >
+                      {col.cell(row)}
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {loadMoreFooter}
     </div>
   )
 }

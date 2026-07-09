@@ -29,4 +29,9 @@ class ListRunsUseCase:
         Library.
         """
         with self.ports.uow as uow:
-            return uow.runs.query_page(request.library_id, status=request.status, page=request.page)
+            return uow.runs.query_page(
+                request.library_id,
+                plan_id=request.plan_id,
+                status=request.status,
+                page=request.page,
+            )

@@ -64,6 +64,8 @@ from omym2.config import (
     WEB_API_PLAN_REFRESH_ROUTE,
     WEB_API_PLANS_ROUTE,
     WEB_API_RUN_DETAIL_ROUTE,
+    WEB_API_RUN_EVENTS_FACETS_ROUTE,
+    WEB_API_RUN_EVENTS_GROUPS_ROUTE,
     WEB_API_RUN_EVENTS_ROUTE,
     WEB_API_SETTINGS_PREVIEW_ROUTE,
     WEB_API_SETTINGS_ROUTE,
@@ -102,13 +104,17 @@ from omym2.features.check.usecases.group_check_issues import GroupCheckIssuesUse
 from omym2.features.check.usecases.list_check_issues import ListCheckIssuesUseCase
 from omym2.features.common_ports import ConfigStoreValidationError, MetadataReadError
 from omym2.features.history.dto import (
+    FileEventStatusFacetsRequest,
     GetRunHeaderRequest,
+    GroupRunEventsRequest,
     ListRunEventsRequest,
     ListRunsRequest,
     RunStatusFacetsRequest,
 )
+from omym2.features.history.usecases.get_file_event_status_facets import GetFileEventStatusFacetsUseCase
 from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase, RunNotFoundError
 from omym2.features.history.usecases.get_run_status_facets import GetRunStatusFacetsUseCase
+from omym2.features.history.usecases.group_run_events import GroupRunEventsUseCase
 from omym2.features.history.usecases.list_run_events import ListRunEventsUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.organize.dto import CreateOrganizePlanRequest, OrganizeLibraryResult
@@ -148,7 +154,7 @@ from omym2.features.tracks.dto import GroupTracksRequest, ListTracksRequest, Tra
 from omym2.features.tracks.usecases.get_track_status_facets import GetTrackStatusFacetsUseCase
 from omym2.features.tracks.usecases.group_tracks import GroupTracksUseCase
 from omym2.features.tracks.usecases.list_tracks import ListTracksUseCase
-from omym2.shared.ids import LibraryId, PlanId, RunId, parse_uuid
+from omym2.shared.ids import LibraryId, PlanId, RunId, TrackId, parse_uuid
 from omym2.shared.pagination import INVALID_CURSOR_MESSAGE, CursorDecodeError, PageRequest, clamp_limit, decode_cursor
 
 if TYPE_CHECKING:
@@ -183,6 +189,7 @@ PLAN_CREATION_ERROR_PREFIX = "Plan creation failed"
 PLAN_PATH_NOT_DIRECTORY_MESSAGE = "Plan path must be a directory"
 PLAN_PATH_NOT_FOUND_MESSAGE = "Plan path was not found"
 PLAN_ACTIONS_GROUP_BY_TARGET_DIRECTORY = "target_directory"  # only supported plan-action group_by value
+RUN_EVENTS_GROUP_BY_TARGET_DIRECTORY = "target_directory"  # only supported FileEvent group_by value
 CHECK_ISSUES_GROUP_BY_ISSUE_TYPE = "issue_type"  # only supported check-issue group_by value
 
 type CheckPortsFactory = Callable[[], "CheckLibraryPorts"]
@@ -259,11 +266,19 @@ def _register_history_routes(router: APIRouter, context: ApiRouteContext) -> Non
     def get_run_events(run_id: str, request: Request) -> JSONResponse:
         return _get_run_events(context, run_id, request)
 
+    def get_run_event_facets(run_id: str) -> JSONResponse:
+        return _get_run_event_facets(context, run_id)
+
+    def get_run_event_groups(run_id: str, request: Request) -> JSONResponse:
+        return _get_run_event_groups(context, run_id, request)
+
     # WEB_API_HISTORY_FACETS_ROUTE ("/api/history/facets") must be registered before
     # WEB_API_RUN_DETAIL_ROUTE ("/api/history/{run_id}"): Starlette matches routes in
     # insertion order, and the dynamic {run_id} segment would otherwise shadow "facets".
     router.add_api_route(WEB_API_HISTORY_ROUTE, get_history, methods=["GET"])
     router.add_api_route(WEB_API_HISTORY_FACETS_ROUTE, get_history_facets, methods=["GET"])
+    router.add_api_route(WEB_API_RUN_EVENTS_FACETS_ROUTE, get_run_event_facets, methods=["GET"])
+    router.add_api_route(WEB_API_RUN_EVENTS_GROUPS_ROUTE, get_run_event_groups, methods=["GET"])
     router.add_api_route(WEB_API_RUN_DETAIL_ROUTE, get_run_detail, methods=["GET"])
     router.add_api_route(WEB_API_RUN_EVENTS_ROUTE, get_run_events, methods=["GET"])
 
@@ -473,9 +488,10 @@ def _get_history(context: ApiRouteContext, request: Request) -> JSONResponse:
         return _list_error_response(cursor_errors)
 
     library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    plan_id, plan_errors = _plan_id_from_query(request.query_params.get("plan_id"))
     status, status_errors = _run_status_from_query(request.query_params.get("status"))
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    filter_errors = library_errors + status_errors + limit_errors
+    filter_errors = library_errors + plan_errors + status_errors + limit_errors
     if filter_errors:
         return _list_error_response(filter_errors)
 
@@ -485,6 +501,7 @@ def _get_history(context: ApiRouteContext, request: Request) -> JSONResponse:
         page = ListRunsUseCase(context.history_ports_factory()).execute(
             ListRunsRequest(
                 library_id=library_id,
+                plan_id=plan_id,
                 status=status,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
@@ -588,6 +605,76 @@ def _get_run_events(context: ApiRouteContext, run_id: str, request: Request) -> 
     return JSONResponse(
         _list_envelope(
             [serialize_file_event(event) for event in page.items],
+            limit=effective_limit,
+            next_cursor_key=page.next_cursor_key,
+            total=page.total,
+        ),
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+def _get_run_event_facets(context: ApiRouteContext, run_id: str) -> JSONResponse:
+    parsed_run_id = _run_id_from_text(run_id)
+    if parsed_run_id is None:
+        return _facet_error_response((RUN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
+
+    try:
+        result = GetFileEventStatusFacetsUseCase(context.history_ports_factory()).execute(
+            FileEventStatusFacetsRequest(parsed_run_id)
+        )
+    except RunNotFoundError:
+        return _facet_error_response((RUN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
+    except sqlite3.DatabaseError as exc:
+        return JSONResponse(
+            {"facets": {}, "total": None, "errors": list(_inspection_errors(exc))},
+            status_code=SERVER_ERROR_STATUS_CODE,
+        )
+
+    return JSONResponse(
+        _facet_envelope(
+            {"status": [serialize_facet_value(facet) for facet in result.facets]},
+            total=result.total,
+        ),
+        status_code=SUCCESS_STATUS_CODE,
+    )
+
+
+def _get_run_event_groups(context: ApiRouteContext, run_id: str, request: Request) -> JSONResponse:
+    parsed_run_id = _run_id_from_text(run_id)
+    if parsed_run_id is None:
+        return _group_error_response((RUN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
+
+    cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
+    grouping, grouping_errors = _run_event_grouping_from_query(request.query_params.get("group_by"))
+    limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
+    request_errors = cursor_errors + grouping_errors + limit_errors
+    if request_errors:
+        return _group_error_response(request_errors)
+
+    effective_limit = cast("int", limit)
+    effective_grouping = cast("str", grouping)
+
+    try:
+        page = GroupRunEventsUseCase(context.history_ports_factory()).execute(
+            GroupRunEventsRequest(
+                run_id=parsed_run_id,
+                page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
+            )
+        )
+    except RunNotFoundError:
+        return _group_error_response((RUN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
+    except CursorDecodeError:
+        return _group_error_response((INVALID_CURSOR_MESSAGE,))
+    except sqlite3.DatabaseError as exc:
+        return JSONResponse(
+            {"group_by": None, "items": [], "page": None, "errors": list(_inspection_errors(exc))},
+            status_code=SERVER_ERROR_STATUS_CODE,
+        )
+
+    return JSONResponse(
+        _group_envelope(
+            effective_grouping,
+            [serialize_group_count(group) for group in page.items],
             limit=effective_limit,
             next_cursor_key=page.next_cursor_key,
             total=page.total,
@@ -992,9 +1079,10 @@ def _get_tracks(context: ApiRouteContext, request: Request) -> JSONResponse:
         return _list_error_response(cursor_errors)
 
     library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    track_id, track_errors = _track_id_from_query(request.query_params.get("track_id"))
     status, status_errors = _track_status_from_query(request.query_params.get("status"))
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    filter_errors = library_errors + status_errors + limit_errors
+    filter_errors = library_errors + track_errors + status_errors + limit_errors
     if filter_errors:
         return _list_error_response(filter_errors)
 
@@ -1005,6 +1093,7 @@ def _get_tracks(context: ApiRouteContext, request: Request) -> JSONResponse:
         page = ListTracksUseCase(context.tracks_ports_factory()).execute(
             ListTracksRequest(
                 library_id=library_id,
+                track_id=track_id,
                 search=search,
                 status=status,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
@@ -1205,6 +1294,16 @@ def _plan_id_from_text(raw_value: str) -> PlanId | None:
         return None
 
 
+def _plan_id_from_query(raw_value: str | None) -> tuple[PlanId | None, tuple[str, ...]]:
+    """Parse an optional `plan_id` filter for Run browsing."""
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return PlanId(parse_uuid(raw_value)), ()
+    except ValueError:
+        return None, (f"Invalid plan_id filter: {raw_value}",)
+
+
 def _plan_status_from_query(raw_value: str | None) -> tuple[PlanStatus | None, tuple[str, ...]]:
     if raw_value is None or raw_value == "":
         return None, ()
@@ -1258,6 +1357,14 @@ def _plan_action_grouping_from_query(raw_value: str | None) -> tuple[str | None,
     return raw_value, ()
 
 
+def _run_event_grouping_from_query(raw_value: str | None) -> tuple[str | None, tuple[str, ...]]:
+    if raw_value is None or raw_value == "":
+        return None, ("Query parameter group_by is required.",)
+    if raw_value != RUN_EVENTS_GROUP_BY_TARGET_DIRECTORY:
+        return None, (f"Invalid group_by filter: {raw_value}",)
+    return raw_value, ()
+
+
 def _check_issue_type_from_query(raw_value: str | None) -> tuple[CheckIssueType | None, tuple[str, ...]]:
     if raw_value is None or raw_value == "":
         return None, ()
@@ -1283,6 +1390,16 @@ def _library_id_from_query(raw_value: str | None) -> tuple[LibraryId | None, tup
         return LibraryId(parse_uuid(raw_value)), ()
     except ValueError:
         return None, (f"Invalid library_id filter: {raw_value}",)
+
+
+def _track_id_from_query(raw_value: str | None) -> tuple[TrackId | None, tuple[str, ...]]:
+    """Parse an optional `track_id` filter for Track browsing."""
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return TrackId(parse_uuid(raw_value)), ()
+    except ValueError:
+        return None, (f"Invalid track_id filter: {raw_value}",)
 
 
 def _limit_from_query(raw_value: str | None) -> tuple[int | None, tuple[str, ...]]:

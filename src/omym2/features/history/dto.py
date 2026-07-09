@@ -13,7 +13,7 @@ from omym2.shared.pagination import PageRequest
 if TYPE_CHECKING:
     from omym2.domain.models.file_event import FileEventStatus
     from omym2.domain.models.run import RunStatus
-    from omym2.shared.ids import LibraryId, RunId
+    from omym2.shared.ids import LibraryId, PlanId, RunId
     from omym2.shared.pagination import FacetValue
 
 
@@ -22,6 +22,7 @@ class ListRunsRequest:
     """Request one keyset page of Runs for a Library or every known Library."""
 
     library_id: LibraryId | None = None
+    plan_id: PlanId | None = None
     status: RunStatus | None = None
     page: PageRequest = field(default_factory=PageRequest)
 
@@ -59,3 +60,26 @@ class RunStatusFacetsResult:
 
     facets: tuple[FacetValue, ...]
     total: int
+
+
+@dataclass(frozen=True, slots=True)
+class FileEventStatusFacetsRequest:
+    """Request FileEvent status facet counts for one Run."""
+
+    run_id: RunId
+
+
+@dataclass(frozen=True, slots=True)
+class FileEventStatusFacetsResult:
+    """FileEvent status facet counts plus the total event count in scope."""
+
+    facets: tuple[FacetValue, ...]
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
+class GroupRunEventsRequest:
+    """Request one keyset page of a Run's FileEvents grouped by target directory."""
+
+    run_id: RunId
+    page: PageRequest = field(default_factory=PageRequest)

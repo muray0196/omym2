@@ -1,10 +1,14 @@
+/*
+Summary: Provides static mock payloads for the OMYM2 console.
+Why: Keeps exported frontend previews usable when the local API is unavailable.
+*/
+
 import type {
   AppConfig,
   CheckFacetsResponse,
   CheckIssue,
   CheckIssueType,
   CheckPageResponse,
-  CheckResponse,
   CheckRunResponse,
   FacetsResponse,
   FacetValue,
@@ -12,14 +16,12 @@ import type {
   FileEventStatus,
   GroupCount,
   GroupsResponse,
-  HistoryResponse,
   PagedResponse,
   PlanAction,
   PlanActionStatus,
+  PlanCreatedDetail,
   PlanCreateResult,
-  PlanDetail,
   PlanDetailResponse,
-  PlansResponse,
   PlanStatus,
   PlanSummary,
   PlanType,
@@ -30,7 +32,6 @@ import type {
   SettingsSaveResult,
   SettingsState,
   SettingsValidateResult,
-  TracksResponse,
   TrackStatus,
   TrackSummary,
   ArtistIdGenerationResult,
@@ -526,21 +527,11 @@ const mockPlanActions: Record<string, PlanAction[]> = {
   ],
 }
 
-export const mockPlansResponse: PlansResponse = {
-  plans: mockPlans,
-  errors: [],
-}
-
-export function mockPlanDetailResponse(planId: string, actionStatus?: string): PlanDetailResponse {
+export function mockPlanDetailResponse(planId: string): PlanDetailResponse {
   const plan = mockPlans.find((candidate) => candidate.plan_id === planId)
   if (!plan) {
     return { detail: null, errors: ["Plan was not found."] }
   }
-  const actions = mockPlanActions[planId] ?? []
-  const filtered =
-    actionStatus && actionStatus !== "all"
-      ? actions.filter((a) => a.status === actionStatus)
-      : actions
   return {
     detail: {
       plan: {
@@ -548,8 +539,6 @@ export function mockPlanDetailResponse(planId: string, actionStatus?: string): P
         config_hash: "mock-config-hash",
         library_root_at_plan: defaultConfig.paths.library ?? "/music/library",
       },
-      actions: filtered,
-      total_action_count: actions.length,
     },
     errors: [],
   }
@@ -581,7 +570,7 @@ export function mockCreatePlan(planType: PlanType): PlanCreateResult {
     reason: null,
     sort_order: 1,
   }
-  const detail: PlanDetail = {
+  const detail: PlanCreatedDetail = {
     plan: {
       ...createdPlan,
       config_hash: "mock-created-config-hash",
@@ -799,11 +788,6 @@ export const mockFileEvents: Record<string, FileEvent[]> = {
   ],
 }
 
-export const mockHistoryResponse: HistoryResponse = {
-  runs: mockRuns,
-  errors: [],
-}
-
 export function mockRunDetailResponse(runId: string): RunDetailResponse {
   const run = mockRuns.find((candidate) => candidate.run_id === runId)
   if (!run) {
@@ -812,7 +796,6 @@ export function mockRunDetailResponse(runId: string): RunDetailResponse {
   return {
     detail: {
       run,
-      file_events: mockFileEvents[runId] ?? [],
     },
     errors: [],
   }
@@ -921,11 +904,6 @@ export const mockIssues: CheckIssue[] = [
       "Library registration is blocked pending manual review; CLI commands targeting it will be rejected.",
   },
 ]
-
-export const mockCheckResponse: CheckResponse = {
-  issues: mockIssues,
-  errors: [],
-}
 
 export const mockTracks: TrackSummary[] = [
   {
@@ -1049,11 +1027,6 @@ export const mockTracks: TrackSummary[] = [
     updated_at: "2026-06-10T15:31:00Z",
   },
 ]
-
-export const mockTracksResponse: TracksResponse = {
-  tracks: mockTracks,
-  errors: [],
-}
 
 // --- Paginated Web API mocks (D6) -------------------------------------------
 // Pure paging/faceting/grouping helpers plus a mock branch for every new
@@ -1192,10 +1165,14 @@ function buildTrackPredicate(options: {
   query?: string
   status?: TrackStatus | "all"
   libraryId?: string
+  trackId?: string
 }): (row: TrackSummary) => boolean {
   const query = options.query?.trim().toLowerCase()
   return (row) => {
     if (options.libraryId && row.library_id !== options.libraryId) {
+      return false
+    }
+    if (options.trackId && row.track_id !== options.trackId) {
       return false
     }
     if (options.status && options.status !== "all" && row.status !== options.status) {
@@ -1264,9 +1241,13 @@ function buildCheckPredicate(options: {
 function buildRunPredicate(options: {
   status?: RunStatus | "all"
   libraryId?: string
+  planId?: string
 }): (row: RunSummary) => boolean {
   return (row) => {
     if (options.libraryId && row.library_id !== options.libraryId) {
+      return false
+    }
+    if (options.planId && row.plan_id !== options.planId) {
       return false
     }
     if (options.status && options.status !== "all" && row.status !== options.status) {
@@ -1303,6 +1284,7 @@ export function mockGetTracksPage(
     query?: string
     status?: TrackStatus | "all"
     libraryId?: string
+    trackId?: string
     limit?: number
     cursor?: string
   } = {},
@@ -1444,7 +1426,13 @@ export function mockRunCheck(libraryId?: string): CheckRunResponse {
 // --- History / run events -------------------------------------------------------
 
 export function mockGetHistoryPage(
-  options: { status?: RunStatus | "all"; libraryId?: string; limit?: number; cursor?: string } = {},
+  options: {
+    status?: RunStatus | "all"
+    libraryId?: string
+    planId?: string
+    limit?: number
+    cursor?: string
+  } = {},
 ): PagedResponse<RunSummary> {
   return pageMock(mockRuns, {
     limit: options.limit,
@@ -1469,5 +1457,21 @@ export function mockGetRunEventsPage(
     limit: options.limit,
     cursor: options.cursor,
     predicate: buildFileEventPredicate(options),
+  })
+}
+
+export function mockGetRunEventFacets(runId: string): FacetsResponse {
+  const rows = mockFileEvents[runId] ?? []
+  return facetsMock(rows, { status: (event) => event.status })
+}
+
+export function mockGetRunEventGroups(
+  runId: string,
+  options: { limit?: number; cursor?: string } = {},
+): GroupsResponse {
+  const rows = mockFileEvents[runId] ?? []
+  return groupsMock("target_directory", rows, (event) => targetDirectoryOf(event.target_path), {
+    limit: options.limit,
+    cursor: options.cursor,
   })
 }

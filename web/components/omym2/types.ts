@@ -1,4 +1,7 @@
-// Domain types for the OMYM2 local console.
+/*
+Summary: Defines Web UI data contracts for the OMYM2 console.
+Why: Keeps frontend state aligned with the packaged local JSON API.
+*/
 
 export type LibraryStatus = "registered" | "unregistered" | "stale" | "blocked"
 export type TrackStatus = "active" | "removed"
@@ -175,13 +178,11 @@ export interface PlanAction {
 
 export interface PlanDetail {
   plan: PlanHeader
-  actions: PlanAction[]
-  total_action_count: number
 }
 
-export interface PlansResponse {
-  plans: PlanSummary[]
-  errors: string[]
+export interface PlanCreatedDetail extends PlanDetail {
+  actions: PlanAction[]
+  total_action_count: number
 }
 
 export interface PlanDetailResponse {
@@ -204,7 +205,7 @@ export interface OrganizeRegistration {
 
 export interface PlanCreateResult {
   created: boolean
-  detail: PlanDetail | null
+  detail: PlanCreatedDetail | null
   registration: OrganizeRegistration | null
   errors: string[]
 }
@@ -217,11 +218,6 @@ export interface RunSummary {
   started_at: string
   completed_at: string | null
   error_summary: string | null
-}
-
-export interface HistoryResponse {
-  runs: RunSummary[]
-  errors: string[]
 }
 
 export interface FileEvent {
@@ -242,7 +238,6 @@ export interface FileEvent {
 
 export interface RunDetail {
   run: RunSummary
-  file_events: FileEvent[]
 }
 
 export interface RunDetailResponse {
@@ -259,11 +254,6 @@ export interface CheckIssue {
   track_id: string | null
   plan_id: string | null
   detail: string | null
-}
-
-export interface CheckResponse {
-  issues: CheckIssue[]
-  errors: string[]
 }
 
 export interface TrackMetadata {
@@ -293,11 +283,6 @@ export interface TrackSummary {
   updated_at: string
 }
 
-export interface TracksResponse {
-  tracks: TrackSummary[]
-  errors: string[]
-}
-
 // --- Paginated Web API contracts (D6) --------------------------------------
 // Envelope types shared by the paginated list/facet/group endpoints under
 // /api/tracks, /api/plans/*, /api/check, and /api/history/*. Row payloads
@@ -312,7 +297,7 @@ export interface PageInfo {
 
 export interface PagedResponse<T> {
   items: T[]
-  page: PageInfo
+  page: PageInfo | null
   errors: string[]
 }
 
@@ -323,7 +308,7 @@ export interface FacetValue {
 
 export interface FacetsResponse {
   facets: Record<string, FacetValue[]>
-  total: number
+  total: number | null
   errors: string[]
 }
 
@@ -336,7 +321,7 @@ export interface GroupCount {
 export interface GroupsResponse {
   group_by: string
   items: GroupCount[]
-  page: PageInfo
+  page: PageInfo | null
   errors: string[]
 }
 

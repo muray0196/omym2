@@ -194,6 +194,7 @@ class InMemoryTrackRepository:
         self,
         library_id: LibraryId | None,
         *,
+        track_id: TrackId | None,
         search: str | None,
         status: TrackStatus | None,
         page: PageRequest,
@@ -203,6 +204,7 @@ class InMemoryTrackRepository:
             track
             for track in self.records.values()
             if (library_id is None or track.library_id == library_id)
+            and (track_id is None or track.track_id == track_id)
             and (status is None or track.status == status)
             and (not search or _track_matches_search(track, search))
         ]
@@ -440,6 +442,7 @@ class InMemoryRunRepository:
         self,
         library_id: LibraryId | None,
         *,
+        plan_id: PlanId | None,
         status: RunStatus | None,
         page: PageRequest,
     ) -> Page[Run]:
@@ -447,7 +450,9 @@ class InMemoryRunRepository:
         runs = [
             run
             for run in self.records.values()
-            if (library_id is None or run.library_id == library_id) and (status is None or run.status == status)
+            if (library_id is None or run.library_id == library_id)
+            and (plan_id is None or run.plan_id == plan_id)
+            and (status is None or run.status == status)
         ]
         runs.sort(key=lambda run: (run.started_at, str(run.run_id)), reverse=True)
         total = len(runs)
@@ -548,6 +553,20 @@ class InMemoryFileEventRepository:
         has_more = len(events) > page.limit
         next_cursor_key = (str(page_items[-1].sequence_no), str(page_items[-1].event_id)) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def status_facets(self, run_id: RunId) -> tuple[FacetValue, ...]:
+        """Return FileEvent status facet counts, ordered count DESC then value ASC."""
+        counts: dict[str, int] = {}
+        for event in self.records.values():
+            if event.run_id != run_id:
+                continue
+            counts[event.status.value] = counts.get(event.status.value, 0) + 1
+        ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        return tuple(FacetValue(value=value, count=count) for value, count in ordered)
+
+    def list_target_paths(self, run_id: RunId) -> tuple[str, ...]:
+        """Return target_path values for a Run in durable sequence order."""
+        return tuple(event.target_path for event in self.list_by_run(run_id))
 
 
 @dataclass(slots=True)

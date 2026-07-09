@@ -145,6 +145,7 @@ class TrackRepository(Protocol):
         self,
         library_id: LibraryId | None,
         *,
+        track_id: TrackId | None,
         search: str | None,
         status: TrackStatus | None,
         page: PageRequest,
@@ -267,6 +268,7 @@ class RunRepository(Protocol):
         self,
         library_id: LibraryId | None,
         *,
+        plan_id: PlanId | None,
         status: RunStatus | None,
         page: PageRequest,
     ) -> Page[Run]:
@@ -312,6 +314,14 @@ class FileEventRepository(Protocol):
 
         `page.total` counts rows matching the filters, ignoring the cursor.
         """
+        ...
+
+    def status_facets(self, run_id: RunId) -> tuple[FacetValue, ...]:
+        """Return FileEvent status facets for one Run, ordered count DESC then value ASC."""
+        ...
+
+    def list_target_paths(self, run_id: RunId) -> Sequence[str]:
+        """Return the target_path values recorded for one Run's FileEvents."""
         ...
 
 
