@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from omym2.adapters.cli.commands.output import write_line, write_usage
 from omym2.features.history.dto import ListRunsRequest
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
+from omym2.shared.pagination import MAX_PAGE_LIMIT, PageRequest
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -35,7 +36,7 @@ def run_history_command(
         write_usage(stderr, HISTORY_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
 
-    runs = ListRunsUseCase(ports).execute(ListRunsRequest())
+    runs = _fetch_runs(ports)
 
     if len(runs) == 0:
         write_line(stdout, NO_RUNS_MESSAGE)
@@ -44,6 +45,24 @@ def run_history_command(
     for run in runs:
         _write_run_row(stdout, run)
     return SUCCESS_EXIT_CODE
+
+
+def _fetch_runs(ports: HistoryPorts) -> tuple[Run, ...]:
+    """Return every Run with no filter, walking all keyset pages.
+
+    `history` has no `--limit` option, so every page is walked at
+    `MAX_PAGE_LIMIT` to keep the CLI's unlimited-by-default output from
+    being silently truncated at the Web API's per-page cap.
+    """
+    usecase = ListRunsUseCase(ports)
+    runs: list[Run] = []
+    cursor: tuple[str, ...] | None = None
+    while True:
+        page = usecase.execute(ListRunsRequest(page=PageRequest(limit=MAX_PAGE_LIMIT, cursor_key=cursor)))
+        runs.extend(page.items)
+        if page.next_cursor_key is None:
+            return tuple(runs)
+        cursor = page.next_cursor_key
 
 
 def _write_run_row(stdout: TextIO, run: Run) -> None:

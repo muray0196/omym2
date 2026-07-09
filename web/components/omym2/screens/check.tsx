@@ -1,11 +1,18 @@
+/*
+Summary: Renders persisted consistency-check findings.
+Why: Lets users triage stored issues without recomputing checks on page load.
+*/
+
 "use client"
 
-import { CircleAlert, CircleX, Info, ShieldCheck } from "lucide-react"
-import { useMemo, useState } from "react"
-import { useApp } from "../app-context"
+import { ChevronDown, CircleAlert, CircleX, Info, ShieldCheck } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { getCheckFacets, getCheckPage } from "../api-client"
 import { cn, severityForIssue, truncateMiddle } from "../lib"
 import type { CheckIssue, CheckIssueType, IssueSeverity } from "../types"
+import { usePagedList } from "../use-paged-list"
 import {
+  Button,
   CopyButton,
   EmptyState,
   MetricCard,
@@ -34,6 +41,8 @@ const ISSUE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "library_stale", label: "Library stale" },
   { value: "library_blocked", label: "Library blocked" },
 ]
+
+const CHECK_PAGE_LIMIT = 100
 
 const MISSING_TYPES: CheckIssueType[] = ["db_file_missing"]
 const UNMANAGED_TYPES: CheckIssueType[] = ["unmanaged_file_exists"]
@@ -106,6 +115,27 @@ function issueSeverity(issue: CheckIssue): IssueSeverity {
   return issue.severity ?? severityForIssue(issue.issue_type)
 }
 
+function issueFacetCounts(facets: Record<string, { value: string; count: number }[]>) {
+  return Object.fromEntries(
+    facets.issue_type?.map((facet) => [facet.value, facet.count]) ?? [],
+  ) as Partial<Record<CheckIssueType, number>>
+}
+
+function sumIssueCounts(
+  counts: Partial<Record<CheckIssueType, number>>,
+  issueTypes: CheckIssueType[],
+): number {
+  return issueTypes.reduce((total, issueType) => total + (counts[issueType] ?? 0), 0)
+}
+
+function totalIssueCount(counts: Partial<Record<CheckIssueType, number>>): number {
+  return Object.values(counts).reduce((total, count) => total + (count ?? 0), 0)
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
+}
+
 function IssueCard({ issue }: { issue: CheckIssue }) {
   const severity = issueSeverity(issue)
   const command = remediationFor(issue)
@@ -154,32 +184,74 @@ function IssueCard({ issue }: { issue: CheckIssue }) {
 }
 
 export function CheckScreen() {
-  const { checkErrors, checkIssues, checkLoaded } = useApp()
-  const [typeFilter, setTypeFilter] = useState("all")
+  const [typeFilter, setTypeFilter] = useState<CheckIssueType | "all">("all")
+  const [issueTypeCounts, setIssueTypeCounts] = useState<Partial<Record<CheckIssueType, number>>>(
+    {},
+  )
+  const [checkedAt, setCheckedAt] = useState<string | null | undefined>(undefined)
+  const [facetTotal, setFacetTotal] = useState<number | null>(null)
+  const [facetErrors, setFacetErrors] = useState<string[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    getCheckFacets()
+      .then((response) => {
+        if (cancelled) return
+        setIssueTypeCounts(issueFacetCounts(response.facets))
+        setCheckedAt(response.checked_at)
+        setFacetTotal(response.total)
+        setFacetErrors(response.errors)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setIssueTypeCounts({})
+        setFacetTotal(null)
+        setFacetErrors([errorMessage(error, "Check summary failed to load.")])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const loadIssuesPage = useCallback(
+    async (cursor?: string) => {
+      const response = await getCheckPage({
+        cursor,
+        issueType: typeFilter,
+        limit: CHECK_PAGE_LIMIT,
+      })
+      setCheckedAt(response.checked_at)
+      return response
+    },
+    [typeFilter],
+  )
+  const issuesPage = usePagedList({
+    errorMessage: "Check issues failed to load.",
+    loadPage: loadIssuesPage,
+  })
+  const checkIssues = issuesPage.items
+  const checkErrors = [...issuesPage.errors, ...facetErrors]
+  const checkLoaded = issuesPage.loaded
+  const checkHasRun = checkedAt !== null && checkedAt !== undefined
+  const checkNeverRan = checkLoaded && checkedAt === null
+  const checkDataUnavailable = checkLoaded && checkErrors.length > 0 && checkedAt === undefined
 
   const counts = useMemo(() => {
-    const within = (types: CheckIssueType[]) =>
-      checkIssues.filter((i) => types.includes(i.issue_type)).length
     return {
-      total: checkIssues.length,
-      missing: within(MISSING_TYPES),
-      unmanaged: within(UNMANAGED_TYPES),
-      hash: within(HASH_TYPES),
-      path: within(PATH_TYPES),
-      library: within(LIBRARY_TYPES),
+      total: facetTotal ?? totalIssueCount(issueTypeCounts),
+      missing: sumIssueCounts(issueTypeCounts, MISSING_TYPES),
+      unmanaged: sumIssueCounts(issueTypeCounts, UNMANAGED_TYPES),
+      hash: sumIssueCounts(issueTypeCounts, HASH_TYPES),
+      path: sumIssueCounts(issueTypeCounts, PATH_TYPES),
+      library: sumIssueCounts(issueTypeCounts, LIBRARY_TYPES),
     }
-  }, [checkIssues])
-
-  const filtered = useMemo(
-    () => checkIssues.filter((i) => (typeFilter === "all" ? true : i.issue_type === typeFilter)),
-    [checkIssues, typeFilter],
-  )
+  }, [facetTotal, issueTypeCounts])
 
   const grouped = useMemo(() => {
     const buckets: Record<IssueSeverity, CheckIssue[]> = { error: [], warning: [], info: [] }
-    for (const issue of filtered) buckets[issueSeverity(issue)].push(issue)
+    for (const issue of checkIssues) buckets[issueSeverity(issue)].push(issue)
     return buckets
-  }, [filtered])
+  }, [checkIssues])
 
   return (
     <>
@@ -195,7 +267,7 @@ export function CheckScreen() {
         <MetricCard
           label="Total issues"
           value={counts.total}
-          tone={counts.total ? "warning" : "success"}
+          tone={counts.total ? "warning" : checkHasRun ? "success" : "neutral"}
         />
         <MetricCard
           label="Missing files"
@@ -231,7 +303,7 @@ export function CheckScreen() {
               id={id}
               options={ISSUE_TYPE_OPTIONS}
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
+              onChange={(e) => setTypeFilter(e.target.value as CheckIssueType | "all")}
             />
           )}
         </Field>
@@ -242,15 +314,27 @@ export function CheckScreen() {
           </Notice>
         ) : null}
 
-        {filtered.length === 0 ? (
-          checkIssues.length === 0 ? (
+        {checkIssues.length === 0 ? (
+          checkNeverRan || checkDataUnavailable || (typeFilter === "all" && counts.total === 0) ? (
             <EmptyState
               icon={ShieldCheck}
-              title={checkLoaded ? "No issues found." : "Loading issues..."}
+              title={
+                !checkLoaded
+                  ? "Loading issues..."
+                  : checkNeverRan
+                    ? "No check has run yet."
+                    : checkDataUnavailable
+                      ? "Check data unavailable."
+                      : "No issues found."
+              }
               description={
-                checkLoaded
-                  ? "DB and filesystem state appear consistent."
-                  : "Current diagnostics will appear here once they are loaded."
+                !checkLoaded
+                  ? "Current diagnostics will appear here once they are loaded."
+                  : checkNeverRan
+                    ? "Run omym2 check to persist DB and filesystem diagnostics."
+                    : checkDataUnavailable
+                      ? "The check API response did not include a completed check timestamp."
+                      : "DB and filesystem state appear consistent."
               }
             />
           ) : (
@@ -291,6 +375,31 @@ export function CheckScreen() {
                 </section>
               )
             })}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-3">
+              <span className="text-xs tabular-nums text-mute">
+                {typeFilter === "all"
+                  ? `${Math.min(issuesPage.items.length, counts.total)} of ${counts.total} issue${
+                      counts.total === 1 ? "" : "s"
+                    } loaded`
+                  : `${issuesPage.items.length} issue${
+                      issuesPage.items.length === 1 ? "" : "s"
+                    } loaded`}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!issuesPage.hasMore || issuesPage.loadingMore}
+                onClick={issuesPage.loadMore}
+              >
+                <ChevronDown className="size-4" aria-hidden="true" />
+                {issuesPage.loadingMore
+                  ? "Loading..."
+                  : issuesPage.hasMore
+                    ? "Load more"
+                    : "All issues loaded"}
+              </Button>
+            </div>
           </div>
         )}
       </Panel>

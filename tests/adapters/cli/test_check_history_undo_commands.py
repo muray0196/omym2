@@ -27,6 +27,7 @@ from omym2.domain.services.content_fingerprint import calculate_content_fingerpr
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.platform.cli_entry_point import run_cli as main
 from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
+from omym2.shared.pagination import PageRequest
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -73,6 +74,13 @@ def test_check_command_reports_missing_db_file(tmp_path: Path) -> None:
     assert exit_code == ERROR_EXIT_CODE
     assert "db_file_missing" in stdout.getvalue()
     assert stderr.getvalue() == ""
+
+    with SQLiteUnitOfWork(app_paths.database_file) as uow:
+        check_run = uow.check_runs.latest(LIBRARY_ID)
+        assert check_run is not None
+        assert check_run.total_count > 0
+        persisted_page = uow.check_issues.query_page(LIBRARY_ID, issue_type=None, page=PageRequest())
+        assert any(issue.issue_type.value == "db_file_missing" for issue in persisted_page.items)
 
 
 def test_history_command_lists_runs(tmp_path: Path) -> None:

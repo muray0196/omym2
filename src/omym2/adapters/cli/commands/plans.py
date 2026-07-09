@@ -16,10 +16,19 @@ from omym2.adapters.cli.commands.plans_serializers import (
 )
 from omym2.domain.models.plan import PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType
-from omym2.features.plans.dto import GetPlanDetailRequest, ListPlansRequest
-from omym2.features.plans.usecases.get_plan_detail import GetPlanDetailUseCase, PlanNotFoundError
+from omym2.features.plans.dto import (
+    GetPlanHeaderRequest,
+    ListPlanActionsRequest,
+    ListPlansRequest,
+    PlanActionFacetsRequest,
+    PlanDetail,
+)
+from omym2.features.plans.usecases.get_plan_action_facets import GetPlanActionFacetsUseCase
+from omym2.features.plans.usecases.get_plan_header import GetPlanHeaderUseCase, PlanNotFoundError
+from omym2.features.plans.usecases.list_plan_actions import ListPlanActionsUseCase
 from omym2.features.plans.usecases.list_plans import ListPlansUseCase
 from omym2.shared.ids import PlanId, parse_uuid
+from omym2.shared.pagination import MAX_PAGE_LIMIT, PageRequest
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -27,7 +36,6 @@ if TYPE_CHECKING:
 
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
-    from omym2.features.plans.dto import PlanDetail
     from omym2.features.plans.ports import PlanQueryPorts
 
 ACTIONS_OPTION = "--actions"
@@ -187,9 +195,68 @@ def _parse_positive_int(raw_value: str) -> int:
     return value
 
 
+def _fetch_plans(
+    ports: PlanQueryPorts,
+    *,
+    status: PlanStatus | None,
+    plan_type: PlanType | None,
+    limit: int | None,
+) -> tuple[Plan, ...]:
+    """Return Plans for the filters: exactly `limit` newest matches if given, otherwise every match.
+
+    `--limit N` fetches a single page of the N newest matches. Without
+    `--limit`, every keyset page is walked so the CLI's unlimited-by-default
+    output is not silently truncated at the Web API's per-page cap.
+    """
+    usecase = ListPlansUseCase(ports)
+    if limit is not None:
+        page = usecase.execute(
+            ListPlansRequest(status=status, plan_type=plan_type, page=PageRequest(limit=limit)),
+        )
+        return page.items
+
+    plans: list[Plan] = []
+    cursor: tuple[str, ...] | None = None
+    while True:
+        page = usecase.execute(
+            ListPlansRequest(
+                status=status,
+                plan_type=plan_type,
+                page=PageRequest(limit=MAX_PAGE_LIMIT, cursor_key=cursor),
+            ),
+        )
+        plans.extend(page.items)
+        if page.next_cursor_key is None:
+            return tuple(plans)
+        cursor = page.next_cursor_key
+
+
+def _fetch_plan_actions(
+    ports: PlanQueryPorts,
+    plan_id: PlanId,
+    *,
+    status: ActionStatus | None,
+) -> tuple[PlanAction, ...]:
+    """Return every action for a Plan matching an optional status filter, walking all keyset pages."""
+    usecase = ListPlanActionsUseCase(ports)
+    actions: list[PlanAction] = []
+    cursor: tuple[str, ...] | None = None
+    while True:
+        page = usecase.execute(
+            ListPlanActionsRequest(
+                plan_id=plan_id,
+                status=status,
+                page=PageRequest(limit=MAX_PAGE_LIMIT, cursor_key=cursor),
+            ),
+        )
+        actions.extend(page.items)
+        if page.next_cursor_key is None:
+            return tuple(actions)
+        cursor = page.next_cursor_key
+
+
 def _run_plan_list(options: _PlanListOptions, stdout: TextIO, ports: PlanQueryPorts) -> int:
-    request = ListPlansRequest(status=options.status, plan_type=options.plan_type, limit=options.limit)
-    plans = ListPlansUseCase(ports).execute(request)
+    plans = _fetch_plans(ports, status=options.status, plan_type=options.plan_type, limit=options.limit)
 
     if options.as_json:
         write_json(stdout, serialize_plan_list_response(plans))
@@ -219,12 +286,14 @@ def _run_plan_detail(
         return ERROR_EXIT_CODE
 
     try:
-        detail = GetPlanDetailUseCase(ports).execute(
-            GetPlanDetailRequest(plan_id=plan_id, action_status=options.action_status)
-        )
+        plan = GetPlanHeaderUseCase(ports).execute(GetPlanHeaderRequest(plan_id))
     except PlanNotFoundError as exc:
         write_line(stderr, str(exc))
         return ERROR_EXIT_CODE
+
+    total_action_count = GetPlanActionFacetsUseCase(ports).execute(PlanActionFacetsRequest(plan_id)).total
+    actions = _fetch_plan_actions(ports, plan_id, status=options.action_status)
+    detail = PlanDetail(plan=plan, actions=actions, total_action_count=total_action_count)
 
     if options.as_json:
         write_json(stdout, serialize_plan_detail_response(detail))

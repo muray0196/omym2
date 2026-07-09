@@ -1,7 +1,13 @@
+/*
+Summary: Renders a Plan header and paged PlanAction list.
+Why: Lets users inspect recorded Plan work without loading every action upfront.
+*/
+
 "use client"
 
 import { ArrowLeft, ClipboardList, FileDiff, Hash, ListTree } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { getHistoryPage, getPlanActionsPage, getPlanFacets } from "../api-client"
 import { useApp } from "../app-context"
 import { describeBlockReason, formatTimestamp, truncateMiddle } from "../lib"
 import type {
@@ -12,6 +18,7 @@ import type {
   PlanSummary,
   RunSummary,
 } from "../types"
+import { usePagedList } from "../use-paged-list"
 import { Select } from "../forms"
 import {
   Button,
@@ -30,6 +37,8 @@ import {
 import { CliCommand } from "../widgets"
 import { PageHeading } from "./page-heading"
 
+const PLAN_ACTION_PAGE_LIMIT = 100
+
 /** Most recent run whose plan_id matches this Plan, if any exists in context. */
 function findRunForPlan(runs: RunSummary[], planId: string): RunSummary | undefined {
   return runs
@@ -37,12 +46,28 @@ function findRunForPlan(runs: RunSummary[], planId: string): RunSummary | undefi
     .sort((a, b) => b.started_at.localeCompare(a.started_at))[0]
 }
 
-/** Count of blocked actions from the Plan's stable summary (not the current action-status filter). */
-function blockedActionCount(plan: PlanSummary): number {
-  const raw = plan.summary.blocked_actions
+function summaryNumber(plan: PlanHeader | PlanSummary, key: string): number {
+  const raw = plan.summary[key]
   if (!raw) return 0
   const parsed = Number.parseInt(raw, 10)
   return Number.isNaN(parsed) ? 0 : parsed
+}
+
+/** Count of blocked actions from the Plan's stable summary (not the current action-status filter). */
+function blockedActionCount(plan: PlanSummary): number {
+  return summaryNumber(plan, "blocked_actions")
+}
+
+function countFacetValues<T extends string>(
+  values: { value: string; count: number }[] | undefined,
+): Partial<Record<T, number>> {
+  return Object.fromEntries(values?.map((facet) => [facet.value, facet.count]) ?? []) as Partial<
+    Record<T, number>
+  >
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
 }
 
 /**
@@ -152,29 +177,101 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
     runs,
   } = useApp()
   const [actionStatus, setActionStatus] = useState<PlanActionStatus | "all">("all")
+  const [actionStatusCounts, setActionStatusCounts] = useState<
+    Partial<Record<PlanActionStatus, number>>
+  >({})
+  const [actionTypeCounts, setActionTypeCounts] = useState<Partial<Record<string, number>>>({})
+  const [actionFacetTotal, setActionFacetTotal] = useState<number | null>(null)
+  const [actionFacetErrors, setActionFacetErrors] = useState<string[]>([])
+  const [matchingRun, setMatchingRun] = useState<RunSummary | null>(null)
+  const [matchingRunErrors, setMatchingRunErrors] = useState<string[]>([])
 
   useEffect(() => {
-    void loadPlanDetail(planId, actionStatus)
-  }, [actionStatus, loadPlanDetail, planId])
+    void loadPlanDetail(planId)
+  }, [loadPlanDetail, planId])
+
+  useEffect(() => {
+    let cancelled = false
+    setActionFacetErrors([])
+    getPlanFacets(planId)
+      .then((response) => {
+        if (cancelled) return
+        setActionStatusCounts(countFacetValues<PlanActionStatus>(response.facets.status))
+        setActionTypeCounts(countFacetValues(response.facets.action_type))
+        setActionFacetTotal(response.total)
+        setActionFacetErrors(response.errors)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setActionStatusCounts({})
+        setActionTypeCounts({})
+        setActionFacetTotal(null)
+        setActionFacetErrors([errorMessage(error, "Plan action summary failed to load.")])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [planId])
+
+  const loadActionsPage = useCallback(
+    (cursor?: string) =>
+      getPlanActionsPage(planId, {
+        cursor,
+        limit: PLAN_ACTION_PAGE_LIMIT,
+        status: actionStatus,
+      }),
+    [actionStatus, planId],
+  )
+  const actionsPage = usePagedList({
+    errorMessage: "Plan actions failed to load.",
+    loadPage: loadActionsPage,
+  })
 
   const detail = planDetails[planId]
   const errors = planDetailErrors[planId] ?? []
   const isLoaded = Object.prototype.hasOwnProperty.call(planDetails, planId) || errors.length > 0
   const isLoading = planDetailLoading[planId] ?? false
   const plan = detail?.plan ?? plans.find((candidate) => candidate.plan_id === planId) ?? null
-  const actions = detail?.actions ?? []
+  const actions = actionsPage.items
+  const runCandidates = matchingRun
+    ? [matchingRun, ...runs.filter((candidate) => candidate.run_id !== matchingRun.run_id)]
+    : runs
+
+  useEffect(() => {
+    if (!plan || !["applied", "partial_failed", "failed"].includes(plan.status)) {
+      setMatchingRun(null)
+      setMatchingRunErrors([])
+      return
+    }
+
+    let cancelled = false
+    setMatchingRunErrors([])
+    getHistoryPage({ planId, limit: 1 })
+      .then((response) => {
+        if (cancelled) return
+        setMatchingRun(response.items[0] ?? null)
+        setMatchingRunErrors(response.errors)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setMatchingRun(null)
+        setMatchingRunErrors([errorMessage(error, "Matching run failed to load.")])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [plan, planId])
 
   const counts = useMemo(() => {
-    return actions.reduce(
-      (acc, action) => {
-        acc.total += 1
-        acc[action.status] = (acc[action.status] ?? 0) + 1
-        acc[action.action_type] = (acc[action.action_type] ?? 0) + 1
-        return acc
-      },
-      { total: 0 } as Record<string, number>,
-    )
-  }, [actions])
+    return {
+      total: actions.length,
+      planned: actionStatusCounts.planned ?? 0,
+      blocked: actionStatusCounts.blocked ?? 0,
+      move: actionTypeCounts.move ?? 0,
+      refresh_metadata: actionTypeCounts.refresh_metadata ?? 0,
+    }
+  }, [actionStatusCounts, actionTypeCounts, actions.length])
 
   if (!plan) {
     if (!isLoaded || isLoading) {
@@ -210,6 +307,8 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
   }
 
   const blockedCount = blockedActionCount(plan)
+  const recordedActionCount = actionFacetTotal ?? summaryNumber(plan, "action_count")
+  const actionErrors = [...actionsPage.errors, ...actionFacetErrors]
 
   const columns: Column<PlanAction>[] = [
     {
@@ -280,9 +379,15 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
 
       <PlanStatusPanel
         plan={plan}
-        runs={runs}
+        runs={runCandidates}
         onViewRun={(runId) => navigate({ name: "run-detail", runId })}
       />
+
+      {matchingRunErrors.length > 0 ? (
+        <Notice tone="warning" title="Run link is incomplete" className="mb-6">
+          {matchingRunErrors.join(" ")}
+        </Notice>
+      ) : null}
 
       {blockedCount > 0 ? (
         <Notice
@@ -304,7 +409,7 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
         className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
       >
         <MetricCard label="Shown" value={counts.total ?? 0} tone="neutral" />
-        <MetricCard label="Recorded" value={detail?.total_action_count ?? 0} tone="neutral" />
+        <MetricCard label="Recorded" value={recordedActionCount} tone="neutral" />
         <MetricCard label="Planned" value={counts.planned ?? 0} tone="info" />
         <MetricCard label="Blocked" value={counts.blocked ?? 0} tone="danger" />
         <MetricCard label="Moves" value={counts.move ?? 0} tone="neutral" />
@@ -355,6 +460,11 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
           />
         }
       >
+        {actionErrors.length > 0 ? (
+          <Notice tone="warning" title="Plan actions are incomplete" className="mb-4">
+            {actionErrors.join(" ")}
+          </Notice>
+        ) : null}
         <DataTable
           columns={columns}
           rows={actions}
@@ -364,9 +474,19 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
           empty={
             <EmptyState
               icon={FileDiff}
-              title={isLoading ? "Loading actions..." : "No actions match this filter."}
+              title={
+                isLoading || !actionsPage.loaded
+                  ? "Loading actions..."
+                  : "No actions match this filter."
+              }
             />
           }
+          loadMore={{
+            hasMore: actionsPage.hasMore,
+            loading: actionsPage.loadingMore,
+            onLoadMore: actionsPage.loadMore,
+            total: actionsPage.page?.total ?? actions.length,
+          }}
         />
       </Panel>
     </>

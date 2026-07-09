@@ -17,6 +17,7 @@ from omym2.config import (
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     ALLOWED_UI_THEMES,
 )
+from omym2.shared.pagination import encode_cursor
 
 if TYPE_CHECKING:
     from omym2.adapters.web.schemas.settings_changes import SettingsChange
@@ -31,8 +32,8 @@ if TYPE_CHECKING:
     from omym2.domain.models.track_metadata import TrackMetadata
     from omym2.features.artist_ids.dto import GenerateArtistIdsResult
     from omym2.features.organize.dto import OrganizeLibraryResult
-    from omym2.features.plans.dto import PlanDetail
     from omym2.features.settings.dto import PathPolicyPreviewResult, ValidateSettingsResult
+    from omym2.shared.pagination import FacetValue, GroupCount
 
 
 def serialize_app_config(config: AppConfig) -> dict[str, object]:
@@ -134,9 +135,9 @@ def serialize_run_summary(run: Run) -> dict[str, object]:
     }
 
 
-def serialize_run_detail(run: Run, file_events: tuple[FileEvent, ...]) -> dict[str, object]:
-    """Return a JSON-safe Run detail payload."""
-    return {"run": serialize_run_summary(run), "file_events": [serialize_file_event(event) for event in file_events]}
+def serialize_run_header_response(run: Run) -> dict[str, object]:
+    """Return a JSON-safe header-only Run detail payload (no embedded file_events)."""
+    return {"run": serialize_run_summary(run)}
 
 
 def serialize_file_event(event: FileEvent) -> dict[str, object]:
@@ -184,6 +185,25 @@ def serialize_track_summary(track: Track) -> dict[str, object]:
         "first_seen_at": track.first_seen_at.isoformat(),
         "last_seen_at": track.last_seen_at.isoformat(),
         "updated_at": track.updated_at.isoformat(),
+    }
+
+
+def serialize_facet_value(facet: FacetValue) -> dict[str, object]:
+    """Return a JSON-safe FacetValue payload."""
+    return {"value": facet.value, "count": facet.count}
+
+
+def serialize_group_count(group: GroupCount) -> dict[str, object]:
+    """Return a JSON-safe GroupCount payload."""
+    return {"key": group.key, "label": group.label, "count": group.count}
+
+
+def serialize_page_info(*, limit: int, next_cursor_key: tuple[str, ...] | None, total: int) -> dict[str, object]:
+    """Return a JSON-safe page-info payload for keyset-paginated list endpoints."""
+    return {
+        "limit": limit,
+        "next_cursor": None if next_cursor_key is None else encode_cursor(next_cursor_key),
+        "total": total,
     }
 
 
@@ -242,13 +262,9 @@ def serialize_plan_action(action: PlanAction) -> dict[str, object]:
     }
 
 
-def serialize_plan_detail(detail: PlanDetail) -> dict[str, object]:
-    """Return a JSON-safe Plan detail payload."""
-    return serialize_plan_detail_parts(
-        detail.plan,
-        detail.actions,
-        total_action_count=detail.total_action_count,
-    )
+def serialize_plan_header_response(plan: Plan) -> dict[str, object]:
+    """Return a JSON-safe header-only Plan detail payload (no actions, no total_action_count)."""
+    return {"plan": serialize_plan_header(plan)}
 
 
 def serialize_plan_detail_parts(

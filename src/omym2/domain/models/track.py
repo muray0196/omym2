@@ -26,6 +26,12 @@ class TrackStatus(StrEnum):
     REMOVED = "removed"
 
 
+class TrackGrouping(StrEnum):
+    """Known Track group-by query groupings."""
+
+    ARTIST_ALBUM = "artist_album"
+
+
 @dataclass(frozen=True, slots=True)
 class Track:
     """Current managed state of one music file known to OMYM2."""

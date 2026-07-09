@@ -1,18 +1,17 @@
+/*
+Summary: Renders paged Plan browsing and Plan creation controls.
+Why: Supports reviewing large Plan histories without full-list API reads.
+*/
+
 "use client"
 
-import {
-  ClipboardList,
-  FolderInput,
-  FolderTree,
-  Plus,
-  RefreshCcw,
-  Search,
-  Table2,
-} from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
-import { useApp, type PlanFilters } from "../app-context"
+import { ClipboardList, FolderInput, FolderTree, Plus, RefreshCcw, Table2 } from "lucide-react"
+import { useCallback, useMemo, useState } from "react"
+import { getPlansPage } from "../api-client"
+import { useApp } from "../app-context"
 import { diffConfig, formatTimestamp, truncateMiddle } from "../lib"
 import type { PlanCreateResult, PlanStatus, PlanSummary, PlanType } from "../types"
+import { usePagedList } from "../use-paged-list"
 import { Field, Select, TextInput, Toggle } from "../forms"
 import {
   Button,
@@ -48,10 +47,10 @@ const TYPE_OPTIONS: { value: PlanType | "all"; label: string }[] = [
 ]
 
 const LIMIT_OPTIONS = [
-  { value: "10", label: "10 newest" },
-  { value: "25", label: "25 newest" },
-  { value: "50", label: "50 newest" },
-  { value: "100", label: "100 newest" },
+  { value: "10", label: "10 / page" },
+  { value: "25", label: "25 / page" },
+  { value: "50", label: "50 / page" },
+  { value: "100", label: "100 / page" },
 ]
 
 type CreateMode = "add" | "organize" | "refresh"
@@ -240,19 +239,28 @@ function CreatePlanPanel() {
 }
 
 export function PlansScreen() {
-  const { loadPlans, navigate, planErrors, plans, plansLoaded } = useApp()
+  const { navigate } = useApp()
   const [status, setStatus] = useState<PlanStatus | "all">("all")
   const [planType, setPlanType] = useState<PlanType | "all">("all")
   const [limit, setLimit] = useState(25)
-  const [query, setQuery] = useState("")
 
-  useEffect(() => {
-    const filters: PlanFilters = { status, type: planType, limit }
-    void loadPlans(filters)
-  }, [limit, loadPlans, planType, status])
+  const loadPlansPage = useCallback(
+    (cursor?: string) =>
+      getPlansPage({
+        cursor,
+        limit,
+        status,
+        type: planType,
+      }),
+    [limit, planType, status],
+  )
+  const plansPage = usePagedList({
+    errorMessage: "Plans failed to load.",
+    loadPage: loadPlansPage,
+  })
 
   const counts = useMemo(() => {
-    return plans.reduce(
+    return plansPage.items.reduce(
       (acc, plan) => {
         acc.total += 1
         acc[plan.status] = (acc[plan.status] ?? 0) + 1
@@ -260,20 +268,9 @@ export function PlansScreen() {
       },
       { total: 0 } as Record<string, number>,
     )
-  }, [plans])
+  }, [plansPage.items])
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return plans
-    return plans.filter((plan) => {
-      return (
-        plan.plan_id.toLowerCase().includes(needle) ||
-        plan.library_id.toLowerCase().includes(needle) ||
-        plan.plan_type.toLowerCase().includes(needle) ||
-        plan.status.toLowerCase().includes(needle)
-      )
-    })
-  }, [plans, query])
+  const matchingTotal = plansPage.page?.total ?? plansPage.items.length
 
   const columns: Column<PlanSummary>[] = [
     {
@@ -331,33 +328,16 @@ export function PlansScreen() {
         aria-label="Plan summary"
         className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
       >
-        <MetricCard label="Total" value={counts.total ?? 0} tone="neutral" />
-        <MetricCard label="Ready" value={counts.ready ?? 0} tone="info" />
-        <MetricCard label="Applied" value={counts.applied ?? 0} tone="success" />
-        <MetricCard label="Partial failed" value={counts.partial_failed ?? 0} tone="warning" />
-        <MetricCard label="Failed" value={counts.failed ?? 0} tone="danger" />
+        <MetricCard label="Matching" value={matchingTotal} tone="neutral" />
+        <MetricCard label="Loaded" value={counts.total ?? 0} tone="neutral" />
+        <MetricCard label="Loaded ready" value={counts.ready ?? 0} tone="info" />
+        <MetricCard label="Loaded applied" value={counts.applied ?? 0} tone="success" />
+        <MetricCard label="Loaded failed" value={counts.failed ?? 0} tone="danger" />
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <Panel title="Plan review" icon={ClipboardList} bodyClassName="flex flex-col gap-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_10rem_8rem]">
-            <Field label="Search">
-              {(id) => (
-                <div className="relative">
-                  <Search
-                    className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-mute"
-                    aria-hidden="true"
-                  />
-                  <TextInput
-                    id={id}
-                    className="pl-8"
-                    placeholder="Search plans..."
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                  />
-                </div>
-              )}
-            </Field>
+          <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Status">
               {(id) => (
                 <Select
@@ -390,29 +370,35 @@ export function PlansScreen() {
             </Field>
           </div>
 
-          {planErrors.length > 0 ? (
+          {plansPage.errors.length > 0 ? (
             <Notice tone="warning" title="Plan data is incomplete">
-              {planErrors.join(" ")}
+              {plansPage.errors.join(" ")}
             </Notice>
           ) : null}
 
           <DataTable
             columns={columns}
-            rows={filtered}
+            rows={plansPage.items}
             getRowKey={(plan) => plan.plan_id}
             onRowClick={(plan) => navigate({ name: "plan-detail", planId: plan.plan_id })}
             caption="Plans"
             empty={
               <EmptyState
                 icon={Table2}
-                title={plansLoaded ? "No plans match your filters." : "Loading plans..."}
+                title={plansPage.loaded ? "No plans match these filters." : "Loading plans..."}
                 description={
-                  plansLoaded
+                  plansPage.loaded
                     ? "Adjust filters or create a new Plan."
                     : "Plans will appear here once they are loaded."
                 }
               />
             }
+            loadMore={{
+              hasMore: plansPage.hasMore,
+              loading: plansPage.loadingMore,
+              onLoadMore: plansPage.loadMore,
+              total: matchingTotal,
+            }}
           />
         </Panel>
 

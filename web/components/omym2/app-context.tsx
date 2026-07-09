@@ -1,3 +1,8 @@
+/*
+Summary: Provides shell state and navigation for the OMYM2 console.
+Why: Shares settings, CSRF, and detail fallbacks across client screens.
+*/
+
 "use client"
 
 import {
@@ -13,13 +18,10 @@ import {
   createAddPlan as createAddPlanRequest,
   createOrganizePlan as createOrganizePlanRequest,
   createRefreshPlan as createRefreshPlanRequest,
-  getCheck,
-  getHistory,
+  getHistoryPage,
   getPlanDetail,
-  getPlans,
   getRunDetail,
   getSettings,
-  getTracks,
   generateArtistIds as generateArtistIdsRequest,
   saveSettings as saveSettingsRequest,
   validateSettings,
@@ -28,21 +30,19 @@ import { savedArtistIdEntries } from "./lib"
 import { defaultConfig, mockSettingsState } from "./mock-data"
 import type {
   AppConfig,
-  CheckIssue,
   PathPreview,
-  PlanActionStatus,
   PlanCreateResult,
   PlanDetail,
-  PlanStatus,
   PlanSummary,
-  PlanType,
   RunDetail,
   RunSummary,
   SettingsChange,
   SettingsChoices,
-  TrackSummary,
   ValidationResult,
 } from "./types"
+
+const INITIAL_RUN_LIMIT = 30
+const RUN_POLL_INTERVAL_MS = 5000
 
 export type Route =
   | { name: "dashboard" }
@@ -57,12 +57,6 @@ export type Route =
 
 export type NavKey =
   "dashboard" | "settings" | "path-policy" | "plans" | "runs" | "check" | "tracks"
-
-export interface PlanFilters {
-  status?: PlanStatus | "all"
-  type?: PlanType | "all"
-  limit?: number
-}
 
 interface AppContextValue {
   route: Route
@@ -81,27 +75,23 @@ interface AppContextValue {
   saveConfig: () => Promise<boolean>
   resetDraft: () => void
   generateArtistIds: (artistNames: string[], overwrite: boolean) => Promise<boolean>
-  checkErrors: string[]
-  checkIssues: CheckIssue[]
-  checkLoaded: boolean
   historyErrors: string[]
   historyLoaded: boolean
   loadHistory: () => Promise<void>
   createAddPlan: (sourcePath: string | null) => Promise<PlanCreateResult>
   createOrganizePlan: (libraryRoot: string | null) => Promise<PlanCreateResult>
   createRefreshPlan: (targetPath: string | null, includeAll: boolean) => Promise<PlanCreateResult>
-  loadPlanDetail: (planId: string, actionStatus?: PlanActionStatus | "all") => Promise<void>
-  loadPlans: (filters?: PlanFilters) => Promise<void>
+  loadPlanDetail: (planId: string) => Promise<void>
   planDetailErrors: Record<string, string[]>
   planDetailLoading: Record<string, boolean>
   planDetails: Record<string, PlanDetail | null>
-  planErrors: string[]
+  /** Local Plan snapshot used only as an immediate detail fallback after creation. */
   plans: PlanSummary[]
-  plansLoaded: boolean
   loadRunDetail: (runId: string) => Promise<void>
   runDetailErrors: Record<string, string[]>
   runDetailLoading: Record<string, boolean>
   runDetails: Record<string, RunDetail | null>
+  /** First Run page used for command palette entries and optimistic detail fallback. */
   runs: RunSummary[]
   settingsChoices: SettingsChoices
   settingsChanges: SettingsChange[]
@@ -110,9 +100,6 @@ interface AppContextValue {
   settingsLoadError: string | null
   settingsPreview: PathPreview
   settingsValidation: ValidationResult
-  trackErrors: string[]
-  tracks: TrackSummary[]
-  tracksLoaded: boolean
   validateDraft: () => Promise<boolean>
 }
 
@@ -142,20 +129,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [historyErrors, setHistoryErrors] = useState<string[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [plans, setPlans] = useState<PlanSummary[]>([])
-  const [planErrors, setPlanErrors] = useState<string[]>([])
-  const [plansLoaded, setPlansLoaded] = useState(false)
   const [planDetails, setPlanDetails] = useState<Record<string, PlanDetail | null>>({})
   const [planDetailErrors, setPlanDetailErrors] = useState<Record<string, string[]>>({})
   const [planDetailLoading, setPlanDetailLoading] = useState<Record<string, boolean>>({})
   const [runDetails, setRunDetails] = useState<Record<string, RunDetail | null>>({})
   const [runDetailErrors, setRunDetailErrors] = useState<Record<string, string[]>>({})
   const [runDetailLoading, setRunDetailLoading] = useState<Record<string, boolean>>({})
-  const [checkIssues, setCheckIssues] = useState<CheckIssue[]>([])
-  const [checkErrors, setCheckErrors] = useState<string[]>([])
-  const [checkLoaded, setCheckLoaded] = useState(false)
-  const [tracks, setTracks] = useState<TrackSummary[]>([])
-  const [trackErrors, setTrackErrors] = useState<string[]>([])
-  const [tracksLoaded, setTracksLoaded] = useState(false)
 
   useEffect(() => {
     function syncRouteFromLocation() {
@@ -201,48 +180,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let cancelled = false
 
     async function loadInspectionState() {
-      const [historyResult, plansResult, checkResult, tracksResult] = await Promise.allSettled([
-        getHistory(),
-        getPlans(),
-        getCheck(),
-        getTracks(),
-      ])
+      const historyResult = await getHistoryPage({ limit: INITIAL_RUN_LIMIT })
       if (cancelled) return
 
-      if (historyResult.status === "fulfilled") {
-        setRuns(historyResult.value.runs)
-        setHistoryErrors(historyResult.value.errors)
-      } else {
-        setHistoryErrors([errorMessage(historyResult.reason, "Run history failed to load.")])
-      }
+      setRuns(historyResult.items)
+      setHistoryErrors(historyResult.errors)
       setHistoryLoaded(true)
-
-      if (plansResult.status === "fulfilled") {
-        setPlans(plansResult.value.plans)
-        setPlanErrors(plansResult.value.errors)
-      } else {
-        setPlanErrors([errorMessage(plansResult.reason, "Plans failed to load.")])
-      }
-      setPlansLoaded(true)
-
-      if (checkResult.status === "fulfilled") {
-        setCheckIssues(checkResult.value.issues)
-        setCheckErrors(checkResult.value.errors)
-      } else {
-        setCheckErrors([errorMessage(checkResult.reason, "Check issues failed to load.")])
-      }
-      setCheckLoaded(true)
-
-      if (tracksResult.status === "fulfilled") {
-        setTracks(tracksResult.value.tracks)
-        setTrackErrors(tracksResult.value.errors)
-      } else {
-        setTrackErrors([errorMessage(tracksResult.reason, "Tracks failed to load.")])
-      }
-      setTracksLoaded(true)
     }
 
-    void loadInspectionState()
+    loadInspectionState().catch((error: unknown) => {
+      if (cancelled) return
+      setHistoryErrors([errorMessage(error, "Run history failed to load.")])
+      setHistoryLoaded(true)
+    })
     return () => {
       cancelled = true
     }
@@ -267,8 +217,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const loadHistory = useCallback(async () => {
     try {
-      const result = await getHistory()
-      setRuns(result.runs)
+      const result = await getHistoryPage({ limit: INITIAL_RUN_LIMIT })
+      setRuns(result.items)
       setHistoryErrors(result.errors)
     } catch (error: unknown) {
       setHistoryErrors([errorMessage(error, "Run history failed to load.")])
@@ -286,44 +236,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!hasRunningRun) return
     const interval = setInterval(() => {
       void loadHistory()
-    }, 5000)
+    }, RUN_POLL_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [hasRunningRun, loadHistory])
 
-  const loadPlans = useCallback(async (filters: PlanFilters = {}) => {
+  const loadPlanDetail = useCallback(async (planId: string) => {
+    setPlanDetailLoading((current) => ({ ...current, [planId]: true }))
     try {
-      const result = await getPlans(filters)
-      setPlans(result.plans)
-      setPlanErrors(result.errors)
+      const result = await getPlanDetail(planId)
+      setPlanDetails((current) => ({ ...current, [planId]: result.detail }))
+      setPlanDetailErrors((current) => ({ ...current, [planId]: result.errors }))
     } catch (error: unknown) {
-      setPlanErrors([errorMessage(error, "Plans failed to load.")])
+      setPlanDetails((current) => ({ ...current, [planId]: null }))
+      setPlanDetailErrors((current) => ({
+        ...current,
+        [planId]: [errorMessage(error, "Plan detail failed to load.")],
+      }))
     } finally {
-      setPlansLoaded(true)
+      setPlanDetailLoading((current) => ({ ...current, [planId]: false }))
     }
   }, [])
 
-  const loadPlanDetail = useCallback(
-    async (planId: string, actionStatus: PlanActionStatus | "all" = "all") => {
-      setPlanDetailLoading((current) => ({ ...current, [planId]: true }))
-      try {
-        const result = await getPlanDetail(planId, actionStatus)
-        setPlanDetails((current) => ({ ...current, [planId]: result.detail }))
-        setPlanDetailErrors((current) => ({ ...current, [planId]: result.errors }))
-      } catch (error: unknown) {
-        setPlanDetails((current) => ({ ...current, [planId]: null }))
-        setPlanDetailErrors((current) => ({
-          ...current,
-          [planId]: [errorMessage(error, "Plan detail failed to load.")],
-        }))
-      } finally {
-        setPlanDetailLoading((current) => ({ ...current, [planId]: false }))
-      }
-    },
-    [],
-  )
-
   const recordCreatedPlan = useCallback((result: PlanCreateResult) => {
-    setPlanErrors(result.errors)
     const detail = result.detail
     if (!detail) return
     setPlans((current) => upsertPlan(current, detail.plan))
@@ -344,7 +278,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           registration: null,
           errors: [errorMessage(error, "Add Plan creation failed.")],
         }
-        setPlanErrors(result.errors)
         return result
       }
     },
@@ -364,7 +297,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           registration: null,
           errors: [errorMessage(error, "Organize Plan creation failed.")],
         }
-        setPlanErrors(result.errors)
         return result
       }
     },
@@ -384,7 +316,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           registration: null,
           errors: [errorMessage(error, "Refresh Plan creation failed.")],
         }
-        setPlanErrors(result.errors)
         return result
       }
     },
@@ -475,9 +406,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return false
         }
       },
-      checkErrors,
-      checkIssues,
-      checkLoaded,
       createAddPlan,
       createOrganizePlan,
       createRefreshPlan,
@@ -485,13 +413,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       historyLoaded,
       loadHistory,
       loadPlanDetail,
-      loadPlans,
       planDetailErrors,
       planDetailLoading,
       planDetails,
-      planErrors,
       plans,
-      plansLoaded,
       loadRunDetail,
       runDetailErrors,
       runDetailLoading,
@@ -504,9 +429,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       settingsLoadError,
       settingsPreview,
       settingsValidation,
-      trackErrors,
-      tracks,
-      tracksLoaded,
       validateDraft: async () => {
         try {
           const result = await validateSettings(draftConfig)
@@ -528,9 +450,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
     }),
     [
-      checkErrors,
-      checkIssues,
-      checkLoaded,
       createAddPlan,
       createOrganizePlan,
       createRefreshPlan,
@@ -540,14 +459,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       historyLoaded,
       loadHistory,
       loadPlanDetail,
-      loadPlans,
       loadRunDetail,
       planDetailErrors,
       planDetailLoading,
       planDetails,
-      planErrors,
       plans,
-      plansLoaded,
       route,
       runDetailErrors,
       runDetailLoading,
@@ -561,9 +477,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       settingsLoadError,
       settingsPreview,
       settingsValidation,
-      trackErrors,
-      tracks,
-      tracksLoaded,
     ],
   )
 

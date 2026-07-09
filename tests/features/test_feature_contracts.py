@@ -25,9 +25,9 @@ from omym2.features.check.dto import CheckLibraryRequest
 from omym2.features.check.ports import CheckLibraryPorts
 from omym2.features.check.usecases.check_library import CheckLibraryUseCase
 from omym2.features.common_ports import FileSystemPath, Uuid7IdGenerator
-from omym2.features.history.dto import GetRunDetailRequest, ListRunsRequest
+from omym2.features.history.dto import GetRunHeaderRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
-from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase, RunNotFoundError
+from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase, RunNotFoundError
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.undo.dto import CreateUndoPlanRequest
 from omym2.features.undo.ports import CreateUndoPlanPorts
@@ -191,15 +191,17 @@ def test_diagnostics_and_recovery_usecases_handle_empty_repository_contracts() -
     id_generator = SequenceIdGenerator()
 
     assert (
-        CheckLibraryUseCase(CheckLibraryPorts(uow, scanner, snapshot_reader, config_store, path_resolver)).execute(
-            CheckLibraryRequest()
+        CheckLibraryUseCase(
+            CheckLibraryPorts(uow, scanner, snapshot_reader, config_store, path_resolver, clock, id_generator)
         )
+        .execute(CheckLibraryRequest())
+        .issues
         == ()
     )
-    assert ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest()) == ()
+    assert ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest()).items == ()
 
     with pytest.raises(RunNotFoundError):
-        _ = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunDetailRequest(RUN_ID))
+        _ = GetRunHeaderUseCase(HistoryPorts(uow)).execute(GetRunHeaderRequest(RUN_ID))
 
     with pytest.raises(UndoPlanError):
         _ = CreateUndoPlanUseCase(

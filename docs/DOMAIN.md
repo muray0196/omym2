@@ -1,9 +1,9 @@
 ---
 type: Domain Model
 title: Domain
-description: Defines OMYM2's core domain entities (AppConfig, FileScanEntry, FileSnapshot, TrackMetadata, PathPolicy, Library, Track, Plan, PlanAction, Run, FileEvent, CheckIssue), their invariants, and the UUIDv7-based ID design policy.
+description: Defines OMYM2's core domain entities (AppConfig, FileScanEntry, FileSnapshot, TrackMetadata, PathPolicy, Library, Track, Plan, PlanAction, Run, FileEvent, CheckIssue, CheckRun), their invariants, and the UUIDv7-based ID design policy.
 tags: [domain-model, entities, invariants, id-design]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-10T09:00:00+09:00
 ---
 
 # Domain
@@ -297,9 +297,22 @@ An inconsistency detected between OMYM2's last known managed state and the actua
 
 Allowed issue types are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#checkissue-issue-type).
 
-CheckIssue is not persisted as primary state in the initial version. It is calculated by `check` from the DB and filesystem observations.
+CheckIssue is calculated by `check` from DB and filesystem observations, then persisted as part of the owning Library's latest CheckRun (below) so Web and CLI browsing read stored findings instead of recomputing them on every request.
 
 Reported CheckIssues that refer to Library-managed files identify the owning Library through `library_id`.
+
+## CheckRun
+
+The persisted record of one Library's latest completed check run.
+
+Representative fields:
+
+* check_run_id
+* library_id
+* checked_at
+* total_count
+
+A Library has at most one CheckRun at a time: each new check run for a Library replaces its prior CheckRun and prior CheckIssues wholesale. CheckRun and CheckIssue persistence is authoritative in [contracts/db-schema.md](contracts/db-schema.md#check_runs).
 
 ## Domain Invariants
 
@@ -334,6 +347,7 @@ plan_id         UUIDv7 generated when a Plan is created
 run_id          UUIDv7 generated when an apply attempt starts
 action_id       UUIDv7 generated when a PlanAction is created
 event_id        UUIDv7 generated when a FileEvent is created
+check_run_id    UUIDv7 generated when a check run is persisted
 ```
 
 `track_id` must not be derived from:

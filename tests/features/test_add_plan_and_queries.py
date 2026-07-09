@@ -38,9 +38,10 @@ from omym2.features.add.usecases.create_add_plan import (
     AddLibrarySelectionError,
     CreateAddPlanUseCase,
 )
-from omym2.features.plans.dto import GetPlanDetailRequest, ListPlansRequest
+from omym2.features.plans.dto import GetPlanHeaderRequest, ListPlanActionsRequest, ListPlansRequest
 from omym2.features.plans.ports import PlanQueryPorts
-from omym2.features.plans.usecases.get_plan_detail import GetPlanDetailUseCase
+from omym2.features.plans.usecases.get_plan_header import GetPlanHeaderUseCase
+from omym2.features.plans.usecases.list_plan_actions import ListPlanActionsUseCase
 from omym2.features.plans.usecases.list_plans import ListPlansUseCase
 from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
@@ -563,12 +564,13 @@ def test_plans_list_and_detail_usecases_return_recorded_actions() -> None:
     plan = CreateAddPlanUseCase(add_ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
     query_ports = PlanQueryPorts(uow=uow)
 
-    plans = ListPlansUseCase(query_ports).execute(ListPlansRequest())
-    detail = GetPlanDetailUseCase(query_ports).execute(GetPlanDetailRequest(PLAN_ID))
+    plans_page = ListPlansUseCase(query_ports).execute(ListPlansRequest())
+    header = GetPlanHeaderUseCase(query_ports).execute(GetPlanHeaderRequest(PLAN_ID))
+    actions_page = ListPlanActionsUseCase(query_ports).execute(ListPlanActionsRequest(plan_id=PLAN_ID))
 
-    assert plans == (plan,)
-    assert detail.plan == plan
-    assert detail.actions == plan.actions
+    assert plans_page.items == (plan,)
+    assert header == plan
+    assert actions_page.items == plan.actions
 
 
 class StaticConfigStore:

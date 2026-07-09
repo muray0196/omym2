@@ -1,10 +1,24 @@
+/*
+Summary: Renders the OMYM2 console readiness dashboard.
+Why: Summarizes settings, runs, checks, and tracks without loading full tables.
+*/
+
 "use client"
 
 import { Database, FolderTree, ListChecks, Music, ShieldCheck, Terminal } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import {
+  getCheckFacets,
+  getHistoryFacets,
+  getHistoryPage,
+  getTrackFacets,
+  getTracksPage,
+} from "../api-client"
 import { useApp } from "../app-context"
 import { CommandPaletteTrigger } from "../command-palette"
 import { AppIconTile, CommandRow } from "../command-kit"
 import { formatTimestamp, severityForIssue, truncateMiddle, validateConfig } from "../lib"
+import type { CheckIssueType, RunStatus, RunSummary, TrackStatus } from "../types"
 import {
   Button,
   EmptyState,
@@ -18,22 +32,127 @@ import {
 } from "../primitives"
 import { CliCommand } from "../widgets"
 
+const DASHBOARD_RUN_LIMIT = 4
+
+function facetCounts<T extends string>(
+  facets: Record<string, { value: string; count: number }[]>,
+  field: string,
+): Partial<Record<T, number>> {
+  return Object.fromEntries(
+    facets[field]?.map((facet) => [facet.value, facet.count]) ?? [],
+  ) as Partial<Record<T, number>>
+}
+
+function sumCounts<T extends string>(counts: Partial<Record<T, number>>, values: T[]): number {
+  return values.reduce((total, value) => total + (counts[value] ?? 0), 0)
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
+}
+
 export function DashboardScreen() {
-  const {
-    checkErrors,
-    checkIssues,
-    checkLoaded,
-    historyErrors,
-    historyLoaded,
-    navigate,
-    runs,
-    savedConfig,
-    settingsLoaded,
-    settingsLoadError,
-    trackErrors,
-    tracks,
-    tracksLoaded,
-  } = useApp()
+  const { navigate, savedConfig, settingsLoaded, settingsLoadError } = useApp()
+  const [recentRuns, setRecentRuns] = useState<RunSummary[]>([])
+  const [historyStatusCounts, setHistoryStatusCounts] = useState<
+    Partial<Record<RunStatus, number>>
+  >({})
+  const [historyErrors, setHistoryErrors] = useState<string[]>([])
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [checkIssueCounts, setCheckIssueCounts] = useState<Partial<Record<CheckIssueType, number>>>(
+    {},
+  )
+  const [checkTotal, setCheckTotal] = useState<number | null>(null)
+  const [checkErrors, setCheckErrors] = useState<string[]>([])
+  const [checkLoaded, setCheckLoaded] = useState(false)
+  const [trackStatusCounts, setTrackStatusCounts] = useState<Partial<Record<TrackStatus, number>>>(
+    {},
+  )
+  const [trackTotal, setTrackTotal] = useState<number | null>(null)
+  const [trackErrors, setTrackErrors] = useState<string[]>([])
+  const [tracksLoaded, setTracksLoaded] = useState(false)
+  const [trackSampleLibraryId, setTrackSampleLibraryId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadDashboardState() {
+      const [
+        historyPageResult,
+        historyFacetsResult,
+        checkFacetsResult,
+        trackFacetsResult,
+        trackSampleResult,
+      ] = await Promise.allSettled([
+        getHistoryPage({ limit: DASHBOARD_RUN_LIMIT }),
+        getHistoryFacets(),
+        getCheckFacets(),
+        getTrackFacets(),
+        getTracksPage({ limit: 1 }),
+      ])
+      if (cancelled) return
+
+      const nextHistoryErrors: string[] = []
+      if (historyPageResult.status === "fulfilled") {
+        setRecentRuns(historyPageResult.value.items)
+        nextHistoryErrors.push(...historyPageResult.value.errors)
+      } else {
+        nextHistoryErrors.push(
+          errorMessage(historyPageResult.reason, "Recent run history failed to load."),
+        )
+      }
+      if (historyFacetsResult.status === "fulfilled") {
+        setHistoryStatusCounts(facetCounts<RunStatus>(historyFacetsResult.value.facets, "status"))
+        nextHistoryErrors.push(...historyFacetsResult.value.errors)
+      } else {
+        nextHistoryErrors.push(
+          errorMessage(historyFacetsResult.reason, "Run status summary failed to load."),
+        )
+      }
+      setHistoryErrors(nextHistoryErrors)
+      setHistoryLoaded(true)
+
+      if (checkFacetsResult.status === "fulfilled") {
+        setCheckIssueCounts(
+          facetCounts<CheckIssueType>(checkFacetsResult.value.facets, "issue_type"),
+        )
+        setCheckTotal(checkFacetsResult.value.total)
+        setCheckErrors(checkFacetsResult.value.errors)
+      } else {
+        setCheckIssueCounts({})
+        setCheckTotal(null)
+        setCheckErrors([errorMessage(checkFacetsResult.reason, "Check summary failed to load.")])
+      }
+      setCheckLoaded(true)
+
+      const nextTrackErrors: string[] = []
+      if (trackFacetsResult.status === "fulfilled") {
+        setTrackStatusCounts(facetCounts<TrackStatus>(trackFacetsResult.value.facets, "status"))
+        setTrackTotal(trackFacetsResult.value.total)
+        nextTrackErrors.push(...trackFacetsResult.value.errors)
+      } else {
+        setTrackStatusCounts({})
+        setTrackTotal(null)
+        nextTrackErrors.push(
+          errorMessage(trackFacetsResult.reason, "Track summary failed to load."),
+        )
+      }
+      if (trackSampleResult.status === "fulfilled") {
+        setTrackSampleLibraryId(trackSampleResult.value.items[0]?.library_id ?? null)
+        nextTrackErrors.push(...trackSampleResult.value.errors)
+      } else {
+        nextTrackErrors.push(errorMessage(trackSampleResult.reason, "Track sample failed to load."))
+      }
+      setTrackErrors(nextTrackErrors)
+      setTracksLoaded(true)
+    }
+
+    void loadDashboardState()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const validation = validateConfig(savedConfig)
   // "Ready" means actually loaded from the backend. When loading finished
   // via failure, keep the placeholder values — never present the fabricated
@@ -43,19 +162,25 @@ export function DashboardScreen() {
   const settingsPendingHint = settingsFailed ? "Failed to load" : "Loading settings..."
   const libraryConfigured = Boolean(savedConfig.paths.library)
   const incomingConfigured = Boolean(savedConfig.paths.incoming)
-  const lastRun = runs
+  const lastRun = recentRuns
     .filter((r) => r.status !== "running")
     .sort((a, b) => b.started_at.localeCompare(a.started_at))[0]
-  const runningCount = runs.filter((r) => r.status === "running").length
-  const issueCount = checkIssues.length
-  const errorIssues = checkIssues.filter(
-    (i) => (i.severity ?? severityForIssue(i.issue_type)) === "error",
-  ).length
-  const warningIssues = checkIssues.filter(
-    (i) => (i.severity ?? severityForIssue(i.issue_type)) === "warning",
-  ).length
-  const knownLibraryId =
-    tracks[0]?.library_id ?? runs[0]?.library_id ?? checkIssues[0]?.library_id ?? null
+  const runningCount = historyStatusCounts.running ?? 0
+  const issueCount =
+    checkTotal ?? Object.values(checkIssueCounts).reduce((total, count) => total + (count ?? 0), 0)
+  const issueSeverityCounts = useMemo(() => {
+    const counts = { error: 0, warning: 0 }
+    for (const [issueType, count] of Object.entries(checkIssueCounts)) {
+      const severity = severityForIssue(issueType as CheckIssueType)
+      if (severity === "error" || severity === "warning") {
+        counts[severity] += count ?? 0
+      }
+    }
+    return counts
+  }, [checkIssueCounts])
+  const errorIssues = issueSeverityCounts.error
+  const warningIssues = issueSeverityCounts.warning
+  const knownLibraryId = trackSampleLibraryId ?? recentRuns[0]?.library_id ?? null
   const inspectionErrors = [...historyErrors, ...checkErrors, ...trackErrors]
 
   // Recommended next CLI command.
@@ -65,11 +190,6 @@ export function DashboardScreen() {
         command: "omym2 add",
         description: "Ready for daily import. Scans incoming files and builds a reviewable Plan.",
       }
-
-  const recentRuns = runs
-    .slice()
-    .sort((a, b) => b.started_at.localeCompare(a.started_at))
-    .slice(0, 4)
 
   return (
     <>
@@ -175,9 +295,13 @@ export function DashboardScreen() {
         />
         <MetricCard
           label="Managed tracks"
-          value={tracksLoaded ? tracks.filter((t) => t.status === "active").length : "—"}
+          value={tracksLoaded ? (trackStatusCounts.active ?? 0) : "—"}
           tone="neutral"
-          hint={tracksLoaded ? `${tracks.length} total records` : "Loading tracks..."}
+          hint={
+            tracksLoaded
+              ? `${trackTotal ?? sumCounts(trackStatusCounts, ["active", "removed"])} total records`
+              : "Loading tracks..."
+          }
           icon={Music}
         />
       </section>

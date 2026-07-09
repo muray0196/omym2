@@ -72,6 +72,16 @@ REQUIRED_TABLES = {
     "tracks",
 }
 
+REQUIRED_BROWSING_INDEXES = {
+    "idx_plans_created",
+    "idx_plans_library_created",
+    "idx_tracks_current_path",
+    "idx_tracks_status",
+    "idx_plan_actions_status",
+    "idx_plan_actions_type",
+    "idx_runs_started",
+}
+
 
 def test_sqlite_migrations_create_required_tables(tmp_path: Path) -> None:
     """Migration runner creates the SQLite table set."""
@@ -80,6 +90,15 @@ def test_sqlite_migrations_create_required_tables(tmp_path: Path) -> None:
     migrate_database(database_file)
 
     assert _table_names(database_file) >= REQUIRED_TABLES
+
+
+def test_sqlite_migrations_create_browsing_indexes(tmp_path: Path) -> None:
+    """Browsing migrations create every Plan/Track/PlanAction/Run browsing index."""
+    database_file = default_application_paths(tmp_path).database_file
+
+    migrate_database(database_file)
+
+    assert _index_names(database_file) >= REQUIRED_BROWSING_INDEXES
 
 
 def test_sqlite_migration_script_rolls_back_with_marker_on_failure(
@@ -262,6 +281,18 @@ def _table_names(database_file: Path) -> set[str]:
             SELECT name
             FROM sqlite_master
             WHERE type = 'table'
+            """
+        ).fetchall()
+    return {str(row[0]) for row in cast("list[tuple[object, ...]]", rows)}
+
+
+def _index_names(database_file: Path) -> set[str]:
+    with sqlite3.connect(database_file) as connection:
+        rows = connection.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'index'
             """
         ).fetchall()
     return {str(row[0]) for row in cast("list[tuple[object, ...]]", rows)}

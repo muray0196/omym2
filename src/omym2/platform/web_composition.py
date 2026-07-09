@@ -14,6 +14,7 @@ from omym2.config import WEB_CSRF_TOKEN_BYTES
 from omym2.platform.artist_ids_composition import web_artist_language_detector, web_artist_name_resolver
 from omym2.platform.feature_composition import (
     build_check_library_ports,
+    build_check_query_ports,
     build_create_add_plan_ports,
     build_create_organize_plan_ports,
     build_create_refresh_plan_ports,
@@ -35,6 +36,7 @@ def build_api_route_context(config_path: Path | None = None, database_path: Path
     runtime = runtime_context_for(config_path, database_path)
     return ApiRouteContext(
         check_ports_factory=lambda: build_check_library_ports(runtime),
+        check_query_ports_factory=lambda: build_check_query_ports(runtime),
         csrf_token=secrets.token_urlsafe(WEB_CSRF_TOKEN_BYTES),
         history_ports_factory=lambda: build_history_ports(runtime),
         plan_query_ports_factory=lambda: build_plan_query_ports(runtime),

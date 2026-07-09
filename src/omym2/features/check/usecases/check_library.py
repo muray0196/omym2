@@ -1,6 +1,7 @@
 """
-Summary: Implements read-only Library consistency checks.
-Why: Lets users diagnose DB and filesystem drift without mutating state.
+Summary: Implements Library consistency checks and persists their findings.
+Why: Lets users diagnose DB and filesystem drift, then browse the latest findings as a cheap
+DB read instead of recomputing them on every request.
 """
 
 from __future__ import annotations
@@ -10,14 +11,17 @@ from pathlib import PurePath
 from typing import TYPE_CHECKING
 
 from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
+from omym2.domain.models.check_run import CheckRun
 from omym2.domain.models.library import LibraryStatus
 from omym2.domain.models.plan import PlanStatus
 from omym2.domain.models.plan_action import ActionStatus
 from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
+from omym2.features.check.dto import CheckLibraryResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.file_scan_entry import FileScanEntry
@@ -27,25 +31,30 @@ if TYPE_CHECKING:
     from omym2.features.check.dto import CheckLibraryRequest
     from omym2.features.check.ports import CheckLibraryPorts
     from omym2.features.common_ports import FileSystemPath, PathResolver, UnitOfWork
-    from omym2.shared.ids import RunId
+    from omym2.shared.ids import LibraryId, RunId
 
 LIBRARY_NOT_FOUND_MESSAGE = "Library was not found."
 
 
 @dataclass(frozen=True, slots=True)
 class CheckLibraryUseCase:
-    """Report consistency issues without changing DB or filesystem state."""
+    """Report consistency issues, then persist them as each Library's latest check run."""
 
     ports: CheckLibraryPorts
 
-    def execute(self, request: CheckLibraryRequest) -> tuple[CheckIssue, ...]:
-        """Report read-only consistency issues for a Library."""
+    def execute(self, request: CheckLibraryRequest) -> CheckLibraryResult:
+        """Report consistency issues for a Library and persist them as its latest check run.
+
+        Never mutates Library music files, Tracks, Plans, or Runs. Only writes to the
+        check_runs / check_issues tables that hold this diagnostic's own findings.
+        """
         config = self.ports.config_store.load()
         current_path_policy_hash = calculate_path_policy_fingerprint(
             config.path_policy,
             config.artist_ids,
             config.metadata.album_year_resolution,
         )
+        checked_at = self.ports.clock.now()
 
         with self.ports.uow as uow:
             libraries = _selected_libraries(uow, request)
@@ -58,13 +67,37 @@ class CheckLibraryUseCase:
                 )
                 plans = tuple(uow.plans.list_by_library(library.library_id))
 
-                issues.extend(_library_state_issues(library, current_path_policy_hash))
-                issues.extend(self._track_issues(library, active_tracks))
-                issues.extend(self._scan_issues(library, active_tracks))
-                issues.extend(self._plan_source_issues(uow, library, plans))
-                issues.extend(_pending_event_issues(uow, library))
+                library_issues: list[CheckIssue] = []
+                library_issues.extend(_library_state_issues(library, current_path_policy_hash))
+                library_issues.extend(self._track_issues(library, active_tracks))
+                library_issues.extend(self._scan_issues(library, active_tracks))
+                library_issues.extend(self._plan_source_issues(uow, library, plans))
+                library_issues.extend(_pending_event_issues(uow, library))
 
-            return tuple(issues)
+                self._persist_check_run(uow, library.library_id, library_issues, checked_at)
+                issues.extend(library_issues)
+
+            uow.commit()
+            return CheckLibraryResult(issues=tuple(issues), checked_at=checked_at)
+
+    def _persist_check_run(
+        self,
+        uow: UnitOfWork,
+        library_id: LibraryId,
+        issues: Sequence[CheckIssue],
+        checked_at: datetime,
+    ) -> None:
+        """Replace one Library's prior check run with its freshly computed findings."""
+        uow.check_issues.delete_for_library(library_id)
+        uow.check_runs.delete_for_library(library_id)
+        check_run = CheckRun(
+            check_run_id=self.ports.id_generator.new_check_run_id(),
+            library_id=library_id,
+            checked_at=checked_at,
+            total_count=len(issues),
+        )
+        uow.check_runs.save(check_run)
+        uow.check_issues.save_many(check_run.check_run_id, issues)
 
     def _track_issues(self, library: Library, tracks: Sequence[Track]) -> tuple[CheckIssue, ...]:
         issues: list[CheckIssue] = []

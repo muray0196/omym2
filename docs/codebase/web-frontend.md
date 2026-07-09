@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Authoritative reference for the Next.js web/ frontend layout, its audited static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
 tags: [web-frontend, nextjs, static-export, api-boundary]
-timestamp: 2026-07-07T14:00:00+09:00
+timestamp: 2026-07-10T01:21:53+09:00
 ---
 
 # Web Frontend
@@ -59,9 +59,11 @@ copy matches the source before runtime or package verification. Do not commit
 
 ## Frontend / Backend Boundary
 
+The JSON envelope, pagination/cursor, facet, and group-by contract for the browsing endpoints (`/api/tracks`, `/api/plans`, `/api/check`, `/api/history`) is authoritative in [../contracts/web-api.md](../contracts/web-api.md).
+
 The frontend talks to the backend only through the JSON API:
 
-* `web/components/omym2/api-client.ts` calls `/api/settings`, `/api/settings/validate`, `/api/settings/preview`, `/api/settings/save`, `/api/settings/artist-ids/generate`, `/api/plans`, `/api/plans/{plan_id}`, `/api/plans/add`, `/api/plans/organize`, `/api/plans/refresh`, `/api/history`, `/api/history/{run_id}`, `/api/check`, and `/api/tracks`. Settings saves, artist ID generation, and Plan creation POSTs send the CSRF token in the `X-OMYM2-CSRF-Token` header.
+* `web/components/omym2/api-client.ts` calls the Settings endpoints (`/api/settings`, `/api/settings/validate`, `/api/settings/preview`, `/api/settings/save`, `/api/settings/artist-ids/generate`) and the browsing endpoints documented in [../contracts/web-api.md](../contracts/web-api.md), including paged list, facet, group, and detail routes under `/api/tracks`, `/api/plans`, `/api/check`, and `/api/history`. Settings saves, artist ID generation, and Plan creation POSTs send the CSRF token in the `X-OMYM2-CSRF-Token` header.
 * `src/omym2/adapters/web/routes/api.py` translates JSON payloads into feature usecases (settings load / validate / preview / save, Plan list / detail / creation, history, check, tracks). Routes never read TOML or the filesystem directly; config access goes through `SettingsPorts` and the `ConfigStore` port, and Plan creation stays review-only without wiring apply or file moving.
 
 When the page is not served from localhost (or `NEXT_PUBLIC_OMYM2_API_MODE=mock` is set), `api-client.ts` returns mock data from `components/omym2/mock-data.ts` instead of calling the API, which keeps static previews working without a backend.

@@ -4,37 +4,60 @@ Why: Connects settings UI state to persisted TOML while preserving static previe
 */
 
 import {
-  mockCheckResponse,
   mockCreatePlan,
-  mockHistoryResponse,
+  mockGetCheckFacets,
+  mockGetCheckGroups,
+  mockGetCheckPage,
+  mockGetHistoryFacets,
+  mockGetHistoryPage,
+  mockGetPlanActionsPage,
+  mockGetPlanFacets,
+  mockGetPlanGroups,
+  mockGetPlansPage,
+  mockGetRunEventsPage,
+  mockGetRunEventFacets,
+  mockGetRunEventGroups,
+  mockGetTrackFacets,
+  mockGetTrackGroups,
+  mockGetTracksPage,
   mockGenerateArtistIds,
   mockPlanDetailResponse,
-  mockPlansResponse,
+  mockRunCheck,
   mockRunDetailResponse,
   mockSaveSettings,
   mockSettingsState,
-  mockTracksResponse,
   mockValidateSettings,
   mockPreviewSettings,
 } from "./mock-data"
 import type {
   AppConfig,
   ArtistIdGenerationResult,
-  CheckResponse,
-  HistoryResponse,
+  CheckFacetsResponse,
+  CheckIssueType,
+  CheckPageResponse,
+  CheckRunResponse,
+  FacetsResponse,
+  FileEvent,
+  FileEventStatus,
+  GroupsResponse,
+  PagedResponse,
+  PlanAction,
   PlanActionStatus,
   PlanCreateResult,
   PlanDetailResponse,
-  PlansResponse,
   PlanStatus,
+  PlanSummary,
   PlanType,
   RunDetailResponse,
+  RunStatus,
+  RunSummary,
   SampleMetadata,
   SettingsPreviewResult,
   SettingsSaveResult,
   SettingsState,
   SettingsValidateResult,
-  TracksResponse,
+  TrackStatus,
+  TrackSummary,
 } from "./types"
 
 const CSRF_HEADER = "X-OMYM2-CSRF-Token"
@@ -48,38 +71,6 @@ export async function getSettings(): Promise<SettingsState> {
   return requestJson<SettingsState>("/api/settings")
 }
 
-export async function getHistory(): Promise<HistoryResponse> {
-  if (isMockApiMode()) {
-    return clonePayload(mockHistoryResponse)
-  }
-  return requestJson<HistoryResponse>("/api/history")
-}
-
-export async function getPlans(
-  filters: {
-    status?: PlanStatus | "all"
-    type?: PlanType | "all"
-    limit?: number
-  } = {},
-): Promise<PlansResponse> {
-  if (isMockApiMode()) {
-    const response = clonePayload(mockPlansResponse)
-    return { ...response, plans: filterPlanRows(response.plans, filters) }
-  }
-  const params = new URLSearchParams()
-  if (filters.status && filters.status !== "all") {
-    params.set("status", filters.status)
-  }
-  if (filters.type && filters.type !== "all") {
-    params.set("type", filters.type)
-  }
-  if (filters.limit) {
-    params.set("limit", String(filters.limit))
-  }
-  const query = params.toString()
-  return requestJson<PlansResponse>(query ? `/api/plans?${query}` : "/api/plans")
-}
-
 export async function getRunDetail(runId: string): Promise<RunDetailResponse> {
   if (isMockApiMode()) {
     return clonePayload(mockRunDetailResponse(runId))
@@ -87,35 +78,11 @@ export async function getRunDetail(runId: string): Promise<RunDetailResponse> {
   return requestJson<RunDetailResponse>(`/api/history/${encodeURIComponent(runId)}`)
 }
 
-export async function getPlanDetail(
-  planId: string,
-  actionStatus?: PlanActionStatus | "all",
-): Promise<PlanDetailResponse> {
+export async function getPlanDetail(planId: string): Promise<PlanDetailResponse> {
   if (isMockApiMode()) {
-    return clonePayload(mockPlanDetailResponse(planId, actionStatus))
+    return clonePayload(mockPlanDetailResponse(planId))
   }
-  const params = new URLSearchParams()
-  if (actionStatus && actionStatus !== "all") {
-    params.set("actions", actionStatus)
-  }
-  const query = params.toString()
-  return requestJson<PlanDetailResponse>(
-    `/api/plans/${encodeURIComponent(planId)}${query ? `?${query}` : ""}`,
-  )
-}
-
-export async function getCheck(): Promise<CheckResponse> {
-  if (isMockApiMode()) {
-    return clonePayload(mockCheckResponse)
-  }
-  return requestJson<CheckResponse>("/api/check")
-}
-
-export async function getTracks(): Promise<TracksResponse> {
-  if (isMockApiMode()) {
-    return clonePayload(mockTracksResponse)
-  }
-  return requestJson<TracksResponse>("/api/tracks")
+  return requestJson<PlanDetailResponse>(`/api/plans/${encodeURIComponent(planId)}`)
 }
 
 export async function validateSettings(config: AppConfig): Promise<SettingsValidateResult> {
@@ -213,6 +180,325 @@ export async function createRefreshPlan(
   })
 }
 
+// --- Paginated Web API (D6) --------------------------------------------------
+// Screens use these cursor-paginated/faceted/grouped endpoints directly; the
+// previous top-level array responses were removed with the browsing contract.
+
+export async function getTracksPage(
+  options: {
+    query?: string
+    status?: TrackStatus | "all"
+    libraryId?: string
+    trackId?: string
+    limit?: number
+    cursor?: string
+  } = {},
+): Promise<PagedResponse<TrackSummary>> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetTracksPage(options))
+  }
+  const params = new URLSearchParams()
+  if (options.query) {
+    params.set("query", options.query)
+  }
+  if (options.status && options.status !== "all") {
+    params.set("status", options.status)
+  }
+  if (options.libraryId) {
+    params.set("library_id", options.libraryId)
+  }
+  if (options.trackId) {
+    params.set("track_id", options.trackId)
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  if (options.cursor) {
+    params.set("cursor", options.cursor)
+  }
+  const query = params.toString()
+  return requestJson<PagedResponse<TrackSummary>>(query ? `/api/tracks?${query}` : "/api/tracks")
+}
+
+export async function getTrackFacets(
+  options: { libraryId?: string } = {},
+): Promise<FacetsResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetTrackFacets(options))
+  }
+  const params = new URLSearchParams()
+  if (options.libraryId) {
+    params.set("library_id", options.libraryId)
+  }
+  const query = params.toString()
+  return requestJson<FacetsResponse>(query ? `/api/tracks/facets?${query}` : "/api/tracks/facets")
+}
+
+export async function getTrackGroups(
+  options: { libraryId?: string; limit?: number; cursor?: string } = {},
+): Promise<GroupsResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetTrackGroups(options))
+  }
+  const params = new URLSearchParams({ group_by: "artist_album" })
+  if (options.libraryId) {
+    params.set("library_id", options.libraryId)
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  if (options.cursor) {
+    params.set("cursor", options.cursor)
+  }
+  return requestJson<GroupsResponse>(`/api/tracks/groups?${params.toString()}`)
+}
+
+export async function getPlansPage(
+  options: {
+    status?: PlanStatus | "all"
+    type?: PlanType | "all"
+    limit?: number
+    cursor?: string
+  } = {},
+): Promise<PagedResponse<PlanSummary>> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetPlansPage(options))
+  }
+  const params = new URLSearchParams()
+  if (options.status && options.status !== "all") {
+    params.set("status", options.status)
+  }
+  if (options.type && options.type !== "all") {
+    params.set("type", options.type)
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  if (options.cursor) {
+    params.set("cursor", options.cursor)
+  }
+  const query = params.toString()
+  return requestJson<PagedResponse<PlanSummary>>(query ? `/api/plans?${query}` : "/api/plans")
+}
+
+export async function getPlanActionsPage(
+  planId: string,
+  options: { status?: PlanActionStatus | "all"; limit?: number; cursor?: string } = {},
+): Promise<PagedResponse<PlanAction>> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetPlanActionsPage(planId, options))
+  }
+  const params = new URLSearchParams()
+  if (options.status && options.status !== "all") {
+    params.set("status", options.status)
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  if (options.cursor) {
+    params.set("cursor", options.cursor)
+  }
+  const query = params.toString()
+  return requestJson<PagedResponse<PlanAction>>(
+    `/api/plans/${encodeURIComponent(planId)}/actions${query ? `?${query}` : ""}`,
+  )
+}
+
+export async function getPlanFacets(planId: string): Promise<FacetsResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetPlanFacets(planId))
+  }
+  return requestJson<FacetsResponse>(`/api/plans/${encodeURIComponent(planId)}/facets`)
+}
+
+export async function getPlanGroups(
+  planId: string,
+  options: { limit?: number; cursor?: string } = {},
+): Promise<GroupsResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetPlanGroups(planId, options))
+  }
+  const params = new URLSearchParams({ group_by: "target_directory" })
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  if (options.cursor) {
+    params.set("cursor", options.cursor)
+  }
+  return requestJson<GroupsResponse>(
+    `/api/plans/${encodeURIComponent(planId)}/groups?${params.toString()}`,
+  )
+}
+
+export async function getCheckPage(
+  options: {
+    issueType?: CheckIssueType | "all"
+    libraryId?: string
+    limit?: number
+    cursor?: string
+  } = {},
+): Promise<CheckPageResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetCheckPage(options))
+  }
+  const params = new URLSearchParams()
+  if (options.issueType && options.issueType !== "all") {
+    params.set("issue_type", options.issueType)
+  }
+  if (options.libraryId) {
+    params.set("library_id", options.libraryId)
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  if (options.cursor) {
+    params.set("cursor", options.cursor)
+  }
+  const query = params.toString()
+  return requestJson<CheckPageResponse>(query ? `/api/check?${query}` : "/api/check")
+}
+
+export async function getCheckFacets(
+  options: { libraryId?: string } = {},
+): Promise<CheckFacetsResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetCheckFacets(options))
+  }
+  const params = new URLSearchParams()
+  if (options.libraryId) {
+    params.set("library_id", options.libraryId)
+  }
+  const query = params.toString()
+  return requestJson<CheckFacetsResponse>(
+    query ? `/api/check/facets?${query}` : "/api/check/facets",
+  )
+}
+
+export async function getCheckGroups(
+  options: { libraryId?: string; limit?: number; cursor?: string } = {},
+): Promise<GroupsResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetCheckGroups(options))
+  }
+  const params = new URLSearchParams({ group_by: "issue_type" })
+  if (options.libraryId) {
+    params.set("library_id", options.libraryId)
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  if (options.cursor) {
+    params.set("cursor", options.cursor)
+  }
+  return requestJson<GroupsResponse>(`/api/check/groups?${params.toString()}`)
+}
+
+export async function runCheck(csrfToken: string, libraryId?: string): Promise<CheckRunResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockRunCheck(libraryId))
+  }
+  return requestJson<CheckRunResponse>("/api/check/run", {
+    body: JSON.stringify(libraryId ? { library_id: libraryId } : {}),
+    headers: { [CSRF_HEADER]: csrfToken },
+    method: "POST",
+  })
+}
+
+export async function getHistoryPage(
+  options: {
+    status?: RunStatus | "all"
+    libraryId?: string
+    planId?: string
+    limit?: number
+    cursor?: string
+  } = {},
+): Promise<PagedResponse<RunSummary>> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetHistoryPage(options))
+  }
+  const params = new URLSearchParams()
+  if (options.status && options.status !== "all") {
+    params.set("status", options.status)
+  }
+  if (options.libraryId) {
+    params.set("library_id", options.libraryId)
+  }
+  if (options.planId) {
+    params.set("plan_id", options.planId)
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  if (options.cursor) {
+    params.set("cursor", options.cursor)
+  }
+  const query = params.toString()
+  return requestJson<PagedResponse<RunSummary>>(query ? `/api/history?${query}` : "/api/history")
+}
+
+export async function getHistoryFacets(
+  options: { libraryId?: string } = {},
+): Promise<FacetsResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetHistoryFacets(options))
+  }
+  const params = new URLSearchParams()
+  if (options.libraryId) {
+    params.set("library_id", options.libraryId)
+  }
+  const query = params.toString()
+  return requestJson<FacetsResponse>(query ? `/api/history/facets?${query}` : "/api/history/facets")
+}
+
+export async function getRunEventsPage(
+  runId: string,
+  options: { status?: FileEventStatus | "all"; limit?: number; cursor?: string } = {},
+): Promise<PagedResponse<FileEvent>> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetRunEventsPage(runId, options))
+  }
+  const params = new URLSearchParams()
+  if (options.status && options.status !== "all") {
+    params.set("status", options.status)
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  if (options.cursor) {
+    params.set("cursor", options.cursor)
+  }
+  const query = params.toString()
+  return requestJson<PagedResponse<FileEvent>>(
+    `/api/history/${encodeURIComponent(runId)}/events${query ? `?${query}` : ""}`,
+  )
+}
+
+export async function getRunEventFacets(runId: string): Promise<FacetsResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetRunEventFacets(runId))
+  }
+  return requestJson<FacetsResponse>(`/api/history/${encodeURIComponent(runId)}/events/facets`)
+}
+
+export async function getRunEventGroups(
+  runId: string,
+  options: { limit?: number; cursor?: string } = {},
+): Promise<GroupsResponse> {
+  if (isMockApiMode()) {
+    return clonePayload(mockGetRunEventGroups(runId, options))
+  }
+  const params = new URLSearchParams({ group_by: "target_directory" })
+  if (options.limit) {
+    params.set("limit", String(options.limit))
+  }
+  if (options.cursor) {
+    params.set("cursor", options.cursor)
+  }
+  return requestJson<GroupsResponse>(
+    `/api/history/${encodeURIComponent(runId)}/events/groups?${params.toString()}`,
+  )
+}
+
 async function requestJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (!headers.has("Content-Type")) {
@@ -252,27 +538,6 @@ function isMockApiMode(): boolean {
 function isJsonContentType(contentType: string): boolean {
   const mediaType = contentType.split(";")[0]?.trim().toLowerCase() ?? ""
   return mediaType === "application/json" || mediaType.endsWith("+json")
-}
-
-function filterPlanRows(
-  plans: PlansResponse["plans"],
-  filters: {
-    status?: PlanStatus | "all"
-    type?: PlanType | "all"
-    limit?: number
-  },
-): PlansResponse["plans"] {
-  let filtered = plans
-  if (filters.status && filters.status !== "all") {
-    filtered = filtered.filter((plan) => plan.status === filters.status)
-  }
-  if (filters.type && filters.type !== "all") {
-    filtered = filtered.filter((plan) => plan.plan_type === filters.type)
-  }
-  if (filters.limit && filters.limit > 0) {
-    filtered = filtered.slice(0, filters.limit)
-  }
-  return filtered
 }
 
 function clonePayload<T>(payload: T): T {

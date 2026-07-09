@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events), migrations, stored JSON fields, and timestamp policy.
+description: Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events, check_runs, check_issues), migrations, indexes, stored JSON fields, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-07T00:39:14+09:00
+timestamp: 2026-07-10T01:53:50+09:00
 ---
 
 # DB Schema Contract
@@ -54,6 +54,8 @@ plans
 plan_actions
 runs
 file_events
+check_runs
+check_issues
 ```
 
 ### libraries
@@ -166,6 +168,36 @@ Minimum representative fields:
 
 FileEvents are used for run detail display, diagnosing partial failures, crash inspection, and undo plan creation.
 
+### check_runs
+
+Stores one row per Library for that Library's latest completed check run.
+
+Minimum representative fields:
+
+* `check_run_id`
+* `library_id`
+* `checked_at`
+* `total_count`
+
+A Library has at most one `check_runs` row at a time: each new check run for a Library replaces that Library's prior row and prior `check_issues` rows. Check findings are therefore persisted latest-run-only, never accumulated across runs.
+
+### check_issues
+
+Stores the findings of one check run.
+
+Minimum representative fields:
+
+* `issue_seq`
+* `check_run_id`
+* `library_id`
+* `issue_type`
+* `path` nullable
+* `track_id` nullable
+* `plan_id` nullable
+* `detail` nullable
+
+`issue_seq` is an auto-incrementing sequence that preserves the insertion order of one check run's findings and backs keyset pagination for check browsing. Rows are removed when their owning `check_runs` row is replaced or deleted.
+
 ## Migrations
 
 Migrations must preserve existing managed state or fail explicitly before partially changing schema state.
@@ -193,6 +225,27 @@ Every schema change needs tests for:
   script and the insert in one `BEGIN`/`commit`, rolling back on
   `sqlite3.DatabaseError`), so a migration is never recorded as applied
   unless it fully succeeded; there are no silent partial migrations.
+
+## Indexes
+
+Indexes exist to keep the Web API's list, facet, and group-by endpoints (authoritative in [web-api.md](web-api.md)) fast at scale. They are persistence details: they change lookup cost, never table responsibilities or stored data.
+
+`202607090001_browsing_indexes.sql` adds:
+
+* `idx_tracks_current_path` on `tracks (current_path, track_id)` — backs Track list ordering and keyset pagination (`GET /api/tracks`).
+* `idx_tracks_status` on `tracks (library_id, status)` — backs Track status filtering and status facet counts scoped to one Library.
+* `idx_plan_actions_status` on `plan_actions (plan_id, status)` — backs PlanAction status filtering within one Plan.
+* `idx_plan_actions_type` on `plan_actions (plan_id, action_type)` — backs PlanAction type filtering within one Plan.
+* `idx_runs_started` on `runs (started_at, run_id)` — backs Run history ordering and keyset pagination.
+
+`202607090002_check_results.sql` adds:
+
+* `idx_check_issues_library_type` on `check_issues (library_id, issue_type, issue_seq)` — backs CheckIssue Library/issue_type filtering, ordering, and keyset pagination (`GET /api/check`).
+
+`202607100001_plan_browsing_index.sql` adds:
+
+* `idx_plans_created` on `plans (created_at, plan_id)` — backs Plan list ordering and keyset pagination (`GET /api/plans`).
+* `idx_plans_library_created` on `plans (library_id, created_at, plan_id)` — backs Library-scoped Plan ordering and keyset pagination.
 
 ## Stored JSON Fields
 

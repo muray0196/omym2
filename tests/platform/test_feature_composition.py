@@ -17,7 +17,7 @@ from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
 from omym2.adapters.fs.path_resolver import FilesystemPathResolver
 from omym2.features.add.ports import CreateAddPlanPorts
 from omym2.features.apply.ports import ApplyPlanPorts
-from omym2.features.check.ports import CheckLibraryPorts
+from omym2.features.check.ports import CheckLibraryPorts, CheckQueryPorts
 from omym2.features.common_ports import SystemClock, Uuid7IdGenerator
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.inspect.ports import InspectFilePorts
@@ -30,6 +30,7 @@ from omym2.features.undo.ports import CreateUndoPlanPorts
 from omym2.platform.feature_composition import (
     build_apply_plan_ports,
     build_check_library_ports,
+    build_check_query_ports,
     build_create_add_plan_ports,
     build_create_organize_plan_ports,
     build_create_refresh_plan_ports,
@@ -107,6 +108,17 @@ def test_build_check_library_ports_matches_check_command_recipe(runtime: Runtime
     assert ports.file_snapshot_reader.metadata_reader is runtime.metadata_reader
     assert ports.config_store is runtime.config_store
     assert isinstance(ports.path_resolver, FilesystemPathResolver)
+    assert isinstance(ports.clock, SystemClock)
+    assert isinstance(ports.id_generator, Uuid7IdGenerator)
+
+
+def test_build_check_query_ports_matches_web_app_check_factory(runtime: RuntimeContext) -> None:
+    """build_check_query_ports mirrors the lean, filesystem-free read-side check ports factory."""
+    ports = build_check_query_ports(runtime)
+
+    assert isinstance(ports, CheckQueryPorts)
+    assert isinstance(ports.uow, SQLiteUnitOfWork)
+    assert ports.uow.database_path == runtime.database_file
 
 
 def test_build_history_ports_matches_history_command_recipe(runtime: RuntimeContext) -> None:

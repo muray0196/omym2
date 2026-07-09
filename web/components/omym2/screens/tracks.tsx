@@ -1,10 +1,17 @@
+/*
+Summary: Renders paged managed Track browsing.
+Why: Lets users inspect library records without fetching every track.
+*/
+
 "use client"
 
 import { Music, Search, TriangleAlert } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
+import { getTracksPage } from "../api-client"
 import { useApp } from "../app-context"
 import { cn, truncateMiddle, truncatePathTail } from "../lib"
-import type { TrackSummary } from "../types"
+import type { TrackStatus, TrackSummary } from "../types"
+import { usePagedList } from "../use-paged-list"
 import {
   CopyButton,
   DataTable,
@@ -16,7 +23,7 @@ import {
   StatusBadge,
   type Column,
 } from "../primitives"
-import { Field, Select, TextInput, Toggle } from "../forms"
+import { Field, Select, TextInput } from "../forms"
 import { AppIconTile } from "../command-kit"
 import { PageHeading } from "./page-heading"
 
@@ -26,13 +33,14 @@ const STATUS_OPTIONS = [
   { value: "removed", label: "Removed" },
 ]
 
-function hasMissingMetadata(t: TrackSummary): boolean {
-  const m = t.metadata
-  return !m.title?.trim() || !m.artist?.trim() || !m.album?.trim()
-}
+const TRACK_PAGE_LIMIT = 100
 
 function metadataText(value: string | null): string {
   return value?.trim() || "—"
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
 }
 
 function TrackDetail({ track }: { track: TrackSummary }) {
@@ -130,11 +138,12 @@ function TrackDetail({ track }: { track: TrackSummary }) {
 }
 
 export function TracksScreen() {
-  const { navigate, route, trackErrors, tracks, tracksLoaded } = useApp()
+  const { navigate, route } = useApp()
   const [query, setQuery] = useState("")
-  const [status, setStatus] = useState("all")
-  const [mismatchOnly, setMismatchOnly] = useState(false)
-  const [missingOnly, setMissingOnly] = useState(false)
+  const [status, setStatus] = useState<TrackStatus | "all">("all")
+  const [selectedTrack, setSelectedTrack] = useState<TrackSummary | null>(null)
+  const [selectedTrackErrors, setSelectedTrackErrors] = useState<string[]>([])
+  const [selectedTrackLoading, setSelectedTrackLoading] = useState(false)
   // Selection lives in the URL (?track=<id>) rather than local state so it
   // survives a refresh, matching Plans/Runs which use real routes for their
   // master-detail selection. Selecting is not navigating, though: replace
@@ -143,25 +152,63 @@ export function TracksScreen() {
   const selectedId = route.name === "tracks" ? (route.trackId ?? null) : null
   const selectTrack = (trackId: string) => navigate({ name: "tracks", trackId }, { replace: true })
 
-  const filtered = useMemo(() => {
-    return tracks
-      .filter((t) => (status === "all" ? true : t.status === status))
-      .filter((t) => (mismatchOnly ? t.current_path !== t.canonical_path : true))
-      .filter((t) => (missingOnly ? hasMissingMetadata(t) : true))
-      .filter((t) => {
-        if (!query.trim()) return true
-        const q = query.toLowerCase()
-        return (
-          (t.metadata.title ?? "").toLowerCase().includes(q) ||
-          (t.metadata.artist ?? "").toLowerCase().includes(q) ||
-          (t.metadata.album ?? "").toLowerCase().includes(q) ||
-          t.current_path.toLowerCase().includes(q) ||
-          t.track_id.toLowerCase().includes(q)
+  const loadTracksPage = useCallback(
+    (cursor?: string) =>
+      getTracksPage({
+        cursor,
+        limit: TRACK_PAGE_LIMIT,
+        query: query.trim() || undefined,
+        status,
+      }),
+    [query, status],
+  )
+  const tracksPage = usePagedList({
+    errorMessage: "Tracks failed to load.",
+    loadPage: loadTracksPage,
+  })
+
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedTrack(null)
+      setSelectedTrackErrors([])
+      setSelectedTrackLoading(false)
+      return
+    }
+
+    const loadedTrack = tracksPage.items.find((track) => track.track_id === selectedId)
+    if (loadedTrack) {
+      setSelectedTrack(loadedTrack)
+      setSelectedTrackErrors([])
+      setSelectedTrackLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setSelectedTrackLoading(true)
+    setSelectedTrackErrors([])
+    getTracksPage({ trackId: selectedId, limit: 1 })
+      .then((response) => {
+        if (cancelled) return
+        setSelectedTrack(response.items[0] ?? null)
+        setSelectedTrackErrors(
+          response.items.length === 0 ? ["Selected track was not found."] : response.errors,
         )
       })
-  }, [missingOnly, mismatchOnly, query, status, tracks])
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setSelectedTrack(null)
+        setSelectedTrackErrors([errorMessage(error, "Selected track failed to load.")])
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSelectedTrackLoading(false)
+        }
+      })
 
-  const selected = filtered.find((t) => t.track_id === selectedId) ?? null
+    return () => {
+      cancelled = true
+    }
+  }, [selectedId, tracksPage.items])
 
   const columns: Column<TrackSummary>[] = [
     {
@@ -254,35 +301,20 @@ export function TracksScreen() {
                     id={id}
                     options={STATUS_OPTIONS}
                     value={status}
-                    onChange={(e) => setStatus(e.target.value)}
+                    onChange={(e) => setStatus(e.target.value as TrackStatus | "all")}
                   />
                 )}
               </Field>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Toggle
-                checked={mismatchOnly}
-                onChange={setMismatchOnly}
-                label="Path mismatch only"
-                help="Show tracks where current differs from canonical."
-              />
-              <Toggle
-                checked={missingOnly}
-                onChange={setMissingOnly}
-                label="Missing metadata only"
-                help="Show tracks missing a required field."
-              />
-            </div>
-
-            {trackErrors.length > 0 ? (
+            {tracksPage.errors.length > 0 ? (
               <Notice tone="warning" title="Track data is incomplete">
-                {trackErrors.join(" ")}
+                {tracksPage.errors.join(" ")}
               </Notice>
             ) : null}
 
             <DataTable
               columns={columns}
-              rows={filtered}
+              rows={tracksPage.items}
               getRowKey={(t) => t.track_id}
               onRowClick={(t) => selectTrack(t.track_id)}
               rowIsActive={(t) => t.track_id === selectedId}
@@ -291,22 +323,34 @@ export function TracksScreen() {
               empty={
                 <EmptyState
                   icon={Music}
-                  title={tracksLoaded ? "No tracks match your filters." : "Loading tracks..."}
+                  title={tracksPage.loaded ? "No tracks match your filters." : "Loading tracks..."}
                   description={
-                    tracksLoaded
+                    tracksPage.loaded
                       ? "Clear filters or adjust your search to see managed track records."
                       : "Managed track records will appear here once they are loaded."
                   }
                 />
               }
+              loadMore={{
+                hasMore: tracksPage.hasMore,
+                loading: tracksPage.loadingMore,
+                onLoadMore: tracksPage.loadMore,
+                total: tracksPage.page?.total ?? tracksPage.items.length,
+              }}
             />
           </Panel>
         </div>
 
         <div className="lg:sticky lg:top-6 lg:self-start">
           <Panel title="Track detail" icon={Music}>
-            {selected ? (
-              <TrackDetail track={selected} />
+            {selectedTrackErrors.length > 0 ? (
+              <Notice tone="warning" title="Track detail is incomplete">
+                {selectedTrackErrors.join(" ")}
+              </Notice>
+            ) : selectedTrack ? (
+              <TrackDetail track={selectedTrack} />
+            ) : selectedTrackLoading ? (
+              <EmptyState icon={Music} title="Loading selected track..." />
             ) : (
               <EmptyState
                 icon={Music}

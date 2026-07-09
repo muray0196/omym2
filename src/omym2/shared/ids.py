@@ -11,13 +11,14 @@ from uuid import UUID, uuid7
 from omym2.config import UUID_VERSION
 
 ActionId = NewType("ActionId", UUID)
+CheckRunId = NewType("CheckRunId", UUID)
 EventId = NewType("EventId", UUID)
 LibraryId = NewType("LibraryId", UUID)
 PlanId = NewType("PlanId", UUID)
 RunId = NewType("RunId", UUID)
 TrackId = NewType("TrackId", UUID)
 
-type OmymId = ActionId | EventId | LibraryId | PlanId | RunId | TrackId
+type OmymId = ActionId | CheckRunId | EventId | LibraryId | PlanId | RunId | TrackId
 
 
 def new_uuid7() -> UUID:
@@ -33,6 +34,11 @@ def is_uuid7(value: UUID) -> bool:
 def new_action_id() -> ActionId:
     """Create an action identifier."""
     return ActionId(new_uuid7())
+
+
+def new_check_run_id() -> CheckRunId:
+    """Create a check-run identifier."""
+    return CheckRunId(new_uuid7())
 
 
 def new_event_id() -> EventId:
