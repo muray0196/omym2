@@ -3,7 +3,7 @@ type: Execution Spec
 title: Add Execution
 description: Defines add plan creation from an Incoming/source scan against the sole registered Library, including duplicate-hash skips, missing-metadata and target-conflict blocks, and add --apply orchestration.
 tags: [add, plan-creation, library-registration, apply]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-10T02:07:39+09:00
 ---
 
 # Add Execution
@@ -43,10 +43,12 @@ The add plan creation behavior includes:
 * scan Incoming or specified source
 * capture file snapshots
 * generate target canonical paths
-* check duplicate hashes against known DB state and skip duplicates with `duplicate_hash`
+* check duplicate hashes against known active Library tracks and skip duplicates with `duplicate_hash`
 * block missing required metadata for incoming files
-* block target conflicts
+* block target conflicts against known active Library tracks
 * persist Plan and PlanActions
+
+REMOVED Library tracks are excluded from duplicate-hash and target-conflict judgment, matching refresh, check, and album-year resolution.
 
 ## Registered Library Gate
 

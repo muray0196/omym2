@@ -422,6 +422,27 @@ def test_add_plan_duplicate_skip_references_first_track_in_list_order() -> None:
     assert action.track_id == TRACK_ID
 
 
+def test_add_plan_ignores_removed_track_for_duplicate_hash() -> None:
+    """A REMOVED Library track's content hash no longer skips incoming imports."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track(CONTENT_HASH, SECOND_DUPLICATE_TRACK_PATH, status=TrackStatus.REMOVED))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    action = plan.actions[0]
+    assert action.action_type == ActionType.MOVE
+    assert action.status == ActionStatus.PLANNED
+    assert action.reason is None
+    assert action.target_path == EXPECTED_CANONICAL_PATH
+
+
 def test_add_plan_blocks_missing_required_metadata() -> None:
     """Missing required incoming metadata creates a blocked action."""
     uow = InMemoryUnitOfWork()
@@ -463,6 +484,27 @@ def test_add_plan_detects_target_conflict() -> None:
     assert action.reason == PlanActionReason.TARGET_EXISTS
     assert action.target_path == EXPECTED_CANONICAL_PATH
     assert plan.summary["blocked_actions"] == "1"
+
+
+def test_add_plan_ignores_removed_track_current_path_for_target_conflict() -> None:
+    """A REMOVED Library track's current path no longer blocks incoming targets."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track(OTHER_CONTENT_HASH, EXPECTED_CANONICAL_PATH, status=TrackStatus.REMOVED))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    action = plan.actions[0]
+    assert action.action_type == ActionType.MOVE
+    assert action.status == ActionStatus.PLANNED
+    assert action.reason is None
+    assert action.target_path == EXPECTED_CANONICAL_PATH
 
 
 def test_add_plan_blocks_existing_untracked_target_file() -> None:
