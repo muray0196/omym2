@@ -198,7 +198,7 @@ export function CopyButton({
 }
 
 /* ------------------------------------------------------------------ */
-/* Mono / PathDisplay                                                  */
+/* Mono / PathArrow                                                    */
 /* ------------------------------------------------------------------ */
 
 export function Mono({
@@ -214,30 +214,6 @@ export function Mono({
     <code className={cn("font-mono text-[0.8125rem] tracking-tight", className)} title={title}>
       {children}
     </code>
-  )
-}
-
-export function PathDisplay({
-  value,
-  max = 48,
-  copy = true,
-  prefix,
-  className,
-}: {
-  value: string
-  max?: number
-  copy?: boolean
-  prefix?: string
-  className?: string
-}) {
-  return (
-    <span className={cn("inline-flex max-w-full items-center gap-1.5", className)}>
-      {prefix ? <span className="text-xs text-mute">{prefix}</span> : null}
-      <Mono className="truncate text-ink">
-        <span title={value}>{truncateMiddle(value, max)}</span>
-      </Mono>
-      {copy ? <CopyButton value={value} label="Copy path" /> : null}
-    </span>
   )
 }
 

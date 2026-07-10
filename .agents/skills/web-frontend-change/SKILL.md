@@ -16,8 +16,8 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
 
 ## Rules
 
-- Match existing component style: TypeScript, Tailwind, existing `components/ui/` primitives before new dependencies.
-- Every state-changing POST — Settings save, artist ID generation, and Plan creation (add/organize/refresh) — must keep sending the CSRF token header (`X-OMYM2-CSRF-Token`).
+- Match existing component style: TypeScript, Tailwind, existing primitives in `web/components/omym2/primitives.tsx` before new dependencies.
+- Every state-changing POST — Settings save, artist ID generation, Plan creation (add/organize/refresh), and Check recomputation (`POST /api/check/run`) — must keep sending the CSRF token header (`X-OMYM2-CSRF-Token`).
 
 ## Procedure
 
