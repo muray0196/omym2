@@ -154,7 +154,6 @@ def test_in_memory_repositories_store_models_by_usecase_query_shape() -> None:
     assert uow.libraries.get(LIBRARY_ID) == library
     assert uow.libraries.find_by_root_path(LIBRARY_ROOT) == library
     assert uow.tracks.list_by_library(LIBRARY_ID) == (track,)
-    assert uow.tracks.find_by_content_hash(LIBRARY_ID, CONTENT_HASH) == (track,)
     assert uow.plans.list_by_library(LIBRARY_ID) == (plan,)
     assert uow.plan_actions.list_by_plan(PLAN_ID) == (action_early, action_late)
     assert uow.runs.list_by_plan(PLAN_ID) == (run,)

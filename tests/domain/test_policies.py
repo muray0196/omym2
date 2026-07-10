@@ -19,7 +19,6 @@ from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.artist_id import generate_artist_id
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
-from omym2.domain.services.duplicate_policy import DuplicateDecisionKind, DuplicatePolicy
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 from omym2.shared.paths import ESCAPING_LIBRARY_PATH_MESSAGE
@@ -453,16 +452,6 @@ def test_collision_policy_occupied_paths_matches_raw_iterable_decisions() -> Non
     assert blocked_decision.reason == PlanActionReason.TARGET_EXISTS
     assert available_decision == CollisionPolicy().decide(UNOCCUPIED_TARGET_PATH, raw_occupied)
     assert available_decision.kind == CollisionDecisionKind.AVAILABLE
-
-
-def test_duplicate_policy_skips_duplicate_hash() -> None:
-    """DuplicatePolicy returns a skip decision for an already known content hash."""
-    content_hash = calculate_content_fingerprint(CONTENT)
-
-    decision = DuplicatePolicy().decide(content_hash, [content_hash])
-
-    assert decision.kind == DuplicateDecisionKind.SKIP
-    assert decision.reason == PlanActionReason.DUPLICATE_HASH
 
 
 def _track_metadata() -> TrackMetadata:

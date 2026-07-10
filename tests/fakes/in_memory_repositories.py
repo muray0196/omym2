@@ -178,14 +178,6 @@ class InMemoryTrackRepository:
         """Return Tracks owned by a Library."""
         return tuple(track for track in self.records.values() if track.library_id == library_id)
 
-    def find_by_content_hash(self, library_id: LibraryId, content_hash: str) -> tuple[Track, ...]:
-        """Return Tracks with a matching content hash in one Library."""
-        return tuple(
-            track
-            for track in self.records.values()
-            if track.library_id == library_id and track.content_hash == content_hash
-        )
-
     def save(self, track: Track) -> None:
         """Store or replace one Track."""
         self.records[track.track_id] = track

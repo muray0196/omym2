@@ -133,10 +133,6 @@ class TrackRepository(Protocol):
         """Return Tracks owned by one Library."""
         ...
 
-    def find_by_content_hash(self, library_id: LibraryId, content_hash: str) -> Sequence[Track]:
-        """Return Tracks with a matching content hash in one Library."""
-        ...
-
     def save(self, track: Track) -> None:
         """Persist a Track without recalculating identity or paths."""
         ...

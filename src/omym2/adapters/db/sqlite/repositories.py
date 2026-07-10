@@ -421,19 +421,6 @@ class SQLiteTrackRepository(_SQLiteRepository):
         )
         return tuple(_track_from_row(row) for row in rows)
 
-    def find_by_content_hash(self, library_id: LibraryId, content_hash: str) -> tuple[Track, ...]:
-        """Return Tracks with a matching content hash in one Library."""
-        rows = _fetch_all(
-            self._connection,
-            TRACK_SELECT_FROM
-            + """
-            WHERE library_id = ? AND content_hash = ?
-            ORDER BY current_path, track_id
-            """,
-            (str(library_id), content_hash),
-        )
-        return tuple(_track_from_row(row) for row in rows)
-
     def save(self, track: Track) -> None:
         """Persist a Track without recalculating identity or paths."""
         _ = self._connection.execute(

@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Naming
 description: Authoritative Python naming conventions for OMYM2 modules, classes, functions, and constants, including banned vague names and per-layer naming rules for domain, features, and adapters.
 tags: [naming-conventions, python, code-style, architecture]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-10T02:07:51+09:00
 ---
 
 # Source Naming
@@ -55,7 +55,7 @@ domain/models/
 domain/services/
   path_policy.py
   collision_policy.py
-  duplicate_policy.py
+  artist_id.py
   config_fingerprint.py
   metadata_fingerprint.py
   content_fingerprint.py

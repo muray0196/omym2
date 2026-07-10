@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Layout
 description: Authoritative description of OMYM2's src/ layout and Feature-oriented Hexagonal Architecture, covering the domain, features, adapters, platform, and shared packages and rules for adding new directories.
 tags: [source-layout, architecture, hexagonal-architecture, python]
-timestamp: 2026-07-07T14:00:00+09:00
+timestamp: 2026-07-10T02:07:51+09:00
 ---
 
 # Source Layout
@@ -90,7 +90,6 @@ Main targets:
 * FileEvent
 * PathPolicy
 * CollisionPolicy
-* DuplicatePolicy
 * CheckIssue
 
 `domain/` performs no I/O. It does not import DB, filesystem, HTTP, CLI, Web, TOML, or mutagen.

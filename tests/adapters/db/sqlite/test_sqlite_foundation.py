@@ -213,7 +213,6 @@ def test_sqlite_repositories_round_trip_domain_models(tmp_path: Path) -> None:
         assert uow.libraries.list_all() == (library,)
         assert uow.tracks.get(TRACK_ID) == track
         assert uow.tracks.list_by_library(LIBRARY_ID) == (track,)
-        assert uow.tracks.find_by_content_hash(LIBRARY_ID, CONTENT_HASH) == (track,)
         assert uow.plans.get(PLAN_ID) == plan
         assert uow.plans.list_by_library(LIBRARY_ID) == (plan,)
         assert uow.plan_actions.get(ACTION_ID) == action_early
