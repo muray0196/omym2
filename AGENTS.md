@@ -21,20 +21,6 @@ suppressions, or runtime configuration work.
 Mode selection is owned by `.agents/skills/validate/SKILL.md`. Gate
 definitions live in `docs/DEVELOPMENT.md`.
 
-## Delegation
-
-Use subagents when independent parallel work or a bounded independent review
-materially improves speed or confidence. Skip them for small, sequential, or
-context-heavy tasks.
-
-The root agent owns scope, repo-policy and safety-skill decisions, review of
-resulting diffs, final validation, and final judgment. Brief each subagent with
-the goal, exact scope and exclusions, relevant repo constraints, and expected
-output.
-
-Do not run concurrent writers on overlapping files. Independent read-only
-investigations may run in parallel.
-
 ## Knowledge Navigation
 
 Use the docs router below for task-specific reading.
