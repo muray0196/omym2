@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Layout
 description: Authoritative description of OMYM2's src/ layout and Feature-oriented Hexagonal Architecture, covering the domain, features, adapters, platform, and shared packages and rules for adding new directories.
 tags: [source-layout, architecture, hexagonal-architecture, python]
-timestamp: 2026-07-10T02:07:51+09:00
+timestamp: 2026-07-10T20:39:36+09:00
 ---
 
 # Source Layout
@@ -148,7 +148,6 @@ Feature-to-feature chaining belongs in CLI, Web, or platform orchestration, not 
 
 `shared/` contains only pure auxiliary primitives.
 
-* Result type
 * ID value object helpers
 * Pure functions for path string processing
 * Time type helpers

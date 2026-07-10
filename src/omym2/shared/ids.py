@@ -18,8 +18,6 @@ PlanId = NewType("PlanId", UUID)
 RunId = NewType("RunId", UUID)
 TrackId = NewType("TrackId", UUID)
 
-type OmymId = ActionId | CheckRunId | EventId | LibraryId | PlanId | RunId | TrackId
-
 
 def new_uuid7() -> UUID:
     """Create a UUIDv7 value for stable internal identifiers."""

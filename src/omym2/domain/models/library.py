@@ -56,15 +56,3 @@ class Library:
             created_at=self.created_at,
             updated_at=updated_at,
         )
-
-    def with_status(self, status: LibraryStatus, updated_at: datetime) -> Library:
-        """Return a Library with updated registration state."""
-        return Library(
-            library_id=self.library_id,
-            root_path=self.root_path,
-            path_policy_hash=self.path_policy_hash,
-            registered_at=self.registered_at,
-            status=status,
-            created_at=self.created_at,
-            updated_at=updated_at,
-        )

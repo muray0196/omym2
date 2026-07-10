@@ -182,7 +182,6 @@ PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES: Final[frozenset[str]] = frozenset(
     {"CON", "PRN", "AUX", "NUL"} | {f"COM{digit}" for digit in range(1, 10)} | {f"LPT{digit}" for digit in range(1, 10)}
 )  # Windows reserved device names treated as sanitized-to-empty stems, case-insensitive
 PATH_POLICY_TRACK_NUMBER_WIDTH: Final = 2  # zero-padding width for generated track numbers
-PATH_POLICY_UNSAFE_CHARACTERS: Final = '<>:"\\|?*/'  # characters replaced in metadata path components
 PATH_POLICY_PREVIEW_TITLE: Final = "Example Song"  # sample title shown in settings preview
 PATH_POLICY_PREVIEW_ARTIST: Final = "Aimer"  # sample artist shown in settings preview
 PATH_POLICY_PREVIEW_ALBUM: Final = "Example Album"  # sample album shown in settings preview
