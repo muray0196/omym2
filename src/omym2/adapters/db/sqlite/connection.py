@@ -21,7 +21,8 @@ def open_sqlite_connection(database_path: str | PathLike[str]) -> sqlite3.Connec
         database_path: Filesystem path to the application database.
 
     Returns:
-        A connection that yields sqlite3.Row values and enforces foreign keys.
+        A connection that yields sqlite3.Row values, enforces foreign keys,
+        and uses WAL journal mode.
     """
     connection = sqlite3.connect(
         database_path,
@@ -30,4 +31,5 @@ def open_sqlite_connection(database_path: str | PathLike[str]) -> sqlite3.Connec
     )
     connection.row_factory = sqlite3.Row
     _ = connection.execute("PRAGMA foreign_keys = ON")
+    _ = connection.execute("PRAGMA journal_mode = WAL")
     return connection

@@ -3,7 +3,7 @@ type: Storage Design
 title: Storage
 description: Defines the TOML-vs-SQLite storage boundary, repository responsibilities, DB consistency and reproducibility principles, and the high-level Library-root-relative stored path policy.
 tags: [storage, sqlite, toml, persistence]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-10T02:07:23+09:00
 ---
 
 # Storage
@@ -85,6 +85,8 @@ The DB must preserve enough state to inspect interrupted or partially failed app
 * FileEvents, PlanActions, Tracks, Runs, and Plans are updated as the apply attempt progresses
 
 If the process crashes, pending or partially recorded FileEvents remain available for inspection. Recovery behavior is defined in [execution/model.md](execution/model.md#durable-operation-log).
+
+Connections enable `journal_mode = WAL` for read/write concurrency, but `synchronous` stays at its FULL default rather than being lowered to NORMAL: NORMAL only guarantees a WAL fsync at the next checkpoint, so a committed PENDING FileEvent could remain unsynced in the WAL file while the subsequent Library music file move already executed, reopening the crash-safety gap the pending-FileEvent-before-mutation ordering exists to close. WAL also backs each database with a `-wal` and `-shm` shared-memory file, which can misbehave over Windows-mounted 9p/DrvFs paths (for example, running from `/mnt/c` under WSL2); the database should live on a native filesystem.
 
 ## Reproducibility
 
