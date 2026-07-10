@@ -21,48 +21,19 @@ suppressions, or runtime configuration work.
 Mode selection is owned by `.agents/skills/validate/SKILL.md`. Gate
 definitions live in `docs/DEVELOPMENT.md`.
 
-## Subagents
+## Delegation
 
-You are the orchestrator. Use subagents to complete tasks.
-Focus on planning, delegation, review, and synthesis. Do not do the execution work yourself unless necessary.
-Delegate implementation, investigation, editing, testing, and detailed analysis to subagents.
+Use subagents when independent parallel work or a bounded independent review
+materially improves speed or confidence. Skip them for small, sequential, or
+context-heavy tasks.
 
-* Skip subagents for trivial one-file or command-only work.
-* Use `explorer` before implementation when files, patterns, or dependencies are
-  not clear.
-* Use `coder` only after scope, target files, and approach are settled.
-* Use `reviewer` after non-trivial implementation or before PR/commit review.
-* The main agent owns orchestration, final judgment, repo-policy checks, and
-  high-risk architecture, storage, path, or Plan decisions. "High-risk" means
-  anything matching a safety-skill row in `.agents/skills/implement-change`'s
-  routing table (Plan/apply/undo, stored paths & identity, DB schema, config
-  contract).
+The root agent owns scope, repo-policy and safety-skill decisions, review of
+resulting diffs, final validation, and final judgment. Brief each subagent with
+the goal, exact scope and exclusions, relevant repo constraints, and expected
+output.
 
-### Briefing a Subagent
-
-Subagents start with zero context. Every dispatch must be self-contained:
-
-1. Goal — one sentence stating the outcome.
-2. Scope — exact files, symbols, or directories, plus what is out of bounds.
-3. Constraints — the repo rules that apply: which `.agents/skills/` entries to
-   follow, never read `WORKFLOW.md`, and the check mode selected per
-   `.agents/skills/validate`.
-4. Expected output — the exact report shape needed back (paths with line
-   numbers, diff summary, or verdict).
-
-### Working the Pipeline
-
-* Default flow for non-trivial changes: `explorer` → `coder` → `reviewer`.
-* Forward evidence verbatim: paste explorer's paths, line numbers, and pattern
-  examples into the coder brief, never a summary of a summary.
-* One change per coder dispatch. Split large work into sequential scoped
-  dispatches; never run two coders that could touch the same files.
-* Independent explorer questions may run in parallel.
-* If a subagent stops on ambiguity or repeated failure, resolve the gap first
-  (directly or with another explorer pass), then re-dispatch with a tighter
-  brief; do not retry the same prompt.
-* Read the resulting diff before accepting it; feed reviewer must-fix findings
-  back as a new scoped coder dispatch.
+Do not run concurrent writers on overlapping files. Independent read-only
+investigations may run in parallel.
 
 ## Knowledge Navigation
 
