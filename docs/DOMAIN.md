@@ -3,7 +3,7 @@ type: Domain Model
 title: Domain
 description: Defines OMYM2's core domain entities, including Track stat baselines and snapshot trust boundaries, their invariants, and the UUIDv7-based identity policy.
 tags: [domain-model, entities, invariants, id-design]
-timestamp: 2026-07-11T10:21:41+09:00
+timestamp: 2026-07-11T21:32:08+09:00
 ---
 
 # Domain
@@ -118,7 +118,10 @@ already-loaded config and metadata only. Language detection, fastText model
 loading, and MusicBrainz HTTP lookup are feature/adapter concerns and must not
 run during canonical path generation.
 
-If the final generated target path already exists, the PlanAction becomes blocked as a conflict. PathPolicy does not solve collisions by itself.
+Planning usecases check generated targets through filesystem ports and
+CollisionPolicy. If a target is occupied, the usecase records the PlanAction
+as blocked with the documented conflict reason; PathPolicy neither performs
+that I/O nor solves collisions itself.
 
 ## Library
 

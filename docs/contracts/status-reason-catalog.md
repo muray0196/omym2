@@ -1,14 +1,14 @@
 ---
 type: Contract
 title: Status And Reason Catalog
-description: Defines the authoritative catalog of allowed status, reason, action type, event type, error code, and check issue values used across Library, Track, Plan, PlanAction, Run, and FileEvent entities.
+description: Defines the authoritative catalog of allowed status, reason, action type, event type, and check issue values, plus the FileEvent error-code schema used across Library, Track, Plan, PlanAction, Run, and FileEvent entities.
 tags: [status, reason-codes, catalog, execution]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-11T21:33:40+09:00
 ---
 
 # Status And Reason Catalog
 
-This document is authoritative for allowed status, reason, action type, event type, error code, and check issue values.
+This document is authoritative for allowed status, reason, action type, event type, and check issue values, plus the FileEvent error-code schema.
 
 Domain concepts are in [../DOMAIN.md](../DOMAIN.md). Execution state transitions are in [../execution/model.md](../execution/model.md), [../execution/apply.md](../execution/apply.md), and [../execution/failure-policy.md](../execution/failure-policy.md).
 
@@ -125,11 +125,26 @@ FileEvents are created only for attempted Library music file mutations.
 
 Field: `FileEvent.error_code`.
 
-No closed catalog exists yet.
+This nullable field is an open schema, not a closed enum. Apply writes `null`
+for pending and succeeded FileEvents, and records a stable code when a pending
+move FileEvent fails.
 
-Values must be stable snake_case strings. Adapter-specific raw exception names must not be persisted directly.
+Values must be stable snake_case strings. Adapter-specific raw exception names
+and raw exception messages must not be persisted as codes; `error_message`
+carries the human-readable failure detail.
 
-Any newly introduced `error_code` must be added to this catalog and covered by tests.
+Current core apply codes are:
+
+| Code | Meaning |
+| --- | --- |
+| `target_exists` | The FileMover reported `FileExistsError` after the pending event was recorded, including a target that appeared after planning. |
+| `source_missing` | The FileMover reported `FileNotFoundError` after the pending event was recorded. A source missing during precondition verification creates no FileEvent. |
+| `move_failed` | The FileMover raised another `OSError` that has no more-specific stable code. |
+
+New codes are permitted when a new observable mutation failure needs a stable
+programmatic classification. They must be documented in the execution contract
+that emits them and covered by tests; update the table when core apply begins
+emitting a new code.
 
 ## CheckIssue Issue Type
 

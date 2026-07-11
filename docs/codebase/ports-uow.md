@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Ports And UnitOfWork
-description: Defines OMYM2's scan/stat/snapshot ports, ordered batch capture, one-usecase UnitOfWork resource lifetime, independent transactions, and durable FileEvents.
+description: Defines OMYM2's port and UnitOfWork repository inventory, scan/stat/snapshot ports, ordered batch capture, independent transactions, durable FileEvents, and persisted check diagnostics.
 tags: [ports, unit-of-work, transactions, architecture]
-timestamp: 2026-07-11T16:52:31+09:00
+timestamp: 2026-07-11T21:32:22+09:00
 ---
 
 # Ports And UnitOfWork
@@ -20,8 +20,12 @@ Representative examples:
 
 ```python
 class UnitOfWork(Protocol):
+    libraries: LibraryRepository
+    check_runs: CheckRunRepository
+    check_issues: CheckIssueRepository
     tracks: TrackRepository
     plans: PlanRepository
+    plan_actions: PlanActionRepository
     runs: RunRepository
     file_events: FileEventRepository
 
@@ -31,6 +35,10 @@ class UnitOfWork(Protocol):
     def commit(self) -> None: ...
     def rollback(self) -> None: ...
 ```
+
+`check_runs` and `check_issues` persist each Library's latest completed check
+diagnostics. Their replacement and browsing rules are authoritative in
+[../contracts/db-schema.md](../contracts/db-schema.md#check_runs).
 
 ```python
 class FileScanner(Protocol):
@@ -85,6 +93,7 @@ class Clock(Protocol):
 ```python
 class IdGenerator(Protocol):
     def new_library_id(self) -> LibraryId: ...
+    def new_check_run_id(self) -> CheckRunId: ...
     def new_track_id(self) -> TrackId: ...
     def new_plan_id(self) -> PlanId: ...
     def new_action_id(self) -> ActionId: ...
@@ -94,7 +103,7 @@ class IdGenerator(Protocol):
 
 `Clock` and `IdGenerator` are ports. This makes it possible to fix time and IDs during tests.
 
-In the initial implementation, IdGenerator returns UUIDv7-backed IDs. Domain and usecases depend on typed IDs such as LibraryId, TrackId, PlanId, ActionId, RunId, and EventId, not on a concrete UUID library.
+In the initial implementation, IdGenerator returns UUIDv7-backed IDs. Domain and usecases depend on typed IDs such as LibraryId, CheckRunId, TrackId, PlanId, ActionId, RunId, and EventId, not on a concrete UUID library.
 
 ## UnitOfWork Policy
 

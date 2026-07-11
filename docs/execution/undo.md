@@ -3,7 +3,7 @@ type: Execution Spec
 title: Undo Execution
 description: Defines per-Run undo, terminal Run requirements, refresh_metadata rejection, reverse FileEvent tracing, restore-destination conflict handling, and external restore Track removal.
 tags: [undo, file-event, plan-creation, restore]
-timestamp: 2026-07-08T22:55:21+09:00
+timestamp: 2026-07-11T21:38:14+09:00
 ---
 
 # Undo Execution
@@ -45,7 +45,10 @@ Only when applying within the same command is `--apply` used.
 omym2 undo <run-id> --apply
 ```
 
-If the restore destination is already occupied during undo, it is not overwritten automatically. It stops as a conflict and requires manual review.
+If the restore destination is already occupied during undo Plan creation, the
+corresponding PlanAction is `blocked` with reason `target_exists`; it is not
+overwritten automatically. A target that appears later is caught by apply's
+exclusive-create move and fails closed, requiring manual review.
 
 When undo restores a file that originally came from outside the Library, such as an add/import source, the undo Plan records the external restore destination as an absolute target path. Applying that undo moves the file out of the Library and marks the managed Track as `removed`; Track paths remain Library-root-relative and do not store the external destination.
 

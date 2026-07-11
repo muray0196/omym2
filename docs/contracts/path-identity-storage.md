@@ -3,7 +3,7 @@ type: Contract
 title: Path Identity And Storage Contract
 description: Defines the authoritative rules for Library and Track identity stability, stored path representation, PathResolver boundaries, absolute-path exceptions, and path escape prevention.
 tags: [paths, identity, storage, library]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-11T21:32:08+09:00
 ---
 
 # Path Identity And Storage Contract
@@ -22,7 +22,13 @@ Every Library-managed record belongs to exactly one Library through `library_id`
 
 `libraries.root_path` is mutable. It is used for runtime path resolution and must not be treated as Library identity.
 
-Relink is an internal concept. It preserves `library_id`, updates only `libraries.root_path`, and does not duplicate Tracks, Plans, PlanActions, FileEvents, or Library-managed history records. It does not rewrite Library-relative paths.
+Relink is an internal future concept, not an MVP user-facing operation. When it
+is implemented, it must preserve `library_id`, update only
+`libraries.root_path`, and not duplicate Tracks, Plans, PlanActions,
+FileEvents, or Library-managed history records. It must not rewrite
+Library-relative paths. Until then, `organize --library PATH` refuses an
+unmatched path when another Library exists rather than guessing whether the
+path is a moved Library or a second Library.
 
 ## Stored Path Representation
 
@@ -75,7 +81,7 @@ Any path identity contract change requires tests for the affected representation
 
 * path normalization
 * parent-path escape rejection
-* relink behavior
+* relink behavior, when relink is implemented
 * Library identity stability
 * Track identity stability
 * repository persistence of Library-root-relative paths

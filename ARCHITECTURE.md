@@ -1,14 +1,19 @@
 # Architecture
 
-This document is the top-level OMYM2 architecture contract.
+This document is the top-level OMYM2 architecture contract and the always-read
+architecture safety cache for code, Web, and test work.
 
-It is authoritative for the architecture overview and non-negotiable architecture rules.
+It is authoritative for the architecture overview and non-negotiable global
+rules. Focused docs own detailed implementation contracts.
 
 ## Architecture Model
 
 OMYM2 adopts Feature-oriented Hexagonal Architecture.
 
-Core concepts such as Library, Track, Plan, Run, FileEvent, and PathPolicy are shared as a domain kernel. Features are divided by user goal. CLI and Web are inbound adapters. DB, filesystem, metadata reader, and config loader are outbound adapters.
+Core concepts such as Library, Track, Plan, Run, FileEvent, CheckRun, and
+PathPolicy are shared as a domain kernel. Features are divided by user goal.
+CLI and Web are inbound adapters. DB, filesystem, metadata reader, and config
+loader are outbound adapters.
 
 The package uses the Python `src/` layout:
 
@@ -51,7 +56,11 @@ Detailed dependency direction, forbidden dependency lists, direct feature-to-fea
 
 `adapters/` implement ports and handle external I/O. Adapters may create and restore domain models, but they must not contain business rules such as conflict judgment, duplicate judgment, canonical path calculation, metadata validation, or PlanAction status decisions.
 
-`platform/` wires concrete adapters to feature usecases and owns application runtime assembly. The `omym2` console script and `python -m omym2` both start through `platform/cli_entry_point.py`, which builds a `CommandDependencies` bundle via `platform/cli_composition.py` and dispatches into `adapters/cli/main.py`. `adapters/web/app.py` only assembles FastAPI routes and static assets from an injected `ApiRouteContext`; `platform/web_composition.py` builds that context and the concrete adapters behind it.
+`platform/` wires concrete adapters to feature usecases and owns application
+runtime assembly. CLI and Web entry points build dependencies through it rather
+than constructing concrete adapters themselves. The current composition layout
+is documented in [docs/codebase/source-layout.md](docs/codebase/source-layout.md)
+and [docs/codebase/web-frontend.md](docs/codebase/web-frontend.md).
 
 `shared/` contains only pure auxiliary primitives. It does not depend on domain, features, adapters, or platform.
 
@@ -61,7 +70,9 @@ External I/O is expressed as ports. Representative ports include UnitOfWork, Fil
 
 The baseline policy is `1 usecase = 1 UnitOfWork`. Concrete repositories and transaction mechanics stay behind the UnitOfWork adapter.
 
-`Clock` and `IdGenerator` are ports so tests can fix time and IDs. IdGenerator creates typed IDs for Library, Track, Plan, PlanAction, Run, and FileEvent.
+`Clock` and `IdGenerator` are ports so tests can fix time and IDs. IdGenerator
+creates typed IDs for Library, CheckRun, Track, Plan, PlanAction, Run, and
+FileEvent.
 
 `apply` and `undo` are practical exceptions to the simple `1 usecase = 1 UnitOfWork` shape because Library music file operations and DB transactions cannot be made fully atomic. They use FileEvents as a durable operation log.
 

@@ -1,13 +1,20 @@
 # OMYM2 Agent Instructions
 
-Use this routing before choosing task-specific docs.
+Use this routing before choosing task-specific docs. `ARCHITECTURE.md` is the
+always-read safety cache; focused docs own the detailed, task-specific contract.
 
 ## Required Reading
 
 Read `ARCHITECTURE.md` before any task that touches `src/`, `web/`, or
-`tests/`. Docs-only, issue-only, or purely read-only tasks may skip it.
+`tests/`. Keep its non-negotiable rules active throughout the task. Docs-only,
+issue-only, or purely read-only tasks may skip it.
 
 ## Read As Needed
+
+For an implementation task, start with
+`.agents/skills/implement-change/SKILL.md`; it selects the safety checklist and
+focused documentation for the change. Do not replace those focused checks with
+the Architecture summary.
 
 Read `docs/DEVELOPMENT.md` for implementation, validation, quality gates,
 suppressions, or runtime configuration work.
@@ -34,6 +41,7 @@ conformance via the docs bundle test under `tests/docs/`.
 | [docs/COMMANDS.md](docs/COMMANDS.md) | CLI command surface and command behavior. |
 | [docs/STORAGE.md](docs/STORAGE.md) | Storage responsibilities and persisted-state boundaries. |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development commands, quality gates, suppressions, and runtime configuration. |
+| [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | Pipeline benchmark procedure for performance changes. |
 | [docs/TESTING.md](docs/TESTING.md) | Test policy and coverage expectations. |
 | [docs/codebase/index.md](docs/codebase/index.md) | Detailed source layout, dependency, port, and naming rules. |
 | [docs/contracts/index.md](docs/contracts/index.md) | Config, DB schema, path identity, storage representation, and status values. |

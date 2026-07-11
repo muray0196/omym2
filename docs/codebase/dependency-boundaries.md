@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Dependency Boundaries
 description: Defines OMYM2's dependency direction between adapters, features, domain, and shared layers, the forbidden dependencies, and where business rules must live.
 tags: [architecture, dependency-boundaries, hexagonal-architecture, business-rules]
-timestamp: 2026-07-07T14:00:00+09:00
+timestamp: 2026-07-11T21:36:40+09:00
 ---
 
 # Dependency Boundaries
@@ -36,7 +36,10 @@ features/*/ports.py or features/common_ports.py
 domain/
 ```
 
-`platform/` is the composition root and wires features and adapters together. `platform/runtime_context.py` resolves shared application paths and stateful adapters once per invocation; `platform/feature_composition.py` and `platform/artist_ids_composition.py` build each feature's `*Ports` dataclass from concrete adapters; `platform/cli_composition.py` and `platform/cli_entry_point.py` assemble the CLI's `CommandDependencies` bundle and dispatch into `adapters/cli/main.py`; `platform/web_composition.py` builds the Web UI's `ApiRouteContext` and calls `adapters/web/app.py::create_web_app` with it. Inbound adapters no longer construct outbound adapters themselves.
+`platform/` is the composition root and wires features and adapters together.
+Inbound adapters do not construct outbound adapters themselves. The current
+composition-module inventory and responsibilities are documented in
+[source-layout.md](source-layout.md).
 
 ## Forbidden Dependencies
 
@@ -48,7 +51,7 @@ domain -> fs
 domain -> web
 domain -> cli
 
-features -> concrete db/fs/web/cli implementations
+features -> concrete adapter implementations
 features -> internal implementations of other features
 
 adapters -> platform
@@ -60,7 +63,7 @@ adapters/cli/commands -> direct filesystem operations
 templates -> filesystem operations
 ```
 
-The inbound-adapter-to-concrete-outbound-adapter rule has an exact-pair allowlist for two pure, I/O-free functions that are coupled only to the TOML config representation: `adapters/cli/commands/config.py` may import `omym2.adapters.config.toml_config_store`, and `adapters/web/schemas/settings_json.py` may import `omym2.adapters.config.config_validator`. No other file under `adapters/cli/` or `adapters/web/` may import a concrete outbound adapter subpackage.
+Inbound adapters must not import concrete outbound adapter subpackages (`adapters.db`, `adapters.fs`, `adapters.metadata`, `adapters.config`, or `adapters.artist_ids`). The exact-pair allowlist permits only two pure, I/O-free TOML-representation helpers: `adapters/cli/commands/config.py` may import `omym2.adapters.config.toml_config_store`, and `adapters/web/schemas/settings_json.py` may import `omym2.adapters.config.config_validator`. Those exceptions do not permit adapter construction or I/O from inbound adapters. No other file under `adapters/cli/` or `adapters/web/` may import a concrete outbound adapter subpackage.
 
 Direct imports between features are prohibited in principle. When multiple usecases are chained, orchestration is done in CLI, Web, or platform.
 
@@ -114,7 +117,7 @@ FileScanner must not read tags or calculate hashes. FileSnapshotReader may compo
 Architecture tests enforce the highest-risk dependency rules:
 
 * source files follow naming conventions
-* usecases do not import concrete SQLite or filesystem adapters
+* usecases do not import concrete adapters
 * domain does not import adapters or platform
 * shared stays below upper layers
 * adapters do not import platform

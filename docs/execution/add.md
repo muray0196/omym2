@@ -3,7 +3,7 @@ type: Execution Spec
 title: Add Execution
 description: Defines add plan creation from an Incoming/source scan against the sole registered Library, including duplicate-hash skips, missing-metadata and target-conflict blocks, and add --apply orchestration.
 tags: [add, plan-creation, library-registration, apply]
-timestamp: 2026-07-10T02:07:39+09:00
+timestamp: 2026-07-11T21:33:40+09:00
 ---
 
 # Add Execution
@@ -45,10 +45,38 @@ The add plan creation behavior includes:
 * generate target canonical paths
 * check duplicate hashes against known active Library tracks and skip duplicates with `duplicate_hash`
 * block missing required metadata for incoming files
-* block target conflicts against known active Library tracks
+* block target conflicts according to [Target Collision Safety](#target-collision-safety)
 * persist Plan and PlanActions
 
 REMOVED Library tracks are excluded from duplicate-hash and target-conflict judgment, matching refresh, check, and album-year resolution.
+
+## Target Collision Safety
+
+This section is authoritative for add-time target-conflict checks. The
+[Path Identity And Storage Contract](../contracts/path-identity-storage.md#pathresolver-boundary)
+owns stored target-path representation and normalized comparison; [apply.md](apply.md)
+owns the final no-overwrite guard and its state transitions.
+
+For an add candidate that is otherwise a planned `move`, the candidate becomes
+a `blocked` PlanAction with reason `target_exists` when any of the following is
+true:
+
+| Planning observation | Required result |
+| --- | --- |
+| An active Track in the target Library has the same normalized `current_path` as the generated target. | Block the candidate. REMOVED Tracks do not occupy a target for this DB check. |
+| Two or more otherwise eligible move candidates in the same add batch resolve to the same normalized target. | Block every candidate that claims that target. |
+| A filesystem entry already exists at the generated target after it is resolved against the Library root. | Block the candidate, even when no Track records that path. |
+
+The logical comparisons are exact normalized Library-root-relative string
+matches. They intentionally do not fold case or Unicode; the path contract
+defines that boundary. Add never renames a candidate or overwrites a target to
+resolve a collision.
+
+Plan-time checks can become stale. Apply therefore atomically claims the
+recorded target through its exclusive-create FileMover before moving a file. A
+target that exists or appears after planning fails closed: the move's FileEvent
+and PlanAction become failed with `target_exists`; [failure-policy.md](failure-policy.md)
+defines the resulting Run and Plan outcome.
 
 ## Registered Library Gate
 

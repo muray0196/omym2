@@ -1,14 +1,15 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies dependency setup, developer quality gates, checks.sh, pipeline benchmark modes, suppression rules, and Python runtime configuration policy.
+description: Specifies dependency setup, developer quality gates, checks.sh, suppression rules, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation]
-timestamp: 2026-07-11T20:36:46+09:00
+timestamp: 2026-07-11T21:38:58+09:00
 ---
 
 # Development Harness
 
-This document is authoritative for developer quality commands, validation gates, suppressions, and Python runtime configuration policy.
+This document is authoritative for developer quality commands, validation gates,
+suppressions, and Python runtime configuration policy.
 
 Product command behavior is defined in [COMMANDS.md](COMMANDS.md). Test design is defined in [TESTING.md](TESTING.md). Application config and stored path policy are defined in [STORAGE.md](STORAGE.md) and [contracts/](contracts/).
 
@@ -108,36 +109,9 @@ Hosted CI runs `uv sync --locked --dev`, `npm ci`, `scripts/checks.sh all`, and 
 
 ## Pipeline Performance Benchmark
 
-Run the end-to-end pipeline benchmark before and after performance changes:
-
-```bash
-uv run python scripts/benchmark_pipeline.py \
-  --tracks 100 \
-  --file-size-bytes 1048576 \
-  --tracks-per-album 10
-```
-
-`--tracks` controls the total dataset size. `--file-size-bytes` controls the exact size of each generated file, and `--tracks-per-album` controls the album shape. The minimum file size is 4096 bytes so every fixture can contain valid FLAC metadata. Use `--workspace-root PATH` to place the disposable workspace on the filesystem being measured; otherwise the operating system's temporary directory is used.
-
-The harness first registers an empty Library through the public `organize` command, then generates tagged synthetic FLAC files in Incoming. Its clean baseline runs `add`, `apply latest --yes`, `organize`, and `check` through fresh `python -m omym2` processes. Each stage timing therefore includes CLI startup and the real composition, metadata, filesystem, hashing, and SQLite pathways.
-
-After the clean check, setup changes the path-neutral genre tag on every managed FLAC and appends a one-byte payload sentinel so every filesystem reports a size mismatch from the persisted baseline. It then creates an unapplied `refresh --all` Plan containing one `refresh_metadata` action per Track. A second measured `check_ready_plan` stage exercises the overlap between managed-Track and READY-Plan source diagnostics. That diagnostic check intentionally exits nonzero because every Track differs from persisted managed state; the harness requires one `content_hash_changed` and one `metadata_hash_changed` result per Track.
-
-Bootstrap, fixture generation, tag mutation, and READY-Plan creation are reported as `setup.*` timings. `stage.measured_total_seconds` retains the original clean-baseline total, while `stage.extended_measured_total_seconds` adds only the measured `check_ready_plan` stage; neither includes setup. The temporary workspace is deleted after the run.
-
-Compare runs only when dataset arguments and workspace filesystem are the same. The harness does not clear operating-system filesystem caches.
-
-Add `--trust-stat` to forward the explicit opt-in to measured organize/check stages and to the post-mutation refresh/check setup:
-
-```bash
-uv run python scripts/benchmark_pipeline.py \
-  --tracks 100 \
-  --file-size-bytes 1048576 \
-  --tracks-per-album 10 \
-  --trust-stat
-```
-
-The output header records `trust_stat=false` or `trust_stat=true`. Apply remains unchanged in both modes and always performs full source hashing. On the clean organize/check stages, a true run measures the stat-only path after apply has populated verified baselines. After tag mutation, the sentinel-forced size mismatch sends refresh and READY-Plan check back to full capture, which also verifies the fallback behavior independently of filesystem timestamp precision.
+For a performance change, read [BENCHMARKS.md](BENCHMARKS.md) and run its
+pipeline benchmark before and after the change. It owns the benchmark dataset,
+measurement boundaries, and `--trust-stat` comparison procedure.
 
 ## Test Commands
 

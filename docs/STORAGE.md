@@ -1,9 +1,9 @@
 ---
 type: Storage Design
 title: Storage
-description: Defines the TOML-vs-SQLite boundary, repository and Track stat-baseline responsibilities, SQLite durability rules, reproducibility, and Library-relative path policy.
+description: Defines the TOML-vs-SQLite boundary, repository, Track stat-baseline, and persisted check-diagnostic responsibilities, SQLite durability rules, reproducibility, and Library-relative path policy.
 tags: [storage, sqlite, toml, persistence]
-timestamp: 2026-07-11T16:53:09+09:00
+timestamp: 2026-07-11T21:32:22+09:00
 ---
 
 # Storage
@@ -21,7 +21,7 @@ Domain concepts are defined in [DOMAIN.md](DOMAIN.md), and execution order is de
 
 ## Storage Boundary
 
-OMYM2 uses TOML for editable application settings and SQLite for managed state, plans, runs, and durable operation logs.
+OMYM2 uses TOML for editable application settings and SQLite for managed state, plans, runs, durable operation logs, and persisted check diagnostics.
 
 | Concern | Store |
 | --- | --- |
@@ -31,6 +31,7 @@ OMYM2 uses TOML for editable application settings and SQLite for managed state, 
 | Managed Library and Track state | SQLite |
 | Plans and PlanActions | SQLite |
 | Runs and FileEvents | SQLite |
+| CheckRuns and CheckIssues | SQLite |
 | Actual music files | Filesystem, not DB |
 
 Config files, DB files, and internal directories are created lazily when commands need them. Missing config or DB is not an error by itself; missing required paths are errors only for commands that need those paths.
@@ -52,7 +53,7 @@ are user-editable path/config values, not managed Library state.
 
 OMYM2 uses a single application database.
 
-The DB records OMYM2's last known managed state, scheduled plans, execution attempts, and durable Library music file operation logs.
+The DB records OMYM2's last known managed state, scheduled plans, execution attempts, durable Library music file operation logs, and persisted check diagnostics.
 
 The DB is not used as the editable settings store. It is not the source of truth for the actual filesystem. The filesystem can diverge from the DB because users or external tools may move, delete, rename, or modify files. Such divergence is detected by `check`.
 
@@ -67,7 +68,15 @@ plans
 plan_actions
 runs
 file_events
+check_runs
+check_issues
 ```
+
+`check` replaces each Library's prior CheckRun and CheckIssues with its latest
+diagnostics. It does not change Tracks, Plans, Runs, or Library music files.
+The detailed persistence and browsing contract is in
+[contracts/db-schema.md](contracts/db-schema.md#check_runs) and
+[execution/check.md](execution/check.md).
 
 ## Repository Boundary
 

@@ -3,7 +3,7 @@ type: Execution Spec
 title: Execution Model
 description: Defines the common Plan-centered execution model shared by all commands, covering Plan/PlanAction/Run/FileEvent behavior, single-use Plan policy, the blocked-vs-failed distinction, and the durable operation log principle.
 tags: [execution-model, plan, run, file-event]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-11T21:33:40+09:00
 ---
 
 # Execution Model
@@ -79,7 +79,11 @@ A Run is created before processing PlanActions and before any Library music file
 
 A Run is the parent unit for FileEvents and the main unit used by history and undo.
 
-If a failure occurs after some Library music file operations have succeeded, the Run becomes `partial_failed`.
+A Run becomes `partial_failed` when at least one eligible `move` or
+`refresh_metadata` action succeeds and at least one eligible action fails.
+`refresh_metadata` counts even though it creates no FileEvent and does not
+mutate a Library music file. Blocked and `skip` actions do not count. If no
+eligible action succeeds, an eligible-action failure makes the Run `failed`.
 
 ## FileEvent Behavior
 

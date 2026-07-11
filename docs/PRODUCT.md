@@ -1,9 +1,9 @@
 ---
 type: Product Overview
 title: Product
-description: Describes OMYM2's product shape as a headless domain core with a CLI runner and a local Web settings console, and defines its primary safe-import use case and technology stack.
+description: Describes OMYM2's product shape as a headless domain core with a CLI runner and a local Web settings, Plan creation/review, and status console, and defines its primary safe-import use case and technology stack.
 tags: [product, overview, cli, web-ui]
-timestamp: 2026-07-07T00:39:14+09:00
+timestamp: 2026-07-11T21:32:22+09:00
 ---
 
 # Product
@@ -14,12 +14,12 @@ This document explains what OMYM2 is and is not. Execution semantics live in [ex
 
 OMYM2 safely imports local music files into an organized library.
 
-The primary usage model is execution through the CLI. The GUI is a local settings and status console.
+The primary usage model is execution through the CLI. The GUI is a local settings, Plan creation/review, and status console.
 
 OMYM2 is not a full GUI music management application. Its shape is:
 
 ```text
-Headless domain/usecase core + CLI runner + Web settings console
+Headless domain/usecase core + CLI runner + Web settings, Plan creation/review, and status console
 ```
 
 The main value is not moving files quickly. The value is moving files through a reviewed Plan while keeping enough state and history to diagnose failures and recover safely.
@@ -29,7 +29,7 @@ The main value is not moving files quickly. The value is moving files through a 
 This is a product-level summary. Execution rules are authoritative in [execution/](execution/), and storage rules are authoritative in [STORAGE.md](STORAGE.md) plus [contracts/](contracts/).
 
 * Execution is primarily performed from the CLI.
-* The Web UI is a local settings and status console.
+* The Web UI is a local settings, Plan creation/review, and status console; it does not apply Plans or move files.
 * Daily use imports new files with `add` after one Library has been registered.
 * Unregistered or unorganized Libraries are accepted through `organize --library PATH` before `add`.
 * Tag editing is outside OMYM2; relocation after external tag correction is handled by `refresh`.
@@ -69,7 +69,7 @@ Incoming-to-Library flow and periodic maintenance operations.
 
 ## Role of the UI
 
-The GUI is a settings console, not an execution screen.
+The GUI is a local settings, Plan creation/review, and status console. It is not an execution screen: it does not apply Plans or move files.
 
 The main roles of the GUI are:
 
@@ -82,10 +82,12 @@ The main roles of the GUI are:
 * Setting behavior for conflicts
 * Validating settings
 * Displaying diffs before and after settings changes
+* Creating add, organize, and refresh Plans for review
+* Browsing and reviewing Plans and their PlanActions
 * Reviewing execution history
 * Checking the state of the DB and filesystem
 
-In the initial stage, the GUI focuses on read/write settings and read-only history / check views. Large-scale file movement is left to the CLI.
+The Web UI supports settings, Plan creation/review, and read-only Track, history, and check browsing. Applying Plans and all direct file movement remain CLI-only.
 
 ## Web UI Screen Ideas
 
@@ -93,6 +95,8 @@ Initial screens:
 
 * Settings
 * Path Policy Preview
+* Plans
+* Plan Detail
 * Runs
 * Run Detail
 * Check
@@ -118,4 +122,4 @@ E2E: deferred in the initial test policy
 Metadata extractor: mutagen
 ```
 
-The Web UI runs on localhost as a local settings console. Settings UI is represented by `omym2 settings`.
+The Web UI runs on localhost as a local settings, Plan creation/review, and status console. It is served by `omym2 settings`.

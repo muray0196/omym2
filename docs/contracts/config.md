@@ -3,12 +3,14 @@ type: Contract
 title: Config Contract
 description: Defines the authoritative contract for OMYM2's TOML-based application config, including its file location, AppConfig shape, path-policy templates, artist ID rules, and metadata/collision policy.
 tags: [config, toml, path-policy, artist-ids]
-timestamp: 2026-07-07T12:00:00+09:00
+timestamp: 2026-07-11T21:34:03+09:00
 ---
 
 # Config Contract
 
-This document is authoritative for the OMYM2 application config contract.
+This document is authoritative for the OMYM2 application config contract. It
+specifies the complete persisted TOML schema, defaults, and validation rules
+for the supported config version.
 
 Storage responsibility is summarized in [../STORAGE.md](../STORAGE.md). Domain concepts are in [../DOMAIN.md](../DOMAIN.md).
 
@@ -32,83 +34,66 @@ Expected settings file:
 
 The `.config/` directory is reserved for OMYM2 internal data under the application root.
 
-## AppConfig Shape
+## TOML Schema, Defaults, And Validation
 
-Initial settings areas:
+The table below is the complete schema for the persisted config. Every table
+except `[artist_ids.entries]` has a fixed key set.
 
-```text
-version
-paths
-add
-organize
-refresh
-path_policy
-artist_ids
-metadata
-collision
-ui
-```
+| TOML path | Accepted value | Default when omitted |
+| --- | --- | --- |
+| `version` | integer `1` exactly | Required; omission is invalid. |
+| `paths.library` | non-empty string path | unset (`null` in `AppConfig`) |
+| `paths.incoming` | non-empty string path | unset (`null` in `AppConfig`) |
+| `add.default_mode` | `"plan_first"` | `"plan_first"` |
+| `add.auto_apply` | boolean | `false` |
+| `organize.default_mode` | `"plan_first"` | `"plan_first"` |
+| `organize.auto_apply` | boolean | `false` |
+| `refresh.default_mode` | `"plan_first"` | `"plan_first"` |
+| `refresh.auto_apply` | boolean | `false` |
+| `path_policy.template` | non-empty valid path-stem template | `{album_artist}/{year}_{album}/{disc}-{track}_{title}` |
+| `path_policy.unknown_artist` | non-empty string | `"Unknown Artist"` |
+| `path_policy.unknown_album` | non-empty string | `"Unknown Album"` |
+| `path_policy.sanitize` | boolean | `true` |
+| `path_policy.max_filename_length` | positive integer | `180` |
+| `path_policy.disc_number_style` | `"plain"` or `"d_prefixed"` | `"plain"` |
+| `path_policy.disc_number_condition` | `"always"` or `"multiple_discs"` | `"always"` |
+| `artist_ids.max_length` | positive integer | `8` |
+| `artist_ids.fallback_id` | value matching the saved artist-ID pattern below | `"NOART"` |
+| `artist_ids.entries` | table mapping non-empty source-artist strings to valid saved artist-ID values | empty mapping |
+| `metadata.prefer_album_artist` | boolean | `true` |
+| `metadata.require_title` | boolean | `true` |
+| `metadata.require_artist` | boolean | `true` |
+| `metadata.require_album` | boolean | `false` |
+| `metadata.album_year_resolution` | `"latest"`, `"oldest"`, or `"most_frequent"` | `"latest"` |
+| `collision.on_target_exists` | `"conflict"` | `"conflict"` |
+| `collision.on_duplicate_hash` | `"skip"` | `"skip"` |
+| `collision.on_missing_metadata` | `"block"` | `"block"` |
+| `ui.theme` | `"system"`, `"light"`, `"dark"`, or `"oled"` | `"system"` |
+| `ui.show_advanced_settings` | boolean | `false` |
 
-Representative TOML shape:
+Every named section is optional. A missing section, or a missing key in a
+present section, uses the table's default; `version` is the sole exception.
+`TomlConfigStore.save` serializes a deterministic configuration containing every
+non-null setting and an `[artist_ids.entries]` table, even when that mapping is
+empty.
 
-```toml
-version = 1
-
-[paths]
-library = "/Users/me/Music/Library"
-incoming = "/Users/me/Music/Incoming"
-
-[add]
-default_mode = "plan_first"
-auto_apply = false
-
-[organize]
-default_mode = "plan_first"
-auto_apply = false
-
-[refresh]
-default_mode = "plan_first"
-auto_apply = false
-
-[path_policy]
-template = "{album_artist}/{year}_{album}/{disc}-{track}_{title}"
-unknown_artist = "Unknown Artist"
-unknown_album = "Unknown Album"
-sanitize = true
-max_filename_length = 180
-disc_number_style = "plain"
-disc_number_condition = "always"
-
-[artist_ids]
-max_length = 8
-fallback_id = "NOART"
-
-[artist_ids.entries]
-"米津玄師" = "KENSHYNZ"
-"John Smith" = "JOHNSMTH"
-
-[metadata]
-prefer_album_artist = true
-require_title = true
-require_artist = true
-require_album = false
-album_year_resolution = "latest"
-
-[collision]
-on_target_exists = "conflict"
-on_duplicate_hash = "skip"
-on_missing_metadata = "block"
-
-[ui]
-theme = "system"
-show_advanced_settings = false
-```
+Unknown top-level keys and unknown keys in a fixed section are validation
+errors. `[artist_ids.entries]` is the only open-ended table: its keys are
+user-provided source artist names, so any non-empty string key is allowed.
+Its values must be non-empty strings. All ordinary string settings must be
+non-empty when present; integers reject booleans; booleans must be TOML
+booleans. TOML validation checks configured paths only for string type and
+non-emptiness, not filesystem existence or accessibility.
 
 ## Versioning And Migration
 
-Config has a version so future migrations can be supported.
+Only config version `1` is supported. Missing, non-integer, or unsupported
+versions are validation errors. No version-based migration exists: a removed
+or renamed key is rejected as unknown, and an older version is rejected rather
+than silently upgraded.
 
-Config migration policy belongs in this contract. Migration implementation belongs to the config adapter. Do not add a separate migration document.
+Config migration policy belongs in this contract. Migration implementation
+belongs to the config adapter. Do not add a separate migration document.
 
 ## PathPolicyConfig
 
@@ -127,7 +112,7 @@ Allowed placeholders:
 * `{year}`
 * `{artist_id}`
 
-Initial template:
+Default template:
 
 ```text
 {album_artist}/{year}_{album}/{disc}-{track}_{title}
@@ -135,7 +120,7 @@ Initial template:
 
 The source music file suffix is appended after template rendering. Source suffixes are normalized to lowercase in the generated path. `max_filename_length` budgets the total generated file name including the extension; the extension is always preserved.
 
-The initial template does not include hash-based suffixes. If the final target path already exists, the PlanAction is blocked with `target_exists`.
+The default template does not include hash-based suffixes. If the final target path already exists, the PlanAction is blocked with `target_exists`.
 
 PathPolicy is pure and does not perform I/O. Target existence is checked by usecases through ports.
 
@@ -178,7 +163,7 @@ placeholder.
 Artist IDs are editable settings stored in TOML, not internal OMYM2 identities.
 They are not Track, Library, or Artist entity IDs.
 
-Representative fields:
+Fields:
 
 * `max_length`: positive maximum generated ID length
 * `fallback_id`: non-empty ID used when source text has no usable characters
@@ -215,7 +200,7 @@ Collision policy controls what plan creation records when:
 * a duplicate content hash is known
 * required metadata is missing
 
-The initial policy blocks target conflicts, skips duplicate hashes, and blocks missing required metadata.
+The current policy blocks target conflicts, skips duplicate hashes, and blocks missing required metadata.
 
 ## UI Settings
 

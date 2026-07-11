@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines OMYM2's local Web API envelopes, browsing and Plan-creation requests, pagination/facets/groups, and exclusion of CLI-only trust-stat flags.
 tags: [web-api, pagination, json, contract]
-timestamp: 2026-07-11T19:41:06+09:00
+timestamp: 2026-07-11T21:33:40+09:00
 ---
 
 # Web API Contract
@@ -26,7 +26,7 @@ Every list endpoint returns:
 }
 ```
 
-* `page.total` is the count of rows matching the same filters as the request, ignoring the cursor. It does not change as the client pages forward.
+* `page.total` is the count of rows matching the same filters as the request, ignoring the cursor, evaluated for this response. Pagination does not create a snapshot: the total may change between page requests as matching data changes.
 * `page.next_cursor` is `null` when there is no further page.
 * `page.limit` echoes the effective (post-clamp) limit that was applied to this response.
 
@@ -60,7 +60,7 @@ Facet endpoints return value/count breakdowns for one or more fields, ignoring p
 }
 ```
 
-`total` is the count of rows matching the request's filters (the same definition as `page.total` on list endpoints). Check facets additionally carry a top-level `"checked_at": "<iso>" | null` field (see Check Endpoints below).
+`total` is the count of rows matching the request's filters, evaluated for this response (the same non-snapshot behavior as `page.total` on list endpoints). Check facets additionally carry a top-level `"checked_at": "<iso>" | null` field (see Check Endpoints below).
 
 ## Group Envelope
 
@@ -75,7 +75,7 @@ Group-by endpoints return paginated group rows:
 }
 ```
 
-Group rows are ordered `count DESC, key ASC`. `page.total` is the total number of group rows matching the request's filters, ignoring the cursor.
+Group rows are ordered `count DESC, key ASC`. `page.total` is the number of group rows matching the request's filters, ignoring the cursor, evaluated for that response; it has no cross-page snapshot guarantee.
 
 Plan action group rows extend the shared row with review-risk fields:
 
@@ -132,16 +132,36 @@ Plan-creation JSON does not accept `trust_stat`. Web organize and refresh always
 
 ### Check
 
-Check findings are persisted, not recomputed per request. Ordering: `issue_seq ASC` (insertion order of the latest check run).
+Check findings are persisted, not recomputed per request. Each Library retains
+only its own latest completed check run and its issues. Ordering is
+`issue_seq ASC`: it preserves insertion order within a check run, while an
+aggregate response orders the current runs by their persisted sequence values.
 
-* `GET /api/check?issue_type=&library_id=&limit=&cursor=` — list envelope of `CheckIssue` items, plus a top-level `"checked_at": "<iso>" | null` field. `checked_at` is `null` when no check run has ever completed; in that case `items` is empty.
+The optional `library_id` selects the scope for every `GET /api/check*`
+endpoint:
+
+* With `library_id`, the endpoint reads only that Library's latest persisted
+  check run and its issues.
+* Without `library_id`, the endpoint aggregates the latest persisted issues of
+  every Library. Libraries can have different check times; this is not one
+  global latest run.
+
+For list and facet responses, `checked_at` is the selected Library's check time
+when `library_id` is supplied. In the aggregate scope it is the earliest check
+time among Libraries that have completed a check, intentionally reporting the
+least-fresh component; it is `null` only when the selected scope has no
+completed check run. The `issue_type` filter does not change this freshness
+timestamp. The groups response uses the same data scope but carries no
+`checked_at` field.
+
+* `GET /api/check?issue_type=&library_id=&limit=&cursor=` — list envelope of `CheckIssue` items, plus a top-level `"checked_at": "<iso>" | null` field.
 * `GET /api/check/facets?library_id=` — facet envelope; facet field: `issue_type`; carries `checked_at` per the Facet Envelope section above.
 * `GET /api/check/groups?group_by=issue_type&library_id=&limit=&cursor=` — group envelope.
-* `POST /api/check/run` — CSRF-protected via the `X-OMYM2-CSRF-Token` header; body may carry an optional `library_id`. Returns `{ "checked_at": "<iso>", "total": N, "errors": [] }`.
+* `POST /api/check/run` — CSRF-protected via the `X-OMYM2-CSRF-Token` header; body may carry an optional `library_id`. With it, the request recomputes one Library; without it, the request recomputes every known Library. Returns `{ "checked_at": "<iso>", "total": N, "errors": [] }` for that invocation.
 
 The check-run body does not accept `trust_stat`; Web recomputation always uses complete managed-file snapshots.
 
-Behavior change: `GET /api/check` no longer recomputes findings on every request. Findings are persisted by either the `omym2 check` CLI command or `POST /api/check/run`, and all `GET /api/check*` endpoints read the stored findings of the most recent check run.
+`GET /api/check*` never recomputes findings. The `omym2 check` CLI command and `POST /api/check/run` persist them, and browsing endpoints read the stored latest findings in their selected scope.
 
 ### History
 

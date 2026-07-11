@@ -3,7 +3,7 @@ type: Testing Guide
 title: Testing
 description: Defines OMYM2's test policy across architecture, unit, and integration test categories, fixture policy, and which contract changes require which test focus.
 tags: [testing, pytest, architecture-tests, fixtures]
-timestamp: 2026-07-07T14:00:00+09:00
+timestamp: 2026-07-11T21:34:03+09:00
 ---
 
 # Testing
@@ -65,12 +65,13 @@ Contract changes require tests for the changed behavior.
 
 | Contract change | Required test focus |
 | --- | --- |
-| Config contract | config load, save, validation, defaults, and migration behavior |
+| Config contract | config load, save, validation, defaults, and migration behavior; include Web settings JSON serialization and parsing when that boundary changes |
 | DB schema contract | migrations, repositories, constraints, stored JSON, timestamps, and path representation |
 | Path identity contract | path normalization, relink, Library identity, Track identity, and Library-root-relative persistence |
 | Status catalog | state transitions, failure behavior, and persistence of allowed values |
 | Execution contract | Plan, PlanAction, Run, FileEvent, apply order, failure cases, and undo/refresh/check behavior |
 | Architecture contract | dependency-boundary tests and source naming tests |
+| Web API contract | route-level request and response JSON shapes, success and error status/envelopes, CSRF on state-changing routes, and affected filters, pagination, facets, or groups |
 
 ## Fixture Policy
 

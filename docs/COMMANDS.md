@@ -3,7 +3,7 @@ type: Command Reference
 title: Commands
 description: Lists the OMYM2 CLI surface, including Plan workflows, diagnostics, settings, and the explicit organize/refresh/check trust-stat optimization flags.
 tags: [cli, commands, reference]
-timestamp: 2026-07-11T10:21:41+09:00
+timestamp: 2026-07-11T21:32:08+09:00
 ---
 
 # Commands
@@ -14,7 +14,7 @@ The CLI is the primary execution interface. Complex settings editing is left to 
 
 ## Command List
 
-The initial CLI is expected to include:
+The current CLI surface includes:
 
 ```bash
 # Settings
