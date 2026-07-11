@@ -3,7 +3,7 @@ type: Storage Design
 title: Storage
 description: Defines the TOML-vs-SQLite boundary, repository and Track stat-baseline responsibilities, SQLite durability rules, reproducibility, and Library-relative path policy.
 tags: [storage, sqlite, toml, persistence]
-timestamp: 2026-07-11T10:21:41+09:00
+timestamp: 2026-07-11T16:53:09+09:00
 ---
 
 # Storage
@@ -98,7 +98,7 @@ If the process crashes, pending or partially recorded FileEvents remain availabl
 
 Apply retains one lazily opened SQLite connection for the lifetime of one apply usecase. Every inner UnitOfWork block remains an independent `BEGIN` / commit-or-rollback transaction, including the commit that persists a PENDING FileEvent before its Library music file mutation. The connection is closed deterministically on the same thread when the usecase ends. UnitOfWork blocks outside that outer scope keep their close-per-transaction behavior; connections are not process-global or shared across Web requests or threads.
 
-Connections enable `journal_mode = WAL` for read/write concurrency, but `synchronous` stays at its FULL default rather than being lowered to NORMAL: NORMAL only guarantees a WAL fsync at the next checkpoint, so a committed PENDING FileEvent could remain unsynced in the WAL file while the subsequent Library music file move already executed, reopening the crash-safety gap the pending-FileEvent-before-mutation ordering exists to close. Reusing the apply connection changes checkpoint timing only: normal WAL auto-checkpointing bounds growth, and deterministic final connection close allows SQLite's last-connection checkpoint. OMYM2 does not force an extra per-transaction or apply-end checkpoint.
+Connections enable `journal_mode = WAL` for read/write concurrency and explicitly set `synchronous = FULL`: SQLite build defaults may select NORMAL for WAL, which only guarantees a WAL fsync at the next checkpoint. Under NORMAL, a committed PENDING FileEvent could remain unsynced in the WAL file while the subsequent Library music file move already executed, reopening the crash-safety gap the pending-FileEvent-before-mutation ordering exists to close. Reusing the apply connection changes checkpoint timing only: normal WAL auto-checkpointing bounds growth, and deterministic final connection close allows SQLite's last-connection checkpoint. OMYM2 does not force an extra per-transaction or apply-end checkpoint.
 
 WAL backs each database with a `-wal` and `-shm` shared-memory file, which can misbehave over Windows-mounted 9p/DrvFs paths (for example, running from `/mnt/c` under WSL2); the database should live on a native filesystem.
 

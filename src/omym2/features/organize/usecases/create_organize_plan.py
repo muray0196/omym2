@@ -70,8 +70,9 @@ class CreateOrganizePlanUseCase:
         with self.ports.uow as uow:
             library = self._select_library(uow, request.library_root, path_policy_hash, timestamp)
             existing_track_records = tuple(uow.tracks.list_by_library(library.library_id))
-            existing_tracks = {track.current_path: track for track in existing_track_records}
             trust_eligible_tracks = _unique_tracks_by_current_path(existing_track_records)
+            existing_tracks = {track.current_path: track for track in existing_track_records}
+            existing_tracks.update(trust_eligible_tracks)
             scan_entries = tuple(self.ports.file_scanner.scan(library.root_path))
             capture_inputs = tuple(self._capture_input(library.root_path, entry) for entry in scan_entries)
             valid_capture_inputs = tuple(

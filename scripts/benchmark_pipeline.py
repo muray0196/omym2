@@ -25,6 +25,7 @@ from omym2.config import (
     BENCHMARK_MIN_FILE_SIZE_BYTES,
     BENCHMARK_MIN_TRACK_COUNT,
     BENCHMARK_MIN_TRACKS_PER_ALBUM,
+    BENCHMARK_MUTATION_SENTINEL_BYTES,
 )
 
 if TYPE_CHECKING:
@@ -383,6 +384,7 @@ def _mutate_path_neutral_tags(library_root: Path, expected_count: int) -> None:
         audio = cast("FlacTagWriter", FLAC(path))
         audio["genre"] = SYNTHETIC_MUTATED_GENRE
         audio.save()
+        _append_payload(path, BENCHMARK_MUTATION_SENTINEL_BYTES)
 
 
 def _measure_cli(

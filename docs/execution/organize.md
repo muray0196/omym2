@@ -3,7 +3,7 @@ type: Execution Spec
 title: Organize Execution
 description: Defines organize registration and reconciliation, Plan creation, and the explicit unique-Track size+mtime trust-stat optimization and fallback rules.
 tags: [organize, library-registration, plan-creation, path-policy]
-timestamp: 2026-07-11T10:21:41+09:00
+timestamp: 2026-07-11T16:53:36+09:00
 ---
 
 # Organize Execution
@@ -87,6 +87,8 @@ One scanned source is eligible only when all of these conditions hold:
 * current size and modification time exactly equal that persisted baseline
 
 For an eligible source, organize may reconstruct the FileSnapshot from the scanner stat plus the Track's last verified hashes and metadata. Every null, ambiguous, path-mismatching, or changed baseline falls back to a complete snapshot that performs a fresh stat, metadata read, and content hash. Full captures do not reuse the earlier scan observation when establishing the persisted baseline.
+
+When an eligible source is accepted, organize updates that same unique active Track identity. Removed Track records that share the source path remain removed.
 
 Accepted organize candidates persist their snapshot size and modification time. This backfills existing null baselines only after full verification; an eligible trusted candidate preserves its already verified baseline.
 

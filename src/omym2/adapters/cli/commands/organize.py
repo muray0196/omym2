@@ -135,7 +135,7 @@ def _parse_args(args: Sequence[str]) -> _OrganizeCommandOptions:
             continue
 
         if arg == LIBRARY_OPTION:
-            if library_root is not None or index + 1 >= len(args):
+            if library_root is not None or index + 1 >= len(args) or args[index + 1].startswith("-"):
                 raise ValueError(ORGANIZE_USAGE_MESSAGE)
             library_root = args[index + 1]
             index += LIBRARY_OPTION_ARG_COUNT

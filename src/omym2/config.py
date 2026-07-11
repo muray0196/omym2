@@ -16,6 +16,7 @@ SQLITE_DATABASE_FILE_NAME: Final = "omym2.sqlite3"  # SQLite database file name
 BENCHMARK_DEFAULT_TRACK_COUNT: Final = 100  # default synthetic benchmark size, tracks, >= 1
 BENCHMARK_DEFAULT_FILE_SIZE_BYTES: Final = 1_048_576  # default synthetic file size, bytes, >= 4096
 BENCHMARK_DEFAULT_TRACKS_PER_ALBUM: Final = 10  # default synthetic album shape, tracks per album, >= 1
+BENCHMARK_MUTATION_SENTINEL_BYTES: Final = 1  # payload appended after tag mutation, bytes, >= 1
 BENCHMARK_MIN_TRACK_COUNT: Final = 1  # minimum synthetic benchmark size, tracks, >= 1
 BENCHMARK_MIN_FILE_SIZE_BYTES: Final = 4_096  # minimum tagged synthetic FLAC size, bytes, >= 4096
 BENCHMARK_MIN_TRACKS_PER_ALBUM: Final = 1  # minimum synthetic album shape, tracks per album, >= 1
@@ -203,6 +204,7 @@ PATH_POLICY_PREVIEW_FILE_EXTENSION: Final = ".FLAC"  # sample source suffix show
 SQLITE_CONNECTION_TIMEOUT_SECONDS: Final = 30.0  # SQLite connection busy timeout, seconds
 SQLITE_MIGRATION_FILE_ENCODING: Final = "utf-8"  # SQLite migration resource encoding
 SQLITE_MIGRATION_FILE_EXTENSION: Final = ".sql"  # migration resource file extension
+SQLITE_SYNCHRONOUS_PRAGMA: Final = "PRAGMA synchronous = FULL"  # per-commit WAL durability pragma
 SUPPORTED_MUSIC_FILE_EXTENSIONS: Final = frozenset(
     {
         ".aac",

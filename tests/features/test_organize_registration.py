@@ -6,7 +6,7 @@ Why: Protects Library registration and review-plan creation before apply exists.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -155,6 +155,36 @@ def test_organize_trust_stat_skips_full_capture_for_matching_active_track() -> N
     assert result.plan is None
     assert result.track_count == 1
     assert uow.tracks.get(TRACK_ID) is not None
+
+
+def test_organize_trust_stat_preserves_unique_active_track_when_removed_track_shares_path() -> None:
+    """Stat trust and persistence select the same unique active Track identity."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    active_track = _track(size=FILE_SIZE, mtime=BASE_TIME)
+    removed_track = replace(
+        _track(track_id=SECOND_TRACK_ID, size=FILE_SIZE, mtime=BASE_TIME),
+        status=TrackStatus.REMOVED,
+    )
+    uow.tracks.save(active_track)
+    uow.tracks.save(removed_track)
+    ports, _, snapshot_reader = _ports(
+        uow,
+        (_entry(CANONICAL_ABSOLUTE_PATH),),
+        {},
+        SequenceIdGenerator(),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=True, library_root=LIBRARY_ROOT)
+    )
+
+    assert snapshot_reader.captured_paths == []
+    assert result.plan is None
+    persisted_active_track = uow.tracks.get(TRACK_ID)
+    assert persisted_active_track is not None
+    assert persisted_active_track.status == TrackStatus.ACTIVE
+    assert uow.tracks.get(SECOND_TRACK_ID) == removed_track
 
 
 def test_organize_trust_stat_full_captures_track_without_complete_baseline() -> None:

@@ -2,7 +2,7 @@
 type: Plan
 title: Performance Optimization Plan
 description: Tracks the implemented OMYM2 performance roadmap, measured phase impact, safety trade-offs, and the approved opt-in trust-stat policy.
-timestamp: 2026-07-11
+timestamp: 2026-07-11T16:52:31+09:00
 status: Phases 0-3 implemented and validated
 ---
 
@@ -75,7 +75,7 @@ All S effort, independently committable, no crash-safety interaction. Expected c
 | P0-4 | Index migration: **add** `idx_check_issues_check_run_id` (EXPLAIN-verified scan→covering-index) and `idx_file_events_library_status (library_id, status, sequence_no)` (check's `list_pending_by_library` currently full-scans an append-only log); **drop** `idx_tracks_library_id` and `idx_plans_library_id` (both EXPLAIN-verified subsumed by composite indexes) | migrations/ | Kills 2 recurring scans; ~20% less index maintenance on every per-move `tracks` write | Re-verify EXPLAIN on the live migrated DB before merging (agent tested a reconstructed schema) |
 | P0-5 | PathPolicy: skip computing template fields the configured template doesn't use (reuse `_template_uses_placeholder` from config_fingerprint.py); add per-instance memo dict for `sanitize_*`/`generate_artist_id` (500 artists / 2k albums, not 50k) | [path_policy.py:83-93](src/omym2/domain/services/path_policy.py#L83-L93) | ~0.3 s/50k unconditionally under the default template (artist_id is computed and unused); memo: 28.6× on generate_artist_id | Cache must be instance-scoped, not a global lru_cache — the web process is long-lived |
 | P0-6 | file_mover: memoize parent dirs already ensured this run; skip repeat `mkdir` | [file_mover.py:34](src/omym2/adapters/fs/file_mover.py#L34) | Replaces the repeated existing-directory `mkdir` path with one cached-directory validation, saving roughly one metadata syscall per repeated parent | The validation preserves behavior if a cached directory is removed and does not retry a missing source; keep the known TARGET_EXISTS mislabel note in mind if touching adjacent lines |
-| P0-7 | Organize initially passed the scanner's stat result into snapshot capture instead of re-stat'ing. Phase 3 supersedes this for full captures because their fresh stat now becomes a persisted trust baseline; only an eligible trusted snapshot reuses scan stat. Add's second stat remains untouched. | [file_snapshot_reader.py:29](src/omym2/adapters/fs/file_snapshot_reader.py#L29) + organize call site | Negligible on ext4; ~90 s per 50k on drvfs mounts before baseline persistence changed the safety requirement | Port signature retains the optional pre-stat parameter for callers that do not establish a baseline |
+| P0-7 | Organize initially passed the scanner's stat result into snapshot capture instead of re-stat'ing. Phase 3 supersedes this for full captures because their fresh stat now becomes a persisted trust baseline; only an eligible trusted snapshot reuses scan stat. Add's second stat remains untouched. | [file_snapshot_reader.py:29](src/omym2/adapters/fs/file_snapshot_reader.py#L29) + organize call site | Negligible on ext4; ~90 s per 50k on drvfs mounts before baseline persistence changed the safety requirement | The full-capture port remains path-only; trusted-snapshot reconstruction occurs in domain/usecase code above the adapter |
 | P0-8 | check: for unmanaged-file duplicate candidates, hash directly instead of full `capture()` (metadata_hash is unused there) | [check_library.py:179-184](src/omym2/features/check/usecases/check_library.py#L179-L184) | Saves one mutagen open+read per unmanaged file | None |
 
 ## Phase 2 (P1) — Structural wins, still zero behavior change
@@ -123,7 +123,7 @@ Matched Phase 3 runs used the same 100 × 1 MiB dataset and `/tmp` filesystem. T
 | measured total | 1.123609 s | 0.833924 s | -25.8% |
 | check after tag mutation + READY refresh Plan | 0.258639 s | 0.259550 s | +0.4% (expected full-capture fallback) |
 
-Final validation passed `scripts/checks.sh all`: frontend format/lint/build, Ruff lint/format, basedpyright with zero warnings, and 636 pytest tests.
+Final validation passed `scripts/checks.sh all`: frontend format/lint/build, Ruff lint/format, basedpyright with zero warnings, and the complete pytest suite.
 
 ## Not recommended (analyzed, with reasons — do not re-open without new evidence)
 

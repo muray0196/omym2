@@ -178,6 +178,18 @@ def test_organize_command_reports_usage_for_wrong_argument_count() -> None:
     assert "Usage: omym2 organize [--library PATH] [--apply] [--trust-stat]" in stderr.getvalue()
 
 
+def test_organize_command_reports_usage_when_library_path_is_an_option() -> None:
+    """organize --library rejects another option in place of its path."""
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = main(["organize", "--library", "--trust-stat"], stdout=stdout, stderr=stderr)
+
+    assert exit_code == USAGE_EXIT_CODE
+    assert stdout.getvalue() == ""
+    assert "Usage: omym2 organize [--library PATH] [--apply] [--trust-stat]" in stderr.getvalue()
+
+
 def test_organize_command_apply_moves_file_and_registers_library(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

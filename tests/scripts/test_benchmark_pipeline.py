@@ -14,10 +14,38 @@ from omym2.config import (
     BENCHMARK_MIN_FILE_SIZE_BYTES,
     BENCHMARK_MIN_TRACK_COUNT,
     BENCHMARK_MIN_TRACKS_PER_ALBUM,
+    BENCHMARK_MUTATION_SENTINEL_BYTES,
 )
+from scripts import benchmark_pipeline
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
 SCRIPT_RELATIVE_PATH = "scripts/benchmark_pipeline.py"
+
+
+def test_benchmark_tag_mutation_forces_file_size_mismatch(tmp_path: Path) -> None:
+    """Tag mutation always invalidates a trusted size baseline, even on coarse-timestamp filesystems."""
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    track = benchmark_pipeline.SyntheticTrack(
+        path=library_root / "track.flac",
+        title="Track",
+        artist="Artist",
+        album="Album",
+        track_number=BENCHMARK_MIN_TRACK_COUNT,
+        track_total=BENCHMARK_MIN_TRACK_COUNT,
+    )
+    benchmark_pipeline._write_synthetic_flac(  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001 -- directly covers benchmark fixture setup.
+        track,
+        BENCHMARK_MIN_FILE_SIZE_BYTES,
+    )
+    baseline_size = track.path.stat().st_size
+
+    benchmark_pipeline._mutate_path_neutral_tags(  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001 -- directly covers benchmark setup behavior.
+        library_root,
+        BENCHMARK_MIN_TRACK_COUNT,
+    )
+
+    assert track.path.stat().st_size == baseline_size + BENCHMARK_MUTATION_SENTINEL_BYTES
 
 
 def test_benchmark_pipeline_runs_real_cli_stages_at_minimum_dataset_boundary() -> None:
@@ -51,8 +79,8 @@ def test_benchmark_pipeline_runs_real_cli_stages_at_minimum_dataset_boundary() -
         assert re.search(rf"^stage\.{stage}_seconds=\d+\.\d+$", result.stdout, flags=re.MULTILINE)
 
 
-def test_benchmark_pipeline_exercises_trust_stat_commands() -> None:
-    """The benchmark can run every eligible measured workflow with the explicit opt-in."""
+def test_benchmark_pipeline_forces_trust_stat_fallback_after_mutation() -> None:
+    """A deterministic size mutation exercises every opted-in workflow and its full-capture fallback."""
     result = _run_script(
         "--tracks",
         str(BENCHMARK_MIN_TRACK_COUNT),

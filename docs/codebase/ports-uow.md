@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Ports And UnitOfWork
 description: Defines OMYM2's scan/stat/snapshot ports, ordered batch capture, one-usecase UnitOfWork resource lifetime, independent transactions, and durable FileEvents.
 tags: [ports, unit-of-work, transactions, architecture]
-timestamp: 2026-07-11T10:21:41+09:00
+timestamp: 2026-07-11T16:52:31+09:00
 ---
 
 # Ports And UnitOfWork
@@ -44,17 +44,11 @@ class FileStatReader(Protocol):
 
 ```python
 class FileSnapshotReader(Protocol):
-    def capture(
-        self,
-        path: PathLike,
-        *,
-        observation: FileScanEntry | None = None,
-    ) -> FileSnapshot: ...
+    def capture(self, path: PathLike) -> FileSnapshot: ...
 
 @dataclass(frozen=True)
 class FileSnapshotCaptureRequest:
     path: PathLike
-    observation: FileScanEntry | None = None
 
 class BatchFileSnapshotReader(Protocol):
     def capture_many(
@@ -65,7 +59,7 @@ class BatchFileSnapshotReader(Protocol):
 
 `BatchFileSnapshotReader` is the bounded, input-order-preserving read path used by add, organize, refresh, and check. A `None` result represents `FileNotFoundError` for the corresponding request. Apply, undo, and inspect keep using single-file `FileSnapshotReader.capture()`; in particular, apply never batches the source precondition that immediately precedes a move.
 
-An optional `observation` can avoid a redundant stat inside a complete capture when the usecase does not persist that stat as a new trust baseline. Complete captures that establish or refresh a Track baseline request their own fresh stat. Trust eligibility is a domain/usecase decision; filesystem adapters only return observations and snapshots.
+Every complete capture performs its own fresh stat. Trust eligibility and trusted-snapshot reconstruction are domain/usecase decisions above the filesystem adapter; filesystem adapters only return observations and complete snapshots.
 
 ```python
 class MetadataReader(Protocol):
