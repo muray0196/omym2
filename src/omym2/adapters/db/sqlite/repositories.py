@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
 from omym2.config import PERSISTED_JSON_ITEM_SEPARATOR, PERSISTED_JSON_KEY_SEPARATOR
-from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
+from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
 from omym2.domain.models.check_run import CheckRun
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
@@ -19,7 +19,7 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
-from omym2.features.common_ports import PlanActionGroupRow
+from omym2.features.common_ports import CheckIssueGroup, PlanActionGroupRow
 from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId, parse_uuid
 from omym2.shared.pagination import INVALID_CURSOR_MESSAGE, CursorDecodeError, FacetValue, GroupCount, Page
 from omym2.shared.time import as_utc
@@ -39,6 +39,11 @@ LIKE_ESCAPE_CHAR = "\\"  # escape character used for LIKE search patterns
 UNSUPPORTED_TRACK_GROUPING_MESSAGE = "Unsupported Track grouping"
 UNKNOWN_TRACK_GROUP_LABEL = "(unknown)"
 TRACK_GROUP_LABEL_SEPARATOR = " — "  # em dash joiner between group artist and group album labels
+CHECK_ISSUE_GROUP_UNKNOWN_KEY = "(unknown)"
+CHECK_ISSUE_GROUP_ROOT_KEY = "(root)"
+CHECK_ISSUE_GROUP_EXTERNAL_KEY = "(external)"
+CHECK_ISSUE_GROUP_ARTIST_ALBUM_LABEL_SEPARATOR = " / "
+CHECK_ISSUE_GROUP_UNKNOWN_ARTIST_ALBUM_LABEL = "Unknown Artist / Unknown Album"
 KEYSET_CURSOR_KEY_LENGTH = 2  # every keyset cursor key in this module is a 2-tuple
 CHECK_ISSUE_CURSOR_KEY_LENGTH = 1  # a CheckIssue cursor key is a single issue_seq value
 
@@ -55,6 +60,70 @@ TRACK_GROUP_SOURCE_SELECT = """
                     AS group_artist,
                 COALESCE(json_extract(metadata_json, '$.album'), ?) AS group_album
             FROM tracks
+"""
+CHECK_ISSUE_PATH_ROOT_SELECT = f"""
+                CASE
+                    WHEN ci.path IS NULL OR ci.path = '' THEN NULL
+                    WHEN substr(ci.path, 1, 1) = '/' THEN '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}'
+                    WHEN instr(ci.path, '/') = 0 THEN '{CHECK_ISSUE_GROUP_ROOT_KEY}'
+                    ELSE substr(ci.path, 1, instr(ci.path, '/'))
+                END
+"""
+CHECK_ISSUE_ARTIST_SEGMENT_SELECT = f"""
+                CASE
+                    WHEN ci.path IS NULL OR ci.path = '' THEN NULL
+                    WHEN substr(ci.path, 1, 1) = '/' THEN '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}'
+                    WHEN instr(ci.path, '/') = 0 THEN '{CHECK_ISSUE_GROUP_ROOT_KEY}'
+                    ELSE substr(ci.path, 1, instr(ci.path, '/') - 1)
+                END
+"""
+CHECK_ISSUE_ALBUM_SEGMENT_SELECT = f"""
+                CASE
+                    WHEN ci.path IS NULL OR ci.path = '' THEN NULL
+                    WHEN substr(ci.path, 1, 1) = '/' THEN '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}'
+                    WHEN instr(ci.path, '/') = 0 THEN '{CHECK_ISSUE_GROUP_ROOT_KEY}'
+                    WHEN instr(substr(ci.path, instr(ci.path, '/') + 1), '/') = 0 THEN '{CHECK_ISSUE_GROUP_ROOT_KEY}'
+                    ELSE substr(
+                        substr(ci.path, instr(ci.path, '/') + 1),
+                        1,
+                        instr(substr(ci.path, instr(ci.path, '/') + 1), '/') - 1
+                    )
+                END
+"""
+CHECK_ISSUE_SEVERITY_SELECT = """
+                CASE ci.issue_type
+                    WHEN 'db_file_missing' THEN 'error'
+                    WHEN 'content_hash_changed' THEN 'error'
+                    WHEN 'library_stale' THEN 'info'
+                    ELSE 'warning'
+                END
+"""
+CHECK_ISSUE_COMMAND_KEY_SELECT = """
+                CASE
+                    WHEN ci.issue_type IN ('db_file_missing', 'content_hash_changed', 'metadata_hash_changed') THEN 'refresh'
+                    WHEN ci.issue_type = 'unmanaged_file_exists' THEN 'add'
+                    WHEN ci.issue_type IN (
+                        'current_path_differs_from_canonical_path',
+                        'duplicate_candidate',
+                        'plan_source_changed'
+                    ) THEN 'organize'
+                    WHEN ci.issue_type = 'pending_file_event_exists' THEN 'history'
+                    ELSE 'check'
+                END
+"""
+CHECK_ISSUE_COMMAND_LABEL_SELECT = """
+                CASE
+                    WHEN ci.issue_type IN ('db_file_missing', 'content_hash_changed', 'metadata_hash_changed')
+                        THEN 'omym2 refresh <file>'
+                    WHEN ci.issue_type = 'unmanaged_file_exists' THEN 'omym2 add <path>'
+                    WHEN ci.issue_type IN (
+                        'current_path_differs_from_canonical_path',
+                        'duplicate_candidate',
+                        'plan_source_changed'
+                    ) THEN 'omym2 organize'
+                    WHEN ci.issue_type = 'pending_file_event_exists' THEN 'omym2 history'
+                    ELSE 'omym2 check'
+                END
 """
 
 TRACK_SELECT_FROM = """
@@ -306,9 +375,14 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
         library_id: LibraryId | None,
         *,
         issue_type: CheckIssueType | None,
+        grouping: CheckIssueGrouping | None = None,
+        group_key: str | None = None,
         page: PageRequest,
     ) -> Page[CheckIssue]:
         """Return one keyset page of CheckIssues ordered issue_seq ASC."""
+        if grouping is not None and group_key is not None:
+            return self._group_member_page(library_id, issue_type, grouping, group_key, page)
+
         where_sql, where_params = _check_issue_filter_where(library_id, issue_type)
         # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
         count_sql = f"SELECT COUNT(*) FROM check_issues{where_sql}"  # noqa: S608
@@ -332,6 +406,47 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
         next_cursor_key = (str(_row_int(rows[page.limit - 1], "issue_seq")),) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
+    def _group_member_page(
+        self,
+        library_id: LibraryId | None,
+        issue_type: CheckIssueType | None,
+        grouping: CheckIssueGrouping,
+        group_key: str,
+        page: PageRequest,
+    ) -> Page[CheckIssue]:
+        """Return a keyset page of one server-derived CheckIssue group."""
+        where_sql, where_params = _check_issue_group_filter_where(library_id, issue_type)
+        source_sql = _check_issue_group_source_sql(grouping, where_sql)
+        total = _scalar_int(
+            self._connection,
+            source_sql  # noqa: S608  # source SQL contains only static grouping expressions and bound filters
+            + """
+            SELECT COUNT(*)
+            FROM source
+            WHERE group_key = ?
+            """,
+            (*where_params, group_key),
+        )
+
+        cursor_sql, cursor_params = _check_issue_cursor_clause(" WHERE group_key = ?", page.cursor_key)
+        rows = _fetch_all(
+            self._connection,
+            source_sql  # noqa: S608  # source SQL contains only static grouping expressions and bound filters
+            + f"""
+            SELECT issue_seq, check_run_id, library_id, issue_type, path, track_id, plan_id, detail
+            FROM source
+            WHERE group_key = ?{cursor_sql}
+            ORDER BY issue_seq
+            LIMIT ?
+            """,  # noqa: S608  # cursor SQL is built from a static keyset clause with bound values
+            (*where_params, group_key, *cursor_params, page.limit + 1),
+        )
+        issues = tuple(_check_issue_from_row(row) for row in rows)
+        page_items = issues[: page.limit]
+        has_more = len(issues) > page.limit
+        next_cursor_key = (str(_row_int(rows[page.limit - 1], "issue_seq")),) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
     def issue_type_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
         """Return CheckIssue issue_type facets, ordered count DESC then value ASC."""
         where_sql, where_params = _optional_library_clause(library_id)
@@ -349,45 +464,75 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
         )
         return tuple(FacetValue(value=_row_text(row, "issue_type"), count=_row_int(row, "count")) for row in rows)
 
-    def group_page(self, library_id: LibraryId | None, page: PageRequest) -> Page[GroupCount]:
-        """Return one keyset page of CheckIssue groups by issue_type ordered count DESC then key ASC."""
-        library_where, library_params = _optional_library_clause(library_id)
+    def group_page(
+        self,
+        library_id: LibraryId | None,
+        grouping: CheckIssueGrouping,
+        page: PageRequest,
+    ) -> Page[CheckIssueGroup]:
+        """Return one keyset page of CheckIssue groups with their common path roots."""
+        where_sql, where_params = _check_issue_group_filter_where(library_id, None)
+        source_sql = _check_issue_group_source_sql(grouping, where_sql)
 
-        # SQL-injection safety note: library_where is a static clause template bound with `?`; never raw input.
+        # SQL-injection safety note: source_sql is assembled solely from static SQL templates and bound filters.
         total = _scalar_int(
             self._connection,
-            f"""
+            source_sql  # noqa: S608  # source SQL contains only static grouping expressions and bound filters
+            + """
             SELECT COUNT(*) FROM (
                 SELECT 1
-                FROM check_issues
-                {library_where}
-                GROUP BY issue_type
+                FROM source
+                GROUP BY group_key
             )
-            """,  # noqa: S608
-            tuple(library_params),
+            """,
+            tuple(where_params),
         )
 
         cursor_sql, cursor_params = _track_group_cursor_clause(page.cursor_key)
-        # SQL-injection safety note: library_where and cursor_sql are static templates bound with `?`; never raw input.
+        # SQL-injection safety note: source_sql and cursor_sql use only static templates and bound values.
         rows = _fetch_all(
             self._connection,
-            f"""
-            SELECT key, label, count
+            source_sql  # noqa: S608  # source SQL contains only static grouping expressions and bound filters
+            + f"""
+            , group_counts AS (
+                SELECT group_key AS key, MIN(group_label) AS label, COUNT(*) AS count
+                FROM source
+                GROUP BY group_key
+            ), root_counts AS (
+                SELECT group_key, path_root, COUNT(*) AS root_count
+                FROM source
+                WHERE path_root IS NOT NULL
+                GROUP BY group_key, path_root
+            )
+            SELECT key, label, count, common_path_root
             FROM (
-                SELECT issue_type AS key, issue_type AS label, COUNT(*) AS count
-                FROM check_issues
-                {library_where}
-                GROUP BY issue_type
+                SELECT
+                    group_counts.key,
+                    group_counts.label,
+                    group_counts.count,
+                    (
+                        SELECT root_counts.path_root
+                        FROM root_counts
+                        WHERE root_counts.group_key = group_counts.key
+                        ORDER BY root_counts.root_count DESC, root_counts.path_root ASC
+                        LIMIT 1
+                    ) AS common_path_root
+                FROM group_counts
             )
             {cursor_sql}
             ORDER BY count DESC, key ASC
             LIMIT ?
             """,  # noqa: S608
-            (*library_params, *cursor_params, page.limit + 1),
+            (*where_params, *cursor_params, page.limit + 1),
         )
 
         groups = tuple(
-            GroupCount(key=_row_text(row, "key"), label=_row_text(row, "label"), count=_row_int(row, "count"))
+            CheckIssueGroup(
+                key=_row_text(row, "key"),
+                label=_row_text(row, "label"),
+                count=_row_int(row, "count"),
+                common_path_root=_row_optional_text(row, "common_path_root"),
+            )
             for row in rows
         )
         page_items = groups[: page.limit]
@@ -1396,6 +1541,95 @@ def _check_issue_filter_where(
     if not clauses:
         return "", params
     return " WHERE " + " AND ".join(clauses), params
+
+
+def _check_issue_group_filter_where(
+    library_id: LibraryId | None,
+    issue_type: CheckIssueType | None,
+) -> tuple[str, list[object]]:
+    """Build static, aliased SQL filters for a CheckIssue group source CTE."""
+    clauses: list[str] = []
+    params: list[object] = []
+    if library_id is not None:
+        clauses.append("ci.library_id = ?")
+        params.append(str(library_id))
+    if issue_type is not None:
+        clauses.append("ci.issue_type = ?")
+        params.append(issue_type.value)
+    if not clauses:
+        return "", params
+    return " WHERE " + " AND ".join(clauses), params
+
+
+def _check_issue_group_source_sql(grouping: CheckIssueGrouping, where_sql: str) -> str:
+    """Return a static CTE that projects one requested CheckIssue grouping and path root."""
+    group_key_sql, group_label_sql = _check_issue_group_expressions(grouping)
+    return f"""
+            WITH base AS (
+                SELECT
+                    ci.issue_seq,
+                    ci.check_run_id,
+                    ci.library_id,
+                    ci.issue_type,
+                    ci.path,
+                    ci.track_id,
+                    ci.plan_id,
+                    ci.detail,
+                    {CHECK_ISSUE_PATH_ROOT_SELECT} AS path_root,
+                    {CHECK_ISSUE_ARTIST_SEGMENT_SELECT} AS group_artist,
+                    {CHECK_ISSUE_ALBUM_SEGMENT_SELECT} AS group_album,
+                    {CHECK_ISSUE_SEVERITY_SELECT} AS issue_severity,
+                    {CHECK_ISSUE_COMMAND_KEY_SELECT} AS suggested_command_key,
+                    {CHECK_ISSUE_COMMAND_LABEL_SELECT} AS suggested_command_label
+                FROM check_issues AS ci
+                {where_sql}
+            ), source AS (
+                SELECT
+                    issue_seq,
+                    check_run_id,
+                    library_id,
+                    issue_type,
+                    path,
+                    track_id,
+                    plan_id,
+                    detail,
+                    path_root,
+                    {group_key_sql} AS group_key,
+                    {group_label_sql} AS group_label
+                FROM base
+            )
+    """  # noqa: S608  # interpolated fragments are selected only from static grouping SQL templates
+
+
+def _check_issue_group_expressions(grouping: CheckIssueGrouping) -> tuple[str, str]:
+    """Return static SQL expressions for the CheckIssue group key and display label."""
+    if grouping is CheckIssueGrouping.ISSUE_TYPE:
+        return "issue_type", "issue_type"
+    if grouping is CheckIssueGrouping.SEVERITY:
+        return "issue_severity", "issue_severity"
+    if grouping is CheckIssueGrouping.PATH_ROOT:
+        path_root = f"COALESCE(path_root, '{CHECK_ISSUE_GROUP_UNKNOWN_KEY}')"
+        return path_root, path_root
+    if grouping is CheckIssueGrouping.ARTIST_ALBUM:
+        return (
+            f"""
+                CASE
+                    WHEN group_artist IS NULL THEN '{CHECK_ISSUE_GROUP_UNKNOWN_KEY}'
+                    WHEN group_artist IN ('{CHECK_ISSUE_GROUP_ROOT_KEY}', '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}') THEN group_artist
+                    ELSE group_artist || char(31) || group_album
+                END
+            """,
+            f"""
+                CASE
+                    WHEN group_artist IS NULL THEN '{CHECK_ISSUE_GROUP_UNKNOWN_ARTIST_ALBUM_LABEL}'
+                    WHEN group_artist IN ('{CHECK_ISSUE_GROUP_ROOT_KEY}', '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}') THEN group_artist
+                    ELSE group_artist || '{CHECK_ISSUE_GROUP_ARTIST_ALBUM_LABEL_SEPARATOR}' || group_album
+                END
+            """,
+        )
+    if grouping is CheckIssueGrouping.SUGGESTED_COMMAND:
+        return "suggested_command_key", "suggested_command_label"
+    return "library_id", "library_id"
 
 
 def _check_issue_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:

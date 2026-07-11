@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from omym2.domain.models.app_config import AppConfig
-    from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
+    from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
     from omym2.domain.models.check_run import CheckRun
     from omym2.domain.models.file_event import FileEvent, FileEventStatus
     from omym2.domain.models.file_scan_entry import FileScanEntry
@@ -47,6 +47,16 @@ class ConfigStoreValidationError(ValueError):
 
 class MetadataReadError(ValueError):
     """Raised when a metadata adapter cannot read a supported tag mapping."""
+
+
+@dataclass(frozen=True, slots=True)
+class CheckIssueGroup:
+    """One persisted-issue group plus its most common non-null path root."""
+
+    key: str
+    label: str
+    count: int
+    common_path_root: str | None
 
 
 class CheckRunRepository(Protocol):
@@ -85,6 +95,8 @@ class CheckIssueRepository(Protocol):
         library_id: LibraryId | None,
         *,
         issue_type: CheckIssueType | None,
+        grouping: CheckIssueGrouping | None = None,
+        group_key: str | None = None,
         page: PageRequest,
     ) -> Page[CheckIssue]:
         """Return one keyset page of CheckIssues, ordered issue_seq ASC.
@@ -98,8 +110,13 @@ class CheckIssueRepository(Protocol):
         """Return CheckIssue issue_type facets, ordered count DESC then value ASC."""
         ...
 
-    def group_page(self, library_id: LibraryId | None, page: PageRequest) -> Page[GroupCount]:
-        """Return one keyset page of CheckIssue groups by issue_type, ordered count DESC then key ASC."""
+    def group_page(
+        self,
+        library_id: LibraryId | None,
+        grouping: CheckIssueGrouping,
+        page: PageRequest,
+    ) -> Page[CheckIssueGroup]:
+        """Return one keyset page of CheckIssue groups, ordered count DESC then key ASC."""
         ...
 
 

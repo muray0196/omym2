@@ -198,7 +198,7 @@ export function severityForIssue(issueType: CheckIssueType): IssueSeverity {
   if (issueType === "db_file_missing" || issueType === "content_hash_changed") {
     return "error"
   }
-  if (issueType === "metadata_hash_changed" || issueType === "library_stale") {
+  if (issueType === "library_stale") {
     return "info"
   }
   return "warning"

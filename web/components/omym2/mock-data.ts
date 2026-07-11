@@ -6,6 +6,9 @@ Why: Keeps exported frontend previews usable when the local API is unavailable.
 import type {
   AppConfig,
   CheckFacetsResponse,
+  CheckGroupBy,
+  CheckGroupCount,
+  CheckGroupsResponse,
   CheckIssue,
   CheckIssueType,
   CheckPageResponse,
@@ -39,6 +42,7 @@ import type {
   TrackSummary,
   ArtistIdGenerationResult,
 } from "./types"
+import { severityForIssue } from "./lib"
 
 export const LIBRARY_ID = "lib_9f3c1a7b-4e21-4d8a-9c10-2f6b0a5e7d44"
 
@@ -1368,6 +1372,8 @@ function countTargetCollisions(rows: PlanAction[]): number {
 function buildCheckPredicate(options: {
   issueType?: CheckIssueType | "all"
   libraryId?: string
+  groupBy?: CheckGroupBy
+  groupKey?: string
 }): (row: CheckIssue) => boolean {
   return (row) => {
     if (options.libraryId && row.library_id !== options.libraryId) {
@@ -1376,8 +1382,111 @@ function buildCheckPredicate(options: {
     if (options.issueType && options.issueType !== "all" && row.issue_type !== options.issueType) {
       return false
     }
+    if (options.groupBy && options.groupKey !== undefined) {
+      const entry = checkGroupEntry(row, options.groupBy)
+      if (entry.key !== options.groupKey) {
+        return false
+      }
+    }
     return true
   }
+}
+
+/** Match the API's path-root grouping for relative, root-level, and external paths. */
+function checkPathRoot(path: string | null): string {
+  if (!path) {
+    return "(unknown)"
+  }
+  if (path.startsWith("/")) {
+    return "(external)"
+  }
+  const directories = path.split("/").slice(0, -1).filter(Boolean)
+  if (directories.length === 0) {
+    return "(root)"
+  }
+  return `${directories[0]}/`
+}
+
+/** Match the API's nullable common-root summary for pathless issues. */
+function commonCheckPathRootValue(path: string | null): string | null {
+  return path ? checkPathRoot(path) : null
+}
+
+/** Stable command families keep per-path refresh/add commands in one group. */
+function checkSuggestedCommand(issueType: CheckIssueType): { key: string; label: string } {
+  switch (issueType) {
+    case "db_file_missing":
+    case "content_hash_changed":
+    case "metadata_hash_changed":
+      return { key: "refresh", label: "omym2 refresh <file>" }
+    case "unmanaged_file_exists":
+      return { key: "add", label: "omym2 add <path>" }
+    case "current_path_differs_from_canonical_path":
+    case "duplicate_candidate":
+    case "plan_source_changed":
+      return { key: "organize", label: "omym2 organize" }
+    case "pending_file_event_exists":
+      return { key: "history", label: "omym2 history" }
+    case "library_unregistered":
+    case "library_stale":
+    case "library_blocked":
+      return { key: "check", label: "omym2 check" }
+  }
+}
+
+/** Path-based mock grouping used until a static preview has a real track join. */
+function checkArtistAlbum(path: string | null): { key: string; label: string } {
+  if (!path) {
+    return { key: "(unknown)", label: "Unknown Artist / Unknown Album" }
+  }
+  if (path.startsWith("/")) {
+    return { key: "(external)", label: "(external)" }
+  }
+  const directories = path.split("/").slice(0, -1).filter(Boolean)
+  if (directories.length === 0) {
+    return { key: "(root)", label: "(root)" }
+  }
+  const artist = directories[0]
+  const album = directories[1] ?? "(root)"
+  return { key: `${artist}\u001f${album}`, label: `${artist} / ${album}` }
+}
+
+/** Derive the Check grouping key from one persisted issue fixture. */
+function checkGroupEntry(issue: CheckIssue, groupBy: CheckGroupBy): { key: string; label: string } {
+  switch (groupBy) {
+    case "issue_type":
+      return { key: issue.issue_type, label: issue.issue_type }
+    case "severity": {
+      const severity = issue.severity ?? severityForIssue(issue.issue_type)
+      return { key: severity, label: severity }
+    }
+    case "path_root": {
+      const pathRoot = checkPathRoot(issue.path)
+      return { key: pathRoot, label: pathRoot }
+    }
+    case "artist_album":
+      return checkArtistAlbum(issue.path)
+    case "suggested_command":
+      return checkSuggestedCommand(issue.issue_type)
+    case "library_id":
+      return { key: issue.library_id, label: issue.library_id }
+  }
+}
+
+/** Most common path root, with deterministic lexical tie-breaking. */
+function commonCheckPathRoot(rootCounts: Map<string, number>): string | null {
+  let commonRoot: string | null = null
+  let commonCount = 0
+  for (const [root, count] of rootCounts) {
+    if (
+      count > commonCount ||
+      (count === commonCount && commonRoot !== null && root < commonRoot)
+    ) {
+      commonRoot = root
+      commonCount = count
+    }
+  }
+  return commonRoot
 }
 
 function buildRunPredicate(options: {
@@ -1565,6 +1674,8 @@ export function mockGetCheckPage(
   options: {
     issueType?: CheckIssueType | "all"
     libraryId?: string
+    groupBy?: CheckGroupBy
+    groupKey?: string
     limit?: number
     cursor?: string
   } = {},
@@ -1585,16 +1696,42 @@ export function mockGetCheckFacets(options: { libraryId?: string } = {}): CheckF
   return { ...facets, checked_at: MOCK_CHECKED_AT }
 }
 
-export function mockGetCheckGroups(
-  options: { libraryId?: string; limit?: number; cursor?: string } = {},
-): GroupsResponse {
+export function mockGetCheckGroups(options: {
+  groupBy: CheckGroupBy
+  libraryId?: string
+  limit?: number
+  cursor?: string
+}): CheckGroupsResponse {
   const rows = options.libraryId
     ? mockIssues.filter((issue) => issue.library_id === options.libraryId)
     : mockIssues
-  return groupsMock("issue_type", rows, (issue) => issue.issue_type, {
-    limit: options.limit,
-    cursor: options.cursor,
-  })
+  const groups = new Map<
+    string,
+    { label: string; count: number; rootCounts: Map<string, number> }
+  >()
+  for (const issue of rows) {
+    const entry = checkGroupEntry(issue, options.groupBy)
+    let group = groups.get(entry.key)
+    if (!group) {
+      group = { label: entry.label, count: 0, rootCounts: new Map() }
+      groups.set(entry.key, group)
+    }
+    group.count += 1
+    const pathRoot = commonCheckPathRootValue(issue.path)
+    if (pathRoot !== null) {
+      group.rootCounts.set(pathRoot, (group.rootCounts.get(pathRoot) ?? 0) + 1)
+    }
+  }
+  const allItems: CheckGroupCount[] = Array.from(groups.entries())
+    .map(([key, group]): CheckGroupCount => ({
+      key,
+      label: group.label,
+      count: group.count,
+      common_path_root: commonCheckPathRoot(group.rootCounts),
+    }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+  const paged = pageMock(allItems, { limit: options.limit, cursor: options.cursor })
+  return { group_by: options.groupBy, items: paged.items, page: paged.page, errors: [] }
 }
 
 export function mockRunCheck(libraryId?: string): CheckRunResponse {

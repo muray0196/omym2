@@ -33,6 +33,17 @@ class CheckIssueType(StrEnum):
     LIBRARY_BLOCKED = "library_blocked"
 
 
+class CheckIssueGrouping(StrEnum):
+    """Supported group-by keys for persisted CheckIssue browsing."""
+
+    ISSUE_TYPE = "issue_type"
+    SEVERITY = "severity"
+    PATH_ROOT = "path_root"
+    ARTIST_ALBUM = "artist_album"
+    SUGGESTED_COMMAND = "suggested_command"
+    LIBRARY_ID = "library_id"
+
+
 @dataclass(frozen=True, slots=True)
 class CheckIssue:
     """Calculated inconsistency between DB state and filesystem observations."""

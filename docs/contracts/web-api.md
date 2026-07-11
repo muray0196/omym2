@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines OMYM2's local Web API envelopes, browsing and Plan-creation requests, pagination/facets/groups, and exclusion of CLI-only trust-stat flags.
 tags: [web-api, pagination, json, contract]
-timestamp: 2026-07-11T21:33:40+09:00
+timestamp: 2026-07-11T22:23:30+09:00
 ---
 
 # Web API Contract
@@ -94,6 +94,22 @@ Plan action group rows extend the shared row with review-risk fields:
 equal counts resolve to the lexicographically smaller reason, and a group with
 no reasons returns `null`.
 
+Check issue group rows extend the shared row with the path root that occurs
+most often among the group's members:
+
+```jsonc
+{
+  "key": "current_path_differs_from_canonical_path",
+  "label": "current_path_differs_from_canonical_path",
+  "count": 230,
+  "common_path_root": "Aimer/"
+}
+```
+
+`common_path_root` is the most frequent non-null derived Check `path_root`
+among the group's members. Equal counts resolve to the lexicographically
+smaller root key. It is `null` when every member is pathless.
+
 ## Endpoints
 
 ### Tracks
@@ -154,10 +170,48 @@ completed check run. The `issue_type` filter does not change this freshness
 timestamp. The groups response uses the same data scope but carries no
 `checked_at` field.
 
-* `GET /api/check?issue_type=&library_id=&limit=&cursor=` — list envelope of `CheckIssue` items, plus a top-level `"checked_at": "<iso>" | null` field.
+`group_by` and `group_key` are an optional Check drill-down pair on the list
+endpoint: clients must provide both or neither. A supplied pair selects the
+same members as its corresponding groups response, combines with an optional
+`issue_type` filter as AND, and is applied before pagination. Clients obtain a
+group key from `GET /api/check/groups` and echo it unchanged; they do not
+construct group keys themselves.
+
+* `GET /api/check?issue_type=&group_by=&group_key=&library_id=&limit=&cursor=` — list envelope of `CheckIssue` items, plus a top-level `"checked_at": "<iso>" | null` field. The optional `group_by` / `group_key` pair loads a group’s first examples and, through pagination, its full member list.
 * `GET /api/check/facets?library_id=` — facet envelope; facet field: `issue_type`; carries `checked_at` per the Facet Envelope section above.
-* `GET /api/check/groups?group_by=issue_type&library_id=&limit=&cursor=` — group envelope.
+* `GET /api/check/groups?group_by=&library_id=&limit=&cursor=` — enriched Check issue group envelope. Supported `group_by` values are `issue_type`, `severity`, `path_root`, `artist_album`, `suggested_command`, and `library_id`. Group members are not embedded in this response; clients load examples and expanded members through the list endpoint's drill-down pair.
 * `POST /api/check/run` — CSRF-protected via the `X-OMYM2-CSRF-Token` header; body may carry an optional `library_id`. With it, the request recomputes one Library; without it, the request recomputes every known Library. Returns `{ "checked_at": "<iso>", "total": N, "errors": [] }` for that invocation.
+
+Check group values are derived from each persisted `CheckIssue`; no endpoint
+recomputes diagnostics or reads the filesystem:
+
+* `issue_type` uses the recorded CheckIssue catalog value as its key and label.
+* `severity` uses `error` for `db_file_missing` and
+  `content_hash_changed`, `info` for `library_stale`, and `warning` for every
+  other CheckIssue type. Its key and label are the resulting severity value.
+* `path_root` uses the first directory segment of a relative path, including a
+  trailing `/`. For example, `Aimer/Album/01.flac` has path root `Aimer/`. A root-level relative path uses
+  `(root)`, an absolute path uses `(external)`, and a null path uses
+  `(unknown)`; each is both the key and label.
+* `artist_album` uses the first two directory segments of a relative path and
+  labels them as `Artist / Album`. A one-directory path uses
+  `Artist / (root)`, a root-level path uses `(root)`, an absolute path uses
+  `(external)`, and a null path uses key `(unknown)` with label
+  `Unknown Artist / Unknown Album`.
+* `suggested_command` normalizes issue types into command-family keys and
+  labels: `refresh` (`db_file_missing`, `content_hash_changed`, and
+  `metadata_hash_changed`) uses `omym2 refresh <file>`;
+  `add` (`unmanaged_file_exists`) uses `omym2 add <path>`;
+  `organize` (`current_path_differs_from_canonical_path`,
+  `duplicate_candidate`, and `plan_source_changed`) uses `omym2 organize`;
+  `history` (`pending_file_event_exists`) uses `omym2 history`; and `check`
+  (`library_unregistered`, `library_stale`, and `library_blocked`) uses
+  `omym2 check`.
+* `library_id` uses the recorded Library UUID string as its key and label.
+
+Every Check grouping is ordered `count DESC, key ASC`, including equal-count
+ties. `common_path_root` uses the non-null `path_root` derivation above,
+independent of which grouping was requested.
 
 The check-run body does not accept `trust_stat`; Web recomputation always uses complete managed-file snapshots.
 

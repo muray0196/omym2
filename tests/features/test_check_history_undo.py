@@ -14,7 +14,7 @@ from uuid import UUID
 import pytest
 
 from omym2.adapters.config.default_config import default_app_config
-from omym2.domain.models.check_issue import CheckIssueType
+from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
@@ -416,6 +416,51 @@ def test_check_query_usecases_resolve_checked_at_none_when_never_checked() -> No
     assert aggregate.page.items == ()
     assert aggregate.checked_at is None
     assert facets.checked_at is None
+
+
+def test_check_query_usecases_group_and_drill_down_without_loading_all_issues() -> None:
+    """Check browse usecases expose the same grouping keys and member filters through their ports."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.check_issues.save_many(
+        CHECK_RUN_ID,
+        (
+            CheckIssue(
+                issue_type=CheckIssueType.DB_FILE_MISSING,
+                library_id=LIBRARY_ID,
+                path="Aimer/Album/01.flac",
+            ),
+            CheckIssue(
+                issue_type=CheckIssueType.DB_FILE_MISSING,
+                library_id=LIBRARY_ID,
+                path="Aimer/Album/02.flac",
+            ),
+            CheckIssue(
+                issue_type=CheckIssueType.METADATA_HASH_CHANGED,
+                library_id=LIBRARY_ID,
+                path="Aimer/Other/03.flac",
+            ),
+        ),
+    )
+    ports = CheckQueryPorts(uow)
+
+    groups = GroupCheckIssuesUseCase(ports).execute(
+        GroupCheckIssuesRequest(grouping=CheckIssueGrouping.SUGGESTED_COMMAND)
+    )
+    members = ListCheckIssuesUseCase(ports).execute(
+        ListCheckIssuesRequest(
+            grouping=CheckIssueGrouping.PATH_ROOT,
+            group_key="Aimer/",
+        )
+    )
+
+    assert [(group.key, group.label, group.count) for group in groups.items] == [("refresh", "omym2 refresh <file>", 3)]
+    assert groups.items[0].common_path_root == "Aimer/"
+    assert [issue.path for issue in members.page.items] == [
+        "Aimer/Album/01.flac",
+        "Aimer/Album/02.flac",
+        "Aimer/Other/03.flac",
+    ]
 
 
 def test_history_lists_runs_newest_first_and_loads_detail() -> None:

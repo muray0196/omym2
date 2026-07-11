@@ -19,6 +19,7 @@ from omym2.adapters.web.routes.api_serializers import (
     serialize_app_config,
     serialize_artist_id_generation,
     serialize_check_issue,
+    serialize_check_issue_group,
     serialize_facet_value,
     serialize_file_event,
     serialize_group_count,
@@ -77,7 +78,7 @@ from omym2.config import (
     WEB_CSRF_HEADER_NAME,
 )
 from omym2.domain.models.app_config import AppConfig
-from omym2.domain.models.check_issue import CheckIssueType
+from omym2.domain.models.check_issue import CheckIssueGrouping, CheckIssueType
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus
@@ -190,8 +191,8 @@ PLAN_CREATION_ERROR_PREFIX = "Plan creation failed"
 PLAN_PATH_NOT_DIRECTORY_MESSAGE = "Plan path must be a directory"
 PLAN_PATH_NOT_FOUND_MESSAGE = "Plan path was not found"
 PLAN_ACTIONS_GROUP_FILTER_PAIR_MESSAGE = "Query parameters group_by and group_key must be provided together."
+CHECK_ISSUES_GROUP_FILTER_PAIR_MESSAGE = "Query parameters group_by and group_key must be provided together."
 RUN_EVENTS_GROUP_BY_TARGET_DIRECTORY = "target_directory"  # only supported FileEvent group_by value
-CHECK_ISSUES_GROUP_BY_ISSUE_TYPE = "issue_type"  # only supported check-issue group_by value
 
 type CheckPortsFactory = Callable[[], "CheckLibraryPorts"]
 type CheckQueryPortsFactory = Callable[[], "CheckQueryPorts"]
@@ -957,8 +958,11 @@ def _get_check(context: ApiRouteContext, request: Request) -> JSONResponse:
 
     library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
     issue_type, issue_type_errors = _check_issue_type_from_query(request.query_params.get("issue_type"))
+    grouping, grouping_errors = _optional_check_issue_grouping_from_query(request.query_params.get("group_by"))
+    group_key = _optional_query_text(request.query_params.get("group_key"))
+    pairing_errors = _check_issue_group_filter_pairing_errors(grouping, grouping_errors, group_key)
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    filter_errors = library_errors + issue_type_errors + limit_errors
+    filter_errors = library_errors + issue_type_errors + grouping_errors + pairing_errors + limit_errors
     if filter_errors:
         return _list_error_response(filter_errors)
 
@@ -969,6 +973,8 @@ def _get_check(context: ApiRouteContext, request: Request) -> JSONResponse:
             ListCheckIssuesRequest(
                 library_id=library_id,
                 issue_type=issue_type,
+                grouping=grouping,
+                group_key=group_key,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
         )
@@ -1034,12 +1040,13 @@ def _get_check_groups(context: ApiRouteContext, request: Request) -> JSONRespons
         return _group_error_response(filter_errors)
 
     effective_limit = cast("int", limit)
-    effective_grouping = cast("str", grouping)
+    effective_grouping = cast("CheckIssueGrouping", grouping)
 
     try:
         page = GroupCheckIssuesUseCase(context.check_query_ports_factory()).execute(
             GroupCheckIssuesRequest(
                 library_id=library_id,
+                grouping=effective_grouping,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
         )
@@ -1053,8 +1060,8 @@ def _get_check_groups(context: ApiRouteContext, request: Request) -> JSONRespons
 
     return JSONResponse(
         _group_envelope(
-            effective_grouping,
-            [serialize_group_count(group) for group in page.items],
+            effective_grouping.value,
+            [serialize_check_issue_group(group) for group in page.items],
             limit=effective_limit,
             next_cursor_key=page.next_cursor_key,
             total=page.total,
@@ -1417,12 +1424,38 @@ def _check_issue_type_from_query(raw_value: str | None) -> tuple[CheckIssueType 
         return None, (f"Invalid issue_type filter: {raw_value}",)
 
 
-def _check_issue_grouping_from_query(raw_value: str | None) -> tuple[str | None, tuple[str, ...]]:
+def _check_issue_grouping_from_query(raw_value: str | None) -> tuple[CheckIssueGrouping | None, tuple[str, ...]]:
     if raw_value is None or raw_value == "":
         return None, ("Query parameter group_by is required.",)
-    if raw_value != CHECK_ISSUES_GROUP_BY_ISSUE_TYPE:
+    try:
+        return CheckIssueGrouping(raw_value), ()
+    except ValueError:
         return None, (f"Invalid group_by filter: {raw_value}",)
-    return raw_value, ()
+
+
+def _optional_check_issue_grouping_from_query(
+    raw_value: str | None,
+) -> tuple[CheckIssueGrouping | None, tuple[str, ...]]:
+    """Parse the optional group drill-down filter of the Check issue list endpoint."""
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return CheckIssueGrouping(raw_value), ()
+    except ValueError:
+        return None, (f"Invalid group_by filter: {raw_value}",)
+
+
+def _check_issue_group_filter_pairing_errors(
+    grouping: CheckIssueGrouping | None,
+    grouping_errors: tuple[str, ...],
+    group_key: str | None,
+) -> tuple[str, ...]:
+    """Require Check group_by/group_key together while preserving an invalid-group_by error."""
+    if grouping_errors:
+        return ()
+    if (grouping is None) == (group_key is None):
+        return ()
+    return (CHECK_ISSUES_GROUP_FILTER_PAIR_MESSAGE,)
 
 
 def _library_id_from_query(raw_value: str | None) -> tuple[LibraryId | None, tuple[str, ...]]:

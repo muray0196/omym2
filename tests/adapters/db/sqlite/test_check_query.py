@@ -16,7 +16,7 @@ from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.db.sqlite import migration_runner
 from omym2.adapters.db.sqlite.migration_runner import migrate_database
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
-from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
+from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
 from omym2.domain.models.check_run import CheckRun
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
@@ -48,6 +48,9 @@ REQUIRED_CHECK_INDEXES = {"idx_check_issues_library_type"}
 TWO_ITEM_LIMIT = 2
 THREE_ISSUE_TOTAL = 3
 TWO_ISSUE_TYPE_GROUP_TOTAL = 2
+CHECK_TRIAGE_ISSUE_TOTAL = 5
+CHECK_TRIAGE_ISSUE_TYPE_GROUP_TOTAL = 4
+THREE_AIMER_ISSUE_TOTAL = 3
 
 
 def test_check_results_migration_creates_tables_and_index_on_fresh_database(tmp_path: Path) -> None:
@@ -275,13 +278,131 @@ def test_check_issue_group_page_groups_by_issue_type_ordered_count_desc_key_asc(
         uow.commit()
 
     with SQLiteUnitOfWork(database_file) as uow:
-        page = uow.check_issues.group_page(LIBRARY_ID, PageRequest())
+        page = uow.check_issues.group_page(LIBRARY_ID, CheckIssueGrouping.ISSUE_TYPE, PageRequest())
 
     assert [(group.key, group.label, group.count) for group in page.items] == [
         (CheckIssueType.DB_FILE_MISSING.value, CheckIssueType.DB_FILE_MISSING.value, 2),
         (CheckIssueType.UNMANAGED_FILE_EXISTS.value, CheckIssueType.UNMANAGED_FILE_EXISTS.value, 1),
     ]
     assert page.total == TWO_ISSUE_TYPE_GROUP_TOTAL
+
+
+def test_check_issue_group_page_derives_triage_groupings_and_common_path_roots(tmp_path: Path) -> None:
+    """Every supported triage grouping is SQL-backed and reports its most concentrated path root."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.check_runs.save(_check_run())
+        uow.check_issues.save_many(
+            CHECK_RUN_ID,
+            (
+                _check_issue(issue_type=CheckIssueType.DB_FILE_MISSING, path="Aimer/Album/01.flac"),
+                _check_issue(issue_type=CheckIssueType.DB_FILE_MISSING, path="Aimer/Album/02.flac"),
+                _check_issue(issue_type=CheckIssueType.METADATA_HASH_CHANGED, path="Aimer/Other/03.flac"),
+                _check_issue(issue_type=CheckIssueType.UNMANAGED_FILE_EXISTS, path="Yoasobi/Album/04.flac"),
+                _check_issue(issue_type=CheckIssueType.LIBRARY_STALE, path=None),
+            ),
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        issue_type_groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.ISSUE_TYPE,
+            PageRequest(),
+        )
+        severity_groups = uow.check_issues.group_page(LIBRARY_ID, CheckIssueGrouping.SEVERITY, PageRequest())
+        root_groups = uow.check_issues.group_page(LIBRARY_ID, CheckIssueGrouping.PATH_ROOT, PageRequest())
+        artist_groups = uow.check_issues.group_page(LIBRARY_ID, CheckIssueGrouping.ARTIST_ALBUM, PageRequest())
+        command_groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.SUGGESTED_COMMAND,
+            PageRequest(),
+        )
+        library_groups = uow.check_issues.group_page(LIBRARY_ID, CheckIssueGrouping.LIBRARY_ID, PageRequest())
+
+    assert issue_type_groups.total == CHECK_TRIAGE_ISSUE_TYPE_GROUP_TOTAL
+    assert [(group.key, group.count, group.common_path_root) for group in issue_type_groups.items] == [
+        (CheckIssueType.DB_FILE_MISSING.value, TWO_ITEM_LIMIT, "Aimer/"),
+        (CheckIssueType.LIBRARY_STALE.value, 1, None),
+        (CheckIssueType.METADATA_HASH_CHANGED.value, 1, "Aimer/"),
+        (CheckIssueType.UNMANAGED_FILE_EXISTS.value, 1, "Yoasobi/"),
+    ]
+    assert [(group.key, group.count, group.common_path_root) for group in severity_groups.items] == [
+        ("error", TWO_ITEM_LIMIT, "Aimer/"),
+        ("warning", TWO_ITEM_LIMIT, "Aimer/"),
+        ("info", 1, None),
+    ]
+    assert [(group.key, group.count, group.common_path_root) for group in root_groups.items] == [
+        ("Aimer/", THREE_AIMER_ISSUE_TOTAL, "Aimer/"),
+        ("(unknown)", 1, None),
+        ("Yoasobi/", 1, "Yoasobi/"),
+    ]
+    assert [(group.key, group.count) for group in artist_groups.items] == [
+        ("Aimer\x1fAlbum", TWO_ITEM_LIMIT),
+        ("(unknown)", 1),
+        ("Aimer\x1fOther", 1),
+        ("Yoasobi\x1fAlbum", 1),
+    ]
+    assert [(group.key, group.label, group.count) for group in command_groups.items] == [
+        ("refresh", "omym2 refresh <file>", THREE_AIMER_ISSUE_TOTAL),
+        ("add", "omym2 add <path>", 1),
+        ("check", "omym2 check", 1),
+    ]
+    assert [(group.key, group.count, group.common_path_root) for group in library_groups.items] == [
+        (str(LIBRARY_ID), CHECK_TRIAGE_ISSUE_TOTAL, "Aimer/"),
+    ]
+
+
+def test_check_issue_query_page_drills_into_one_group_with_keyset_pagination(tmp_path: Path) -> None:
+    """A group key filters issue rows in SQL before its keyset cursor and limit are applied."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.check_runs.save(_check_run())
+        uow.check_issues.save_many(
+            CHECK_RUN_ID,
+            (
+                _check_issue(issue_type=CheckIssueType.DB_FILE_MISSING, path="Aimer/Album/01.flac"),
+                _check_issue(issue_type=CheckIssueType.DB_FILE_MISSING, path="Aimer/Album/02.flac"),
+                _check_issue(path="Aimer/Other/03.flac"),
+                _check_issue(path="Yoasobi/Album/04.flac"),
+            ),
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        first_page = uow.check_issues.query_page(
+            LIBRARY_ID,
+            issue_type=None,
+            grouping=CheckIssueGrouping.PATH_ROOT,
+            group_key="Aimer/",
+            page=PageRequest(limit=TWO_ITEM_LIMIT),
+        )
+        second_page = uow.check_issues.query_page(
+            LIBRARY_ID,
+            issue_type=None,
+            grouping=CheckIssueGrouping.PATH_ROOT,
+            group_key="Aimer/",
+            page=PageRequest(limit=TWO_ITEM_LIMIT, cursor_key=first_page.next_cursor_key),
+        )
+        issue_type_filtered_page = uow.check_issues.query_page(
+            LIBRARY_ID,
+            issue_type=CheckIssueType.DB_FILE_MISSING,
+            grouping=CheckIssueGrouping.PATH_ROOT,
+            group_key="Aimer/",
+            page=PageRequest(),
+        )
+
+    assert [issue.path for issue in first_page.items] == ["Aimer/Album/01.flac", "Aimer/Album/02.flac"]
+    assert first_page.total == THREE_AIMER_ISSUE_TOTAL
+    assert [issue.path for issue in second_page.items] == ["Aimer/Other/03.flac"]
+    assert second_page.next_cursor_key is None
+    assert [issue.path for issue in issue_type_filtered_page.items] == [
+        "Aimer/Album/01.flac",
+        "Aimer/Album/02.flac",
+    ]
+    assert issue_type_filtered_page.total == TWO_ITEM_LIMIT
 
 
 def _table_names(database_file: Path) -> set[str]:
@@ -380,6 +501,6 @@ def _check_issue(
     *,
     library_id: LibraryId = LIBRARY_ID,
     issue_type: CheckIssueType = CheckIssueType.UNMANAGED_FILE_EXISTS,
-    path: str = TARGET_PATH,
+    path: str | None = TARGET_PATH,
 ) -> CheckIssue:
     return CheckIssue(issue_type=issue_type, library_id=library_id, path=path)
