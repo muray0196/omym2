@@ -158,6 +158,15 @@ class InMemoryFileEventRepository:
             )
         )
 
+    def list_by_library(self, library_id: LibraryId) -> tuple[FileEvent, ...]:
+        """Return FileEvents for a Library in durable sequence order."""
+        return tuple(
+            sorted(
+                (event for event in self.records.values() if event.library_id == library_id),
+                key=lambda event: (event.started_at, event.sequence_no, event.event_id),
+            )
+        )
+
     def save(self, event: FileEvent) -> None:
         """Store or replace one FileEvent."""
         self.records[event.event_id] = event

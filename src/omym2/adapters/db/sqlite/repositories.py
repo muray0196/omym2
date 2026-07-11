@@ -522,6 +522,33 @@ class SQLiteFileEventRepository(_SQLiteRepository):
         )
         return tuple(_file_event_from_row(row) for row in rows)
 
+    def list_by_library(self, library_id: LibraryId) -> tuple[FileEvent, ...]:
+        """Return FileEvents recorded for one Library in durable order."""
+        rows = _fetch_all(
+            self._connection,
+            """
+            SELECT
+                event_id,
+                library_id,
+                run_id,
+                plan_action_id,
+                event_type,
+                source_path,
+                target_path,
+                status,
+                started_at,
+                completed_at,
+                error_code,
+                error_message,
+                sequence_no
+            FROM file_events
+            WHERE library_id = ?
+            ORDER BY started_at, sequence_no, event_id
+            """,
+            (str(library_id),),
+        )
+        return tuple(_file_event_from_row(row) for row in rows)
+
     def save(self, event: FileEvent) -> None:
         """Persist a FileEvent before or after a filesystem mutation."""
         _ = self._connection.execute(

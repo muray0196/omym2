@@ -237,6 +237,10 @@ def test_apply_external_undo_restore_marks_track_removed() -> None:
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library())
     uow.tracks.save(_track())
+    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plan_actions.save(_source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=TRACK_ID))
+    uow.runs.save(_run(status=RunStatus.SUCCEEDED))
+    uow.file_events.save(_event(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH))
     uow.plans.save(_plan(plan_id=UNDO_PLAN_ID, plan_type=PlanType.UNDO, status=PlanStatus.READY))
     uow.plan_actions.save(
         _source_action(
@@ -266,6 +270,49 @@ def test_apply_external_undo_restore_marks_track_removed() -> None:
     assert track is not None
     assert track.status == TrackStatus.REMOVED
     assert track.current_path == TARGET_PATH
+
+
+def test_apply_rejects_tampered_add_plan_absolute_target() -> None:
+    """Apply fails closed when a non-undo Plan targets an absolute path."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan(status=PlanStatus.READY))
+    uow.plan_actions.save(_source_action(source_path=TARGET_PATH, target_path=EXTERNAL_SOURCE_PATH, track_id=TRACK_ID))
+    mover = RecordingFileMover()
+    ports = ApplyPlanPorts(
+        uow=uow,
+        file_mover=mover,
+        file_snapshot_reader=MappingSnapshotReader({_absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH))}),
+        path_resolver=SimplePathResolver(),
+        clock=FixedClock(BASE_TIME),
+        id_generator=SequenceIdGenerator(run_ids=deque((RUN_ID,))),
+    )
+
+    run = ApplyPlanUseCase(ports).execute(ApplyPlanRequest(PLAN_ID, options=ApplyOptions(yes=True)))
+
+    assert run is not None
+    assert run.status == RunStatus.FAILED
+    assert mover.moves == []
+    action = uow.plan_actions.get(ACTION_ID)
+    assert action is not None
+    assert action.status == ActionStatus.FAILED
+    assert action.reason == PlanActionReason.INVALID_PATH
+
+
+def test_undo_blocks_tampered_absolute_event_source_path() -> None:
+    """Undo refuses absolute restore targets that do not match source action history."""
+    uow = _uow_with_applied_run(second_event=False)
+    uow.file_events.save(_event(source_path=EXTERNAL_SOURCE_PATH, target_path=RESTORE_PATH, plan_action_id=ACTION_ID))
+    ports = _undo_ports(
+        uow,
+        id_generator=SequenceIdGenerator(plan_ids=deque((UNDO_PLAN_ID,)), action_ids=deque((UNDO_ACTION_ID,))),
+    )
+
+    plan = CreateUndoPlanUseCase(ports).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert plan.actions[0].status == ActionStatus.BLOCKED
+    assert plan.actions[0].reason == PlanActionReason.INVALID_PATH
 
 
 class StaticConfigStore:
@@ -395,7 +442,7 @@ def _uow_with_applied_run(*, second_event: bool = True) -> InMemoryUnitOfWork:
             action_id=SECOND_ACTION_ID,
             source_path=EXTERNAL_SOURCE_PATH,
             target_path=TARGET_PATH,
-            track_id=None,
+            track_id=TRACK_ID,
         )
     )
     uow.runs.save(_run(status=RunStatus.SUCCEEDED))

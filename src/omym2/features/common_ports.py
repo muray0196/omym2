@@ -144,6 +144,10 @@ class FileEventRepository(Protocol):
         """Return FileEvents recorded for one Run in sequence order."""
         ...
 
+    def list_by_library(self, library_id: LibraryId) -> Sequence[FileEvent]:
+        """Return FileEvents recorded for one Library in durable order."""
+        ...
+
     def save(self, event: FileEvent) -> None:
         """Persist a FileEvent before or after a filesystem mutation."""
         ...

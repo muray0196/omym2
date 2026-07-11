@@ -146,11 +146,34 @@ class CreateUndoPlanUseCase:
         ):
             reason = PlanActionReason.SOURCE_CHANGED
 
+        if (
+            reason is None
+            and PurePath(event.source_path).is_absolute()
+            and not _is_verified_external_import(uow, event)
+        ):
+            reason = PlanActionReason.INVALID_PATH
+
         target_filesystem_path = _resolve_path(self.ports.path_resolver, library, event.source_path)
         if reason is None and self.ports.file_presence.exists(target_filesystem_path):
             reason = PlanActionReason.TARGET_EXISTS
 
         return _UndoCandidate(track_id=track_id, source_path=source_path, snapshot=snapshot, reason=reason)
+
+
+def _is_verified_external_import(uow: UnitOfWork, event: FileEvent) -> bool:
+    """Return whether an event can be undone to an absolute external path."""
+    source_action = uow.plan_actions.get(event.plan_action_id)
+    if source_action is None or source_action.track_id is None:
+        return False
+    source_plan = uow.plans.get(source_action.plan_id)
+    return (
+        source_plan is not None
+        and source_plan.plan_type == PlanType.ADD
+        and source_action.source_path == event.source_path
+        and source_action.target_path == event.target_path
+        and PurePath(source_action.source_path or "").is_absolute()
+        and not PurePath(source_action.target_path or "").is_absolute()
+    )
 
 
 class UndoPlanError(ValueError):
