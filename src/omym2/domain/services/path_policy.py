@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from omym2.config import (
     LOGICAL_PATH_SEPARATOR,
     PATH_EXTENSION_PREFIX,
+    PATH_POLICY_ALLOWED_PLACEHOLDERS,
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_PREFIX,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
 
 from omym2.domain.models.app_config import ArtistIdConfig
 from omym2.domain.services.artist_id import generate_artist_id
+from omym2.domain.services.config_fingerprint import template_uses_placeholder
 
 EMPTY_FILE_EXTENSION_MESSAGE = "File extension must not be empty."
 MISSING_TITLE_MESSAGE = "Track title is required for canonical path generation."
@@ -52,6 +54,26 @@ class PathPolicy:
 
     config: PathPolicyConfig
     artist_ids: ArtistIdConfig = field(default_factory=ArtistIdConfig)
+    _used_placeholders: frozenset[str] = field(init=False, repr=False, compare=False)
+    _path_component_cache: dict[tuple[str, int | None], str] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _generated_artist_id_cache: dict[str, str] = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Cache the template fields that can affect this policy instance."""
+        object.__setattr__(
+            self,
+            "_used_placeholders",
+            frozenset(
+                placeholder
+                for placeholder in PATH_POLICY_ALLOWED_PLACEHOLDERS
+                if template_uses_placeholder(self.config.template, placeholder)
+            ),
+        )
 
     @classmethod
     def from_path_policy_config(cls, config: PathPolicyConfig, artist_ids: ArtistIdConfig) -> PathPolicy:
@@ -81,16 +103,29 @@ class PathPolicy:
         return normalize_library_relative_path(generated_path)
 
     def _render_raw_stem(self, metadata: TrackMetadata, album_disc_total: int | None) -> str:
-        return self.config.template.format(
-            album_artist=self._album_artist(metadata),
-            year=self._optional_number(metadata.year),
-            album=self._album(metadata),
-            disc=self._disc_number(metadata, album_disc_total),
-            track=self._track_number(metadata),
-            title=self._title(metadata),
-            artist=self._artist(metadata),
-            artist_id=self._artist_id(metadata),
-        )
+        # Title validity predates template-aware rendering and remains a
+        # PathPolicy invariant even when a custom template omits {title}.
+        if metadata.title is None or metadata.title.strip() == "":
+            raise ValueError(MISSING_TITLE_MESSAGE)
+
+        values: dict[str, str] = {}
+        if "album_artist" in self._used_placeholders:
+            values["album_artist"] = self._album_artist(metadata)
+        if "year" in self._used_placeholders:
+            values["year"] = self._optional_number(metadata.year)
+        if "album" in self._used_placeholders:
+            values["album"] = self._album(metadata)
+        if "disc" in self._used_placeholders:
+            values["disc"] = self._disc_number(metadata, album_disc_total)
+        if "track" in self._used_placeholders:
+            values["track"] = self._track_number(metadata)
+        if "title" in self._used_placeholders:
+            values["title"] = self._title(metadata)
+        if "artist" in self._used_placeholders:
+            values["artist"] = self._artist(metadata)
+        if "artist_id" in self._used_placeholders:
+            values["artist_id"] = self._artist_id(metadata)
+        return self.config.template.format(**values)
 
     def _album_artist(self, metadata: TrackMetadata) -> str:
         return self._artist_component(metadata.album_artist or metadata.artist or self.config.unknown_artist)
@@ -100,6 +135,10 @@ class PathPolicy:
 
     def _artist_id(self, metadata: TrackMetadata) -> str:
         source_artist = metadata.artist or metadata.album_artist or self.config.unknown_artist
+        cached_artist_id = self._generated_artist_id_cache.get(source_artist)
+        if cached_artist_id is not None:
+            return cached_artist_id
+
         saved_artist_id = self.artist_ids.entries.get(source_artist) if self.artist_ids.entries is not None else None
         if saved_artist_id is not None:
             sanitized_saved_artist_id = self._artist_id_component(saved_artist_id)
@@ -110,6 +149,7 @@ class PathPolicy:
             # component, which would otherwise silently drop a path directory
             # level.
             if sanitized_saved_artist_id != "":
+                self._generated_artist_id_cache[source_artist] = sanitized_saved_artist_id
                 return sanitized_saved_artist_id
         generated_artist_id = generate_artist_id(
             source_artist,
@@ -119,18 +159,20 @@ class PathPolicy:
         # The generated ID is already [A-Za-z0-9]+, so sanitizing it is a
         # harmless no-op; routing both branches through the same helper keeps
         # {artist_id} rendering consistent regardless of which branch is used.
-        return self._artist_id_component(generated_artist_id)
+        sanitized_generated_artist_id = self._artist_id_component(generated_artist_id)
+        self._generated_artist_id_cache[source_artist] = sanitized_generated_artist_id
+        return sanitized_generated_artist_id
 
     def _artist_id_component(self, value: str) -> str:
         if not self.config.sanitize:
             return value
-        return sanitize_path_component(value)
+        return self._path_component(value)
 
     def _album(self, metadata: TrackMetadata) -> str:
         value = metadata.album or self.config.unknown_album
         if not self.config.sanitize:
             return value
-        return sanitize_path_component(value, SANITIZER_ALBUM_MAX_BYTES)
+        return self._path_component(value, SANITIZER_ALBUM_MAX_BYTES)
 
     def _title(self, metadata: TrackMetadata) -> str:
         if metadata.title is None or metadata.title.strip() == "":
@@ -167,7 +209,15 @@ class PathPolicy:
     def _artist_component(self, value: str) -> str:
         if not self.config.sanitize:
             return value
-        return sanitize_path_component(value, SANITIZER_ARTIST_MAX_BYTES)
+        return self._path_component(value, SANITIZER_ARTIST_MAX_BYTES)
+
+    def _path_component(self, value: str, max_length: int | None = None) -> str:
+        cache_key = (value, max_length)
+        cached_component = self._path_component_cache.get(cache_key)
+        if cached_component is None:
+            cached_component = sanitize_path_component(value, max_length)
+            self._path_component_cache[cache_key] = cached_component
+        return cached_component
 
 
 def sanitize_string(

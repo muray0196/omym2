@@ -60,12 +60,12 @@ def calculate_path_policy_fingerprint(
         CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY: PATH_POLICY_BEHAVIOR_VERSION,
         CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY: _path_policy_payload(path_policy_config),
     }
-    if artist_id_config is not None and _template_uses_placeholder(
+    if artist_id_config is not None and template_uses_placeholder(
         path_policy_config.template,
         PATH_POLICY_ARTIST_ID_PLACEHOLDER,
     ):
         path_policy_payload["artist_ids"] = _artist_id_payload(artist_id_config)
-    if _template_uses_placeholder(path_policy_config.template, PATH_POLICY_YEAR_PLACEHOLDER):
+    if template_uses_placeholder(path_policy_config.template, PATH_POLICY_YEAR_PLACEHOLDER):
         path_policy_payload["album_year_resolution"] = album_year_resolution
     payload = json.dumps(path_policy_payload, sort_keys=True, separators=JSON_SEPARATORS)
     return _fingerprint_payload(payload, algorithm)
@@ -76,7 +76,7 @@ def is_path_policy_stale(library_path_policy_hash: str, current_path_policy_hash
     return library_path_policy_hash != current_path_policy_hash
 
 
-def _template_uses_placeholder(template: str, placeholder: str) -> bool:
+def template_uses_placeholder(template: str, placeholder: str) -> bool:
     """Return whether a format template contains a renderable field."""
     return any(field_name == placeholder for _, field_name, _, _ in Formatter().parse(template))
 
@@ -106,7 +106,7 @@ def _path_policy_payload(config: PathPolicyConfig) -> dict[str, object]:
         "sanitize": config.sanitize,
         "max_filename_length": config.max_filename_length,
     }
-    if _template_uses_placeholder(config.template, PATH_POLICY_DISC_NUMBER_PLACEHOLDER):
+    if template_uses_placeholder(config.template, PATH_POLICY_DISC_NUMBER_PLACEHOLDER):
         payload["disc_number_style"] = config.disc_number_style
         payload["disc_number_condition"] = config.disc_number_condition
     return payload

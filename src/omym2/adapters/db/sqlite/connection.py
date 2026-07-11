@@ -8,7 +8,7 @@ from __future__ import annotations
 import sqlite3
 from typing import TYPE_CHECKING
 
-from omym2.config import SQLITE_CONNECTION_TIMEOUT_SECONDS
+from omym2.config import SQLITE_CONNECTION_TIMEOUT_SECONDS, SQLITE_SYNCHRONOUS_PRAGMA
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -22,7 +22,7 @@ def open_sqlite_connection(database_path: str | PathLike[str]) -> sqlite3.Connec
 
     Returns:
         A connection that yields sqlite3.Row values, enforces foreign keys,
-        and uses WAL journal mode.
+        and uses WAL journal mode with FULL synchronous commits.
     """
     connection = sqlite3.connect(
         database_path,
@@ -32,4 +32,5 @@ def open_sqlite_connection(database_path: str | PathLike[str]) -> sqlite3.Connec
     connection.row_factory = sqlite3.Row
     _ = connection.execute("PRAGMA foreign_keys = ON")
     _ = connection.execute("PRAGMA journal_mode = WAL")
+    _ = connection.execute(SQLITE_SYNCHRONOUS_PRAGMA)
     return connection

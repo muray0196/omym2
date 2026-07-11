@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Ports And UnitOfWork
-description: Defines OMYM2's port protocols (UnitOfWork, FileScanner, Clock, IdGenerator, etc.), the 1-usecase-1-UnitOfWork policy, transaction boundaries, and the FileEvents durable operation log exception for apply/undo.
+description: Defines OMYM2's scan/stat/snapshot ports, ordered batch capture, one-usecase UnitOfWork resource lifetime, independent transactions, and durable FileEvents.
 tags: [ports, unit-of-work, transactions, architecture]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-11T16:52:31+09:00
 ---
 
 # Ports And UnitOfWork
@@ -25,6 +25,7 @@ class UnitOfWork(Protocol):
     runs: RunRepository
     file_events: FileEventRepository
 
+    def usecase_scope(self) -> AbstractContextManager[None]: ...
     def __enter__(self) -> "UnitOfWork": ...
     def __exit__(self, exc_type, exc, tb) -> None: ...
     def commit(self) -> None: ...
@@ -34,12 +35,31 @@ class UnitOfWork(Protocol):
 ```python
 class FileScanner(Protocol):
     def scan(self, root: PathLike) -> list[FileScanEntry]: ...
+
+class FileStatReader(Protocol):
+    def observe(self, path: PathLike) -> FileScanEntry: ...
 ```
+
+`FileScanner` discovers a whole tree; `FileStatReader` observes one regular file. Both return cheap size, modification-time, path, and extension facts without metadata or hashes. The filesystem scanner adapter implements both contracts. Organize and check reuse tree-scan observations for their explicit trust-stat decisions, while refresh uses the single-file port for selected Tracks.
 
 ```python
 class FileSnapshotReader(Protocol):
     def capture(self, path: PathLike) -> FileSnapshot: ...
+
+@dataclass(frozen=True)
+class FileSnapshotCaptureRequest:
+    path: PathLike
+
+class BatchFileSnapshotReader(Protocol):
+    def capture_many(
+        self,
+        requests: Sequence[FileSnapshotCaptureRequest],
+    ) -> Sequence[FileSnapshot | None]: ...
 ```
+
+`BatchFileSnapshotReader` is the bounded, input-order-preserving read path used by add, organize, refresh, and check. A `None` result represents `FileNotFoundError` for the corresponding request. Apply, undo, and inspect keep using single-file `FileSnapshotReader.capture()`; in particular, apply never batches the source precondition that immediately precedes a move.
+
+Every complete capture performs its own fresh stat. Trust eligibility and trusted-snapshot reconstruction are domain/usecase decisions above the filesystem adapter; filesystem adapters only return observations and complete snapshots.
 
 ```python
 class MetadataReader(Protocol):
@@ -78,13 +98,17 @@ In the initial implementation, IdGenerator returns UUIDv7-backed IDs. Domain and
 
 ## UnitOfWork Policy
 
-The baseline policy is `1 usecase = 1 UnitOfWork`.
+The baseline policy is `1 usecase = 1 UnitOfWork` object.
 
 A usecase coordinates domain behavior and persistence through ports. Concrete repositories and transactions stay behind the UnitOfWork adapter.
+
+`UnitOfWork.usecase_scope()` defines the outer lifetime of adapter resources that may be reused by multiple transaction scopes in one usecase. Apply uses it to retain one same-thread SQLite connection. The outer resource scope is not a transaction and must not merge, move, or remove any inner `with uow` transaction boundary. Other usecases may continue using one ordinary transaction scope without an outer resource scope.
 
 ## Transaction Boundary
 
 Usecases define the business transition. The UnitOfWork adapter defines the concrete DB transaction mechanics.
+
+Every `with uow` block starts and completes an independent transaction, even inside `usecase_scope()`. No transaction stays open across hashing or a Library music file mutation. Apply's committed PENDING FileEvent therefore remains visible and durable before the mover runs; connection reuse changes checkpoint timing, not commit ordering or durability. The SQLite-specific FULL/WAL rationale is authoritative in [../STORAGE.md](../STORAGE.md#db-consistency).
 
 Repositories persist and restore domain models. They must not decide conflicts, duplicates, canonical paths, metadata validity, PlanAction status, or retry policy.
 

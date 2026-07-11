@@ -93,10 +93,10 @@ SECOND_NEW_METADATA = TrackMetadata(
 )
 
 
-def test_refresh_command_passes_normalized_target_path_to_request(
+def test_refresh_command_passes_normalized_target_path_and_trust_stat_to_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """refresh delegates target normalization before creating the usecase request."""
+    """refresh forwards normalized target and trust-stat values."""
     captured_requests: list[CreateRefreshPlanRequest] = []
 
     class CapturingCreateRefreshPlanUseCase:
@@ -117,7 +117,7 @@ def test_refresh_command_passes_normalized_target_path_to_request(
     stdout = StringIO()
     stderr = StringIO()
 
-    exit_code = run_refresh_command(
+    default_exit_code = run_refresh_command(
         [RAW_TARGET_PATH],
         stdout,
         stderr,
@@ -127,9 +127,31 @@ def test_refresh_command_passes_normalized_target_path_to_request(
             normalize_target_path=lambda path: f"normalized:{path}",
         ),
     )
+    trusted_exit_code = run_refresh_command(
+        [RAW_TARGET_PATH, "--trust-stat"],
+        stdout,
+        stderr,
+        RefreshCommandDependencies(
+            create_refresh_plan_ports_factory=_stub_create_refresh_plan_ports,
+            apply_plan_ports_factory=_stub_apply_plan_ports,
+            normalize_target_path=lambda path: f"normalized:{path}",
+        ),
+    )
 
-    assert exit_code == SUCCESS_EXIT_CODE
-    assert captured_requests == [CreateRefreshPlanRequest(target_path=NORMALIZED_TARGET_PATH, include_all=False)]
+    assert default_exit_code == SUCCESS_EXIT_CODE
+    assert trusted_exit_code == SUCCESS_EXIT_CODE
+    assert captured_requests == [
+        CreateRefreshPlanRequest(
+            trust_stat=False,
+            target_path=NORMALIZED_TARGET_PATH,
+            include_all=False,
+        ),
+        CreateRefreshPlanRequest(
+            trust_stat=True,
+            target_path=NORMALIZED_TARGET_PATH,
+            include_all=False,
+        ),
+    ]
 
 
 def test_refresh_command_creates_plan_for_managed_file(
@@ -337,7 +359,7 @@ def test_refresh_command_reports_usage_for_invalid_arguments(tmp_path: Path) -> 
 
     assert exit_code == USAGE_EXIT_CODE
     assert stdout.getvalue() == ""
-    assert "Usage: omym2 refresh (<file|dir>|--all) [--apply]" in stderr.getvalue()
+    assert "Usage: omym2 refresh (<file|dir>|--all) [--apply] [--trust-stat]" in stderr.getvalue()
 
 
 def test_refresh_command_reports_unmatched_target(tmp_path: Path) -> None:
@@ -424,6 +446,8 @@ def _track(
         content_hash=CONTENT_HASH,
         metadata_hash=calculate_metadata_fingerprint(metadata),
         metadata=metadata,
+        size=None,
+        mtime=None,
         status=TrackStatus.ACTIVE,
         first_seen_at=BASE_TIME,
         last_seen_at=BASE_TIME,

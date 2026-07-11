@@ -1,9 +1,9 @@
 ---
 type: Domain Model
 title: Domain
-description: Defines OMYM2's core domain entities (AppConfig, FileScanEntry, FileSnapshot, TrackMetadata, PathPolicy, Library, Track, Plan, PlanAction, Run, FileEvent, CheckIssue, CheckRun), their invariants, and the UUIDv7-based ID design policy.
+description: Defines OMYM2's core domain entities, including Track stat baselines and snapshot trust boundaries, their invariants, and the UUIDv7-based identity policy.
 tags: [domain-model, entities, invariants, id-design]
-timestamp: 2026-07-10T09:00:00+09:00
+timestamp: 2026-07-11T10:21:41+09:00
 ---
 
 # Domain
@@ -37,7 +37,7 @@ Representative fields:
 * mtime
 * file_extension
 
-FileScanEntry is the output of FileScanner. It represents that a candidate file was found, but it does not contain music metadata, content hash, or metadata hash.
+FileScanEntry is the output of FileScanner or a single-file FileStatReader observation. It represents that a candidate file was found, but it does not contain music metadata, content hash, or metadata hash.
 
 FileScanEntry must not be used to decide duplicates, metadata validity, or final movement by itself. It is only an input for later inspection.
 
@@ -60,7 +60,7 @@ FileSnapshot is created by a snapshot-capturing port after filesystem stat, meta
 
 FileSnapshot is not the identity of a managed track.
 
-`size` and `mtime` may be used as optimization hints, but content equality must not rely only on them.
+`size` and `mtime` are optimization hints, not proof of content equality. Default workflows and apply must not rely on them alone. The explicit CLI `--trust-stat` mode may reconstruct a snapshot from the last verified Track state only under the eligibility and risk rules owned by the organize, refresh, and check execution contracts.
 
 ## TrackMetadata
 
@@ -156,6 +156,8 @@ Representative fields:
 * canonical_path
 * content_hash
 * metadata_hash
+* size (nullable)
+* mtime (nullable)
 * metadata
 * status
 * first_seen_at
@@ -169,6 +171,13 @@ The `track_id` is the stable internal identity of the Track. The initial impleme
 `track_id` is generated when a Track is first recorded as managed state in OMYM2. It must not be derived from file path, canonical path, content hash, or metadata hash. Those values may change during normal operations such as add, organize, refresh, undo, and external tag correction.
 
 Every Track belongs to exactly one Library through `library_id`. Track rows do not define whether the Library is registered.
+
+`size` and `mtime` are the optional filesystem stat baseline associated with a
+verified snapshot of the managed file. Existing Tracks may have no baseline.
+They are change-detection optimization hints only: neither value is Track
+identity, and their presence does not by itself prove content equality. Only an
+explicit trust-stat workflow may treat an exact complete match as permission to
+reuse the last verified hashes and metadata; apply always captures the source.
 
 Allowed Track status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#track-status). `missing` is reported by `check` in the initial version rather than automatically persisted as Track status.
 

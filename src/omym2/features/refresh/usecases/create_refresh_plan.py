@@ -5,7 +5,9 @@ Why: Relocates files after tag correction without direct file mutation.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, replace
+from os import fspath
 from pathlib import PurePath
 from typing import TYPE_CHECKING
 
@@ -26,6 +28,8 @@ from omym2.domain.services.config_fingerprint import (
     is_path_policy_stale,
 )
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
+from omym2.domain.services.snapshot_baseline import snapshot_from_trusted_stat
+from omym2.features.common_ports import FileSnapshotCaptureRequest
 from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
@@ -36,7 +40,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.library import Library
     from omym2.domain.models.track import Track
-    from omym2.features.common_ports import UnitOfWork
+    from omym2.features.common_ports import FileSystemPath, UnitOfWork
     from omym2.features.refresh.dto import CreateRefreshPlanRequest
     from omym2.features.refresh.ports import CreateRefreshPlanPorts
     from omym2.shared.ids import PlanId
@@ -81,7 +85,24 @@ class CreateRefreshPlanUseCase:
                 track for track in uow.tracks.list_by_library(library.library_id) if track.status == TrackStatus.ACTIVE
             )
             selected_tracks = self._selected_tracks(request, library, active_tracks)
-            candidates = tuple(self._candidate(library, track, config) for track in selected_tracks)
+            trust_eligible_paths = {
+                path for path, count in Counter(track.current_path for track in active_tracks).items() if count == 1
+            }
+            source_paths = tuple(
+                self.ports.path_resolver.resolve_library_path(library.root_path, track.current_path)
+                for track in selected_tracks
+            )
+            snapshots = self._capture_snapshots(
+                selected_tracks,
+                source_paths,
+                trust_eligible_paths,
+                timestamp,
+                trust_stat=request.trust_stat,
+            )
+            candidates = tuple(
+                self._candidate(track, snapshot, config)
+                for track, snapshot in zip(selected_tracks, snapshots, strict=True)
+            )
             candidates = self._with_target_paths(candidates, active_tracks, config, path_policy)
             candidates = self._with_target_conflicts(library, candidates, active_tracks)
             plan_id = self.ports.id_generator.new_plan_id()
@@ -94,6 +115,46 @@ class CreateRefreshPlanUseCase:
 
             uow.commit()
             return plan
+
+    def _capture_snapshots(
+        self,
+        tracks: Sequence[Track],
+        source_paths: Sequence[FileSystemPath],
+        trust_eligible_paths: set[str],
+        timestamp: datetime,
+        *,
+        trust_stat: bool,
+    ) -> tuple[FileSnapshot | None, ...]:
+        snapshots: list[FileSnapshot | None] = [None] * len(tracks)
+        uncached_indexes: list[int] = []
+        uncached_requests: list[FileSnapshotCaptureRequest] = []
+
+        for index, (track, source_path) in enumerate(zip(tracks, source_paths, strict=True)):
+            if trust_stat and track.current_path in trust_eligible_paths:
+                try:
+                    observation = self.ports.file_stat_reader.observe(source_path)
+                except FileNotFoundError:
+                    continue
+                trusted_snapshot = snapshot_from_trusted_stat(
+                    track,
+                    track.current_path,
+                    fspath(source_path),
+                    observation,
+                    timestamp,
+                )
+                if trusted_snapshot is not None:
+                    snapshots[index] = trusted_snapshot
+                    continue
+
+            uncached_indexes.append(index)
+            uncached_requests.append(FileSnapshotCaptureRequest(source_path))
+
+        if len(uncached_requests) > 0:
+            captured = self.ports.file_snapshot_reader.capture_many(tuple(uncached_requests))
+            for index, snapshot in zip(uncached_indexes, captured, strict=True):
+                snapshots[index] = snapshot
+
+        return tuple(snapshots)
 
     def _selected_tracks(
         self,
@@ -121,15 +182,11 @@ class CreateRefreshPlanUseCase:
 
     def _candidate(
         self,
-        library: Library,
         track: Track,
+        snapshot: FileSnapshot | None,
         config: AppConfig,
     ) -> _RefreshCandidate:
-        source_filesystem_path = self.ports.path_resolver.resolve_library_path(library.root_path, track.current_path)
-
-        try:
-            snapshot = self.ports.file_snapshot_reader.capture(source_filesystem_path)
-        except FileNotFoundError:
+        if snapshot is None:
             return _blocked_candidate(track, PlanActionReason.SOURCE_MISSING)
 
         if _has_missing_required_metadata(snapshot, config):

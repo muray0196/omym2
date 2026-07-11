@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 class CreateRefreshPlanRequest:
     """Request to refresh all Tracks or a narrower target."""
 
+    trust_stat: bool
     library_id: LibraryId | None = None
     track_id: TrackId | None = None
     target_path: str | None = None

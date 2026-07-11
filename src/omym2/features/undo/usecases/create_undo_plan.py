@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from omym2.features.common_ports import FileSystemPath, PathResolver, UnitOfWork
     from omym2.features.undo.dto import CreateUndoPlanRequest
     from omym2.features.undo.ports import CreateUndoPlanPorts
-    from omym2.shared.ids import LibraryId, PlanId, TrackId
+    from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
 
 RUN_LIBRARY_NOT_FOUND_MESSAGE = "Run Library was not found."
 RUN_NOT_FOUND_MESSAGE = "Run was not found."
@@ -63,12 +63,11 @@ class CreateUndoPlanUseCase:
             source_plan = uow.plans.get(run.plan_id)
             if source_plan is None:
                 raise UndoPlanError(RUN_PLAN_NOT_FOUND_MESSAGE)
-            if any(
-                action.action_type == ActionType.REFRESH_METADATA
-                for action in uow.plan_actions.list_by_plan(run.plan_id)
-            ):
+            source_actions = tuple(uow.plan_actions.list_by_plan(run.plan_id))
+            if any(action.action_type == ActionType.REFRESH_METADATA for action in source_actions):
                 # Undo currently replays FileEvents only; refresh_metadata updates Track state without a reversible log.
                 raise UndoPlanError(RUN_REFRESH_METADATA_UNSUPPORTED_MESSAGE)
+            source_actions_by_id = {action.action_id: action for action in source_actions}
 
             undo_plan_id = self.ports.id_generator.new_plan_id()
             events = tuple(
@@ -80,7 +79,7 @@ class CreateUndoPlanUseCase:
                     )
                 )
             )
-            actions = self._actions(uow, library, undo_plan_id, events)
+            actions = self._actions(uow, library, undo_plan_id, events, source_actions_by_id)
             plan = Plan(
                 plan_id=undo_plan_id,
                 library_id=run.library_id,
@@ -106,13 +105,14 @@ class CreateUndoPlanUseCase:
         library: Library,
         undo_plan_id: PlanId,
         events: tuple[FileEvent, ...],
+        source_actions_by_id: dict[ActionId, PlanAction],
     ) -> tuple[PlanAction, ...]:
         actions: list[PlanAction] = []
         sort_order = PLAN_ACTION_SORT_ORDER_START
         tracks_by_library: dict[LibraryId, tuple[Track, ...]] = {}
 
         for event in events:
-            candidate = self._candidate(uow, library, event, tracks_by_library)
+            candidate = self._candidate(uow, library, event, source_actions_by_id, tracks_by_library)
             actions.append(
                 PlanAction(
                     action_id=self.ports.id_generator.new_action_id(),
@@ -138,9 +138,10 @@ class CreateUndoPlanUseCase:
         uow: UnitOfWork,
         library: Library,
         event: FileEvent,
+        source_actions_by_id: dict[ActionId, PlanAction],
         tracks_by_library: dict[LibraryId, tuple[Track, ...]],
     ) -> _UndoCandidate:
-        track_id = _track_id_for_event(uow, event, tracks_by_library)
+        track_id = _track_id_for_event(uow, event, source_actions_by_id, tracks_by_library)
         track = None if track_id is None else uow.tracks.get(track_id)
         source_path = event.target_path if track is None else track.current_path
         snapshot = None
@@ -192,9 +193,10 @@ class _UndoCandidate:
 def _track_id_for_event(
     uow: UnitOfWork,
     event: FileEvent,
+    source_actions_by_id: dict[ActionId, PlanAction],
     tracks_by_library: dict[LibraryId, tuple[Track, ...]],
 ) -> TrackId | None:
-    source_action = uow.plan_actions.get(event.plan_action_id)
+    source_action = source_actions_by_id.get(event.plan_action_id)
     if source_action is not None and source_action.track_id is not None:
         return source_action.track_id
 

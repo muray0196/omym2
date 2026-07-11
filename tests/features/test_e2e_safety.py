@@ -436,6 +436,8 @@ def _register_duplicate_track(database_file: Path) -> None:
                 canonical_path=REGISTERED_TRACK_PATH,
                 content_hash=calculate_content_fingerprint(DUPLICATE_CONTENT),
                 metadata_hash=calculate_metadata_fingerprint(metadata),
+                size=None,
+                mtime=None,
                 metadata=metadata,
                 status=TrackStatus.ACTIVE,
                 first_seen_at=BASE_TIME,

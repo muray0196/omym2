@@ -13,6 +13,14 @@ CONFIG_FILE_NAME: Final = "config.toml"  # TOML settings file name
 CURRENT_DIRECTORY_REFERENCE: Final = "."
 DATA_DIRECTORY_NAME: Final = ".data"  # internal data directory under the application root
 SQLITE_DATABASE_FILE_NAME: Final = "omym2.sqlite3"  # SQLite database file name
+BENCHMARK_DEFAULT_TRACK_COUNT: Final = 100  # default synthetic benchmark size, tracks, >= 1
+BENCHMARK_DEFAULT_FILE_SIZE_BYTES: Final = 1_048_576  # default synthetic file size, bytes, >= 4096
+BENCHMARK_DEFAULT_TRACKS_PER_ALBUM: Final = 10  # default synthetic album shape, tracks per album, >= 1
+BENCHMARK_MUTATION_SENTINEL_BYTES: Final = 1  # payload appended after tag mutation, bytes, >= 1
+BENCHMARK_MIN_TRACK_COUNT: Final = 1  # minimum synthetic benchmark size, tracks, >= 1
+BENCHMARK_MIN_FILE_SIZE_BYTES: Final = 4_096  # minimum tagged synthetic FLAC size, bytes, >= 4096
+BENCHMARK_MIN_TRACKS_PER_ALBUM: Final = 1  # minimum synthetic album shape, tracks per album, >= 1
+BENCHMARK_FILE_WRITE_CHUNK_SIZE_BYTES: Final = 1_048_576  # bounded fixture write chunk, bytes, >= 1
 WEB_DEFAULT_HOST: Final = "127.0.0.1"  # local Web UI bind host
 WEB_DEFAULT_PORT: Final = 8765  # local Web UI bind port
 WEB_APP_TITLE: Final = "OMYM2"  # local Web UI application title
@@ -138,6 +146,8 @@ MUSICBRAINZ_TIMEOUT_SECONDS: Final = 5.0  # MusicBrainz HTTP timeout, seconds
 MUSICBRAINZ_USER_AGENT: Final = "OMYM2/0.1 (https://github.com/muray0196/omym2)"  # MusicBrainz client UA
 CONTENT_FINGERPRINT_ALGORITHM: Final = "sha256"  # content fingerprint hash algorithm
 CONTENT_HASH_READ_CHUNK_SIZE_BYTES: Final = 1_048_576  # file hash read chunk size, bytes, positive
+FILE_SNAPSHOT_CAPTURE_MIN_WORKER_COUNT: Final = 1  # minimum parallel snapshot captures, workers, >= 1
+FILE_SNAPSHOT_CAPTURE_WORKER_COUNT: Final = 8  # maximum parallel snapshot captures, workers, >= 1
 CONFIG_FINGERPRINT_ALGORITHM: Final = "sha256"  # config fingerprint hash algorithm
 CONFIG_FINGERPRINT_ENCODING: Final = "utf-8"  # config fingerprint payload encoding
 CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR: Final = ","  # canonical JSON item separator
@@ -194,6 +204,7 @@ PATH_POLICY_PREVIEW_FILE_EXTENSION: Final = ".FLAC"  # sample source suffix show
 SQLITE_CONNECTION_TIMEOUT_SECONDS: Final = 30.0  # SQLite connection busy timeout, seconds
 SQLITE_MIGRATION_FILE_ENCODING: Final = "utf-8"  # SQLite migration resource encoding
 SQLITE_MIGRATION_FILE_EXTENSION: Final = ".sql"  # migration resource file extension
+SQLITE_SYNCHRONOUS_PRAGMA: Final = "PRAGMA synchronous = FULL"  # per-commit WAL durability pragma
 SUPPORTED_MUSIC_FILE_EXTENSIONS: Final = frozenset(
     {
         ".aac",

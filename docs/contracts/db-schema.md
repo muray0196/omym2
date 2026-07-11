@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines the authoritative SQLite schema contract for OMYM2, covering table responsibilities (libraries, tracks, plans, plan_actions, runs, file_events, check_runs, check_issues), migrations, indexes, stored JSON fields, and timestamp policy.
+description: Defines OMYM2's SQLite tables, nullable Track stat baselines, forward-only migrations, performance indexes, stored JSON boundaries, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-10T01:53:50+09:00
+timestamp: 2026-07-11T10:21:41+09:00
 ---
 
 # DB Schema Contract
@@ -86,11 +86,17 @@ Minimum representative fields:
 * `canonical_path`
 * `content_hash`
 * `metadata_hash`
+* `size` nullable
+* `mtime` nullable
 * `metadata_json`
 * `status`
 * timestamps
 
-The DB stores OMYM2's last known Library-root-relative paths and hashes. It does not prove that the file still exists or that the content has not changed.
+The DB stores OMYM2's last known Library-root-relative paths and hashes. Nullable
+`size` and `mtime` store the stat baseline associated with a verified snapshot;
+existing rows without a baseline retain `NULL` in both columns. A non-null
+`size` is constrained to be nonnegative. These values are optimization hints,
+not Track identity or proof that the file still exists or remains unchanged.
 
 ### plans
 
@@ -247,12 +253,30 @@ Indexes exist to keep the Web API's list, facet, and group-by endpoints (authori
 * `idx_plans_created` on `plans (created_at, plan_id)` — backs Plan list ordering and keyset pagination (`GET /api/plans`).
 * `idx_plans_library_created` on `plans (library_id, created_at, plan_id)` — backs Library-scoped Plan ordering and keyset pagination.
 
+`202607110001_performance_indexes.sql` adds:
+
+* `idx_check_issues_check_run_id` on `check_issues (check_run_id)` — backs foreign-key lookup and cascade cleanup when replacing a CheckRun.
+* `idx_file_events_library_status` on `file_events (library_id, status, sequence_no)` — backs ordered pending-FileEvent lookup for one Library during `check`.
+
+The same migration removes two redundant single-column indexes whose lookup prefixes are covered by existing composite indexes:
+
+* `idx_tracks_library_id`, superseded by indexes beginning with `tracks.library_id`.
+* `idx_plans_library_id`, superseded by `idx_plans_library_created`.
+
+`202607110002_track_stat_baseline.sql` adds:
+
+* nullable `tracks.size`, constrained to nonnegative integer values when present
+* nullable `tracks.mtime`, stored as timestamp text when present
+
+The migration does not backfill existing rows. Both values therefore remain
+`NULL` until a later verified snapshot is persisted for that Track.
+
 ## Stored JSON Fields
 
 Stored JSON fields, such as `metadata_json` and `summary_json`, are persistence details. Repositories restore typed domain models from them and must not use JSON shape to decide business policy.
 
 ## Timestamp Policy
 
-Timestamps are persisted to support history, inspection, and deterministic tests through the `Clock` port.
+Timestamps are persisted to support history, inspection, and deterministic tests through the `Clock` port. A non-null Track `mtime` baseline follows the same UTC timestamp serialization as other persisted timestamps.
 
 Adapters may serialize timestamps, but usecases decide when state transitions occur.

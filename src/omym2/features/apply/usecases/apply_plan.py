@@ -49,6 +49,12 @@ class ApplyPlanUseCase:
         """Apply a reviewed Plan and return its Run when one is created."""
         _require_confirmed(request)
 
+        with self.ports.uow.usecase_scope():
+            return self._execute_confirmed(request)
+
+    def _execute_confirmed(self, request: ApplyPlanRequest) -> Run | None:
+        """Apply one confirmed request inside a shared UnitOfWork resource scope."""
+
         started_apply = self._start_apply(request.plan_id)
         if started_apply is None:
             return None
@@ -347,6 +353,8 @@ class ApplyPlanUseCase:
                 canonical_path=existing_track.canonical_path,
                 content_hash=snapshot.content_hash,
                 metadata_hash=snapshot.metadata_hash,
+                size=snapshot.size,
+                mtime=snapshot.mtime,
                 metadata=snapshot.metadata,
                 status=TrackStatus.REMOVED,
                 first_seen_at=existing_track.first_seen_at,
@@ -361,6 +369,8 @@ class ApplyPlanUseCase:
             canonical_path=target_path,
             content_hash=snapshot.content_hash,
             metadata_hash=snapshot.metadata_hash,
+            size=snapshot.size,
+            mtime=snapshot.mtime,
             metadata=snapshot.metadata,
             status=TrackStatus.ACTIVE,
             first_seen_at=timestamp if existing_track is None else existing_track.first_seen_at,

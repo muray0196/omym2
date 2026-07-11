@@ -57,9 +57,11 @@ UNSANITIZED_PATH = "Artist:Name/2024_Example Album/1-03_Example Song.flac"
 YEAR = 2024
 STEM_TEMPLATE = "{album_artist}/{album}/{disc}-{track} - {title}"
 ARTIST_ID_TEMPLATE = "{artist_id}/{title}"
+ARTIST_ONLY_TEMPLATE = "{artist}"
 ALBUM_ARTIST_ID_TEMPLATE = "{album}/{artist_id}/{title}"
 ALBUM_ARTIST_ID_TEMPLATE_PART_COUNT = 3
 UNSAFE_ARTIST_ID_ENTRY = "../../../etc/passwd"
+UNUSED_ARTIST_ID_GENERATOR_MESSAGE = "unused artist ID generator was called"
 
 
 def test_path_policy_generates_relative_path_without_hash_suffix() -> None:
@@ -155,6 +157,45 @@ def test_path_policy_generates_artist_id_when_no_saved_entry_exists() -> None:
         fallback_id=DEFAULT_ARTIST_ID_FALLBACK,
     )
     assert canonical_path == f"{expected_artist_id}/Example-Song.flac"
+
+
+def test_path_policy_does_not_generate_artist_id_when_template_does_not_use_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Templates without artist_id avoid work that cannot affect the rendered path."""
+
+    def fail_if_called(source_artist: str, *, max_length: int, fallback_id: str) -> str:
+        del source_artist, max_length, fallback_id
+        raise AssertionError(UNUSED_ARTIST_ID_GENERATOR_MESSAGE)
+
+    monkeypatch.setattr("omym2.domain.services.path_policy.generate_artist_id", fail_if_called)
+
+    canonical_path = PathPolicy(PathPolicyConfig()).canonical_path(_track_metadata(), FILE_EXTENSION)
+
+    assert canonical_path == EXPECTED_CANONICAL_PATH
+
+
+def test_path_policy_memoizes_generated_artist_id_per_instance(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Repeated tracks by one artist reuse its generated ID within one planning policy."""
+    generated_artists: list[str] = []
+
+    def record_generation(source_artist: str, *, max_length: int, fallback_id: str) -> str:
+        del max_length, fallback_id
+        generated_artists.append(source_artist)
+        return "AIMR"
+
+    monkeypatch.setattr("omym2.domain.services.path_policy.generate_artist_id", record_generation)
+    policy = PathPolicy(PathPolicyConfig(template=ARTIST_ID_TEMPLATE), ArtistIdConfig(entries={}))
+
+    first_path = policy.canonical_path(_track_metadata(), FILE_EXTENSION)
+    second_path = policy.canonical_path(
+        TrackMetadata(title="Second Song", artist=ALBUM_ARTIST),
+        FILE_EXTENSION,
+    )
+
+    assert first_path == EXPECTED_ARTIST_ID_PATH
+    assert second_path == "AIMR/Second-Song.flac"
+    assert generated_artists == [ALBUM_ARTIST]
 
 
 def test_canonical_path_artist_id_entry_cannot_escape_library_root() -> None:
@@ -388,6 +429,14 @@ def test_path_policy_blocks_missing_title() -> None:
 
     with pytest.raises(ValueError, match=MISSING_TITLE_MESSAGE):
         _ = PathPolicy(PathPolicyConfig()).canonical_path(metadata, FILE_EXTENSION)
+
+
+def test_path_policy_keeps_missing_title_invariant_when_template_omits_title() -> None:
+    """Template-aware rendering does not weaken the existing title requirement."""
+    metadata = TrackMetadata(artist=ALBUM_ARTIST, album=ALBUM)
+
+    with pytest.raises(ValueError, match=MISSING_TITLE_MESSAGE):
+        _ = PathPolicy(PathPolicyConfig(template=ARTIST_ONLY_TEMPLATE)).canonical_path(metadata, FILE_EXTENSION)
 
 
 def test_metadata_fingerprint_changes_when_metadata_changes() -> None:

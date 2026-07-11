@@ -1,9 +1,9 @@
 ---
 type: Execution Spec
 title: Organize Execution
-description: Defines organize --library PATH behavior for first Library registration, existing Library rescan, unregistered-path refusal, and registration timing relative to plan creation and apply.
+description: Defines organize registration and reconciliation, Plan creation, and the explicit unique-Track size+mtime trust-stat optimization and fallback rules.
 tags: [organize, library-registration, plan-creation, path-policy]
-timestamp: 2026-07-07T12:00:00+09:00
+timestamp: 2026-07-11T16:53:36+09:00
 ---
 
 # Organize Execution
@@ -74,3 +74,22 @@ Blocking issues include:
 * invalid paths
 * missing source files
 * other problems preventing safe acceptance
+
+## Trust-Stat Optimization
+
+`omym2 organize --trust-stat` is an explicit CLI-only performance opt-in. The Web organize route always uses full snapshot capture.
+
+One scanned source is eligible only when all of these conditions hold:
+
+* exactly one active Track in the Library has that `current_path`
+* the Track logical path and the scanner observation path match the source being evaluated
+* both persisted Track `size` and `mtime` values are non-null
+* current size and modification time exactly equal that persisted baseline
+
+For an eligible source, organize may reconstruct the FileSnapshot from the scanner stat plus the Track's last verified hashes and metadata. Every null, ambiguous, path-mismatching, or changed baseline falls back to a complete snapshot that performs a fresh stat, metadata read, and content hash. Full captures do not reuse the earlier scan observation when establishing the persisted baseline.
+
+When an eligible source is accepted, organize updates that same unique active Track identity. Removed Track records that share the source path remain removed.
+
+Accepted organize candidates persist their snapshot size and modification time. This backfills existing null baselines only after full verification; an eligible trusted candidate preserves its already verified baseline.
+
+The opt-in can miss a content or metadata edit that preserves both size and modification time. Users who need full integrity verification omit the flag. If `--apply` is also selected, apply still performs its mandatory full source-hash precondition before any Track update or Library music file mutation.

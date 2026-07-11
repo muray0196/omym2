@@ -14,6 +14,7 @@ from omym2.adapters.fs.file_mover import FilesystemFileMover
 from omym2.adapters.fs.file_presence import FilesystemFilePresence
 from omym2.adapters.fs.file_scanner import FilesystemFileScanner
 from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
+from omym2.adapters.fs.hash_calculator import FileContentHasher
 from omym2.adapters.fs.path_resolver import FilesystemPathResolver
 from omym2.features.add.ports import CreateAddPlanPorts
 from omym2.features.apply.ports import ApplyPlanPorts
@@ -106,6 +107,7 @@ def test_build_check_library_ports_matches_check_command_recipe(runtime: Runtime
     assert isinstance(ports.file_scanner, FilesystemFileScanner)
     assert isinstance(ports.file_snapshot_reader, FilesystemFileSnapshotReader)
     assert ports.file_snapshot_reader.metadata_reader is runtime.metadata_reader
+    assert isinstance(ports.file_content_hasher, FileContentHasher)
     assert ports.config_store is runtime.config_store
     assert isinstance(ports.path_resolver, FilesystemPathResolver)
     assert isinstance(ports.clock, SystemClock)
@@ -174,6 +176,7 @@ def test_build_create_refresh_plan_ports_matches_refresh_command_recipe(runtime:
     assert ports.uow.database_path == runtime.database_file
     assert isinstance(ports.file_snapshot_reader, FilesystemFileSnapshotReader)
     assert ports.file_snapshot_reader.metadata_reader is runtime.metadata_reader
+    assert isinstance(ports.file_stat_reader, FilesystemFileScanner)
     assert isinstance(ports.file_presence, FilesystemFilePresence)
     assert ports.config_store is runtime.config_store
     assert isinstance(ports.path_resolver, FilesystemPathResolver)

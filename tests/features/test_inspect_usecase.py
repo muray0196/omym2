@@ -24,6 +24,7 @@ from omym2.features.inspect.ports import InspectFilePorts
 from omym2.features.inspect.usecases.inspect_file import InspectFileUseCase
 
 if TYPE_CHECKING:
+    from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.features.common_ports import FileSystemPath
 
 CAPTURED_AT = datetime(2026, 1, 1, tzinfo=UTC)
@@ -134,8 +135,14 @@ class StaticSnapshotReader:
         self._snapshot: FileSnapshot = snapshot
         self.captured_path: FileSystemPath | None = None
 
-    def capture(self, path: FileSystemPath) -> FileSnapshot:
+    def capture(
+        self,
+        path: FileSystemPath,
+        *,
+        observation: FileScanEntry | None = None,
+    ) -> FileSnapshot:
         """Return the configured snapshot."""
+        del observation
         self.captured_path = path
         return self._snapshot
 

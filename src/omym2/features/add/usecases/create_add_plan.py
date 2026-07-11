@@ -26,6 +26,7 @@ from omym2.domain.services.config_fingerprint import (
     is_path_policy_stale,
 )
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
+from omym2.features.common_ports import FileSnapshotCaptureRequest
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -75,8 +76,15 @@ class CreateAddPlanUseCase:
             library_tracks = tuple(uow.tracks.list_by_library(library.library_id))
             active_library_tracks = tuple(track for track in library_tracks if track.status == TrackStatus.ACTIVE)
             duplicate_track_by_hash = _duplicate_track_by_hash(active_library_tracks)
-            scan_entries = self.ports.file_scanner.scan(source_root)
-            candidates = tuple(self._candidate(entry, config) for entry in scan_entries)
+            scan_entries = tuple(self.ports.file_scanner.scan(source_root))
+            source_paths = tuple(_normalize_external_source_path(entry.path) for entry in scan_entries)
+            snapshots = self.ports.file_snapshot_reader.capture_many(
+                tuple(FileSnapshotCaptureRequest(entry.path) for entry in scan_entries)
+            )
+            candidates = tuple(
+                self._candidate(entry, source_path, snapshot, config)
+                for entry, source_path, snapshot in zip(scan_entries, source_paths, snapshots, strict=True)
+            )
             candidates = self._with_target_paths(candidates, library_tracks, config, path_policy)
             candidates = self._with_duplicates(candidates, duplicate_track_by_hash)
             candidates = self._with_target_conflicts(library, candidates, active_library_tracks)
@@ -220,12 +228,11 @@ class CreateAddPlanUseCase:
     def _candidate(
         self,
         entry: FileScanEntry,
+        source_path: str,
+        snapshot: FileSnapshot | None,
         config: AppConfig,
     ) -> _AddCandidate:
-        source_path = _normalize_external_source_path(entry.path)
-        try:
-            snapshot = self.ports.file_snapshot_reader.capture(entry.path)
-        except FileNotFoundError:
+        if snapshot is None:
             return _blocked_candidate(source_path, PlanActionReason.SOURCE_MISSING)
 
         if _source_changed(entry, snapshot):

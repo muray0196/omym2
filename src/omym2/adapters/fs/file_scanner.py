@@ -17,12 +17,30 @@ from omym2.domain.models.file_scan_entry import FileScanEntry
 if TYPE_CHECKING:
     from omym2.features.common_ports import FileSystemPath
 
+NOT_A_REGULAR_FILE_MESSAGE = "Path is not a regular file"
+
 
 @dataclass(frozen=True, slots=True)
 class FilesystemFileScanner:
     """Read candidate music files from a directory tree."""
 
     supported_extensions: frozenset[str] = SUPPORTED_MUSIC_FILE_EXTENSIONS
+
+    def observe(self, path: FileSystemPath) -> FileScanEntry:
+        """Return one cheap regular-file observation without metadata or hashes."""
+        file_path = Path(path)
+        stat_result = file_path.stat()
+        if not stat.S_ISREG(stat_result.st_mode):
+            if stat.S_ISDIR(stat_result.st_mode):
+                raise IsADirectoryError(file_path)
+            message = f"{NOT_A_REGULAR_FILE_MESSAGE}: {file_path}"
+            raise OSError(message)
+        return FileScanEntry(
+            path=str(file_path),
+            size=stat_result.st_size,
+            mtime=datetime.fromtimestamp(stat_result.st_mtime, UTC),
+            file_extension=file_path.suffix.lower(),
+        )
 
     def scan(self, root: FileSystemPath) -> tuple[FileScanEntry, ...]:
         """Return sorted file discovery entries without metadata or hashes."""

@@ -12,6 +12,7 @@ from omym2.adapters.fs.file_mover import FilesystemFileMover
 from omym2.adapters.fs.file_presence import FilesystemFilePresence
 from omym2.adapters.fs.file_scanner import FilesystemFileScanner
 from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
+from omym2.adapters.fs.hash_calculator import FileContentHasher
 from omym2.adapters.fs.path_resolver import FilesystemPathResolver
 from omym2.features.add.ports import CreateAddPlanPorts
 from omym2.features.apply.ports import ApplyPlanPorts
@@ -67,6 +68,7 @@ def build_check_library_ports(runtime: RuntimeContext) -> CheckLibraryPorts:
         uow=SQLiteUnitOfWork(runtime.database_file),
         file_scanner=FilesystemFileScanner(),
         file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=runtime.metadata_reader),
+        file_content_hasher=FileContentHasher(),
         config_store=runtime.config_store,
         path_resolver=FilesystemPathResolver(),
         clock=SystemClock(),
@@ -115,6 +117,7 @@ def build_create_refresh_plan_ports(runtime: RuntimeContext) -> CreateRefreshPla
     return CreateRefreshPlanPorts(
         uow=SQLiteUnitOfWork(runtime.database_file),
         file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=runtime.metadata_reader),
+        file_stat_reader=FilesystemFileScanner(),
         file_presence=FilesystemFilePresence(),
         config_store=runtime.config_store,
         path_resolver=FilesystemPathResolver(),

@@ -64,6 +64,8 @@ TRACK_SELECT_FROM = """
                 canonical_path,
                 content_hash,
                 metadata_hash,
+                size,
+                mtime,
                 metadata_json,
                 status,
                 first_seen_at,
@@ -432,19 +434,23 @@ class SQLiteTrackRepository(_SQLiteRepository):
                 canonical_path,
                 content_hash,
                 metadata_hash,
+                size,
+                mtime,
                 metadata_json,
                 status,
                 first_seen_at,
                 last_seen_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(track_id) DO UPDATE SET
                 library_id = excluded.library_id,
                 current_path = excluded.current_path,
                 canonical_path = excluded.canonical_path,
                 content_hash = excluded.content_hash,
                 metadata_hash = excluded.metadata_hash,
+                size = excluded.size,
+                mtime = excluded.mtime,
                 metadata_json = excluded.metadata_json,
                 status = excluded.status,
                 first_seen_at = excluded.first_seen_at,
@@ -458,6 +464,8 @@ class SQLiteTrackRepository(_SQLiteRepository):
                 track.canonical_path,
                 track.content_hash,
                 track.metadata_hash,
+                track.size,
+                _optional_timestamp_to_text(track.mtime),
                 _metadata_to_json(track.metadata),
                 track.status.value,
                 _timestamp_to_text(track.first_seen_at),
@@ -1138,6 +1146,8 @@ def _track_from_row(row: sqlite3.Row) -> Track:
         canonical_path=_row_text(row, "canonical_path"),
         content_hash=_row_text(row, "content_hash"),
         metadata_hash=_row_text(row, "metadata_hash"),
+        size=_row_optional_int(row, "size"),
+        mtime=_optional_timestamp_from_text(_row_optional_text(row, "mtime")),
         metadata=_metadata_from_json(_row_text(row, "metadata_json")),
         status=TrackStatus(_row_text(row, "status")),
         first_seen_at=_timestamp_from_text(_row_text(row, "first_seen_at")),
@@ -1477,6 +1487,13 @@ def _row_optional_text(row: sqlite3.Row, key: str) -> str | None:
 def _row_int(row: sqlite3.Row, key: str) -> int:
     value = cast("object", row[key])
     if isinstance(value, int):
+        return value
+    raise TypeError(INVALID_ROW_INTEGER_MESSAGE)
+
+
+def _row_optional_int(row: sqlite3.Row, key: str) -> int | None:
+    value = cast("object", row[key])
+    if value is None or isinstance(value, int):
         return value
     raise TypeError(INVALID_ROW_INTEGER_MESSAGE)
 

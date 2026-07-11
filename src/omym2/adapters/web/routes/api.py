@@ -26,7 +26,6 @@ from omym2.adapters.web.routes.api_serializers import (
     serialize_page_info,
     serialize_path_preview,
     serialize_plan_action,
-    serialize_plan_detail_parts,
     serialize_plan_header_response,
     serialize_plan_row,
     serialize_run_header_response,
@@ -899,7 +898,7 @@ async def _create_organize_plan(context: ApiRouteContext, request: Request) -> J
 
     try:
         result = CreateOrganizePlanUseCase(context.organize_plan_ports_factory()).execute(
-            CreateOrganizePlanRequest(library_root=library_root)
+            CreateOrganizePlanRequest(trust_stat=False, library_root=library_root)
         )
     except (ConfigStoreValidationError, OrganizeLibrarySelectionError) as exc:
         return _plan_creation_error(_errors_from_plan_client_error(exc))
@@ -925,7 +924,11 @@ async def _create_refresh_plan(context: ApiRouteContext, request: Request) -> JS
 
     try:
         plan = CreateRefreshPlanUseCase(context.refresh_plan_ports_factory()).execute(
-            CreateRefreshPlanRequest(target_path=target_path, include_all=include_all)
+            CreateRefreshPlanRequest(
+                trust_stat=False,
+                target_path=target_path,
+                include_all=include_all,
+            )
         )
     except (ConfigStoreValidationError, RefreshLibrarySelectionError, RefreshTargetSelectionError) as exc:
         return _plan_creation_error(_errors_from_plan_client_error(exc))
@@ -1061,7 +1064,9 @@ async def _run_check(context: ApiRouteContext, request: Request) -> JSONResponse
         return _check_run_error(library_errors)
 
     try:
-        result = CheckLibraryUseCase(context.check_ports_factory()).execute(CheckLibraryRequest(library_id=library_id))
+        result = CheckLibraryUseCase(context.check_ports_factory()).execute(
+            CheckLibraryRequest(trust_stat=False, library_id=library_id)
+        )
     except (ConfigStoreValidationError, CheckLibraryError) as exc:
         return _check_run_error(_errors_from_client_error(exc))
     except (MetadataReadError, OSError, sqlite3.DatabaseError) as exc:
@@ -1596,7 +1601,7 @@ def _created_plan_response(plan: Plan) -> JSONResponse:
     return JSONResponse(
         {
             "created": True,
-            "detail": serialize_plan_detail_parts(plan, plan.actions),
+            "detail": serialize_plan_header_response(plan),
             "registration": None,
             "errors": [],
         },
@@ -1608,7 +1613,7 @@ def _created_organize_response(result: OrganizeLibraryResult) -> JSONResponse:
     return JSONResponse(
         {
             "created": result.plan is not None,
-            "detail": None if result.plan is None else serialize_plan_detail_parts(result.plan, result.actions),
+            "detail": None if result.plan is None else serialize_plan_header_response(result.plan),
             "registration": serialize_organize_registration(result),
             "errors": [],
         },

@@ -57,8 +57,10 @@ from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from omym2.domain.models.app_config import AppConfig
-    from omym2.features.common_ports import FileSystemPath
+    from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
@@ -119,11 +121,13 @@ def test_check_reports_db_filesystem_plan_and_pending_event_issues() -> None:
     snapshots = MappingSnapshotReader(
         {
             _absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH), CHANGED_CONTENT_HASH, CHANGED_METADATA_HASH),
-            _absolute(UNMANAGED_PATH): _snapshot(_absolute(UNMANAGED_PATH), CONTENT_HASH, METADATA_HASH),
         }
     )
+    content_hasher = MappingContentHasher({_absolute(UNMANAGED_PATH): CONTENT_HASH})
 
-    result = CheckLibraryUseCase(_check_ports(uow, scanner, snapshots)).execute(CheckLibraryRequest())
+    result = CheckLibraryUseCase(_check_ports(uow, scanner, snapshots, content_hasher=content_hasher)).execute(
+        CheckLibraryRequest(trust_stat=False)
+    )
 
     assert {
         CheckIssueType.CONTENT_HASH_CHANGED,
@@ -138,6 +142,138 @@ def test_check_reports_db_filesystem_plan_and_pending_event_issues() -> None:
     assert uow.commit_count == 1
     assert uow.tracks.get(TRACK_ID) is not None
     assert uow.libraries.get(LIBRARY_ID) is not None
+    assert _absolute(UNMANAGED_PATH) not in snapshots.captured_paths
+    assert content_hasher.calculated_paths == [_absolute(UNMANAGED_PATH)]
+
+
+def test_check_keeps_unmanaged_issue_when_file_vanishes_before_hashing() -> None:
+    """A vanished unmanaged candidate is still reported unmanaged without a duplicate issue."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    unmanaged_path = _absolute(UNMANAGED_PATH)
+    content_hasher = MappingContentHasher({}, missing_paths={unmanaged_path})
+
+    result = CheckLibraryUseCase(
+        _check_ports(
+            uow,
+            StaticScanner((_scan_entry(unmanaged_path),)),
+            MappingSnapshotReader({}),
+            content_hasher=content_hasher,
+        )
+    ).execute(CheckLibraryRequest(trust_stat=False))
+
+    assert tuple(issue.issue_type for issue in result.issues) == (CheckIssueType.UNMANAGED_FILE_EXISTS,)
+    assert content_hasher.calculated_paths == [unmanaged_path]
+
+
+def test_check_reuses_managed_snapshot_for_ready_plan_source_without_reordering_issues() -> None:
+    """Managed-track and READY-plan diagnostics share one snapshot while retaining phase order."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan())
+    uow.plan_actions.save(_source_action())
+    managed_path = _absolute(TARGET_PATH)
+    snapshots = MappingSnapshotReader({managed_path: _snapshot(managed_path, CHANGED_CONTENT_HASH, METADATA_HASH)})
+
+    result = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), snapshots)).execute(
+        CheckLibraryRequest(trust_stat=False)
+    )
+
+    assert tuple(issue.issue_type for issue in result.issues) == (
+        CheckIssueType.CONTENT_HASH_CHANGED,
+        CheckIssueType.PLAN_SOURCE_CHANGED,
+    )
+    assert snapshots.captured_paths == [managed_path]
+
+
+def test_check_trust_stat_skips_full_capture_and_reuses_ready_plan_snapshot() -> None:
+    """Opted-in check shares one trusted managed observation with READY-Plan diagnostics."""
+    track = replace(_track(), size=FILE_SIZE, mtime=BASE_TIME)
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(track)
+    uow.plans.save(_plan())
+    uow.plan_actions.save(_source_action())
+    managed_path = _absolute(TARGET_PATH)
+    snapshots = MappingSnapshotReader({})
+
+    result = CheckLibraryUseCase(_check_ports(uow, StaticScanner((_scan_entry(managed_path),)), snapshots)).execute(
+        CheckLibraryRequest(trust_stat=True)
+    )
+
+    assert result.issues == ()
+    assert snapshots.captured_paths == []
+    assert uow.tracks.get(TRACK_ID) == track
+
+
+def test_check_trust_stat_full_captures_mismatching_baseline() -> None:
+    """A mismatching scan observation falls back to a full snapshot during check."""
+    track = replace(_track(), size=FILE_SIZE, mtime=BASE_TIME)
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(track)
+    managed_path = _absolute(TARGET_PATH)
+    changed_entry = FileScanEntry(
+        path=managed_path,
+        size=FILE_SIZE + 1,
+        mtime=BASE_TIME,
+        file_extension=FILE_EXTENSION,
+    )
+    snapshots = MappingSnapshotReader({managed_path: _snapshot(managed_path, CHANGED_CONTENT_HASH, METADATA_HASH)})
+
+    result = CheckLibraryUseCase(_check_ports(uow, StaticScanner((changed_entry,)), snapshots)).execute(
+        CheckLibraryRequest(trust_stat=True)
+    )
+
+    assert tuple(issue.issue_type for issue in result.issues) == (CheckIssueType.CONTENT_HASH_CHANGED,)
+    assert snapshots.captured_paths == [managed_path]
+    assert uow.tracks.get(TRACK_ID) == track
+
+
+def test_check_trust_stat_full_captures_duplicate_active_path() -> None:
+    """Duplicate active Track paths cannot seed Track-derived snapshot memo entries."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(replace(_track(), size=FILE_SIZE, mtime=BASE_TIME))
+    uow.tracks.save(
+        replace(
+            _track(track_id=SECOND_TRACK_ID),
+            size=FILE_SIZE,
+            mtime=BASE_TIME,
+            content_hash=CHANGED_CONTENT_HASH,
+        )
+    )
+    managed_path = _absolute(TARGET_PATH)
+    snapshots = MappingSnapshotReader({managed_path: _snapshot(managed_path)})
+
+    result = CheckLibraryUseCase(_check_ports(uow, StaticScanner((_scan_entry(managed_path),)), snapshots)).execute(
+        CheckLibraryRequest(trust_stat=True)
+    )
+
+    assert snapshots.captured_paths == [managed_path]
+    assert tuple(issue.track_id for issue in result.issues) == (SECOND_TRACK_ID,)
+
+
+def test_check_memoizes_missing_managed_snapshot_for_ready_plan_source() -> None:
+    """A missing managed source is observed once and reused by both diagnostic phases."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan())
+    uow.plan_actions.save(_source_action())
+    managed_path = _absolute(TARGET_PATH)
+    snapshots = MappingSnapshotReader({}, missing_paths={managed_path})
+
+    result = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), snapshots)).execute(
+        CheckLibraryRequest(trust_stat=False)
+    )
+
+    assert tuple(issue.issue_type for issue in result.issues) == (
+        CheckIssueType.DB_FILE_MISSING,
+        CheckIssueType.PLAN_SOURCE_CHANGED,
+    )
+    assert snapshots.captured_paths == [managed_path]
 
 
 def test_check_reports_missing_file_and_library_state() -> None:
@@ -147,7 +283,9 @@ def test_check_reports_missing_file_and_library_state() -> None:
     uow.tracks.save(_track())
     snapshots = MappingSnapshotReader({}, missing_paths={_absolute(TARGET_PATH)})
 
-    result = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), snapshots)).execute(CheckLibraryRequest())
+    result = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), snapshots)).execute(
+        CheckLibraryRequest(trust_stat=False)
+    )
 
     assert CheckIssueType.DB_FILE_MISSING in {issue.issue_type for issue in result.issues}
     assert CheckIssueType.LIBRARY_BLOCKED in {issue.issue_type for issue in result.issues}
@@ -165,7 +303,7 @@ def test_check_orders_pending_event_issues_by_run_start_then_sequence() -> None:
     uow.file_events.save(_pending_event())
 
     result = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), MappingSnapshotReader({}))).execute(
-        CheckLibraryRequest()
+        CheckLibraryRequest(trust_stat=False)
     )
 
     pending_issues = tuple(
@@ -188,7 +326,7 @@ def test_check_replaces_prior_run_findings_wholesale_on_recheck() -> None:
 
     first = CheckLibraryUseCase(
         _check_ports(uow, StaticScanner(()), dirty_snapshots, id_generator=first_id_generator)
-    ).execute(CheckLibraryRequest())
+    ).execute(CheckLibraryRequest(trust_stat=False))
 
     first_run = uow.check_runs.latest(LIBRARY_ID)
     assert first_run is not None
@@ -202,7 +340,7 @@ def test_check_replaces_prior_run_findings_wholesale_on_recheck() -> None:
 
     second = CheckLibraryUseCase(
         _check_ports(uow, StaticScanner(()), clean_snapshots, id_generator=second_id_generator)
-    ).execute(CheckLibraryRequest())
+    ).execute(CheckLibraryRequest(trust_stat=False))
 
     assert second.issues == ()
     second_run = uow.check_runs.latest(LIBRARY_ID)
@@ -225,23 +363,25 @@ def test_check_query_usecases_read_persisted_findings_and_resolve_checked_at() -
             uow=uow,
             file_scanner=StaticScanner(()),
             file_snapshot_reader=dirty_snapshots,
+            file_content_hasher=MappingContentHasher({}),
             config_store=StaticConfigStore(),
             path_resolver=SimplePathResolver(),
             clock=FixedClock(BASE_TIME),
             id_generator=SequenceIdGenerator(check_run_ids=deque((CHECK_RUN_ID,))),
         )
-    ).execute(CheckLibraryRequest(library_id=LIBRARY_ID))
+    ).execute(CheckLibraryRequest(trust_stat=False, library_id=LIBRARY_ID))
     _ = CheckLibraryUseCase(
         CheckLibraryPorts(
             uow=uow,
             file_scanner=StaticScanner(()),
             file_snapshot_reader=MappingSnapshotReader({}),
+            file_content_hasher=MappingContentHasher({}),
             config_store=StaticConfigStore(),
             path_resolver=SimplePathResolver(),
             clock=FixedClock(BASE_TIME + timedelta(days=1)),
             id_generator=SequenceIdGenerator(check_run_ids=deque((SECOND_CHECK_RUN_ID,))),
         )
-    ).execute(CheckLibraryRequest(library_id=SECOND_LIBRARY_ID))
+    ).execute(CheckLibraryRequest(trust_stat=False, library_id=SECOND_LIBRARY_ID))
 
     query_ports = CheckQueryPorts(uow)
     per_library = ListCheckIssuesUseCase(query_ports).execute(ListCheckIssuesRequest(library_id=LIBRARY_ID))
@@ -562,13 +702,46 @@ class MappingSnapshotReader:
         """Store snapshots and paths that should appear missing."""
         self._snapshots: dict[str, FileSnapshot] = snapshots
         self._missing_paths: set[str] = set() if missing_paths is None else set(missing_paths)
+        self.captured_paths: list[str] = []
 
     def capture(self, path: FileSystemPath) -> FileSnapshot:
         """Return the configured snapshot for a path."""
         path_text = str(path)
+        self.captured_paths.append(path_text)
         if path_text in self._missing_paths:
             raise FileNotFoundError(path_text)
         return self._snapshots[path_text]
+
+    def capture_many(
+        self,
+        requests: Sequence[FileSnapshotCaptureRequest],
+    ) -> tuple[FileSnapshot | None, ...]:
+        """Capture requests serially while recording memo-visible path reads."""
+        snapshots: list[FileSnapshot | None] = []
+        for request in requests:
+            try:
+                snapshots.append(self.capture(request.path))
+            except FileNotFoundError:
+                snapshots.append(None)
+        return tuple(snapshots)
+
+
+class MappingContentHasher:
+    """FileContentHasher fake keyed by filesystem path text."""
+
+    def __init__(self, hashes: dict[str, str], *, missing_paths: set[str] | None = None) -> None:
+        """Store hashes and paths that should disappear before hashing."""
+        self._hashes: dict[str, str] = hashes
+        self._missing_paths: set[str] = set() if missing_paths is None else set(missing_paths)
+        self.calculated_paths: list[str] = []
+
+    def calculate(self, path: FileSystemPath) -> str:
+        """Return the configured hash for a path."""
+        path_text = str(path)
+        self.calculated_paths.append(path_text)
+        if path_text in self._missing_paths:
+            raise FileNotFoundError(path_text)
+        return self._hashes[path_text]
 
 
 class StaticFilePresence:
@@ -612,12 +785,14 @@ def _check_ports(
     scanner: StaticScanner,
     snapshot_reader: MappingSnapshotReader,
     *,
+    content_hasher: MappingContentHasher | None = None,
     id_generator: SequenceIdGenerator | None = None,
 ) -> CheckLibraryPorts:
     return CheckLibraryPorts(
         uow=uow,
         file_scanner=scanner,
         file_snapshot_reader=snapshot_reader,
+        file_content_hasher=MappingContentHasher({}) if content_hasher is None else content_hasher,
         config_store=StaticConfigStore(),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
@@ -714,6 +889,8 @@ def _track(
         canonical_path=canonical_path,
         content_hash=CONTENT_HASH,
         metadata_hash=METADATA_HASH,
+        size=None,
+        mtime=None,
         metadata=METADATA,
         status=status,
         first_seen_at=BASE_TIME,

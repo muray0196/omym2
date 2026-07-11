@@ -180,11 +180,6 @@ export interface PlanDetail {
   plan: PlanHeader
 }
 
-export interface PlanCreatedDetail extends PlanDetail {
-  actions: PlanAction[]
-  total_action_count: number
-}
-
 export interface PlanDetailResponse {
   detail: PlanDetail | null
   errors: string[]
@@ -205,7 +200,7 @@ export interface OrganizeRegistration {
 
 export interface PlanCreateResult {
   created: boolean
-  detail: PlanCreatedDetail | null
+  detail: PlanDetail | null
   registration: OrganizeRegistration | null
   errors: string[]
 }

@@ -10,10 +10,11 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from omym2.features.common_ports import (
+        BatchFileSnapshotReader,
         Clock,
         ConfigStore,
         FilePresence,
-        FileSnapshotReader,
+        FileStatReader,
         IdGenerator,
         PathResolver,
         UnitOfWork,
@@ -25,7 +26,8 @@ class CreateRefreshPlanPorts:
     """Ports required when refresh planning is implemented."""
 
     uow: UnitOfWork
-    file_snapshot_reader: FileSnapshotReader
+    file_snapshot_reader: BatchFileSnapshotReader
+    file_stat_reader: FileStatReader
     file_presence: FilePresence
     config_store: ConfigStore
     path_resolver: PathResolver

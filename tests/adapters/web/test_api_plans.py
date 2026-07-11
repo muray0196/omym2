@@ -502,10 +502,14 @@ def test_create_add_plan_uses_persisted_album_year_resolution(
     payload = _json_payload(response)
     detail = _object_payload(payload, "detail")
     plan = _object_payload(detail, "plan")
-    actions = _object_list_payload(detail, "actions")
     assert payload["created"] is True
     assert payload["errors"] == []
+    assert set(detail) == {"plan"}
     assert plan["plan_type"] == PlanType.ADD.value
+
+    actions_response = client.get(f"{WEB_API_PLANS_ROUTE}/{plan['plan_id']}/actions")
+    assert actions_response.status_code == SUCCESS_STATUS_CODE
+    actions = _object_list_payload(_json_payload(actions_response), "items")
     assert {action["target_path"] for action in actions} == {ADD_OLD_TARGET, ADD_NEW_TARGET}
 
 
@@ -539,7 +543,7 @@ def test_create_organize_plan_via_web_api(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Organize Plan creation scans a Library root and returns reviewable actions."""
+    """Organize Plan creation returns a header and exposes reviewable actions separately."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     loose_file = _write_audio_file(library_root, "Loose.flac")
@@ -557,11 +561,15 @@ def test_create_organize_plan_via_web_api(
     payload = _json_payload(response)
     detail = _object_payload(payload, "detail")
     plan = _object_payload(detail, "plan")
-    actions = _object_list_payload(detail, "actions")
     assert payload["created"] is True
     assert payload["errors"] == []
+    assert set(detail) == {"plan"}
     assert _object_payload(payload, "registration")["track_count"] == 1
     assert plan["plan_type"] == PlanType.ORGANIZE.value
+
+    actions_response = client.get(f"{WEB_API_PLANS_ROUTE}/{plan['plan_id']}/actions")
+    assert actions_response.status_code == SUCCESS_STATUS_CODE
+    actions = _object_list_payload(_json_payload(actions_response), "items")
     assert actions[0]["source_path"] == "Loose.flac"
     assert actions[0]["target_path"] == ORGANIZE_TARGET
 
@@ -592,7 +600,7 @@ def test_create_refresh_plan_via_web_api(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Refresh Plan creation records relocation actions for managed Tracks."""
+    """Refresh Plan creation returns a header and records separately browsable actions."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     old_file = _write_audio_file(library_root, REFRESH_OLD_PATH)
@@ -617,10 +625,14 @@ def test_create_refresh_plan_via_web_api(
     payload = _json_payload(response)
     detail = _object_payload(payload, "detail")
     plan = _object_payload(detail, "plan")
-    actions = _object_list_payload(detail, "actions")
     assert payload["created"] is True
     assert payload["errors"] == []
+    assert set(detail) == {"plan"}
     assert plan["plan_type"] == PlanType.REFRESH.value
+
+    actions_response = client.get(f"{WEB_API_PLANS_ROUTE}/{plan['plan_id']}/actions")
+    assert actions_response.status_code == SUCCESS_STATUS_CODE
+    actions = _object_list_payload(_json_payload(actions_response), "items")
     assert actions[0]["source_path"] == REFRESH_OLD_PATH
     assert actions[0]["target_path"] == REFRESH_NEW_PATH
 
@@ -823,6 +835,8 @@ def _track(current_path: str = TARGET_PATH, *, metadata: TrackMetadata = REFRESH
         canonical_path=current_path,
         content_hash=CONTENT_HASH,
         metadata_hash=calculate_metadata_fingerprint(metadata),
+        size=None,
+        mtime=None,
         metadata=metadata,
         status=TrackStatus.ACTIVE,
         first_seen_at=BASE_TIME,

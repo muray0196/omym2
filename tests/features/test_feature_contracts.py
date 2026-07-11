@@ -24,7 +24,7 @@ from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.features.check.dto import CheckLibraryRequest
 from omym2.features.check.ports import CheckLibraryPorts
 from omym2.features.check.usecases.check_library import CheckLibraryUseCase
-from omym2.features.common_ports import FileSystemPath, Uuid7IdGenerator
+from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath, Uuid7IdGenerator
 from omym2.features.history.dto import GetRunHeaderRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase, RunNotFoundError
@@ -37,6 +37,8 @@ from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import EMPTY_SEQUENCE_MESSAGE, FixedClock, SequenceIdGenerator
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from omym2.domain.models.app_config import AppConfig
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
@@ -183,6 +185,7 @@ def test_diagnostics_and_recovery_usecases_handle_empty_repository_contracts() -
     uow = InMemoryUnitOfWork()
     scanner = NoopFileScanner()
     snapshot_reader = NoopFileSnapshotReader()
+    content_hasher = NoopFileContentHasher()
     config_store = StaticConfigStore()
     path_resolver = NoopPathResolver()
     file_presence = NoopFilePresence()
@@ -191,9 +194,18 @@ def test_diagnostics_and_recovery_usecases_handle_empty_repository_contracts() -
 
     assert (
         CheckLibraryUseCase(
-            CheckLibraryPorts(uow, scanner, snapshot_reader, config_store, path_resolver, clock, id_generator)
+            CheckLibraryPorts(
+                uow,
+                scanner,
+                snapshot_reader,
+                content_hasher,
+                config_store,
+                path_resolver,
+                clock,
+                id_generator,
+            )
         )
-        .execute(CheckLibraryRequest())
+        .execute(CheckLibraryRequest(trust_stat=False))
         .issues
         == ()
     )
@@ -220,8 +232,31 @@ class NoopFileScanner:
 class NoopFileSnapshotReader:
     """FileSnapshotReader fake that proves skeletons do not capture yet."""
 
-    def capture(self, path: FileSystemPath) -> FileSnapshot:
+    def capture(
+        self,
+        path: FileSystemPath,
+        *,
+        observation: FileScanEntry | None = None,
+    ) -> FileSnapshot:
         """Fail if a skeleton unexpectedly reaches file observation."""
+        del path, observation
+        raise AssertionError(UNEXPECTED_IO_MESSAGE)
+
+    def capture_many(
+        self,
+        requests: Sequence[FileSnapshotCaptureRequest],
+    ) -> tuple[FileSnapshot | None, ...]:
+        """Allow empty batches while rejecting any unexpected filesystem observation."""
+        if len(requests) > 0:
+            raise AssertionError(UNEXPECTED_IO_MESSAGE)
+        return ()
+
+
+class NoopFileContentHasher:
+    """FileContentHasher fake that proves empty checks do not hash."""
+
+    def calculate(self, path: FileSystemPath) -> str:
+        """Fail if an empty repository unexpectedly reaches content hashing."""
         del path
         raise AssertionError(UNEXPECTED_IO_MESSAGE)
 
@@ -281,6 +316,8 @@ def _track() -> Track:
         canonical_path=TARGET_PATH,
         content_hash=CONTENT_HASH,
         metadata_hash=METADATA_HASH,
+        size=None,
+        mtime=None,
         metadata=TrackMetadata(title=TRACK_TITLE, artist=TRACK_ARTIST),
         status=TrackStatus.ACTIVE,
         first_seen_at=BASE_TIME,

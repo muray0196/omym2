@@ -1,9 +1,9 @@
 ---
 type: Command Reference
 title: Commands
-description: Lists and summarizes the OMYM2 CLI command surface, including add, plans, apply, refresh, organize, history, undo, check, inspect, config, artist-ids, and settings.
+description: Lists the OMYM2 CLI surface, including Plan workflows, diagnostics, settings, and the explicit organize/refresh/check trust-stat optimization flags.
 tags: [cli, commands, reference]
-timestamp: 2026-07-07T00:39:14+09:00
+timestamp: 2026-07-11T10:21:41+09:00
 ---
 
 # Commands
@@ -26,6 +26,7 @@ omym2 artist-ids generate [--overwrite] [--fasttext-model <path>] <artist>...
 # Register or organize existing Library
 omym2 organize --library <path>
 omym2 organize --library <path> --apply
+omym2 organize --library <path> --trust-stat
 omym2 organize
 omym2 organize --apply
 
@@ -47,6 +48,7 @@ omym2 refresh <file>
 omym2 refresh <dir>
 omym2 refresh --all
 omym2 refresh <file> --apply
+omym2 refresh --all --trust-stat
 
 # History and recovery
 omym2 history
@@ -55,6 +57,7 @@ omym2 undo <run-id> --apply
 
 # Status check
 omym2 check
+omym2 check --trust-stat
 omym2 inspect <file>
 ```
 
@@ -100,17 +103,23 @@ The recommended pre-apply review workflow is `omym2 plans <PLAN_ID> --blocked-on
 
 `apply <plan-id> --yes` skips confirmation through `ApplyOptions.yes`.
 
+`apply` has no `--trust-stat` mode. It always captures a full source snapshot and verifies the recorded PlanAction hashes before a Library music file mutation or Track update.
+
 Detailed apply behavior is defined in [execution/apply.md](execution/apply.md).
 
 ## refresh
 
 `refresh` re-evaluates metadata after external tag correction and creates a relocation plan when needed.
 
+`--trust-stat` explicitly opts into reusing a Track's stored hashes and metadata when the active Track has a unique current path and the current file size and modification time exactly match its complete verified-hash baseline. A missing, ambiguous, or mismatched baseline falls back to full snapshot capture. Size and modification time are optimization hints, not proof of content equality.
+
 Detailed refresh behavior is defined in [execution/refresh.md](execution/refresh.md).
 
 ## organize
 
 `organize --library <path>` registers or reconciles a Library.
+
+`--trust-stat` applies the same explicit stat-baseline optimization used by `refresh`; files without an eligible exact verified baseline match receive full snapshot capture.
 
 Detailed organize behavior is defined in [execution/organize.md](execution/organize.md).
 
@@ -131,6 +140,8 @@ Detailed undo behavior is defined in [execution/undo.md](execution/undo.md).
 ## check
 
 `check` reports inconsistencies between the DB and the filesystem and reports Library state.
+
+`--trust-stat` explicitly allows managed-file diagnostics to reuse stored hashes and metadata on an exact verified stat-baseline match. Other files and baseline misses still receive full capture. The Web check route does not enable this CLI-only opt-in.
 
 Detailed check behavior is defined in [execution/check.md](execution/check.md).
 

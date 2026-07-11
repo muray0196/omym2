@@ -30,10 +30,18 @@ from omym2.platform.feature_composition import (
     build_uow,
 )
 from omym2.platform.runtime_context import runtime_context_for
-from omym2.platform.web_composition import build_web_app
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from fastapi import FastAPI
+
+
+def _build_web_app(config_path: Path, database_path: Path) -> FastAPI:
+    """Build the settings Web app without importing its stack for other commands."""
+    from omym2.platform.web_composition import build_web_app  # noqa: PLC0415  # Intentional settings-only import.
+
+    return build_web_app(config_path, database_path)
 
 
 def build_command_dependencies(
@@ -74,7 +82,7 @@ def build_command_dependencies(
             normalize_target_path=normalize_cli_path,
         ),
         settings=SettingsCommandPorts(
-            web_app_factory=lambda: build_web_app(runtime.config_file, runtime.database_file)
+            web_app_factory=lambda: _build_web_app(runtime.config_file, runtime.database_file)
         ),
         undo=UndoCommandDependencies(
             create_undo_plan_ports_factory=lambda: build_create_undo_plan_ports(runtime),

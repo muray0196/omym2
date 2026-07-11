@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 class CreateOrganizePlanRequest:
     """Request to organize or register a Library root."""
 
+    trust_stat: bool
     library_root: str | None = None
 
 
