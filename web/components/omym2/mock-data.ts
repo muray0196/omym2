@@ -1400,7 +1400,7 @@ function checkPathRoot(path: string | null): string {
   if (path.startsWith("/")) {
     return "(external)"
   }
-  const directories = path.split("/").slice(0, -1).filter(Boolean)
+  const directories = path.split("/").slice(0, -1)
   if (directories.length === 0) {
     return "(root)"
   }
@@ -1442,7 +1442,8 @@ function checkArtistAlbum(path: string | null): { key: string; label: string } {
   if (path.startsWith("/")) {
     return { key: "(external)", label: "(external)" }
   }
-  const directories = path.split("/").slice(0, -1).filter(Boolean)
+  // Positional segments, matching the server's SQL derivation byte for byte.
+  const directories = path.split("/").slice(0, -1)
   if (directories.length === 0) {
     return { key: "(root)", label: "(root)" }
   }

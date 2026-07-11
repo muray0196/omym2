@@ -10,7 +10,16 @@ from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
 from omym2.config import PERSISTED_JSON_ITEM_SEPARATOR, PERSISTED_JSON_KEY_SEPARATOR
-from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
+from omym2.domain.models.check_issue import (
+    CHECK_ISSUE_GROUP_ARTIST_ALBUM_LABEL_SEPARATOR,
+    CHECK_ISSUE_GROUP_EXTERNAL_KEY,
+    CHECK_ISSUE_GROUP_ROOT_KEY,
+    CHECK_ISSUE_GROUP_UNKNOWN_ARTIST_ALBUM_LABEL,
+    CHECK_ISSUE_GROUP_UNKNOWN_KEY,
+    CheckIssue,
+    CheckIssueGrouping,
+    CheckIssueType,
+)
 from omym2.domain.models.check_run import CheckRun
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
@@ -39,11 +48,6 @@ LIKE_ESCAPE_CHAR = "\\"  # escape character used for LIKE search patterns
 UNSUPPORTED_TRACK_GROUPING_MESSAGE = "Unsupported Track grouping"
 UNKNOWN_TRACK_GROUP_LABEL = "(unknown)"
 TRACK_GROUP_LABEL_SEPARATOR = " — "  # em dash joiner between group artist and group album labels
-CHECK_ISSUE_GROUP_UNKNOWN_KEY = "(unknown)"
-CHECK_ISSUE_GROUP_ROOT_KEY = "(root)"
-CHECK_ISSUE_GROUP_EXTERNAL_KEY = "(external)"
-CHECK_ISSUE_GROUP_ARTIST_ALBUM_LABEL_SEPARATOR = " / "
-CHECK_ISSUE_GROUP_UNKNOWN_ARTIST_ALBUM_LABEL = "Unknown Artist / Unknown Album"
 KEYSET_CURSOR_KEY_LENGTH = 2  # every keyset cursor key in this module is a 2-tuple
 CHECK_ISSUE_CURSOR_KEY_LENGTH = 1  # a CheckIssue cursor key is a single issue_seq value
 
@@ -1616,7 +1620,7 @@ def _check_issue_group_expressions(grouping: CheckIssueGrouping) -> tuple[str, s
                 CASE
                     WHEN group_artist IS NULL THEN '{CHECK_ISSUE_GROUP_UNKNOWN_KEY}'
                     WHEN group_artist IN ('{CHECK_ISSUE_GROUP_ROOT_KEY}', '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}') THEN group_artist
-                    ELSE group_artist || char(31) || group_album
+                    ELSE group_artist || char(31) || group_album -- char(31) is CHECK_ISSUE_GROUP_ARTIST_ALBUM_SEPARATOR
                 END
             """,
             f"""

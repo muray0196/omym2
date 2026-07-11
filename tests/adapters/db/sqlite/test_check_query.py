@@ -405,6 +405,50 @@ def test_check_issue_query_page_drills_into_one_group_with_keyset_pagination(tmp
     assert issue_type_filtered_page.total == TWO_ITEM_LIMIT
 
 
+def test_check_issue_group_page_derives_sentinel_path_groups(tmp_path: Path) -> None:
+    """Absolute, root-level, and pathless issues map to the contracted sentinel groups and stay drillable."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.check_runs.save(_check_run())
+        uow.check_issues.save_many(
+            CHECK_RUN_ID,
+            (
+                _check_issue(path="/external/copy.flac"),
+                _check_issue(path="root-level.flac"),
+                _check_issue(path="Aimer/01.flac"),
+                _check_issue(issue_type=CheckIssueType.LIBRARY_STALE, path=None),
+            ),
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        root_groups = uow.check_issues.group_page(LIBRARY_ID, CheckIssueGrouping.PATH_ROOT, PageRequest())
+        artist_groups = uow.check_issues.group_page(LIBRARY_ID, CheckIssueGrouping.ARTIST_ALBUM, PageRequest())
+        unknown_members = uow.check_issues.query_page(
+            LIBRARY_ID,
+            issue_type=None,
+            grouping=CheckIssueGrouping.PATH_ROOT,
+            group_key="(unknown)",
+            page=PageRequest(),
+        )
+
+    assert [(group.key, group.count, group.common_path_root) for group in root_groups.items] == [
+        ("(external)", 1, "(external)"),
+        ("(root)", 1, "(root)"),
+        ("(unknown)", 1, None),
+        ("Aimer/", 1, "Aimer/"),
+    ]
+    assert [(group.key, group.label, group.count) for group in artist_groups.items] == [
+        ("(external)", "(external)", 1),
+        ("(root)", "(root)", 1),
+        ("(unknown)", "Unknown Artist / Unknown Album", 1),
+        ("Aimer\x1f(root)", "Aimer / (root)", 1),
+    ]
+    assert [issue.path for issue in unknown_members.items] == [None]
+    assert unknown_members.total == 1
+
+
 def _table_names(database_file: Path) -> set[str]:
     with sqlite3.connect(database_file) as connection:
         rows = connection.execute(

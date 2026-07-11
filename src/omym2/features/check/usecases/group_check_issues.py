@@ -9,7 +9,16 @@ from dataclasses import dataclass
 from posixpath import dirname
 from typing import TYPE_CHECKING
 
-from omym2.domain.models.check_issue import CheckIssueGrouping, CheckIssueType
+from omym2.domain.models.check_issue import (
+    CHECK_ISSUE_GROUP_ARTIST_ALBUM_LABEL_SEPARATOR,
+    CHECK_ISSUE_GROUP_ARTIST_ALBUM_SEPARATOR,
+    CHECK_ISSUE_GROUP_EXTERNAL_KEY,
+    CHECK_ISSUE_GROUP_ROOT_KEY,
+    CHECK_ISSUE_GROUP_UNKNOWN_ARTIST_ALBUM_LABEL,
+    CHECK_ISSUE_GROUP_UNKNOWN_KEY,
+    CheckIssueGrouping,
+    CheckIssueType,
+)
 
 if TYPE_CHECKING:
     from omym2.domain.models.check_issue import CheckIssue
@@ -17,14 +26,6 @@ if TYPE_CHECKING:
     from omym2.features.check.ports import CheckQueryPorts
     from omym2.features.common_ports import CheckIssueGroup
     from omym2.shared.pagination import Page
-
-
-CHECK_ISSUE_GROUP_UNKNOWN_KEY = "(unknown)"
-CHECK_ISSUE_GROUP_ROOT_KEY = "(root)"
-CHECK_ISSUE_GROUP_EXTERNAL_KEY = "(external)"
-CHECK_ISSUE_GROUP_ARTIST_ALBUM_SEPARATOR = "\x1f"
-CHECK_ISSUE_GROUP_ARTIST_ALBUM_LABEL_SEPARATOR = " / "
-CHECK_ISSUE_GROUP_UNKNOWN_ARTIST_ALBUM_LABEL = "Unknown Artist / Unknown Album"
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +76,12 @@ def common_path_root_for_check_issue(issue: CheckIssue) -> str | None:
 
 
 def _artist_album_group(issue: CheckIssue) -> CheckIssueGroupKey:
-    """Group relative paths by their first two directory segments for triage."""
+    """Group relative paths by their first two directory segments for triage.
+
+    Segments are read positionally so this derivation matches the SQLite
+    grouping SQL on any input; relative `CheckIssue.path` values are already
+    slash-normalized at construction, so both always see clean segments.
+    """
     if issue.path is None or issue.path == "":
         return CheckIssueGroupKey(
             key=CHECK_ISSUE_GROUP_UNKNOWN_KEY,
@@ -84,7 +90,7 @@ def _artist_album_group(issue: CheckIssue) -> CheckIssueGroupKey:
     if issue.path.startswith("/"):
         return CheckIssueGroupKey(key=CHECK_ISSUE_GROUP_EXTERNAL_KEY, label=CHECK_ISSUE_GROUP_EXTERNAL_KEY)
 
-    directories = [segment for segment in issue.path.split("/")[:-1] if segment]
+    directories = issue.path.split("/")[:-1]
     if not directories:
         return CheckIssueGroupKey(key=CHECK_ISSUE_GROUP_ROOT_KEY, label=CHECK_ISSUE_GROUP_ROOT_KEY)
 
