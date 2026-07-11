@@ -21,6 +21,10 @@ import type {
   PlanActionStatus,
   PlanCreateResult,
   PlanDetailResponse,
+  PlanFacetsResponse,
+  PlanGroupBy,
+  PlanGroupCount,
+  PlanGroupsResponse,
   PlanStatus,
   PlanSummary,
   PlanType,
@@ -169,9 +173,11 @@ export const mockPlans: PlanSummary[] = [
     plan_type: "add",
     status: "ready",
     created_at: "2026-06-29T10:12:03Z",
-    // One action is blocked (target_exists) so this "ready" Plan also
-    // exercises the blocked-actions summary strip on its detail screen.
-    summary: { action_count: "4", move_actions: "4", blocked_actions: "1" },
+    // Three actions are blocked (target_exists, missing_required_metadata
+    // with a null target, duplicate_hash onto an already-used target) so this
+    // default "ready" Plan exercises every risk-summary state on its detail
+    // screen: blocked count, unknown-metadata count, and a target collision.
+    summary: { action_count: "6", move_actions: "6", blocked_actions: "3" },
   },
   {
     plan_id: "plan_b98c2f10-5d4a-4e7b-8c61-3a0f9d2e1c44",
@@ -284,6 +290,40 @@ const mockPlanActions: Record<string, PlanAction[]> = {
       status: "blocked",
       reason: "target_exists",
       sort_order: 4,
+    },
+    {
+      // Blocked with a null target: required metadata is missing, so no
+      // canonical path could be generated. Exercises the "(unknown)"
+      // artist_album group, the unknown-metadata risk metric, and a second
+      // file extension (mp3) in the extension grouping.
+      action_id: "act_005",
+      plan_id: "plan_d54b1a09-3c8e-4f2b-a6d7-1e9c0b4a7f55",
+      library_id: LIBRARY_ID,
+      track_id: null,
+      action_type: "move",
+      source_path: "/music/incoming/Unknown Artist - Track 7.mp3",
+      target_path: null,
+      content_hash_at_plan: "sha256:mock-content-005",
+      metadata_hash_at_plan: "sha256:mock-metadata-005",
+      status: "blocked",
+      reason: "missing_required_metadata",
+      sort_order: 5,
+    },
+    {
+      // Duplicate of act_001's content resolving to the same target path.
+      // Exercises the target-collision risk metric on a "ready" Plan.
+      action_id: "act_006",
+      plan_id: "plan_d54b1a09-3c8e-4f2b-a6d7-1e9c0b4a7f55",
+      library_id: LIBRARY_ID,
+      track_id: null,
+      action_type: "move",
+      source_path: "/music/incoming/dupes/Aimer - Spark Again (copy).flac",
+      target_path: "Aimer/2020_Walpurgis/1-01_Spark-Again.flac",
+      content_hash_at_plan: "sha256:mock-content-001",
+      metadata_hash_at_plan: "sha256:mock-metadata-006",
+      status: "blocked",
+      reason: "duplicate_hash",
+      sort_order: 6,
     },
   ],
   "plan_b98c2f10-5d4a-4e7b-8c61-3a0f9d2e1c44": [
@@ -1198,13 +1238,131 @@ function buildPlanPredicate(options: {
 
 function buildPlanActionPredicate(options: {
   status?: PlanActionStatus | "all"
+  groupBy?: PlanGroupBy
+  groupKey?: string
 }): (row: PlanAction) => boolean {
   return (row) => {
     if (options.status && options.status !== "all" && row.status !== options.status) {
       return false
     }
+    if (options.groupBy && options.groupKey !== undefined) {
+      const entry = planGroupEntry(row, options.groupBy)
+      if (!entry || entry.key !== options.groupKey) {
+        return false
+      }
+    }
     return true
   }
+}
+
+// --- Plan group key semantics (mirrors the backend groups endpoint) ----------
+// These derive group keys from the action fixtures with the same rules as the
+// server so mock counts always match what filtering the fixtures produces.
+
+/** Posix dirname: text before the final "/", "" for bare names, "/" for root files. */
+function posixDirname(path: string): string {
+  const index = path.lastIndexOf("/")
+  if (index < 0) {
+    return ""
+  }
+  return index === 0 ? "/" : path.slice(0, index)
+}
+
+/** Lowercased final suffix (no dot) of the source basename, falling back to target. */
+function planActionExtension(action: PlanAction): string {
+  const path = action.source_path ?? action.target_path
+  if (!path) {
+    return "(none)"
+  }
+  const basename = path.split("/").pop() ?? ""
+  const dot = basename.lastIndexOf(".")
+  if (dot <= 0 || dot === basename.length - 1) {
+    return "(none)"
+  }
+  return basename.slice(dot + 1).toLowerCase()
+}
+
+/**
+ * The group an action belongs to under `groupBy`, or null when the action is
+ * skipped for that key (null target/source directory, null block reason).
+ */
+function planGroupEntry(
+  action: PlanAction,
+  groupBy: PlanGroupBy,
+): { key: string; label: string } | null {
+  switch (groupBy) {
+    case "target_directory": {
+      if (action.target_path === null) {
+        return null
+      }
+      const dir = posixDirname(action.target_path)
+      const key = dir === "" ? "(root)" : dir
+      return { key, label: key }
+    }
+    case "source_directory": {
+      if (action.source_path === null) {
+        return null
+      }
+      const dir = posixDirname(action.source_path)
+      const key = dir === "" ? "(root)" : dir
+      return { key, label: key }
+    }
+    case "artist_album": {
+      if (action.target_path === null) {
+        return { key: "(unknown)", label: "Unknown Artist / Unknown Album" }
+      }
+      const segments = posixDirname(action.target_path).split("/").filter(Boolean).slice(0, 2)
+      if (segments.length === 0) {
+        return { key: "(root)", label: "(root)" }
+      }
+      return { key: segments.join("/"), label: segments.join(" / ") }
+    }
+    case "action_type":
+      return { key: action.action_type, label: action.action_type }
+    case "status":
+      return { key: action.status, label: action.status }
+    case "block_reason": {
+      if (action.reason === null) {
+        return null
+      }
+      return { key: action.reason, label: action.reason }
+    }
+    case "extension": {
+      const extension = planActionExtension(action)
+      return { key: extension, label: extension }
+    }
+  }
+}
+
+/** Most frequent non-null reason (ties break to the lexicographically smallest). */
+function topReasonOf(reasonCounts: Map<string, number>): string | null {
+  let top: string | null = null
+  let topCount = 0
+  for (const [reason, count] of reasonCounts) {
+    if (count > topCount || (count === topCount && top !== null && reason < top)) {
+      top = reason
+      topCount = count
+    }
+  }
+  return top
+}
+
+/** Distinct non-null target paths used by two or more actions. */
+function countTargetCollisions(rows: PlanAction[]): number {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    if (row.target_path === null) {
+      continue
+    }
+    counts.set(row.target_path, (counts.get(row.target_path) ?? 0) + 1)
+  }
+  let collisions = 0
+  for (const count of counts.values()) {
+    if (count >= 2) {
+      collisions += 1
+    }
+  }
+  return collisions
 }
 
 function buildCheckPredicate(options: {
@@ -1330,7 +1488,13 @@ export function mockGetPlansPage(
 
 export function mockGetPlanActionsPage(
   planId: string,
-  options: { status?: PlanActionStatus | "all"; limit?: number; cursor?: string } = {},
+  options: {
+    status?: PlanActionStatus | "all"
+    groupBy?: PlanGroupBy
+    groupKey?: string
+    limit?: number
+    cursor?: string
+  } = {},
 ): PagedResponse<PlanAction> {
   const rows = mockPlanActions[planId] ?? []
   return pageMock(rows, {
@@ -1340,23 +1504,54 @@ export function mockGetPlanActionsPage(
   })
 }
 
-export function mockGetPlanFacets(planId: string): FacetsResponse {
+export function mockGetPlanFacets(planId: string): PlanFacetsResponse {
   const rows = mockPlanActions[planId] ?? []
-  return facetsMock(rows, {
+  const facets = facetsMock(rows, {
     status: (action) => action.status,
     action_type: (action) => action.action_type,
+    reason: (action) => action.reason,
   })
+  return { ...facets, target_collisions: countTargetCollisions(rows) }
 }
 
 export function mockGetPlanGroups(
   planId: string,
-  options: { limit?: number; cursor?: string } = {},
-): GroupsResponse {
+  options: { groupBy: PlanGroupBy; limit?: number; cursor?: string },
+): PlanGroupsResponse {
   const rows = mockPlanActions[planId] ?? []
-  return groupsMock("target_directory", rows, (action) => targetDirectoryOf(action.target_path), {
-    limit: options.limit,
-    cursor: options.cursor,
-  })
+  const groups = new Map<
+    string,
+    { label: string; count: number; blockedCount: number; reasons: Map<string, number> }
+  >()
+  for (const action of rows) {
+    const entry = planGroupEntry(action, options.groupBy)
+    if (!entry) {
+      continue
+    }
+    let group = groups.get(entry.key)
+    if (!group) {
+      group = { label: entry.label, count: 0, blockedCount: 0, reasons: new Map() }
+      groups.set(entry.key, group)
+    }
+    group.count += 1
+    if (action.status === "blocked") {
+      group.blockedCount += 1
+    }
+    if (action.reason !== null) {
+      group.reasons.set(action.reason, (group.reasons.get(action.reason) ?? 0) + 1)
+    }
+  }
+  const allItems: PlanGroupCount[] = Array.from(groups.entries())
+    .map(([key, group]): PlanGroupCount => ({
+      key,
+      label: group.label,
+      count: group.count,
+      blocked_count: group.blockedCount,
+      top_reason: topReasonOf(group.reasons),
+    }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+  const paged = pageMock(allItems, { limit: options.limit, cursor: options.cursor })
+  return { group_by: options.groupBy, items: paged.items, page: paged.page, errors: [] }
 }
 
 // --- Check ---------------------------------------------------------------------

@@ -1,7 +1,7 @@
 """
 Summary: Tests the Plan browsing usecases: paged listing, paged actions, facets, and groups.
 Why: Protects the Plan review query pipeline (filters pushed into the query, keyset
-     paging, facet totals, target-directory grouping) before CLI and Web render it.
+     paging, facet totals, grouped review with drill-down) before CLI and Web render it.
 """
 
 from __future__ import annotations
@@ -13,13 +13,14 @@ import pytest
 
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
+from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.features.plans.dto import (
     GetPlanHeaderRequest,
     GroupPlanActionsRequest,
     ListPlanActionsRequest,
     ListPlansRequest,
     PlanActionFacetsRequest,
+    PlanActionGrouping,
 )
 from omym2.features.plans.ports import PlanQueryPorts
 from omym2.features.plans.usecases.get_plan_action_facets import GetPlanActionFacetsUseCase
@@ -28,8 +29,14 @@ from omym2.features.plans.usecases.get_plan_header import (
     GetPlanHeaderUseCase,
     PlanNotFoundError,
 )
-from omym2.features.plans.usecases.group_plan_actions import GroupPlanActionsUseCase
-from omym2.features.plans.usecases.list_plan_actions import ListPlanActionsUseCase
+from omym2.features.plans.usecases.group_plan_actions import (
+    PLAN_ACTION_GROUP_NO_EXTENSION_KEY,
+    PLAN_ACTION_GROUP_ROOT_LABEL,
+    PLAN_ACTION_GROUP_UNKNOWN_KEY,
+    PLAN_ACTION_GROUP_UNKNOWN_LABEL,
+    GroupPlanActionsUseCase,
+)
+from omym2.features.plans.usecases.list_plan_actions import GROUP_FILTER_PAIRING_MESSAGE, ListPlanActionsUseCase
 from omym2.features.plans.usecases.list_plans import ListPlansUseCase
 from omym2.shared.ids import ActionId, LibraryId, PlanId
 from omym2.shared.pagination import PageRequest
@@ -231,13 +238,34 @@ def test_list_plan_actions_raises_for_unknown_plan() -> None:
 
 
 def test_get_plan_action_facets_returns_both_breakdowns_and_unfiltered_total() -> None:
-    """Facets carry status and action_type breakdowns ordered count DESC then value ASC."""
+    """Facets carry status, type, reason, total, and target-collision risk values."""
     uow = InMemoryUnitOfWork()
     uow.plans.save(_plan(PLAN_ID_1, created_at=BASE_TIME))
-    uow.plan_actions.save(_action(ACTION_ID_1, status=ActionStatus.PLANNED, sort_order=0))
-    uow.plan_actions.save(_action(ACTION_ID_2, status=ActionStatus.PLANNED, sort_order=1))
     uow.plan_actions.save(
-        _action(ACTION_ID_3, status=ActionStatus.BLOCKED, sort_order=2, action_type=ActionType.SKIP),
+        _action(
+            ACTION_ID_1,
+            status=ActionStatus.PLANNED,
+            sort_order=0,
+            target_path="Artist/Album/Same.flac",
+        )
+    )
+    uow.plan_actions.save(
+        _action(
+            ACTION_ID_2,
+            status=ActionStatus.PLANNED,
+            sort_order=1,
+            target_path="Artist/Album/Same.flac",
+        )
+    )
+    uow.plan_actions.save(
+        _action(
+            ACTION_ID_3,
+            status=ActionStatus.BLOCKED,
+            sort_order=2,
+            action_type=ActionType.SKIP,
+            reason=PlanActionReason.MISSING_REQUIRED_METADATA,
+            target_path=None,
+        ),
     )
 
     result = GetPlanActionFacetsUseCase(PlanQueryPorts(uow)).execute(PlanActionFacetsRequest(PLAN_ID_1))
@@ -250,7 +278,11 @@ def test_get_plan_action_facets_returns_both_breakdowns_and_unfiltered_total() -
         (ActionType.MOVE.value, 2),
         (ActionType.SKIP.value, 1),
     ]
+    assert [(facet.value, facet.count) for facet in result.reason_facets] == [
+        (PlanActionReason.MISSING_REQUIRED_METADATA.value, 1),
+    ]
     assert result.total == THREE_ACTIONS
+    assert result.target_collisions == 1
 
 
 def test_get_plan_action_facets_raises_for_unknown_plan() -> None:
@@ -323,6 +355,139 @@ def test_group_plan_actions_paginates_with_count_then_key_keyset() -> None:
     assert visited == ["B", "A"]
 
 
+def test_group_plan_actions_supports_every_review_grouping_with_risk_enrichment() -> None:
+    """Every requested grouping derives stable keys and carries blocked/top-reason risk."""
+    uow = InMemoryUnitOfWork()
+    uow.plans.save(_plan(PLAN_ID_1, created_at=BASE_TIME))
+    uow.plan_actions.save(
+        _action(
+            ACTION_ID_1,
+            status=ActionStatus.PLANNED,
+            sort_order=0,
+            source_path="/incoming/Aimer/01.FLAC",
+            target_path="Aimer/2024_Open Door/01.flac",
+        )
+    )
+    uow.plan_actions.save(
+        _action(
+            ACTION_ID_2,
+            status=ActionStatus.BLOCKED,
+            sort_order=1,
+            source_path="/incoming/Aimer/02.MP3",
+            target_path="Aimer/2024_Open Door/02.mp3",
+            reason=PlanActionReason.MISSING_REQUIRED_METADATA,
+        )
+    )
+    uow.plan_actions.save(
+        _action(
+            ACTION_ID_3,
+            status=ActionStatus.BLOCKED,
+            sort_order=2,
+            source_path="Loose",
+            target_path=None,
+            action_type=ActionType.SKIP,
+            reason=PlanActionReason.SOURCE_MISSING,
+        )
+    )
+    uow.plan_actions.save(
+        _action(
+            ACTION_ID_4,
+            status=ActionStatus.APPLIED,
+            sort_order=3,
+            source_path="Root.wav",
+            target_path="Loose.wav",
+            action_type=ActionType.REFRESH_METADATA,
+        )
+    )
+
+    usecase = GroupPlanActionsUseCase(PlanQueryPorts(uow))
+
+    artist_album = usecase.execute(GroupPlanActionsRequest(plan_id=PLAN_ID_1, grouping=PlanActionGrouping.ARTIST_ALBUM))
+    artist_album_by_key = {group.key: group for group in artist_album.items}
+    assert artist_album_by_key["Aimer/2024_Open Door"].label == "Aimer / 2024_Open Door"
+    assert artist_album_by_key["Aimer/2024_Open Door"].count == TWO_ACTIONS
+    assert artist_album_by_key["Aimer/2024_Open Door"].blocked_count == 1
+    assert artist_album_by_key["Aimer/2024_Open Door"].top_reason == "missing_required_metadata"
+    assert artist_album_by_key[PLAN_ACTION_GROUP_UNKNOWN_KEY].label == PLAN_ACTION_GROUP_UNKNOWN_LABEL
+    assert artist_album_by_key[PLAN_ACTION_GROUP_ROOT_LABEL].count == 1
+
+    expected_keys = {
+        PlanActionGrouping.TARGET_DIRECTORY: {"Aimer/2024_Open Door", PLAN_ACTION_GROUP_ROOT_LABEL},
+        PlanActionGrouping.SOURCE_DIRECTORY: {"/incoming/Aimer", PLAN_ACTION_GROUP_ROOT_LABEL},
+        PlanActionGrouping.ACTION_TYPE: {"move", "skip", "refresh_metadata"},
+        PlanActionGrouping.STATUS: {"planned", "blocked", "applied"},
+        PlanActionGrouping.BLOCK_REASON: {"missing_required_metadata", "source_missing"},
+        PlanActionGrouping.EXTENSION: {"flac", "mp3", "wav", PLAN_ACTION_GROUP_NO_EXTENSION_KEY},
+    }
+    for grouping, keys in expected_keys.items():
+        page = usecase.execute(GroupPlanActionsRequest(plan_id=PLAN_ID_1, grouping=grouping))
+        assert {group.key for group in page.items} == keys
+
+
+def test_list_plan_actions_drills_into_group_with_status_and_keyset_pagination() -> None:
+    """A group drill-down combines membership/status filters before paging in action order."""
+    uow = InMemoryUnitOfWork()
+    uow.plans.save(_plan(PLAN_ID_1, created_at=BASE_TIME))
+    for action_id, sort_order, status in (
+        (ACTION_ID_1, 0, ActionStatus.BLOCKED),
+        (ACTION_ID_2, 1, ActionStatus.PLANNED),
+        (ACTION_ID_3, 2, ActionStatus.BLOCKED),
+    ):
+        uow.plan_actions.save(
+            _action(
+                action_id,
+                status=status,
+                sort_order=sort_order,
+                target_path=f"Aimer/Album/{sort_order}.flac",
+            )
+        )
+    uow.plan_actions.save(
+        _action(
+            ACTION_ID_4,
+            status=ActionStatus.BLOCKED,
+            sort_order=3,
+            target_path="Other/Album/3.flac",
+        )
+    )
+
+    usecase = ListPlanActionsUseCase(PlanQueryPorts(uow))
+    first = usecase.execute(
+        ListPlanActionsRequest(
+            plan_id=PLAN_ID_1,
+            status=ActionStatus.BLOCKED,
+            grouping=PlanActionGrouping.ARTIST_ALBUM,
+            group_key="Aimer/Album",
+            page=PageRequest(limit=1),
+        )
+    )
+    second = usecase.execute(
+        ListPlanActionsRequest(
+            plan_id=PLAN_ID_1,
+            status=ActionStatus.BLOCKED,
+            grouping=PlanActionGrouping.ARTIST_ALBUM,
+            group_key="Aimer/Album",
+            page=PageRequest(limit=1, cursor_key=first.next_cursor_key),
+        )
+    )
+
+    assert tuple(action.action_id for action in first.items) == (ACTION_ID_1,)
+    assert tuple(action.action_id for action in second.items) == (ACTION_ID_3,)
+    assert first.total == TWO_ACTIONS
+    assert first.next_cursor_key is not None
+    assert second.total == TWO_ACTIONS
+    assert second.next_cursor_key is None
+
+
+def test_list_plan_actions_rejects_unpaired_group_filter() -> None:
+    """Grouping and group_key must be supplied together to avoid ambiguous filtering."""
+    uow = InMemoryUnitOfWork()
+    uow.plans.save(_plan(PLAN_ID_1, created_at=BASE_TIME))
+    usecase = ListPlanActionsUseCase(PlanQueryPorts(uow))
+
+    with pytest.raises(ValueError, match=GROUP_FILTER_PAIRING_MESSAGE):
+        _ = usecase.execute(ListPlanActionsRequest(plan_id=PLAN_ID_1, grouping=PlanActionGrouping.STATUS))
+
+
 def test_group_plan_actions_raises_for_unknown_plan() -> None:
     """An unknown Plan ID raises PlanNotFoundError before listing target paths."""
     uow = InMemoryUnitOfWork()
@@ -361,13 +526,15 @@ def _plan(
     )
 
 
-def _action(
+def _action(  # noqa: PLR0913 - test fixture spans every grouped-review action field.
     action_id: ActionId,
     *,
     status: ActionStatus,
     sort_order: int,
     action_type: ActionType = ActionType.MOVE,
+    source_path: str | None = "Source/Track.flac",
     target_path: str | None = "Target/Track.flac",
+    reason: PlanActionReason | None = None,
 ) -> PlanAction:
     return PlanAction(
         action_id=action_id,
@@ -375,11 +542,11 @@ def _action(
         library_id=LIBRARY_ID,
         track_id=None,
         action_type=action_type,
-        source_path="Source/Track.flac",
+        source_path=source_path,
         target_path=target_path,
         content_hash_at_plan=None,
         metadata_hash_at_plan=None,
         status=status,
-        reason=None,
+        reason=reason,
         sort_order=sort_order,
     )

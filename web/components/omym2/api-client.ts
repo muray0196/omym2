@@ -45,6 +45,9 @@ import type {
   PlanActionStatus,
   PlanCreateResult,
   PlanDetailResponse,
+  PlanFacetsResponse,
+  PlanGroupBy,
+  PlanGroupsResponse,
   PlanStatus,
   PlanSummary,
   PlanType,
@@ -283,7 +286,14 @@ export async function getPlansPage(
 
 export async function getPlanActionsPage(
   planId: string,
-  options: { status?: PlanActionStatus | "all"; limit?: number; cursor?: string } = {},
+  options: {
+    status?: PlanActionStatus | "all"
+    /** Drill-down pair: pass `groupBy` and `groupKey` together or not at all. */
+    groupBy?: PlanGroupBy
+    groupKey?: string
+    limit?: number
+    cursor?: string
+  } = {},
 ): Promise<PagedResponse<PlanAction>> {
   if (isMockApiMode()) {
     return clonePayload(mockGetPlanActionsPage(planId, options))
@@ -291,6 +301,10 @@ export async function getPlanActionsPage(
   const params = new URLSearchParams()
   if (options.status && options.status !== "all") {
     params.set("status", options.status)
+  }
+  if (options.groupBy && options.groupKey !== undefined) {
+    params.set("group_by", options.groupBy)
+    params.set("group_key", options.groupKey)
   }
   if (options.limit) {
     params.set("limit", String(options.limit))
@@ -304,28 +318,28 @@ export async function getPlanActionsPage(
   )
 }
 
-export async function getPlanFacets(planId: string): Promise<FacetsResponse> {
+export async function getPlanFacets(planId: string): Promise<PlanFacetsResponse> {
   if (isMockApiMode()) {
     return clonePayload(mockGetPlanFacets(planId))
   }
-  return requestJson<FacetsResponse>(`/api/plans/${encodeURIComponent(planId)}/facets`)
+  return requestJson<PlanFacetsResponse>(`/api/plans/${encodeURIComponent(planId)}/facets`)
 }
 
 export async function getPlanGroups(
   planId: string,
-  options: { limit?: number; cursor?: string } = {},
-): Promise<GroupsResponse> {
+  options: { groupBy: PlanGroupBy; limit?: number; cursor?: string },
+): Promise<PlanGroupsResponse> {
   if (isMockApiMode()) {
     return clonePayload(mockGetPlanGroups(planId, options))
   }
-  const params = new URLSearchParams({ group_by: "target_directory" })
+  const params = new URLSearchParams({ group_by: options.groupBy })
   if (options.limit) {
     params.set("limit", String(options.limit))
   }
   if (options.cursor) {
     params.set("cursor", options.cursor)
   }
-  return requestJson<GroupsResponse>(
+  return requestJson<PlanGroupsResponse>(
     `/api/plans/${encodeURIComponent(planId)}/groups?${params.toString()}`,
   )
 }

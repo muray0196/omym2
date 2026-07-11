@@ -320,6 +320,43 @@ export interface GroupsResponse {
   errors: string[]
 }
 
+/** Group-by keys accepted by GET /api/plans/{plan_id}/groups. */
+export type PlanGroupBy =
+  | "target_directory"
+  | "source_directory"
+  | "artist_album"
+  | "action_type"
+  | "status"
+  | "block_reason"
+  | "extension"
+
+/**
+ * Plan group items are richer than the shared GroupCount: they carry the
+ * blocked-action count and the most frequent non-null block reason so the
+ * grouped review view can surface risk without drilling into every group.
+ */
+export interface PlanGroupCount extends GroupCount {
+  blocked_count: number
+  top_reason: string | null
+}
+
+export interface PlanGroupsResponse {
+  group_by: string
+  items: PlanGroupCount[]
+  page: PageInfo | null
+  errors: string[]
+}
+
+/**
+ * Plan facets extend the shared envelope with `target_collisions`: the number
+ * of distinct non-null target paths used by two or more actions. The `facets`
+ * record additionally includes `reason` (non-null block reasons) alongside
+ * `status` and `action_type`.
+ */
+export interface PlanFacetsResponse extends FacetsResponse {
+  target_collisions: number
+}
+
 export interface CheckPageResponse extends PagedResponse<CheckIssue> {
   checked_at: string | null
 }

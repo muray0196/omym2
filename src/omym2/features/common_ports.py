@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.library import Library
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-    from omym2.domain.models.plan_action import ActionStatus, PlanAction
+    from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
     from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
     from omym2.domain.models.track_metadata import TrackMetadata
@@ -201,6 +201,23 @@ class PlanRepository(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class PlanActionGroupRow:
+    """Per-action projection for deriving Plan review group keys in usecases.
+
+    Carries only the fields the grouping business rules need, so grouping
+    stays in the feature layer instead of SQL.
+    """
+
+    action_id: ActionId
+    sort_order: int
+    status: ActionStatus
+    reason: PlanActionReason | None
+    action_type: ActionType
+    source_path: str | None
+    target_path: str | None
+
+
 class PlanActionRepository(Protocol):
     """Persistence contract for recorded PlanActions."""
 
@@ -210,6 +227,10 @@ class PlanActionRepository(Protocol):
 
     def list_by_plan(self, plan_id: PlanId) -> Sequence[PlanAction]:
         """Return the actions recorded for a Plan in apply order."""
+        ...
+
+    def list_by_ids(self, action_ids: Sequence[ActionId]) -> Sequence[PlanAction]:
+        """Return the PlanActions with the given IDs, ordered (sort_order, action_id)."""
         ...
 
     def save(self, action: PlanAction) -> None:
@@ -237,8 +258,16 @@ class PlanActionRepository(Protocol):
         """Return PlanAction type facets for one Plan, ordered count DESC then value ASC."""
         ...
 
-    def list_target_paths(self, plan_id: PlanId) -> Sequence[str]:
-        """Return the non-null target_path values recorded for one Plan's actions."""
+    def reason_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+        """Return non-null PlanAction reason facets for one Plan, ordered count DESC then value ASC."""
+        ...
+
+    def count_target_collisions(self, plan_id: PlanId) -> int:
+        """Return how many distinct non-null target_path values are recorded by 2+ of the Plan's actions."""
+        ...
+
+    def list_group_rows(self, plan_id: PlanId) -> Sequence[PlanActionGroupRow]:
+        """Return per-action group projections for one Plan, ordered (sort_order, action_id)."""
         ...
 
 

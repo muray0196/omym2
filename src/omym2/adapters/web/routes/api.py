@@ -26,6 +26,7 @@ from omym2.adapters.web.routes.api_serializers import (
     serialize_page_info,
     serialize_path_preview,
     serialize_plan_action,
+    serialize_plan_action_group,
     serialize_plan_header_response,
     serialize_plan_row,
     serialize_run_header_response,
@@ -127,6 +128,7 @@ from omym2.features.plans.dto import (
     ListPlanActionsRequest,
     ListPlansRequest,
     PlanActionFacetsRequest,
+    PlanActionGrouping,
 )
 from omym2.features.plans.usecases.get_plan_action_facets import GetPlanActionFacetsUseCase
 from omym2.features.plans.usecases.get_plan_header import GetPlanHeaderUseCase, PlanNotFoundError
@@ -187,7 +189,7 @@ CHECK_RUN_ERROR_PREFIX = "Check run failed"
 PLAN_CREATION_ERROR_PREFIX = "Plan creation failed"
 PLAN_PATH_NOT_DIRECTORY_MESSAGE = "Plan path must be a directory"
 PLAN_PATH_NOT_FOUND_MESSAGE = "Plan path was not found"
-PLAN_ACTIONS_GROUP_BY_TARGET_DIRECTORY = "target_directory"  # only supported plan-action group_by value
+PLAN_ACTIONS_GROUP_FILTER_PAIR_MESSAGE = "Query parameters group_by and group_key must be provided together."
 RUN_EVENTS_GROUP_BY_TARGET_DIRECTORY = "target_directory"  # only supported FileEvent group_by value
 CHECK_ISSUES_GROUP_BY_ISSUE_TYPE = "issue_type"  # only supported check-issue group_by value
 
@@ -751,8 +753,11 @@ def _get_plan_actions(context: ApiRouteContext, plan_id: str, request: Request) 
 
     cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
     status, status_errors = _action_status_from_query(request.query_params.get("status"))
+    grouping, grouping_errors = _optional_plan_action_grouping_from_query(request.query_params.get("group_by"))
+    group_key = _optional_query_text(request.query_params.get("group_key"))
+    pairing_errors = _group_filter_pairing_errors(grouping, grouping_errors, group_key)
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    request_errors = cursor_errors + status_errors + limit_errors
+    request_errors = cursor_errors + status_errors + grouping_errors + pairing_errors + limit_errors
     if request_errors:
         return _list_error_response(request_errors)
 
@@ -763,6 +768,8 @@ def _get_plan_actions(context: ApiRouteContext, plan_id: str, request: Request) 
             ListPlanActionsRequest(
                 plan_id=parsed_plan_id,
                 status=status,
+                grouping=grouping,
+                group_key=group_key,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
         )
@@ -805,13 +812,17 @@ def _get_plan_facets(context: ApiRouteContext, plan_id: str) -> JSONResponse:
         )
 
     return JSONResponse(
-        _facet_envelope(
-            {
-                "status": [serialize_facet_value(facet) for facet in result.status_facets],
-                "action_type": [serialize_facet_value(facet) for facet in result.action_type_facets],
-            },
-            total=result.total,
-        ),
+        {
+            **_facet_envelope(
+                {
+                    "status": [serialize_facet_value(facet) for facet in result.status_facets],
+                    "action_type": [serialize_facet_value(facet) for facet in result.action_type_facets],
+                    "reason": [serialize_facet_value(facet) for facet in result.reason_facets],
+                },
+                total=result.total,
+            ),
+            "target_collisions": result.target_collisions,
+        },
         status_code=SUCCESS_STATUS_CODE,
     )
 
@@ -829,12 +840,13 @@ def _get_plan_groups(context: ApiRouteContext, plan_id: str, request: Request) -
         return _group_error_response(request_errors)
 
     effective_limit = cast("int", limit)
-    effective_grouping = cast("str", grouping)
+    effective_grouping = cast("PlanActionGrouping", grouping)
 
     try:
         page = GroupPlanActionsUseCase(context.plan_query_ports_factory()).execute(
             GroupPlanActionsRequest(
                 plan_id=parsed_plan_id,
+                grouping=effective_grouping,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
         )
@@ -850,8 +862,8 @@ def _get_plan_groups(context: ApiRouteContext, plan_id: str, request: Request) -
 
     return JSONResponse(
         _group_envelope(
-            effective_grouping,
-            [serialize_group_count(group) for group in page.items],
+            effective_grouping.value,
+            [serialize_plan_action_group(group) for group in page.items],
             limit=effective_limit,
             next_cursor_key=page.next_cursor_key,
             total=page.total,
@@ -1354,12 +1366,38 @@ def _file_event_status_from_query(raw_value: str | None) -> tuple[FileEventStatu
         return None, (f"Invalid event status filter: {raw_value}",)
 
 
-def _plan_action_grouping_from_query(raw_value: str | None) -> tuple[str | None, tuple[str, ...]]:
+def _plan_action_grouping_from_query(raw_value: str | None) -> tuple[PlanActionGrouping | None, tuple[str, ...]]:
     if raw_value is None or raw_value == "":
         return None, ("Query parameter group_by is required.",)
-    if raw_value != PLAN_ACTIONS_GROUP_BY_TARGET_DIRECTORY:
+    try:
+        return PlanActionGrouping(raw_value), ()
+    except ValueError:
         return None, (f"Invalid group_by filter: {raw_value}",)
-    return raw_value, ()
+
+
+def _optional_plan_action_grouping_from_query(
+    raw_value: str | None,
+) -> tuple[PlanActionGrouping | None, tuple[str, ...]]:
+    """Parse the optional `group_by` drill-down filter of the Plan actions list endpoint."""
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return PlanActionGrouping(raw_value), ()
+    except ValueError:
+        return None, (f"Invalid group_by filter: {raw_value}",)
+
+
+def _group_filter_pairing_errors(
+    grouping: PlanActionGrouping | None,
+    grouping_errors: tuple[str, ...],
+    group_key: str | None,
+) -> tuple[str, ...]:
+    """Require `group_by` and `group_key` together; skipped while group_by itself is invalid."""
+    if grouping_errors:
+        return ()
+    if (grouping is None) == (group_key is None):
+        return ()
+    return (PLAN_ACTIONS_GROUP_FILTER_PAIR_MESSAGE,)
 
 
 def _run_event_grouping_from_query(raw_value: str | None) -> tuple[str | None, tuple[str, ...]]:

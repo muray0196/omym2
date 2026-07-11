@@ -10,7 +10,7 @@ import base64
 import binascii
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -104,14 +104,30 @@ def decode_cursor(text: str) -> tuple[str, ...]:
     return tuple(cast("list[str]", parsed_items))
 
 
-def paginate_group_counts(groups: Sequence[GroupCount], page: PageRequest) -> Page[GroupCount]:
-    """Paginate an in-memory sequence of GroupCounts with (count DESC, key ASC) keyset semantics.
+class KeyedCount(Protocol):
+    """Structural shape of a group row pageable with (count DESC, key ASC) keyset semantics."""
 
-    Mirrors the SQL group-by keyset contract (see `docs/contracts/web-api.md`
-    Group Envelope) for callers that must compute groups in Python instead of
-    SQL, e.g. because deriving the group key is a business rule. `groups` is
-    sorted internally; callers do not need to pre-sort it. Raises
-    `CursorDecodeError` for a malformed or wrong-arity `page.cursor_key`.
+    @property
+    def key(self) -> str:
+        """Stable group key used as the keyset tie-breaker."""
+        ...
+
+    @property
+    def count(self) -> int:
+        """Group member count used as the primary keyset ordering column."""
+        ...
+
+
+def paginate_group_counts[T: KeyedCount](groups: Sequence[T], page: PageRequest) -> Page[T]:
+    """Paginate an in-memory sequence of keyed group rows with (count DESC, key ASC) keyset semantics.
+
+    Accepts any row shape exposing `key`/`count` (`GroupCount` and richer
+    per-endpoint group rows alike). Mirrors the SQL group-by keyset contract
+    (see `docs/contracts/web-api.md` Group Envelope) for callers that must
+    compute groups in Python instead of SQL, e.g. because deriving the group
+    key is a business rule. `groups` is sorted internally; callers do not need
+    to pre-sort it. Raises `CursorDecodeError` for a malformed or wrong-arity
+    `page.cursor_key`.
     """
     ordered = sorted(groups, key=lambda group: (-group.count, group.key))
     total = len(ordered)
