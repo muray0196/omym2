@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies developer quality gates, checks.sh, the full-hash and trust-stat pipeline benchmark modes, suppression rules, and Python runtime configuration policy.
+description: Specifies dependency setup, developer quality gates, checks.sh, pipeline benchmark modes, suppression rules, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation]
-timestamp: 2026-07-11T16:53:09+09:00
+timestamp: 2026-07-11T20:36:46+09:00
 ---
 
 # Development Harness
@@ -13,6 +13,19 @@ This document is authoritative for developer quality commands, validation gates,
 Product command behavior is defined in [COMMANDS.md](COMMANDS.md). Test design is defined in [TESTING.md](TESTING.md). Application config and stored path policy are defined in [STORAGE.md](STORAGE.md) and [contracts/](contracts/).
 
 Keep this file limited to commands and validation policy.
+
+## Dependency Setup
+
+Install dependencies after checkout, when a dependency manifest or lockfile changes, or when the environment is missing:
+
+```bash
+uv sync --locked --dev
+cd web
+npm ci
+cd ..
+```
+
+Dependency installation is setup, not a quality check. Reuse `.venv`, `web/node_modules/`, and tool caches during ordinary edit loops and validation reruns. Do not routinely delete or reinstall them; clean installation rewrites the complete dependency tree. Hosted CI performs both locked installations before running the quality wrapper.
 
 ## Edit-Loop Commands
 
@@ -37,7 +50,6 @@ Use this command group after editing the React Web UI:
 
 ```bash
 cd web
-npm ci
 npm run format:check
 npm run lint
 npm run build
@@ -49,7 +61,6 @@ Run these commands in order before marking implementation work complete:
 
 ```bash
 cd web
-npm ci
 npm run format:check
 npm run lint
 npm run build
@@ -62,7 +73,6 @@ uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
 
 All gates must pass:
 
-* Frontend installation fails if `package-lock.json` is out of sync.
 * Frontend formatting fails if Prettier would change any file.
 * Frontend linting fails if ESLint reports any issue.
 * Frontend build fails if TypeScript or the Next.js production build fails.
@@ -78,11 +88,13 @@ If the Python project skeleton or tool configuration does not exist yet, report 
 `scripts/checks.sh` wraps the command groups in this document so they can be run with one call:
 
 ```bash
-scripts/checks.sh [changed|py|web|all|docs|arch]
+scripts/checks.sh <changed|py|web|all|docs|arch>
 scripts/checks.sh test <pytest-target>
 ```
 
-* `changed` (default): edit-loop checks on Python files changed vs `HEAD`
+The mode is required; there is no default. The wrapper does not install dependencies.
+
+* `changed`: edit-loop checks on Python files changed vs `HEAD`
 * `py`: full Python gates
 * `web`: frontend gates
 * `all`: web + py, the final quality gates
@@ -91,6 +103,8 @@ scripts/checks.sh test <pytest-target>
 * `test <pytest-target>`: focused failure inspection
 
 The command groups in this document remain authoritative; the script must stay in sync with them.
+
+Hosted CI runs `uv sync --locked --dev`, `npm ci`, `scripts/checks.sh all`, and then `git diff --exit-code`. The final diff check is a clean-checkout guard against validation tools mutating tracked files; it is intentionally CI-only because a local implementation worktree normally contains intended changes.
 
 ## Pipeline Performance Benchmark
 

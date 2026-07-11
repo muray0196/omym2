@@ -3,7 +3,7 @@
 # Why: Gives agents a single reliable entry point instead of re-deriving command groups.
 #
 # Usage:
-#   scripts/checks.sh [changed|py|web|all|docs|arch]
+#   scripts/checks.sh <changed|py|web|all|docs|arch>
 #   scripts/checks.sh test <pytest-target>
 #
 # See docs/DEVELOPMENT.md for canonical mode descriptions and gate policy.
@@ -12,7 +12,16 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-mode="${1:-changed}"
+usage() {
+    echo "usage: scripts/checks.sh <changed|py|web|all|docs|arch> | scripts/checks.sh test <pytest-target>" >&2
+}
+
+if [[ $# -eq 0 ]]; then
+    usage
+    exit 2
+fi
+
+mode="$1"
 
 run_changed() {
     local -a files=()
@@ -42,14 +51,12 @@ run_py() {
     uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
 }
 
-run_web() {
+run_web() (
     cd web
-    npm ci
     npm run format:check
     npm run lint
     npm run build
-    cd ..
-}
+)
 
 case "$mode" in
 changed)
@@ -77,7 +84,7 @@ test)
     ;;
 *)
     echo "checks.sh: unknown mode '$mode'" >&2
-    echo "usage: scripts/checks.sh [changed|py|web|all|docs|arch] | scripts/checks.sh test <pytest-target>" >&2
+    usage
     exit 2
     ;;
 esac

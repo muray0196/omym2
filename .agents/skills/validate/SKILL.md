@@ -20,6 +20,8 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 
 `scripts/checks.sh` wraps the authoritative commands in `docs/DEVELOPMENT.md`. If the script is missing or itself broken, run those commands directly.
 
+The wrapper requires an explicit mode and assumes dependencies are already installed. Run `uv sync --locked --dev` and `cd web && npm ci` after checkout, after dependency manifests or lockfiles change, or when the environment is missing. Do not reinstall dependencies during ordinary edit loops or validation reruns.
+
 ## Triage table
 
 Fix the first failing gate before looking at later ones.
@@ -53,6 +55,7 @@ Fix the first failing gate before looking at later ones.
 
 ## Done means
 
+- Dependencies are synchronized when their manifests or lockfiles changed.
 - `scripts/checks.sh all` passes from a clean state.
 
 ## Stop and report when
