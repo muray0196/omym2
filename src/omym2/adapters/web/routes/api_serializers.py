@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.track import Track
     from omym2.domain.models.track_metadata import TrackMetadata
     from omym2.features.artist_ids.dto import GenerateArtistIdsResult
+    from omym2.features.common_ports import CheckIssueGroup
     from omym2.features.organize.dto import OrganizeLibraryResult
     from omym2.features.plans.dto import PlanActionGroup
     from omym2.features.settings.dto import PathPolicyPreviewResult, ValidateSettingsResult
@@ -197,6 +198,16 @@ def serialize_facet_value(facet: FacetValue) -> dict[str, object]:
 def serialize_group_count(group: GroupCount) -> dict[str, object]:
     """Return a JSON-safe GroupCount payload."""
     return {"key": group.key, "label": group.label, "count": group.count}
+
+
+def serialize_check_issue_group(group: CheckIssueGroup) -> dict[str, object]:
+    """Return a JSON-safe CheckIssue group payload with its common path root."""
+    return {
+        "key": group.key,
+        "label": group.label,
+        "count": group.count,
+        "common_path_root": group.common_path_root,
+    }
 
 
 def serialize_plan_action_group(group: PlanActionGroup) -> dict[str, object]:

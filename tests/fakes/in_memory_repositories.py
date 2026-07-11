@@ -11,7 +11,11 @@ from typing import TYPE_CHECKING, Self
 
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.track import TrackGrouping
-from omym2.features.common_ports import PlanActionGroupRow
+from omym2.features.check.usecases.group_check_issues import (
+    common_path_root_for_check_issue,
+    derive_check_issue_group_key,
+)
+from omym2.features.common_ports import CheckIssueGroup, PlanActionGroupRow
 from omym2.shared.pagination import (
     INVALID_CURSOR_MESSAGE,
     CursorDecodeError,
@@ -26,7 +30,7 @@ if TYPE_CHECKING:
     from datetime import datetime
     from types import TracebackType
 
-    from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
+    from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
     from omym2.domain.models.check_run import CheckRun
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.library import Library
@@ -118,6 +122,8 @@ class InMemoryCheckIssueRepository:
         library_id: LibraryId | None,
         *,
         issue_type: CheckIssueType | None,
+        grouping: CheckIssueGrouping | None = None,
+        group_key: str | None = None,
         page: PageRequest,
     ) -> Page[CheckIssue]:
         """Return one keyset page of CheckIssues ordered issue_seq ASC."""
@@ -126,6 +132,9 @@ class InMemoryCheckIssueRepository:
             for issue_seq, issue in sorted(self.records.items())
             if (library_id is None or issue.library_id == library_id)
             and (issue_type is None or issue.issue_type == issue_type)
+            and (
+                grouping is None or group_key is None or derive_check_issue_group_key(issue, grouping).key == group_key
+            )
         ]
         total = len(entries)
 
@@ -155,15 +164,40 @@ class InMemoryCheckIssueRepository:
         ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         return tuple(FacetValue(value=value, count=count) for value, count in ordered)
 
-    def group_page(self, library_id: LibraryId | None, page: PageRequest) -> Page[GroupCount]:
-        """Return one keyset page of CheckIssue groups by issue_type ordered count DESC then key ASC."""
-        counts: dict[str, int] = {}
+    def group_page(
+        self,
+        library_id: LibraryId | None,
+        grouping: CheckIssueGrouping,
+        page: PageRequest,
+    ) -> Page[CheckIssueGroup]:
+        """Return one keyset page of CheckIssue groups ordered count DESC then key ASC."""
+        groups_by_key: dict[str, tuple[str, int, dict[str, int]]] = {}
         for issue in self.records.values():
             if library_id is not None and issue.library_id != library_id:
                 continue
-            counts[issue.issue_type.value] = counts.get(issue.issue_type.value, 0) + 1
-        groups = [GroupCount(key=value, label=value, count=count) for value, count in counts.items()]
+            derived = derive_check_issue_group_key(issue, grouping)
+            label, count, root_counts = groups_by_key.get(derived.key, (derived.label, 0, {}))
+            path_root = common_path_root_for_check_issue(issue)
+            if path_root is not None:
+                root_counts[path_root] = root_counts.get(path_root, 0) + 1
+            groups_by_key[derived.key] = (label, count + 1, root_counts)
+        groups = [
+            CheckIssueGroup(
+                key=key,
+                label=label,
+                count=count,
+                common_path_root=_top_check_issue_path_root(root_counts),
+            )
+            for key, (label, count, root_counts) in groups_by_key.items()
+        ]
         return paginate_group_counts(groups, page)
+
+
+def _top_check_issue_path_root(root_counts: dict[str, int]) -> str | None:
+    """Return the most frequent path root, breaking ties by the smaller label."""
+    if not root_counts:
+        return None
+    return min(root_counts.items(), key=lambda item: (-item[1], item[0]))[0]
 
 
 @dataclass(slots=True)

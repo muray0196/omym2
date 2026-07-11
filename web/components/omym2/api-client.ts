@@ -33,6 +33,8 @@ import type {
   AppConfig,
   ArtistIdGenerationResult,
   CheckFacetsResponse,
+  CheckGroupBy,
+  CheckGroupsResponse,
   CheckIssueType,
   CheckPageResponse,
   CheckRunResponse,
@@ -348,6 +350,9 @@ export async function getCheckPage(
   options: {
     issueType?: CheckIssueType | "all"
     libraryId?: string
+    /** Drill-down pair: pass groupBy and groupKey together or not at all. */
+    groupBy?: CheckGroupBy
+    groupKey?: string
     limit?: number
     cursor?: string
   } = {},
@@ -361,6 +366,12 @@ export async function getCheckPage(
   }
   if (options.libraryId) {
     params.set("library_id", options.libraryId)
+  }
+  if (options.groupBy) {
+    params.set("group_by", options.groupBy)
+  }
+  if (options.groupKey !== undefined) {
+    params.set("group_key", options.groupKey)
   }
   if (options.limit) {
     params.set("limit", String(options.limit))
@@ -388,13 +399,16 @@ export async function getCheckFacets(
   )
 }
 
-export async function getCheckGroups(
-  options: { libraryId?: string; limit?: number; cursor?: string } = {},
-): Promise<GroupsResponse> {
+export async function getCheckGroups(options: {
+  groupBy: CheckGroupBy
+  libraryId?: string
+  limit?: number
+  cursor?: string
+}): Promise<CheckGroupsResponse> {
   if (isMockApiMode()) {
     return clonePayload(mockGetCheckGroups(options))
   }
-  const params = new URLSearchParams({ group_by: "issue_type" })
+  const params = new URLSearchParams({ group_by: options.groupBy })
   if (options.libraryId) {
     params.set("library_id", options.libraryId)
   }
@@ -404,7 +418,7 @@ export async function getCheckGroups(
   if (options.cursor) {
     params.set("cursor", options.cursor)
   }
-  return requestJson<GroupsResponse>(`/api/check/groups?${params.toString()}`)
+  return requestJson<CheckGroupsResponse>(`/api/check/groups?${params.toString()}`)
 }
 
 export async function runCheck(csrfToken: string, libraryId?: string): Promise<CheckRunResponse> {

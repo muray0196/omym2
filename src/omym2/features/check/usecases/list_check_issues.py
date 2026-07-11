@@ -19,6 +19,9 @@ if TYPE_CHECKING:
     from omym2.shared.ids import LibraryId
 
 
+GROUP_FILTER_PAIRING_MESSAGE = "grouping and group_key must be provided together."
+
+
 @dataclass(frozen=True, slots=True)
 class ListCheckIssuesUseCase:
     """List persisted CheckIssues as one keyset page, ordered issue_seq ASC."""
@@ -27,10 +30,14 @@ class ListCheckIssuesUseCase:
 
     def execute(self, request: ListCheckIssuesRequest) -> ListCheckIssuesResult:
         """Return one page of CheckIssues plus the requested scope's checked_at."""
+        if (request.grouping is None) != (request.group_key is None):
+            raise ValueError(GROUP_FILTER_PAIRING_MESSAGE)
         with self.ports.uow as uow:
             page = uow.check_issues.query_page(
                 request.library_id,
                 issue_type=request.issue_type,
+                grouping=request.grouping,
+                group_key=request.group_key,
                 page=request.page,
             )
             checked_at = checked_at_for_scope(uow, request.library_id)

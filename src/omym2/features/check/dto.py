@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from omym2.domain.models.check_issue import CheckIssueGrouping
 from omym2.shared.pagination import PageRequest
 
 if TYPE_CHECKING:
@@ -36,10 +37,17 @@ class CheckLibraryResult:
 
 @dataclass(frozen=True, slots=True)
 class ListCheckIssuesRequest:
-    """Request one keyset page of persisted CheckIssues for a Library or every known Library."""
+    """Request one keyset page of persisted CheckIssues for a Library or every known Library.
+
+    `grouping` and `group_key` are an optional drill-down pair. When both are
+    supplied, they select one server-derived issue group while retaining the
+    normal issue-type filter and keyset pagination.
+    """
 
     library_id: LibraryId | None = None
     issue_type: CheckIssueType | None = None
+    grouping: CheckIssueGrouping | None = None
+    group_key: str | None = None
     page: PageRequest = field(default_factory=PageRequest)
 
 
@@ -69,7 +77,8 @@ class CheckIssueFacetsResult:
 
 @dataclass(frozen=True, slots=True)
 class GroupCheckIssuesRequest:
-    """Request one keyset page of CheckIssue groups by issue_type for a Library or every known Library."""
+    """Request one keyset page of CheckIssue groups for a Library or every known Library."""
 
     library_id: LibraryId | None = None
+    grouping: CheckIssueGrouping = CheckIssueGrouping.ISSUE_TYPE
     page: PageRequest = field(default_factory=PageRequest)

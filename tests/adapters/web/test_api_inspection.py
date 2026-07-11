@@ -47,6 +47,8 @@ FIVE_ISSUE_TOTAL = 5
 TWO_ITEM_LIMIT = 2
 THREE_ISSUE_STATUS_TOTAL = 3
 TWO_ISSUE_GROUP_TOTAL = 2
+THREE_AIMER_ISSUE_TOTAL = 3
+FOUR_TRIAGE_ISSUE_TOTAL = 4
 CLAMPED_LIMIT_REQUEST = 1000
 
 
@@ -278,7 +280,12 @@ def test_check_groups_api_returns_ordered_groups_with_keyset(tmp_path: Path) -> 
     assert first_payload["group_by"] == "issue_type"
     first_items = _object_list_payload(first_payload, "items")
     assert first_items == [
-        {"key": CheckIssueType.DB_FILE_MISSING.value, "label": CheckIssueType.DB_FILE_MISSING.value, "count": 2}
+        {
+            "key": CheckIssueType.DB_FILE_MISSING.value,
+            "label": CheckIssueType.DB_FILE_MISSING.value,
+            "count": 2,
+            "common_path_root": "A/",
+        }
     ]
     first_page = _object_payload(first_payload, "page")
     assert first_page["total"] == TWO_ISSUE_GROUP_TOTAL
@@ -298,10 +305,129 @@ def test_check_groups_api_returns_ordered_groups_with_keyset(tmp_path: Path) -> 
             "key": CheckIssueType.UNMANAGED_FILE_EXISTS.value,
             "label": CheckIssueType.UNMANAGED_FILE_EXISTS.value,
             "count": 1,
+            "common_path_root": "C/",
         }
     ]
     second_page = _object_payload(second_payload, "page")
     assert second_page["next_cursor"] is None
+
+
+def test_check_groups_api_supports_triage_groupings_and_group_drill_down(tmp_path: Path) -> None:
+    """Each requested Check grouping is returned server-side and can page only its own member issues."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    with SQLiteUnitOfWork(app_paths.database_file) as uow:
+        uow.libraries.save(_library(str(library_root)))
+        uow.check_runs.save(_check_run())
+        uow.check_issues.save_many(
+            CHECK_RUN_ID,
+            (
+                _issue(issue_type=CheckIssueType.DB_FILE_MISSING, path="Aimer/Album/01.flac"),
+                _issue(issue_type=CheckIssueType.DB_FILE_MISSING, path="Aimer/Album/02.flac"),
+                _issue(issue_type=CheckIssueType.METADATA_HASH_CHANGED, path="Aimer/Other/03.flac"),
+                _issue(issue_type=CheckIssueType.UNMANAGED_FILE_EXISTS, path="Yoasobi/Album/04.flac"),
+            ),
+        )
+        uow.commit()
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    expected_first_group = {
+        "issue_type": {
+            "key": CheckIssueType.DB_FILE_MISSING.value,
+            "label": CheckIssueType.DB_FILE_MISSING.value,
+            "count": TWO_ITEM_LIMIT,
+            "common_path_root": "Aimer/",
+        },
+        "severity": {"key": "error", "label": "error", "count": TWO_ITEM_LIMIT, "common_path_root": "Aimer/"},
+        "path_root": {
+            "key": "Aimer/",
+            "label": "Aimer/",
+            "count": THREE_AIMER_ISSUE_TOTAL,
+            "common_path_root": "Aimer/",
+        },
+        "artist_album": {
+            "key": "Aimer\x1fAlbum",
+            "label": "Aimer / Album",
+            "count": TWO_ITEM_LIMIT,
+            "common_path_root": "Aimer/",
+        },
+        "suggested_command": {
+            "key": "refresh",
+            "label": "omym2 refresh <file>",
+            "count": THREE_AIMER_ISSUE_TOTAL,
+            "common_path_root": "Aimer/",
+        },
+        "library_id": {
+            "key": str(LIBRARY_ID),
+            "label": str(LIBRARY_ID),
+            "count": FOUR_TRIAGE_ISSUE_TOTAL,
+            "common_path_root": "Aimer/",
+        },
+    }
+    for grouping, expected in expected_first_group.items():
+        response = client.get(WEB_API_CHECK_GROUPS_ROUTE, params={"group_by": grouping})
+
+        assert response.status_code == SUCCESS_STATUS_CODE
+        payload = _json_payload(response)
+        assert payload["group_by"] == grouping
+        assert _object_list_payload(payload, "items")[0] == expected
+
+    first_response = client.get(
+        WEB_API_CHECK_ROUTE,
+        params={"group_by": "path_root", "group_key": "Aimer/", "limit": "1"},
+    )
+    first_payload = _json_payload(first_response)
+    first_items = _object_list_payload(first_payload, "items")
+    first_page = _object_payload(first_payload, "page")
+
+    assert first_response.status_code == SUCCESS_STATUS_CODE
+    assert [item["path"] for item in first_items] == ["Aimer/Album/01.flac"]
+    assert first_page["total"] == THREE_AIMER_ISSUE_TOTAL
+    next_cursor = first_page["next_cursor"]
+    assert next_cursor is not None
+
+    second_response = client.get(
+        WEB_API_CHECK_ROUTE,
+        params={
+            "group_by": "path_root",
+            "group_key": "Aimer/",
+            "limit": "1",
+            "cursor": cast("str", next_cursor),
+        },
+    )
+
+    assert second_response.status_code == SUCCESS_STATUS_CODE
+    assert [item["path"] for item in _object_list_payload(_json_payload(second_response), "items")] == [
+        "Aimer/Album/02.flac"
+    ]
+
+
+def test_check_api_requires_a_complete_group_drill_down_pair(tmp_path: Path) -> None:
+    """The Check list endpoint rejects lone group_by or group_key parameters before querying issues."""
+    app_paths = default_application_paths(tmp_path)
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    group_by_only = client.get(WEB_API_CHECK_ROUTE, params={"group_by": "issue_type"})
+    group_key_only = client.get(WEB_API_CHECK_ROUTE, params={"group_key": "db_file_missing"})
+    invalid_grouping = client.get(
+        WEB_API_CHECK_ROUTE,
+        params={"group_by": "not-a-grouping", "group_key": "not-a-key"},
+    )
+
+    for response in (group_by_only, group_key_only):
+        assert response.status_code == ERROR_STATUS_CODE
+        assert response.json() == {
+            "items": [],
+            "page": None,
+            "errors": ["Query parameters group_by and group_key must be provided together."],
+        }
+    assert invalid_grouping.status_code == ERROR_STATUS_CODE
+    assert invalid_grouping.json() == {
+        "items": [],
+        "page": None,
+        "errors": ["Invalid group_by filter: not-a-grouping"],
+    }
 
 
 def test_check_groups_api_rejects_invalid_group_by(tmp_path: Path) -> None:
@@ -460,6 +586,6 @@ def _issue(
     *,
     library_id: LibraryId = LIBRARY_ID,
     issue_type: CheckIssueType = CheckIssueType.UNMANAGED_FILE_EXISTS,
-    path: str = "A/1.flac",
+    path: str | None = "A/1.flac",
 ) -> CheckIssue:
     return CheckIssue(issue_type=issue_type, library_id=library_id, path=path)

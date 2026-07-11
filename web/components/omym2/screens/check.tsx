@@ -1,26 +1,45 @@
 /*
-Summary: Renders persisted consistency-check findings.
-Why: Lets users triage stored issues without recomputing checks on page load.
+Summary: Renders grouped Check triage and detailed issue browsing.
+Why: Lets large-library diagnostics reveal concentrated problems before individual rows.
 */
 
 "use client"
 
-import { ChevronDown, CircleAlert, CircleX, Info, ShieldCheck } from "lucide-react"
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { getCheckFacets, getCheckPage } from "../api-client"
+import {
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  CircleX,
+  Info,
+  ListTree,
+  ShieldCheck,
+  Table2,
+} from "lucide-react"
+import { useCallback, useEffect, useId, useMemo, useState } from "react"
+import { getCheckFacets, getCheckGroups, getCheckPage } from "../api-client"
 import { cn, severityForIssue, truncateMiddle } from "../lib"
-import type { CheckIssue, CheckIssueType, IssueSeverity } from "../types"
+import type {
+  CheckGroupBy,
+  CheckGroupCount,
+  CheckIssue,
+  CheckIssueType,
+  IssueSeverity,
+} from "../types"
 import { usePagedList } from "../use-paged-list"
 import {
   Button,
   CopyButton,
+  DataTable,
   EmptyState,
   MetricCard,
   Mono,
   Notice,
   Panel,
+  SegmentedControl,
   StatusBadge,
   truncateLabel,
+  type Column,
+  type SegmentedOption,
 } from "../primitives"
 import { CliCommand } from "../widgets"
 import { Field, Select } from "../forms"
@@ -42,13 +61,54 @@ const ISSUE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "library_blocked", label: "Library blocked" },
 ]
 
-const CHECK_PAGE_LIMIT = 100
+const CHECK_TABLE_PAGE_LIMIT = 100
+const CHECK_GROUP_PAGE_LIMIT = 50
+const CHECK_EXAMPLE_PAGE_LIMIT = 3
+const CHECK_GROUP_ISSUE_PAGE_LIMIT = 50
 
 const MISSING_TYPES: CheckIssueType[] = ["db_file_missing"]
 const UNMANAGED_TYPES: CheckIssueType[] = ["unmanaged_file_exists"]
 const HASH_TYPES: CheckIssueType[] = ["content_hash_changed", "metadata_hash_changed"]
 const PATH_TYPES: CheckIssueType[] = ["current_path_differs_from_canonical_path"]
 const LIBRARY_TYPES: CheckIssueType[] = ["library_unregistered", "library_stale", "library_blocked"]
+
+type CheckViewMode = "triage" | "grouped" | "table"
+
+const VIEW_MODE_OPTIONS: SegmentedOption<CheckViewMode>[] = [
+  { value: "triage", label: "Triage", icon: ShieldCheck },
+  { value: "grouped", label: "Grouped", icon: ListTree },
+  { value: "table", label: "Table", icon: Table2 },
+]
+
+const GROUP_BY_OPTIONS: { value: CheckGroupBy; label: string }[] = [
+  { value: "issue_type", label: "Issue type" },
+  { value: "severity", label: "Severity" },
+  { value: "path_root", label: "Path root" },
+  { value: "artist_album", label: "Artist / album" },
+  { value: "suggested_command", label: "Suggested command" },
+  { value: "library_id", label: "Library ID" },
+]
+
+const SEVERITY_META: Record<
+  IssueSeverity,
+  { icon: typeof Info; accentBorder: string; accentText: string }
+> = {
+  error: {
+    icon: CircleX,
+    accentBorder: "border-l-danger",
+    accentText: "text-danger",
+  },
+  warning: {
+    icon: CircleAlert,
+    accentBorder: "border-l-warning",
+    accentText: "text-warning",
+  },
+  info: {
+    icon: Info,
+    accentBorder: "border-l-info",
+    accentText: "text-info",
+  },
+}
 
 /** Quote one shell argument for copyable POSIX-style CLI guidance. */
 function quoteShellArg(value: string): string {
@@ -58,20 +118,17 @@ function quoteShellArg(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`
 }
 
-/** Suggested remediation command per issue type (guidance only, never executed). */
-function remediationFor(issue: CheckIssue): string {
-  switch (issue.issue_type) {
+/** Normalized remediation shown in group headers before an individual path is known. */
+function remediationTemplateForIssueType(issueType: CheckIssueType): string {
+  switch (issueType) {
     case "db_file_missing":
     case "content_hash_changed":
     case "metadata_hash_changed":
-      return issue.path
-        ? `omym2 refresh ${quoteShellArg(issue.path)}`
-        : "omym2 refresh <library-file>"
+      return "omym2 refresh <file>"
     case "unmanaged_file_exists":
-      return issue.path ? `omym2 add ${quoteShellArg(issue.path)}` : "omym2 add <path>"
+      return "omym2 add <path>"
     case "current_path_differs_from_canonical_path":
     case "duplicate_candidate":
-      return "omym2 organize"
     case "plan_source_changed":
       return "omym2 organize"
     case "pending_file_event_exists":
@@ -85,30 +142,22 @@ function remediationFor(issue: CheckIssue): string {
   }
 }
 
-const SEVERITY_ORDER: IssueSeverity[] = ["error", "warning", "info"]
-
-const SEVERITY_META: Record<
-  IssueSeverity,
-  { label: string; icon: typeof Info; accentBorder: string; accentText: string }
-> = {
-  error: {
-    label: "Errors — act first",
-    icon: CircleX,
-    accentBorder: "border-l-danger",
-    accentText: "text-danger",
-  },
-  warning: {
-    label: "Warnings — review soon",
-    icon: CircleAlert,
-    accentBorder: "border-l-warning",
-    accentText: "text-warning",
-  },
-  info: {
-    label: "Info — awareness only",
-    icon: Info,
-    accentBorder: "border-l-info",
-    accentText: "text-info",
-  },
+/** Suggested remediation command per issue type (guidance only, never executed). */
+function remediationFor(issue: CheckIssue): string {
+  switch (issue.issue_type) {
+    case "db_file_missing":
+    case "content_hash_changed":
+    case "metadata_hash_changed":
+      return issue.path
+        ? `omym2 refresh ${quoteShellArg(issue.path)}`
+        : remediationTemplateForIssueType(issue.issue_type)
+    case "unmanaged_file_exists":
+      return issue.path
+        ? `omym2 add ${quoteShellArg(issue.path)}`
+        : remediationTemplateForIssueType(issue.issue_type)
+    default:
+      return remediationTemplateForIssueType(issue.issue_type)
+  }
 }
 
 function issueSeverity(issue: CheckIssue): IssueSeverity {
@@ -134,6 +183,13 @@ function totalIssueCount(counts: Partial<Record<CheckIssueType, number>>): numbe
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
+}
+
+function issueKey(issue: CheckIssue, index: number): string {
+  return (
+    issue.issue_id ??
+    `${issue.issue_type}-${issue.library_id}-${issue.path ?? issue.track_id ?? issue.plan_id ?? "none"}-${index}`
+  )
 }
 
 function IssueCard({ issue }: { issue: CheckIssue }) {
@@ -183,7 +239,439 @@ function IssueCard({ issue }: { issue: CheckIssue }) {
   )
 }
 
+function LoadMoreFooter({
+  shown,
+  total,
+  hasMore,
+  loading,
+  onLoadMore,
+  noun,
+  className,
+}: {
+  shown: number
+  total: number | null
+  hasMore: boolean
+  loading: boolean
+  onLoadMore: () => void
+  noun: string
+  className?: string
+}) {
+  const cappedShown = total === null ? shown : Math.min(shown, total)
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-3 bg-surface-elevated px-3 py-2.5",
+        className,
+      )}
+    >
+      <span className="text-xs tabular-nums text-mute">
+        {total === null
+          ? `${cappedShown} ${noun}${cappedShown === 1 ? "" : "s"} loaded`
+          : `${cappedShown} of ${total} ${noun}${total === 1 ? "" : "s"} loaded`}
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!hasMore || loading}
+        onClick={onLoadMore}
+      >
+        <ChevronDown className="size-4" aria-hidden="true" />
+        {loading ? "Loading..." : hasMore ? "Load more" : `All ${noun}s loaded`}
+      </Button>
+    </div>
+  )
+}
+
+function isIssueSeverity(value: string): value is IssueSeverity {
+  return value === "error" || value === "warning" || value === "info"
+}
+
+function groupSeverity(groupBy: CheckGroupBy, group: CheckGroupCount): IssueSeverity | null {
+  if (groupBy === "issue_type") {
+    return severityForIssue(group.key as CheckIssueType)
+  }
+  return groupBy === "severity" && isIssueSeverity(group.key) ? group.key : null
+}
+
+function groupSuggestion(groupBy: CheckGroupBy, group: CheckGroupCount): string | null {
+  if (groupBy === "issue_type") {
+    return remediationTemplateForIssueType(group.key as CheckIssueType)
+  }
+  return groupBy === "suggested_command" ? group.label : null
+}
+
+function formatPathRoot(pathRoot: string): string {
+  return pathRoot.startsWith("(") || pathRoot.endsWith("/") ? pathRoot : `${pathRoot}/`
+}
+
+function CheckGroupLabel({ groupBy, group }: { groupBy: CheckGroupBy; group: CheckGroupCount }) {
+  if (groupBy === "severity" && isIssueSeverity(group.key)) {
+    return <StatusBadge status={group.key} />
+  }
+  if (groupBy === "issue_type") {
+    return <span className="truncate font-medium text-ink">{truncateLabel(group.label)}</span>
+  }
+  if (groupBy === "path_root" || groupBy === "library_id" || groupBy === "suggested_command") {
+    return (
+      <Mono className="truncate text-ink" title={group.label}>
+        {group.label}
+      </Mono>
+    )
+  }
+  return (
+    <span className="truncate font-medium text-ink" title={group.label}>
+      {group.label}
+    </span>
+  )
+}
+
+function CheckGroupIssueList({
+  groupBy,
+  groupKey,
+  total,
+}: {
+  groupBy: CheckGroupBy
+  groupKey: string
+  total: number
+}) {
+  const loadIssuesPage = useCallback(
+    (cursor?: string) =>
+      getCheckPage({
+        cursor,
+        groupBy,
+        groupKey,
+        limit: cursor ? CHECK_GROUP_ISSUE_PAGE_LIMIT : CHECK_EXAMPLE_PAGE_LIMIT,
+      }),
+    [groupBy, groupKey],
+  )
+  const issuesPage = usePagedList<CheckIssue>({
+    errorMessage: "Group issues failed to load.",
+    loadPage: loadIssuesPage,
+  })
+
+  return (
+    <div className="flex flex-col">
+      {issuesPage.errors.length > 0 ? (
+        <Notice tone="warning" title="Group issues are incomplete" className="my-2">
+          {issuesPage.errors.join(" ")}
+        </Notice>
+      ) : null}
+      {issuesPage.items.length === 0 ? (
+        <p className="py-2 text-sm text-mute">
+          {issuesPage.loaded ? "No issues in this group." : "Loading examples..."}
+        </p>
+      ) : (
+        <ul className="grid gap-2 py-2 xl:grid-cols-2">
+          {issuesPage.items.map((issue, index) => (
+            <IssueCard key={issueKey(issue, index)} issue={issue} />
+          ))}
+        </ul>
+      )}
+      {issuesPage.items.length > 0 ? (
+        <LoadMoreFooter
+          className="rounded-md"
+          shown={issuesPage.items.length}
+          total={issuesPage.page?.total ?? total}
+          hasMore={issuesPage.hasMore}
+          loading={issuesPage.loadingMore}
+          onLoadMore={issuesPage.loadMore}
+          noun="issue"
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function CheckGroupRow({
+  groupBy,
+  group,
+  expanded,
+  onToggle,
+}: {
+  groupBy: CheckGroupBy
+  group: CheckGroupCount
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const contentId = useId()
+  const severity = groupSeverity(groupBy, group)
+  const suggestion = groupSuggestion(groupBy, group)
+  return (
+    <li className="border-b border-hairline last:border-0">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        onClick={onToggle}
+        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors hover:bg-surface-card/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      >
+        <ChevronRight
+          className={cn("size-4 shrink-0 text-mute transition-transform", expanded && "rotate-90")}
+          aria-hidden="true"
+        />
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <CheckGroupLabel groupBy={groupBy} group={group} />
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-mute">
+            {severity && groupBy !== "severity" ? <StatusBadge status={severity} /> : null}
+            {group.common_path_root ? (
+              <Mono className="text-xs text-mute" title={group.common_path_root}>
+                common root: {formatPathRoot(group.common_path_root)}
+              </Mono>
+            ) : null}
+            {suggestion ? (
+              <Mono className="text-xs text-mute" title={suggestion}>
+                suggested: {suggestion}
+              </Mono>
+            ) : null}
+          </span>
+        </span>
+        <span className="shrink-0 tabular-nums text-mute">
+          {group.count} issue{group.count === 1 ? "" : "s"}
+        </span>
+        <span className="shrink-0 text-xs font-medium text-mute">
+          {expanded ? "Hide examples" : "Show examples"}
+        </span>
+      </button>
+      {expanded ? (
+        <div
+          id={contentId}
+          className="border-t border-hairline bg-surface-canvas/60 py-1 pl-9 pr-3"
+        >
+          <CheckGroupIssueList groupBy={groupBy} groupKey={group.key} total={group.count} />
+        </div>
+      ) : null}
+    </li>
+  )
+}
+
+function CheckIssueGroups({
+  groupBy,
+  checkedAt,
+}: {
+  groupBy: CheckGroupBy
+  checkedAt: string | null | undefined
+}) {
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+  const loadGroupsPage = useCallback(
+    (cursor?: string) => getCheckGroups({ groupBy, cursor, limit: CHECK_GROUP_PAGE_LIMIT }),
+    [groupBy],
+  )
+  const groupsPage = usePagedList<CheckGroupCount>({
+    errorMessage: "Check issue groups failed to load.",
+    loadPage: loadGroupsPage,
+  })
+  const groups = groupsPage.items
+
+  return (
+    <div className="flex flex-col gap-4">
+      {groupsPage.errors.length > 0 ? (
+        <Notice tone="warning" title="Check issue groups are incomplete">
+          {groupsPage.errors.join(" ")}
+        </Notice>
+      ) : null}
+      {groups.length === 0 ? (
+        <EmptyState
+          icon={ListTree}
+          title={
+            !groupsPage.loaded
+              ? "Loading issue groups..."
+              : checkedAt === null
+                ? "No check has run yet."
+                : checkedAt === undefined
+                  ? "Check data unavailable."
+                  : "No issue groups to show."
+          }
+          description={
+            !groupsPage.loaded
+              ? "Issue concentrations will appear here once they are loaded."
+              : checkedAt === null
+                ? "Run omym2 check to persist DB and filesystem diagnostics."
+                : "DB and filesystem state appear consistent."
+          }
+        />
+      ) : (
+        <div className="overflow-hidden rounded-md border border-hairline">
+          <ul className="flex flex-col">
+            {groups.map((group) => (
+              <CheckGroupRow
+                key={group.key}
+                groupBy={groupBy}
+                group={group}
+                expanded={expandedKey === group.key}
+                onToggle={() =>
+                  setExpandedKey((current) => (current === group.key ? null : group.key))
+                }
+              />
+            ))}
+          </ul>
+          <LoadMoreFooter
+            className="border-t border-hairline"
+            shown={groups.length}
+            total={groupsPage.page?.total ?? groups.length}
+            hasMore={groupsPage.hasMore}
+            loading={groupsPage.loadingMore}
+            onLoadMore={groupsPage.loadMore}
+            noun="group"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CheckIssueTable({
+  issueType,
+  checkedAt,
+  onCheckedAt,
+}: {
+  issueType: CheckIssueType | "all"
+  checkedAt: string | null | undefined
+  onCheckedAt: (checkedAt: string | null) => void
+}) {
+  const loadIssuesPage = useCallback(
+    async (cursor?: string) => {
+      const response = await getCheckPage({
+        cursor,
+        issueType,
+        limit: CHECK_TABLE_PAGE_LIMIT,
+      })
+      onCheckedAt(response.checked_at)
+      return response
+    },
+    [issueType, onCheckedAt],
+  )
+  const issuesPage = usePagedList<CheckIssue>({
+    errorMessage: "Check issues failed to load.",
+    loadPage: loadIssuesPage,
+  })
+
+  const columns: Column<CheckIssue>[] = [
+    {
+      key: "issue_type",
+      header: "Issue type",
+      cell: (issue) => (
+        <span className="font-medium text-ink">{truncateLabel(issue.issue_type)}</span>
+      ),
+      className: "min-w-[12rem]",
+    },
+    {
+      key: "severity",
+      header: "Severity",
+      cell: (issue) => <StatusBadge status={issueSeverity(issue)} iconOnly />,
+      className: "w-20 text-center",
+    },
+    {
+      key: "path",
+      header: "Path",
+      cell: (issue) =>
+        issue.path ? (
+          <span className="flex min-w-0 items-center gap-1">
+            <Mono className="truncate text-ink" title={issue.path}>
+              {truncateMiddle(issue.path, 48)}
+            </Mono>
+            <CopyButton value={issue.path} label="Copy path" />
+          </span>
+        ) : (
+          <span className="text-mute">—</span>
+        ),
+      className: "min-w-[20rem]",
+    },
+    {
+      key: "library_id",
+      header: "Library",
+      cell: (issue) => (
+        <Mono className="text-mute" title={issue.library_id}>
+          {truncateMiddle(issue.library_id, 16)}
+        </Mono>
+      ),
+      className: "min-w-[10rem]",
+    },
+    {
+      key: "track_id",
+      header: "Track",
+      cell: (issue) =>
+        issue.track_id ? (
+          <Mono className="text-mute" title={issue.track_id}>
+            {truncateMiddle(issue.track_id, 16)}
+          </Mono>
+        ) : (
+          <span className="text-mute">—</span>
+        ),
+      className: "min-w-[10rem]",
+    },
+    {
+      key: "plan_id",
+      header: "Plan",
+      cell: (issue) =>
+        issue.plan_id ? (
+          <Mono className="text-mute" title={issue.plan_id}>
+            {truncateMiddle(issue.plan_id, 16)}
+          </Mono>
+        ) : (
+          <span className="text-mute">—</span>
+        ),
+      className: "min-w-[10rem]",
+    },
+    {
+      key: "detail",
+      header: "Detail",
+      cell: (issue) => issue.detail ?? <span className="text-mute">—</span>,
+      className: "min-w-[18rem] text-mute",
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-4">
+      {issuesPage.errors.length > 0 ? (
+        <Notice tone="warning" title="Check issues are incomplete">
+          {issuesPage.errors.join(" ")}
+        </Notice>
+      ) : null}
+      <DataTable
+        columns={columns}
+        rows={issuesPage.items}
+        getRowKey={issueKey}
+        caption="Check issues"
+        empty={
+          <EmptyState
+            icon={ShieldCheck}
+            title={
+              !issuesPage.loaded
+                ? "Loading issues..."
+                : checkedAt === null
+                  ? "No check has run yet."
+                  : checkedAt === undefined
+                    ? "Check data unavailable."
+                    : issueType === "all"
+                      ? "No issues found."
+                      : "No issues match this filter."
+            }
+            description={
+              !issuesPage.loaded
+                ? "Current diagnostics will appear here once they are loaded."
+                : checkedAt === null
+                  ? "Run omym2 check to persist DB and filesystem diagnostics."
+                  : issueType === "all"
+                    ? "DB and filesystem state appear consistent."
+                    : "Choose another issue type to see more diagnostics."
+            }
+          />
+        }
+        loadMore={{
+          hasMore: issuesPage.hasMore,
+          loading: issuesPage.loadingMore,
+          onLoadMore: issuesPage.loadMore,
+          total: issuesPage.page?.total ?? issuesPage.items.length,
+        }}
+      />
+    </div>
+  )
+}
+
 export function CheckScreen() {
+  const [viewMode, setViewMode] = useState<CheckViewMode>("triage")
+  const [groupBy, setGroupBy] = useState<CheckGroupBy>("path_root")
   const [typeFilter, setTypeFilter] = useState<CheckIssueType | "all">("all")
   const [issueTypeCounts, setIssueTypeCounts] = useState<Partial<Record<CheckIssueType, number>>>(
     {},
@@ -213,29 +701,6 @@ export function CheckScreen() {
     }
   }, [])
 
-  const loadIssuesPage = useCallback(
-    async (cursor?: string) => {
-      const response = await getCheckPage({
-        cursor,
-        issueType: typeFilter,
-        limit: CHECK_PAGE_LIMIT,
-      })
-      setCheckedAt(response.checked_at)
-      return response
-    },
-    [typeFilter],
-  )
-  const issuesPage = usePagedList({
-    errorMessage: "Check issues failed to load.",
-    loadPage: loadIssuesPage,
-  })
-  const checkIssues = issuesPage.items
-  const checkErrors = [...issuesPage.errors, ...facetErrors]
-  const checkLoaded = issuesPage.loaded
-  const checkHasRun = checkedAt !== null && checkedAt !== undefined
-  const checkNeverRan = checkLoaded && checkedAt === null
-  const checkDataUnavailable = checkLoaded && checkErrors.length > 0 && checkedAt === undefined
-
   const counts = useMemo(() => {
     return {
       total: facetTotal ?? totalIssueCount(issueTypeCounts),
@@ -247,17 +712,14 @@ export function CheckScreen() {
     }
   }, [facetTotal, issueTypeCounts])
 
-  const grouped = useMemo(() => {
-    const buckets: Record<IssueSeverity, CheckIssue[]> = { error: [], warning: [], info: [] }
-    for (const issue of checkIssues) buckets[issueSeverity(issue)].push(issue)
-    return buckets
-  }, [checkIssues])
+  const checkHasRun = checkedAt !== null && checkedAt !== undefined
+  const activeGroupBy: CheckGroupBy = viewMode === "triage" ? "issue_type" : groupBy
 
   return (
     <>
       <PageHeading
         title="Check"
-        description="Read-only DB and filesystem consistency diagnostics. Issues are triaged by severity; each carries a suggested CLI remediation."
+        description="Read-only DB and filesystem consistency diagnostics. Review issue concentrations before drilling into individual findings."
       />
 
       <section
@@ -296,111 +758,63 @@ export function CheckScreen() {
         />
       </section>
 
-      <Panel title="Triage" icon={ShieldCheck} bodyClassName="flex flex-col gap-4">
-        <Field label="Issue type" className="sm:max-w-xs">
-          {(id) => (
-            <Select
-              id={id}
-              options={ISSUE_TYPE_OPTIONS}
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as CheckIssueType | "all")}
+      <Panel
+        title={viewMode === "table" ? "Issues" : "Issue groups"}
+        icon={viewMode === "table" ? Table2 : ShieldCheck}
+        bodyClassName="flex flex-col gap-4"
+        actions={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <SegmentedControl
+              ariaLabel="Check view mode"
+              size="sm"
+              options={VIEW_MODE_OPTIONS}
+              value={viewMode}
+              onChange={setViewMode}
             />
-          )}
-        </Field>
+            {viewMode === "grouped" ? (
+              <div className="w-48">
+                <Select
+                  aria-label="Group issues by"
+                  options={GROUP_BY_OPTIONS}
+                  value={groupBy}
+                  onChange={(event) => setGroupBy(event.target.value as CheckGroupBy)}
+                />
+              </div>
+            ) : null}
+          </div>
+        }
+      >
+        {viewMode === "table" ? (
+          <Field label="Issue type" className="sm:max-w-xs">
+            {(id) => (
+              <Select
+                id={id}
+                options={ISSUE_TYPE_OPTIONS}
+                value={typeFilter}
+                onChange={(event) => setTypeFilter(event.target.value as CheckIssueType | "all")}
+              />
+            )}
+          </Field>
+        ) : null}
 
-        {checkErrors.length > 0 ? (
-          <Notice tone="warning" title="Check data is incomplete">
-            {checkErrors.join(" ")}
+        {facetErrors.length > 0 ? (
+          <Notice tone="warning" title="Check summary is incomplete">
+            {facetErrors.join(" ")}
           </Notice>
         ) : null}
 
-        {checkIssues.length === 0 ? (
-          checkNeverRan || checkDataUnavailable || (typeFilter === "all" && counts.total === 0) ? (
-            <EmptyState
-              icon={ShieldCheck}
-              title={
-                !checkLoaded
-                  ? "Loading issues..."
-                  : checkNeverRan
-                    ? "No check has run yet."
-                    : checkDataUnavailable
-                      ? "Check data unavailable."
-                      : "No issues found."
-              }
-              description={
-                !checkLoaded
-                  ? "Current diagnostics will appear here once they are loaded."
-                  : checkNeverRan
-                    ? "Run omym2 check to persist DB and filesystem diagnostics."
-                    : checkDataUnavailable
-                      ? "The check API response did not include a completed check timestamp."
-                      : "DB and filesystem state appear consistent."
-              }
-            />
-          ) : (
-            <EmptyState icon={ShieldCheck} title="No issues match this filter." />
-          )
+        {viewMode === "table" ? (
+          <CheckIssueTable
+            issueType={typeFilter}
+            checkedAt={checkedAt}
+            onCheckedAt={setCheckedAt}
+          />
         ) : (
-          <div className="flex flex-col gap-5">
-            {SEVERITY_ORDER.map((severity) => {
-              const issues = grouped[severity]
-              if (issues.length === 0) return null
-              const meta = SEVERITY_META[severity]
-              const Icon = meta.icon
-              return (
-                <section key={severity} aria-label={meta.label}>
-                  <div className="mb-2 flex items-center gap-2">
-                    <Icon className={cn("size-4", meta.accentText)} aria-hidden="true" />
-                    <h3 className="text-sm font-medium tracking-[0.2px] text-ink">{meta.label}</h3>
-                    <span
-                      className={cn(
-                        "rounded-full bg-surface-elevated px-2 py-0.5 text-xs font-medium tabular-nums",
-                        meta.accentText,
-                      )}
-                    >
-                      {issues.length}
-                    </span>
-                  </div>
-                  <ul className="grid gap-2 xl:grid-cols-2">
-                    {issues.map((issue, index) => (
-                      <IssueCard
-                        key={
-                          issue.issue_id ??
-                          `${issue.issue_type}-${issue.library_id}-${issue.path ?? issue.track_id ?? issue.plan_id ?? "none"}-${index}`
-                        }
-                        issue={issue}
-                      />
-                    ))}
-                  </ul>
-                </section>
-              )
-            })}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-3">
-              <span className="text-xs tabular-nums text-mute">
-                {typeFilter === "all"
-                  ? `${Math.min(issuesPage.items.length, counts.total)} of ${counts.total} issue${
-                      counts.total === 1 ? "" : "s"
-                    } loaded`
-                  : `${issuesPage.items.length} issue${
-                      issuesPage.items.length === 1 ? "" : "s"
-                    } loaded`}
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!issuesPage.hasMore || issuesPage.loadingMore}
-                onClick={issuesPage.loadMore}
-              >
-                <ChevronDown className="size-4" aria-hidden="true" />
-                {issuesPage.loadingMore
-                  ? "Loading..."
-                  : issuesPage.hasMore
-                    ? "Load more"
-                    : "All issues loaded"}
-              </Button>
-            </div>
-          </div>
+          <CheckIssueGroups
+            key={`${viewMode}-${activeGroupBy}`}
+            groupBy={activeGroupBy}
+            checkedAt={checkedAt}
+          />
         )}
       </Panel>
     </>

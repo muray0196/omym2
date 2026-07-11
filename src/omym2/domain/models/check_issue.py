@@ -33,6 +33,27 @@ class CheckIssueType(StrEnum):
     LIBRARY_BLOCKED = "library_blocked"
 
 
+class CheckIssueGrouping(StrEnum):
+    """Supported group-by keys for persisted CheckIssue browsing."""
+
+    ISSUE_TYPE = "issue_type"
+    SEVERITY = "severity"
+    PATH_ROOT = "path_root"
+    ARTIST_ALBUM = "artist_album"
+    SUGGESTED_COMMAND = "suggested_command"
+    LIBRARY_ID = "library_id"
+
+
+# Sentinel keys/labels shared by every CheckIssue grouping derivation (SQL and
+# Python alike); their meanings are contracted in docs/contracts/web-api.md.
+CHECK_ISSUE_GROUP_UNKNOWN_KEY = "(unknown)"
+CHECK_ISSUE_GROUP_ROOT_KEY = "(root)"
+CHECK_ISSUE_GROUP_EXTERNAL_KEY = "(external)"
+CHECK_ISSUE_GROUP_ARTIST_ALBUM_SEPARATOR = "\x1f"  # unit separator; keeps artist/album keys collision-free
+CHECK_ISSUE_GROUP_ARTIST_ALBUM_LABEL_SEPARATOR = " / "
+CHECK_ISSUE_GROUP_UNKNOWN_ARTIST_ALBUM_LABEL = "Unknown Artist / Unknown Album"
+
+
 @dataclass(frozen=True, slots=True)
 class CheckIssue:
     """Calculated inconsistency between DB state and filesystem observations."""

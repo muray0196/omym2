@@ -365,6 +365,23 @@ export interface CheckFacetsResponse extends FacetsResponse {
   checked_at: string | null
 }
 
+/** Group-by keys accepted by GET /api/check/groups and Check issue drill-downs. */
+export type CheckGroupBy =
+  "issue_type" | "severity" | "path_root" | "artist_album" | "suggested_command" | "library_id"
+
+/** A persisted CheckIssue concentration, including its most common path root. */
+export interface CheckGroupCount extends GroupCount {
+  common_path_root: string | null
+}
+
+/** Paginated Check-specific group response returned by GET /api/check/groups. */
+export interface CheckGroupsResponse {
+  group_by: CheckGroupBy
+  items: CheckGroupCount[]
+  page: PageInfo | null
+  errors: string[]
+}
+
 export interface CheckRunResponse {
   checked_at: string
   total: number
