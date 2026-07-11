@@ -28,7 +28,6 @@ from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
 if TYPE_CHECKING:
-    from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.features.common_ports import FileSystemPath
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
@@ -337,14 +336,8 @@ class MappingSnapshotReader:
         self._snapshots: dict[str, FileSnapshot] = snapshots
         self.captured_paths: list[str] = []
 
-    def capture(
-        self,
-        path: FileSystemPath,
-        *,
-        observation: FileScanEntry | None = None,
-    ) -> FileSnapshot:
+    def capture(self, path: FileSystemPath) -> FileSnapshot:
         """Return the configured snapshot for a path."""
-        del observation
         path_text = str(path)
         self.captured_paths.append(path_text)
         return self._snapshots[path_text]

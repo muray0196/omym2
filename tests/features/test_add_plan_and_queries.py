@@ -220,7 +220,6 @@ def test_add_uses_configured_incoming_and_persists_move_action() -> None:
 
     assert scanner.scanned_roots == [INCOMING_ROOT]
     assert snapshot_reader.captured_paths == [INCOMING_FILE]
-    assert snapshot_reader.captured_observations == [None]
     assert plan.plan_type == PlanType.ADD
     assert plan.status == PlanStatus.READY
     assert plan.config_hash == calculate_config_fingerprint(config)
@@ -654,17 +653,10 @@ class MappingSnapshotReader:
         """Store snapshots by source path."""
         self._snapshots: dict[str, FileSnapshot] = snapshots
         self.captured_paths: list[FileSystemPath] = []
-        self.captured_observations: list[FileScanEntry | None] = []
 
-    def capture(
-        self,
-        path: FileSystemPath,
-        *,
-        observation: FileScanEntry | None = None,
-    ) -> FileSnapshot:
+    def capture(self, path: FileSystemPath) -> FileSnapshot:
         """Return the configured snapshot for a source path."""
         self.captured_paths.append(path)
-        self.captured_observations.append(observation)
         return self._snapshots[str(path)]
 
     def capture_many(
@@ -675,7 +667,7 @@ class MappingSnapshotReader:
         snapshots: list[FileSnapshot | None] = []
         for request in requests:
             try:
-                snapshots.append(self.capture(request.path, observation=request.observation))
+                snapshots.append(self.capture(request.path))
             except FileNotFoundError:
                 snapshots.append(None)
         return tuple(snapshots)

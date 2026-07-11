@@ -704,14 +704,8 @@ class MappingSnapshotReader:
         self._missing_paths: set[str] = set() if missing_paths is None else set(missing_paths)
         self.captured_paths: list[str] = []
 
-    def capture(
-        self,
-        path: FileSystemPath,
-        *,
-        observation: FileScanEntry | None = None,
-    ) -> FileSnapshot:
+    def capture(self, path: FileSystemPath) -> FileSnapshot:
         """Return the configured snapshot for a path."""
-        del observation
         path_text = str(path)
         self.captured_paths.append(path_text)
         if path_text in self._missing_paths:
@@ -726,7 +720,7 @@ class MappingSnapshotReader:
         snapshots: list[FileSnapshot | None] = []
         for request in requests:
             try:
-                snapshots.append(self.capture(request.path, observation=request.observation))
+                snapshots.append(self.capture(request.path))
             except FileNotFoundError:
                 snapshots.append(None)
         return tuple(snapshots)

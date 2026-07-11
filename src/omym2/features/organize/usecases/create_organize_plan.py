@@ -157,7 +157,7 @@ class CreateOrganizePlanUseCase:
     def _capture_snapshots(
         self,
         capture_inputs: Sequence[_OrganizeCaptureInput],
-        existing_tracks: dict[str, Track],
+        trust_eligible_tracks: dict[str, Track],
         timestamp: datetime,
         *,
         trust_stat: bool,
@@ -168,10 +168,10 @@ class CreateOrganizePlanUseCase:
 
         for index, capture_input in enumerate(capture_inputs):
             trusted_snapshot = None
-            existing_track = existing_tracks.get(capture_input.source_path)
-            if trust_stat and existing_track is not None:
+            eligible_track = trust_eligible_tracks.get(capture_input.source_path)
+            if trust_stat and eligible_track is not None:
                 trusted_snapshot = snapshot_from_trusted_stat(
-                    existing_track,
+                    eligible_track,
                     capture_input.source_path,
                     capture_input.entry.path,
                     capture_input.entry,

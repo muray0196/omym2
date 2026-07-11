@@ -26,9 +26,6 @@ from omym2.features.common_ports import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from omym2.domain.models.file_scan_entry import FileScanEntry
-
-SCAN_OBSERVATION_PATH_MISMATCH_MESSAGE = "Scan observation path must match the captured path."
 INVALID_SNAPSHOT_CAPTURE_WORKER_COUNT_MESSAGE = "Snapshot capture worker count must be positive."
 
 
@@ -59,26 +56,10 @@ class FilesystemFileSnapshotReader:
                 )
             )
 
-    def capture(
-        self,
-        path: FileSystemPath,
-        *,
-        observation: FileScanEntry | None = None,
-    ) -> FileSnapshot:
-        """Capture hashes and metadata, reusing matching scan stat data when supplied."""
+    def capture(self, path: FileSystemPath) -> FileSnapshot:
+        """Capture a fresh stat plus metadata and hashes for one file."""
         file_path = Path(path)
-        if observation is None:
-            stat_result = file_path.stat()
-            size = stat_result.st_size
-            mtime = datetime.fromtimestamp(stat_result.st_mtime, UTC)
-            file_extension = file_path.suffix.lower()
-        else:
-            if Path(observation.path) != file_path:
-                raise ValueError(SCAN_OBSERVATION_PATH_MISMATCH_MESSAGE)
-            size = observation.size
-            mtime = observation.mtime
-            file_extension = observation.file_extension
-
+        stat_result = file_path.stat()
         metadata = self.metadata_reader.read(file_path)
         content_hash = self.hasher.calculate(file_path)
 
@@ -86,9 +67,9 @@ class FilesystemFileSnapshotReader:
         # Plan and apply workflows re-check hashes before mutating Library files.
         return FileSnapshot(
             path=str(file_path),
-            size=size,
-            mtime=mtime,
-            file_extension=file_extension,
+            size=stat_result.st_size,
+            mtime=datetime.fromtimestamp(stat_result.st_mtime, UTC),
+            file_extension=file_path.suffix.lower(),
             content_hash=content_hash,
             metadata_hash=calculate_metadata_fingerprint(metadata),
             metadata=metadata,
@@ -97,6 +78,6 @@ class FilesystemFileSnapshotReader:
 
     def _capture_or_missing(self, request: FileSnapshotCaptureRequest) -> FileSnapshot | None:
         try:
-            return self.capture(request.path, observation=request.observation)
+            return self.capture(request.path)
         except FileNotFoundError:
             return None

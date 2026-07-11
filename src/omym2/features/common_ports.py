@@ -410,22 +410,16 @@ class FileStatReader(Protocol):
 class FileSnapshotReader(Protocol):
     """Filesystem observation contract for full file snapshots."""
 
-    def capture(
-        self,
-        path: FileSystemPath,
-        *,
-        observation: FileScanEntry | None = None,
-    ) -> FileSnapshot:
-        """Capture metadata and hashes, optionally reusing a scan observation."""
+    def capture(self, path: FileSystemPath) -> FileSnapshot:
+        """Capture a fresh stat plus metadata and hashes for one file."""
         ...
 
 
 @dataclass(frozen=True, slots=True)
 class FileSnapshotCaptureRequest:
-    """One full-snapshot request with an optional prior scan observation."""
+    """One full-snapshot request within a batch capture."""
 
     path: FileSystemPath
-    observation: FileScanEntry | None = None
 
 
 class BatchFileSnapshotReader(Protocol):

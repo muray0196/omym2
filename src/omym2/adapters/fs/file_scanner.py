@@ -17,6 +17,8 @@ from omym2.domain.models.file_scan_entry import FileScanEntry
 if TYPE_CHECKING:
     from omym2.features.common_ports import FileSystemPath
 
+NOT_A_REGULAR_FILE_MESSAGE = "Path is not a regular file"
+
 
 @dataclass(frozen=True, slots=True)
 class FilesystemFileScanner:
@@ -31,7 +33,8 @@ class FilesystemFileScanner:
         if not stat.S_ISREG(stat_result.st_mode):
             if stat.S_ISDIR(stat_result.st_mode):
                 raise IsADirectoryError(file_path)
-            raise OSError(file_path)
+            message = f"{NOT_A_REGULAR_FILE_MESSAGE}: {file_path}"
+            raise OSError(message)
         return FileScanEntry(
             path=str(file_path),
             size=stat_result.st_size,

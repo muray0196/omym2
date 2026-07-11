@@ -19,13 +19,11 @@ from omym2.adapters.fs.file_presence import FilesystemFilePresence
 from omym2.adapters.fs.file_scanner import FilesystemFileScanner
 from omym2.adapters.fs.file_snapshot_reader import (
     INVALID_SNAPSHOT_CAPTURE_WORKER_COUNT_MESSAGE,
-    SCAN_OBSERVATION_PATH_MISMATCH_MESSAGE,
     FilesystemFileSnapshotReader,
 )
 from omym2.adapters.fs.hash_calculator import INVALID_CHUNK_SIZE_MESSAGE, FileContentHasher
 from omym2.adapters.fs.path_resolver import PATH_OUTSIDE_LIBRARY_MESSAGE, FilesystemPathResolver
 from omym2.config import FILE_SNAPSHOT_CAPTURE_MIN_WORKER_COUNT
-from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
@@ -58,7 +56,6 @@ TRACK_ARTIST = "Artist"
 TRACK_TITLE = "Track"
 TARGET_FILE_NAME = "Moved.flac"
 SECOND_TARGET_FILE_NAME = "Second-Moved.flac"
-UNEXPECTED_STAT_MESSAGE = "snapshot capture must reuse the supplied scan observation"
 
 
 def test_file_scanner_returns_file_scan_entries_not_snapshots(tmp_path: Path) -> None:
@@ -154,51 +151,6 @@ def test_file_snapshot_reader_captures_metadata_and_hash(tmp_path: Path) -> None
     assert snapshot.metadata_hash == calculate_metadata_fingerprint(metadata)
     assert snapshot.metadata == metadata
     assert snapshot.captured_at == FIXED_TIME
-
-
-def test_file_snapshot_reader_reuses_matching_scan_observation(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A supplied FileScanEntry provides stat fields without a second filesystem stat."""
-    audio_path = tmp_path / AUDIO_FILE_NAME
-    _ = audio_path.write_bytes(AUDIO_CONTENT)
-    observation = FilesystemFileScanner().scan(tmp_path)[0]
-    real_stat = Path.stat
-
-    def reject_repeated_audio_stat(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
-        if path == audio_path:
-            raise AssertionError(UNEXPECTED_STAT_MESSAGE)
-        return real_stat(path, follow_symlinks=follow_symlinks)
-
-    monkeypatch.setattr(Path, "stat", reject_repeated_audio_stat)
-    reader = FilesystemFileSnapshotReader(
-        metadata_reader=StaticMetadataReader(_metadata()),
-        clock=FixedClock(FIXED_TIME),
-    )
-
-    snapshot = reader.capture(audio_path, observation=observation)
-
-    assert snapshot.path == observation.path
-    assert snapshot.size == observation.size
-    assert snapshot.mtime == observation.mtime
-    assert snapshot.file_extension == observation.file_extension
-
-
-def test_file_snapshot_reader_rejects_scan_observation_for_another_path(tmp_path: Path) -> None:
-    """A scan observation cannot supply stat identity for a different file path."""
-    audio_path = tmp_path / AUDIO_FILE_NAME
-    _ = audio_path.write_bytes(AUDIO_CONTENT)
-    observation = FileScanEntry(
-        path=str(tmp_path / SECOND_AUDIO_FILE_NAME),
-        size=len(AUDIO_CONTENT),
-        mtime=FIXED_TIME,
-        file_extension=AUDIO_FILE_EXTENSION,
-    )
-    reader = FilesystemFileSnapshotReader(metadata_reader=StaticMetadataReader(_metadata()))
-
-    with pytest.raises(ValueError, match=SCAN_OBSERVATION_PATH_MISMATCH_MESSAGE):
-        _ = reader.capture(audio_path, observation=observation)
 
 
 def test_file_snapshot_reader_batch_preserves_request_order_and_missing_results(tmp_path: Path) -> None:

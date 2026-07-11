@@ -114,7 +114,6 @@ def test_organize_registers_clean_library_without_mutation_plan() -> None:
 
     assert scanner.scanned_roots == [LIBRARY_ROOT]
     assert snapshot_reader.captured_paths == [CANONICAL_ABSOLUTE_PATH]
-    assert snapshot_reader.captured_observations == [None]
     assert result.plan is None
     assert result.actions == ()
     assert result.track_count == 1
@@ -173,7 +172,6 @@ def test_organize_trust_stat_full_captures_track_without_complete_baseline() -> 
     _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(trust_stat=True, library_root=LIBRARY_ROOT))
 
     assert snapshot_reader.captured_paths == [CANONICAL_ABSOLUTE_PATH]
-    assert snapshot_reader.captured_observations == [None]
 
 
 def test_organize_trust_stat_full_captures_duplicate_active_path() -> None:
@@ -500,17 +498,10 @@ class MappingSnapshotReader:
         self._snapshots: dict[str, FileSnapshot] = snapshots
         self._missing_paths: set[str] = set() if missing_paths is None else set(missing_paths)
         self.captured_paths: list[FileSystemPath] = []
-        self.captured_observations: list[FileScanEntry | None] = []
 
-    def capture(
-        self,
-        path: FileSystemPath,
-        *,
-        observation: FileScanEntry | None = None,
-    ) -> FileSnapshot:
+    def capture(self, path: FileSystemPath) -> FileSnapshot:
         """Return a snapshot or raise FileNotFoundError for vanished files."""
         self.captured_paths.append(path)
-        self.captured_observations.append(observation)
         path_key = str(path)
         if path_key in self._missing_paths:
             raise FileNotFoundError(path_key)
@@ -524,7 +515,7 @@ class MappingSnapshotReader:
         snapshots: list[FileSnapshot | None] = []
         for request in requests:
             try:
-                snapshots.append(self.capture(request.path, observation=request.observation))
+                snapshots.append(self.capture(request.path))
             except FileNotFoundError:
                 snapshots.append(None)
         return tuple(snapshots)

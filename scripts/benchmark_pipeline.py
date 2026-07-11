@@ -192,11 +192,7 @@ def _integer_at_least(raw_value: str, minimum: int) -> int:
 
 
 def _file_size_bytes(raw_value: str) -> int:
-    value = _integer_at_least(raw_value, BENCHMARK_MIN_TRACK_COUNT)
-    if value < BENCHMARK_MIN_FILE_SIZE_BYTES:
-        message = f"value must be at least {BENCHMARK_MIN_FILE_SIZE_BYTES} bytes"
-        raise argparse.ArgumentTypeError(message)
-    return value
+    return _integer_at_least(raw_value, BENCHMARK_MIN_FILE_SIZE_BYTES)
 
 
 def _run_benchmark(args: ParsedArgs) -> BenchmarkMeasurements:
