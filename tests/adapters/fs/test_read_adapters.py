@@ -8,6 +8,7 @@ from __future__ import annotations
 import errno
 import os
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -24,8 +25,6 @@ from omym2.domain.services.metadata_fingerprint import calculate_metadata_finger
 from tests.fakes.runtime import FixedClock
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
@@ -158,6 +157,52 @@ def test_file_mover_refuses_to_overwrite_existing_target(tmp_path: Path) -> None
 
     assert source_path.read_bytes() == AUDIO_CONTENT
     assert target_path.read_bytes() == b"existing"
+
+
+def test_file_mover_refuses_symlinked_target_parent(tmp_path: Path) -> None:
+    """FileMover does not follow replaced Library parents outside the reviewed tree."""
+    source_path = tmp_path / AUDIO_FILE_NAME
+    library_root = tmp_path / "library"
+    outside_root = tmp_path / "outside"
+    target_parent = library_root / "Artist"
+    target_path = target_parent / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    outside_root.mkdir()
+    library_root.mkdir()
+    target_parent.symlink_to(outside_root, target_is_directory=True)
+
+    with pytest.raises(OSError, match="symlinked target parent"):
+        FilesystemFileMover().move(source_path, target_path)
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert not (outside_root / TARGET_FILE_NAME).exists()
+
+
+def test_file_mover_refuses_target_created_during_cross_device_move(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FileMover uses atomic final creation during copy fallback."""
+    source_path = tmp_path / "incoming" / AUDIO_FILE_NAME
+    target_path = tmp_path / "library" / TARGET_FILE_NAME
+    source_path.parent.mkdir()
+    target_path.parent.mkdir()
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+
+    original_link = os.link
+
+    def link_with_attacker_race(source: os.PathLike[str] | str, target: os.PathLike[str] | str) -> None:
+        if Path(source) == source_path:
+            raise OSError(errno.EXDEV, "Invalid cross-device link", source)
+        _ = target_path.write_bytes(b"attacker")
+        original_link(source, target)
+
+    monkeypatch.setattr(os, "link", link_with_attacker_race)
+
+    with pytest.raises(FileExistsError):
+        FilesystemFileMover().move(source_path, target_path)
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert target_path.read_bytes() == b"attacker"
 
 
 def test_file_content_hasher_rejects_invalid_chunk_size() -> None:
