@@ -42,6 +42,7 @@ LIBRARY_ROOT = "/music/library"
 METADATA_HASH = "metadata-hash"
 MOVE_FAILURE_MESSAGE = "move failed"
 OTHER_LIBRARY_ROOT = "/music/moved-library"
+PATH_OUTSIDE_LIBRARY_MESSAGE = "outside library"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
 SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
@@ -166,6 +167,37 @@ def test_apply_metadata_precondition_failure_creates_no_file_event() -> None:
     action = _stored_action(uow)
     assert action.status == ActionStatus.FAILED
     assert action.reason == PlanActionReason.SOURCE_CHANGED
+    assert uow.file_events.records == {}
+    assert mover.moves == []
+
+
+def test_apply_rejects_library_relative_target_with_escaping_parent() -> None:
+    """Symlink-resolved target parents fail before FileEvents or file mutation."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan())
+    uow.plan_actions.save(_move_action(target_path="EvilArtist/Album/Title.flac"))
+    ports, mover = _ports(
+        uow,
+        {SOURCE_PATH: _snapshot(SOURCE_PATH)},
+        SequenceIdGenerator(run_ids=deque((RUN_ID,))),
+    )
+    ports = ApplyPlanPorts(
+        uow=ports.uow,
+        file_mover=ports.file_mover,
+        file_snapshot_reader=ports.file_snapshot_reader,
+        path_resolver=EscapingPathResolver(),
+        clock=ports.clock,
+        id_generator=ports.id_generator,
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request())
+
+    assert run is not None
+    assert run.status == RunStatus.FAILED
+    action = _stored_action(uow)
+    assert action.status == ActionStatus.FAILED
+    assert action.reason == PlanActionReason.INVALID_PATH
     assert uow.file_events.records == {}
     assert mover.moves == []
 
@@ -320,6 +352,16 @@ class SimplePathResolver:
     def relative_to_library(self, library_root: FileSystemPath, path: FileSystemPath) -> str:
         """Return a lexical Library-relative path for completeness."""
         return str(path).removeprefix(f"{str(library_root).rstrip('/')}/")
+
+
+class EscapingPathResolver(SimplePathResolver):
+    """PathResolver fake that simulates a symlink parent escaping the Library."""
+
+    def relative_to_library(self, library_root: FileSystemPath, path: FileSystemPath) -> str:
+        """Reject EvilArtist paths as if their parent resolved outside Library."""
+        if "/EvilArtist/" in str(path):
+            raise ValueError(PATH_OUTSIDE_LIBRARY_MESSAGE)
+        return super().relative_to_library(library_root, path)
 
 
 class RecordingFileMover:

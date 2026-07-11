@@ -37,6 +37,7 @@ PLAN_NOT_FOUND_MESSAGE = "Plan was not found."
 PLAN_NOT_READY_MESSAGE = "Plan is not ready and cannot be applied."
 SUMMARY_SEPARATOR = "; "
 SOURCE_PRECONDITION_SNAPSHOT_MISSING_MESSAGE = "Successful source precondition did not return a snapshot."
+TARGET_OUTSIDE_LIBRARY_SUMMARY = "Planned target path escapes the Library root."
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +168,16 @@ class ApplyPlanUseCase:
 
         source_filesystem_path = self._resolve_source_path(library, source_path)
         target_filesystem_path = self._resolve_target_path(library, target_path)
+        if not PurePath(target_path).is_absolute() and not self._target_parent_is_inside_library(
+            library,
+            target_filesystem_path,
+        ):
+            self._mark_action_failed(action, PlanActionReason.INVALID_PATH)
+            return _ActionApplyResult(
+                succeeded=False,
+                event_created=False,
+                failure_summary=TARGET_OUTSIDE_LIBRARY_SUMMARY,
+            )
 
         precondition = self._verify_source_preconditions(action, source_filesystem_path)
         if not precondition.passed:
@@ -446,6 +457,15 @@ class ApplyPlanUseCase:
         if PurePath(target_path).is_absolute():
             return target_path
         return self.ports.path_resolver.resolve_library_path(library.root_path, target_path)
+
+    def _target_parent_is_inside_library(self, library: Library, target_filesystem_path: FileSystemPath) -> bool:
+        try:
+            # Check the parent because the target file may not exist yet; resolving
+            # it follows symlink ancestors before apply attempts the mutation.
+            _ = self.ports.path_resolver.relative_to_library(library.root_path, PurePath(target_filesystem_path).parent)
+        except ValueError:
+            return False
+        return True
 
 
 @dataclass(frozen=True, slots=True)

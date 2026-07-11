@@ -146,12 +146,24 @@ class CreateRefreshPlanUseCase:
         judged_candidates: list[_RefreshCandidate] = []
 
         for candidate in candidates:
-            if self._has_target_conflict(library, candidate, occupied_paths, target_sources):
+            if self._has_escaping_target_parent(library, candidate):
+                judged_candidates.append(replace(candidate, reason=PlanActionReason.INVALID_PATH))
+            elif self._has_target_conflict(library, candidate, occupied_paths, target_sources):
                 judged_candidates.append(replace(candidate, reason=PlanActionReason.TARGET_EXISTS))
             else:
                 judged_candidates.append(candidate)
 
         return tuple(judged_candidates)
+
+    def _has_escaping_target_parent(self, library: Library, candidate: _RefreshCandidate) -> bool:
+        target_path = candidate.target_path
+        if not candidate.needs_action or candidate.reason is not None or target_path is None:
+            return False
+        if target_path == candidate.track.current_path:
+            return False
+
+        target_filesystem_path = self.ports.path_resolver.resolve_library_path(library.root_path, target_path)
+        return not _target_parent_is_inside_library(self.ports, library, target_filesystem_path)
 
     def _has_target_conflict(
         self,
@@ -276,6 +288,22 @@ def _target_relative_path(ports: CreateRefreshPlanPorts, library: Library, targe
         return normalize_library_relative_path(target_path)
     except ValueError as exc:
         raise RefreshTargetSelectionError(TARGET_OUTSIDE_LIBRARY_MESSAGE) from exc
+
+
+def _target_parent_is_inside_library(
+    ports: CreateRefreshPlanPorts,
+    library: Library,
+    target_filesystem_path: object,
+) -> bool:
+    """Return whether a planned target's resolved parent remains in the Library."""
+    try:
+        # The parent check follows symlink ancestors through PathResolver's
+        # filesystem boundary. This blocks lexical Library-relative targets
+        # whose actual write location would escape the Library at apply time.
+        _ = ports.path_resolver.relative_to_library(library.root_path, PurePath(target_filesystem_path).parent)
+    except ValueError:
+        return False
+    return True
 
 
 def _require_matches(tracks: tuple[Track, ...]) -> tuple[Track, ...]:

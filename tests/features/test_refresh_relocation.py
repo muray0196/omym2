@@ -127,6 +127,33 @@ def test_refresh_records_existing_track_id_for_relocation_after_metadata_change(
     assert uow.tracks.get(TRACK_ID) == _track()
 
 
+def test_refresh_blocks_relocation_when_target_parent_escapes_library() -> None:
+    """Refresh refuses lexical targets whose symlink-resolved parent escapes."""
+    uow = _uow_with_library_and_tracks(_track())
+    source_path = _absolute(OLD_PATH)
+    ports, _ = _ports(
+        uow,
+        {source_path: _snapshot(source_path, NEW_METADATA)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+    ports = CreateRefreshPlanPorts(
+        uow=ports.uow,
+        file_snapshot_reader=ports.file_snapshot_reader,
+        file_presence=ports.file_presence,
+        config_store=ports.config_store,
+        path_resolver=EscapingPathResolver(),
+        clock=ports.clock,
+        id_generator=ports.id_generator,
+    )
+
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(track_id=TRACK_ID))
+
+    action = plan.actions[0]
+    assert action.status == ActionStatus.BLOCKED
+    assert action.reason == PlanActionReason.INVALID_PATH
+    assert action.target_path == NEW_PATH
+
+
 def test_refresh_persists_zero_action_plan_when_canonical_path_is_unchanged() -> None:
     """Refresh observes unchanged metadata without updating Track state."""
     uow = _uow_with_library_and_tracks(_track(current_path=NEW_PATH, metadata=NEW_METADATA))
@@ -433,6 +460,16 @@ class SimplePathResolver:
         if not path_text.startswith(expected_prefix):
             raise ValueError(PATH_OUTSIDE_LIBRARY_MESSAGE)
         return path_text.removeprefix(expected_prefix)
+
+
+class EscapingPathResolver(SimplePathResolver):
+    """PathResolver fake that simulates an Artist symlink escaping the Library."""
+
+    def relative_to_library(self, library_root: FileSystemPath, path: FileSystemPath) -> str:
+        """Reject Artist paths as if their symlink parent resolved outside Library."""
+        if "/Artist/" in str(path):
+            raise ValueError(PATH_OUTSIDE_LIBRARY_MESSAGE)
+        return super().relative_to_library(library_root, path)
 
 
 @dataclass(frozen=True, slots=True)
