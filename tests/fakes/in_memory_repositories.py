@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Self
 
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.track import TrackGrouping
+from omym2.features.common_ports import PlanActionGroupRow
 from omym2.shared.pagination import (
     INVALID_CURSOR_MESSAGE,
     CursorDecodeError,
@@ -400,13 +401,53 @@ class InMemoryPlanActionRepository:
         ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         return tuple(FacetValue(value=value, count=count) for value, count in ordered)
 
-    def list_target_paths(self, plan_id: PlanId) -> tuple[str, ...]:
-        """Return the non-null target_path values recorded for one Plan's actions."""
+    def reason_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+        """Return non-null PlanAction reason facets for one Plan, ordered count DESC then value ASC."""
+        counts: dict[str, int] = {}
+        for action in self.records.values():
+            if action.plan_id != plan_id or action.reason is None:
+                continue
+            counts[action.reason.value] = counts.get(action.reason.value, 0) + 1
+        ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        return tuple(FacetValue(value=value, count=count) for value, count in ordered)
+
+    def count_target_collisions(self, plan_id: PlanId) -> int:
+        """Return how many distinct non-null target_path values are recorded by 2+ of the Plan's actions."""
+        counts: dict[str, int] = {}
+        for action in self.records.values():
+            if action.plan_id != plan_id or action.target_path is None:
+                continue
+            counts[action.target_path] = counts.get(action.target_path, 0) + 1
+        return sum(1 for count in counts.values() if count > 1)
+
+    def list_by_ids(self, action_ids: Sequence[ActionId]) -> tuple[PlanAction, ...]:
+        """Return the PlanActions with the given IDs, ordered (sort_order, action_id)."""
+        wanted = set(action_ids)
+        return tuple(
+            sorted(
+                (action for action in self.records.values() if action.action_id in wanted),
+                key=lambda action: (action.sort_order, str(action.action_id)),
+            )
+        )
+
+    def list_group_rows(self, plan_id: PlanId) -> tuple[PlanActionGroupRow, ...]:
+        """Return per-action group projections for one Plan, ordered (sort_order, action_id)."""
         actions = sorted(
             (action for action in self.records.values() if action.plan_id == plan_id),
             key=lambda action: (action.sort_order, str(action.action_id)),
         )
-        return tuple(action.target_path for action in actions if action.target_path is not None)
+        return tuple(
+            PlanActionGroupRow(
+                action_id=action.action_id,
+                sort_order=action.sort_order,
+                status=action.status,
+                reason=action.reason,
+                action_type=action.action_type,
+                source_path=action.source_path,
+                target_path=action.target_path,
+            )
+            for action in actions
+        )
 
 
 @dataclass(slots=True)

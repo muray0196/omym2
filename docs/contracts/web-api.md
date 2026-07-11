@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines OMYM2's local Web API envelopes, browsing and Plan-creation requests, pagination/facets/groups, and exclusion of CLI-only trust-stat flags.
 tags: [web-api, pagination, json, contract]
-timestamp: 2026-07-11T10:21:41+09:00
+timestamp: 2026-07-11T19:41:06+09:00
 ---
 
 # Web API Contract
@@ -77,6 +77,23 @@ Group-by endpoints return paginated group rows:
 
 Group rows are ordered `count DESC, key ASC`. `page.total` is the total number of group rows matching the request's filters, ignoring the cursor.
 
+Plan action group rows extend the shared row with review-risk fields:
+
+```jsonc
+{
+  "key": "Aimer/2024_Open α Door",
+  "label": "Aimer / 2024_Open α Door",
+  "count": 13,
+  "blocked_count": 0,
+  "top_reason": null
+}
+```
+
+`blocked_count` counts group members whose recorded status is `blocked`.
+`top_reason` is the most frequent non-null recorded reason among group members;
+equal counts resolve to the lexicographically smaller reason, and a group with
+no reasons returns `null`.
+
 ## Endpoints
 
 ### Tracks
@@ -93,12 +110,21 @@ Plan ordering: `created_at DESC, plan_id DESC`. Action ordering: `sort_order ASC
 
 * `GET /api/plans?status=&type=&limit=&cursor=` — list envelope of `PlanSummary` items.
 * `GET /api/plans/{plan_id}` → `{ "detail": { "plan": {...} }, "errors": [] }`. Header only: the previous embedded `actions` array and `total_action_count` field are REMOVED. Actions are fetched separately (below).
-* `GET /api/plans/{plan_id}/actions?status=&limit=&cursor=` — list envelope of `PlanAction` items.
-* `GET /api/plans/{plan_id}/facets` — facet envelope; facet fields: `status`, `action_type`.
-* `GET /api/plans/{plan_id}/groups?group_by=target_directory&limit=&cursor=` — group envelope.
+* `GET /api/plans/{plan_id}/actions?status=&group_by=&group_key=&limit=&cursor=` — list envelope of `PlanAction` items. `group_by` and `group_key` are an optional drill-down pair: clients must provide both or neither. The group filter combines with `status` as AND and uses the same membership rules as the groups endpoint.
+* `GET /api/plans/{plan_id}/facets` — facet envelope; facet fields: `status`, `action_type`, and non-null `reason`. The response additionally carries top-level `target_collisions`, counting distinct non-null target paths recorded by two or more actions.
+* `GET /api/plans/{plan_id}/groups?group_by=&limit=&cursor=` — enriched Plan action group envelope. Supported `group_by` values are `target_directory`, `source_directory`, `artist_album`, `action_type`, `status`, `block_reason`, and `extension`.
 * `POST /api/plans/add` — creates an add Plan; the body may carry `source_path` as a string or `null`.
 * `POST /api/plans/organize` — registers or organizes a Library; the body may carry `library_root` as a string or `null`.
 * `POST /api/plans/refresh` — creates a refresh Plan; the body may carry `target_path` as a string or `null` and `include_all` as a boolean.
+
+Plan action group keys are derived only from values recorded on each
+`PlanAction`; review never recalculates target paths from current config:
+
+* `target_directory` and `source_directory` use the stored path's POSIX parent directory. A root-level file uses `(root)`; a null path has no group.
+* `artist_album` uses the first two directory segments of the stored target path, reflecting the default album-artist/album directory layout. Its label joins those segments with ` / `. A null target uses key `(unknown)` and label `Unknown Artist / Unknown Album`; a root-level target uses `(root)`.
+* `action_type` and `status` use their recorded catalog values.
+* `block_reason` uses the recorded non-null reason; actions without a reason have no group.
+* `extension` uses the lowercased suffix (without `.`) of the stored source path, falling back to the target path. A suffix-less filename uses `(none)`; an action without either path has no group.
 
 All Plan-creation POSTs require the `X-OMYM2-CSRF-Token` header. Their shared response envelope is `{ "created": <boolean>, "detail": { "plan": {...} } | null, "registration": {...} | null, "errors": [...] }`. `detail` is header-only: it never embeds `actions` or `total_action_count`; clients fetch actions through `GET /api/plans/{plan_id}/actions`. `registration` is populated only by organize, including when clean registration needs no Plan and therefore returns `created: false` with `detail: null`.
 

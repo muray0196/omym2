@@ -1,6 +1,6 @@
 """
-Summary: Tests SQLitePlanRepository/SQLitePlanActionRepository keyset paging, facets, and target paths.
-Why: Protects the plans browsing SQL contract (DESC keyset math, filter pushdown, facet ordering).
+Summary: Tests SQLite Plan repositories for paging, facets, risk counts, and group projections.
+Why: Protects Plan browsing SQL, including keyset math, filter pushdown, and review projections.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
+from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.shared.ids import ActionId, LibraryId, PlanId
 from omym2.shared.pagination import PageRequest
 
@@ -209,7 +209,7 @@ def test_plan_action_query_page_filters_by_status_in_sql(tmp_path: Path) -> None
 
 
 def test_plan_action_facets_order_count_desc_then_value_asc(tmp_path: Path) -> None:
-    """status_facets and action_type_facets are ordered count DESC, then value ASC."""
+    """Status, action-type, and reason facets are ordered count DESC, then value ASC."""
     database_file = default_application_paths(tmp_path).database_file
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library(LIBRARY_ID))
@@ -217,13 +217,20 @@ def test_plan_action_facets_order_count_desc_then_value_asc(tmp_path: Path) -> N
         uow.plan_actions.save(_action(ACTION_ID_1, sort_order=1, status=ActionStatus.PLANNED))
         uow.plan_actions.save(_action(ACTION_ID_2, sort_order=2, status=ActionStatus.PLANNED))
         uow.plan_actions.save(
-            _action(ACTION_ID_3, sort_order=3, status=ActionStatus.BLOCKED, action_type=ActionType.SKIP)
+            _action(
+                ACTION_ID_3,
+                sort_order=3,
+                status=ActionStatus.BLOCKED,
+                action_type=ActionType.SKIP,
+                reason=PlanActionReason.MISSING_REQUIRED_METADATA,
+            )
         )
         uow.commit()
 
     with SQLiteUnitOfWork(database_file) as uow:
         status_facets = uow.plan_actions.status_facets(PLAN_ID_1)
         action_type_facets = uow.plan_actions.action_type_facets(PLAN_ID_1)
+        reason_facets = uow.plan_actions.reason_facets(PLAN_ID_1)
 
     assert [(facet.value, facet.count) for facet in status_facets] == [
         (ActionStatus.PLANNED.value, 2),
@@ -233,25 +240,53 @@ def test_plan_action_facets_order_count_desc_then_value_asc(tmp_path: Path) -> N
         (ActionType.MOVE.value, 2),
         (ActionType.SKIP.value, 1),
     ]
+    assert [(facet.value, facet.count) for facet in reason_facets] == [
+        (PlanActionReason.MISSING_REQUIRED_METADATA.value, 1),
+    ]
 
 
-def test_list_target_paths_returns_only_non_null_targets_for_the_plan(tmp_path: Path) -> None:
-    """list_target_paths selects the Plan's non-null target_path values only."""
+def test_plan_action_risk_and_group_projection_queries_are_plan_scoped(tmp_path: Path) -> None:
+    """Collision counts and group projections use only recorded rows from the requested Plan."""
     database_file = default_application_paths(tmp_path).database_file
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library(LIBRARY_ID))
         uow.plans.save(_plan(PLAN_ID_1, created_at=BASE_TIME))
         uow.plans.save(_plan(PLAN_ID_2, created_at=BASE_TIME + timedelta(days=1)))
-        uow.plan_actions.save(_action(ACTION_ID_1, sort_order=1, target_path="Artist/Album/1.flac"))
-        uow.plan_actions.save(_action(ACTION_ID_2, sort_order=2, action_type=ActionType.SKIP, target_path=None))
-        uow.plan_actions.save(_action(ACTION_ID_3, sort_order=3, target_path="Loose.flac"))
-        uow.plan_actions.save(_action(ACTION_ID_4, sort_order=1, plan_id=PLAN_ID_2, target_path="Other/2.flac"))
+        uow.plan_actions.save(_action(ACTION_ID_1, sort_order=1, target_path="Artist/Album/Same.flac"))
+        uow.plan_actions.save(
+            _action(
+                ACTION_ID_2,
+                sort_order=2,
+                status=ActionStatus.BLOCKED,
+                action_type=ActionType.SKIP,
+                target_path="Artist/Album/Same.flac",
+                reason=PlanActionReason.TARGET_EXISTS,
+            )
+        )
+        uow.plan_actions.save(_action(ACTION_ID_3, sort_order=3, target_path=None))
+        uow.plan_actions.save(
+            _action(
+                ACTION_ID_4,
+                sort_order=1,
+                plan_id=PLAN_ID_2,
+                target_path="Artist/Album/Same.flac",
+            )
+        )
         uow.commit()
 
     with SQLiteUnitOfWork(database_file) as uow:
-        target_paths = uow.plan_actions.list_target_paths(PLAN_ID_1)
+        collisions = uow.plan_actions.count_target_collisions(PLAN_ID_1)
+        rows = uow.plan_actions.list_group_rows(PLAN_ID_1)
+        selected = uow.plan_actions.list_by_ids((ACTION_ID_3, ACTION_ID_1))
 
-    assert target_paths == ("Artist/Album/1.flac", "Loose.flac")
+    assert collisions == 1
+    assert tuple(row.action_id for row in rows) == (ACTION_ID_1, ACTION_ID_2, ACTION_ID_3)
+    assert rows[1].status is ActionStatus.BLOCKED
+    assert rows[1].reason is PlanActionReason.TARGET_EXISTS
+    assert rows[1].action_type is ActionType.SKIP
+    assert rows[1].source_path == "Source/Track.flac"
+    assert rows[1].target_path == "Artist/Album/Same.flac"
+    assert tuple(action.action_id for action in selected) == (ACTION_ID_1, ACTION_ID_3)
 
 
 def _library(library_id: LibraryId) -> Library:
@@ -293,6 +328,7 @@ def _action(  # noqa: PLR0913 - test fixture spans the paging/facet/target-path 
     action_type: ActionType = ActionType.MOVE,
     target_path: str | None = "Target/Track.flac",
     plan_id: PlanId = PLAN_ID_1,
+    reason: PlanActionReason | None = None,
 ) -> PlanAction:
     return PlanAction(
         action_id=action_id,
@@ -305,6 +341,6 @@ def _action(  # noqa: PLR0913 - test fixture spans the paging/facet/target-path 
         content_hash_at_plan=None,
         metadata_hash_at_plan=None,
         status=status,
-        reason=None,
+        reason=reason,
         sort_order=sort_order,
     )

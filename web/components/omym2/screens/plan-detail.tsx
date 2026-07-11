@@ -1,43 +1,29 @@
 /*
-Summary: Renders a Plan header and paged PlanAction list.
-Why: Lets users inspect recorded Plan work without loading every action upfront.
+Summary: Renders a Plan header, risk summary, and grouped/table/diff action review.
+Why: Lets a Plan with thousands of actions read as library operations before CLI apply.
 */
 
 "use client"
 
-import { ArrowLeft, ClipboardList, FileDiff, Hash, ListTree } from "lucide-react"
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { getHistoryPage, getPlanActionsPage, getPlanFacets } from "../api-client"
+import { ArrowLeft, ClipboardList, ListTree } from "lucide-react"
+import { useEffect, useState } from "react"
+import { getHistoryPage, getPlanFacets } from "../api-client"
 import { useApp } from "../app-context"
-import { describeBlockReason, formatTimestamp, truncateMiddle } from "../lib"
-import type {
-  PlanAction,
-  PlanActionStatus,
-  PlanHeader,
-  PlanStatus,
-  PlanSummary,
-  RunSummary,
-} from "../types"
-import { usePagedList } from "../use-paged-list"
-import { Select } from "../forms"
+import { formatTimestamp } from "../lib"
+import type { PlanActionStatus, PlanHeader, PlanStatus, PlanSummary, RunSummary } from "../types"
 import {
   Button,
-  DataTable,
-  EmptyState,
   MetaRow,
   MetricCard,
   Mono,
   Notice,
   Panel,
-  PathArrow,
   StatusBadge,
   toneForStatus,
-  type Column,
 } from "../primitives"
 import { CliCommand } from "../widgets"
 import { PageHeading } from "./page-heading"
-
-const PLAN_ACTION_PAGE_LIMIT = 100
+import { PlanActionsPanel, type PlanViewMode } from "./plan-detail-actions"
 
 /** Most recent run whose plan_id matches this Plan, if any exists in context. */
 function findRunForPlan(runs: RunSummary[], planId: string): RunSummary | undefined {
@@ -139,33 +125,6 @@ function PlanStatusPanel({
   )
 }
 
-const ACTION_FILTERS: { value: PlanActionStatus | "all"; label: string }[] = [
-  { value: "all", label: "All actions" },
-  { value: "planned", label: "Planned" },
-  { value: "blocked", label: "Blocked" },
-  { value: "applied", label: "Applied" },
-  { value: "failed", label: "Failed" },
-]
-
-function hashCell(contentHash: string | null, metadataHash: string | null) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="flex items-center gap-1">
-        <Hash className="size-3 shrink-0 text-mute" aria-hidden="true" />
-        <Mono className="truncate text-mute" title={contentHash ?? ""}>
-          {contentHash ? truncateMiddle(contentHash, 18) : "—"}
-        </Mono>
-      </span>
-      <span className="flex items-center gap-1">
-        <Hash className="size-3 shrink-0 text-mute" aria-hidden="true" />
-        <Mono className="truncate text-mute" title={metadataHash ?? ""}>
-          {metadataHash ? truncateMiddle(metadataHash, 18) : "—"}
-        </Mono>
-      </span>
-    </div>
-  )
-}
-
 export function PlanDetailScreen({ planId }: { planId: string }) {
   const {
     loadPlanDetail,
@@ -176,11 +135,13 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
     plans,
     runs,
   } = useApp()
+  const [viewMode, setViewMode] = useState<PlanViewMode>("grouped")
   const [actionStatus, setActionStatus] = useState<PlanActionStatus | "all">("all")
   const [actionStatusCounts, setActionStatusCounts] = useState<
     Partial<Record<PlanActionStatus, number>>
   >({})
-  const [actionTypeCounts, setActionTypeCounts] = useState<Partial<Record<string, number>>>({})
+  const [actionReasonCounts, setActionReasonCounts] = useState<Partial<Record<string, number>>>({})
+  const [targetCollisions, setTargetCollisions] = useState<number | null>(null)
   const [actionFacetTotal, setActionFacetTotal] = useState<number | null>(null)
   const [actionFacetErrors, setActionFacetErrors] = useState<string[]>([])
   const [matchingRun, setMatchingRun] = useState<RunSummary | null>(null)
@@ -197,14 +158,16 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
       .then((response) => {
         if (cancelled) return
         setActionStatusCounts(countFacetValues<PlanActionStatus>(response.facets.status))
-        setActionTypeCounts(countFacetValues(response.facets.action_type))
+        setActionReasonCounts(countFacetValues(response.facets.reason))
+        setTargetCollisions(response.target_collisions)
         setActionFacetTotal(response.total)
         setActionFacetErrors(response.errors)
       })
       .catch((error: unknown) => {
         if (cancelled) return
         setActionStatusCounts({})
-        setActionTypeCounts({})
+        setActionReasonCounts({})
+        setTargetCollisions(null)
         setActionFacetTotal(null)
         setActionFacetErrors([errorMessage(error, "Plan action summary failed to load.")])
       })
@@ -213,26 +176,11 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
     }
   }, [planId])
 
-  const loadActionsPage = useCallback(
-    (cursor?: string) =>
-      getPlanActionsPage(planId, {
-        cursor,
-        limit: PLAN_ACTION_PAGE_LIMIT,
-        status: actionStatus,
-      }),
-    [actionStatus, planId],
-  )
-  const actionsPage = usePagedList({
-    errorMessage: "Plan actions failed to load.",
-    loadPage: loadActionsPage,
-  })
-
   const detail = planDetails[planId]
   const errors = planDetailErrors[planId] ?? []
   const isLoaded = Object.prototype.hasOwnProperty.call(planDetails, planId) || errors.length > 0
   const isLoading = planDetailLoading[planId] ?? false
   const plan = detail?.plan ?? plans.find((candidate) => candidate.plan_id === planId) ?? null
-  const actions = actionsPage.items
   const runCandidates = matchingRun
     ? [matchingRun, ...runs.filter((candidate) => candidate.run_id !== matchingRun.run_id)]
     : runs
@@ -262,16 +210,6 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
       cancelled = true
     }
   }, [plan, planId])
-
-  const counts = useMemo(() => {
-    return {
-      total: actions.length,
-      planned: actionStatusCounts.planned ?? 0,
-      blocked: actionStatusCounts.blocked ?? 0,
-      move: actionTypeCounts.move ?? 0,
-      refresh_metadata: actionTypeCounts.refresh_metadata ?? 0,
-    }
-  }, [actionStatusCounts, actionTypeCounts, actions.length])
 
   if (!plan) {
     if (!isLoaded || isLoading) {
@@ -308,68 +246,17 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
 
   const blockedCount = blockedActionCount(plan)
   const recordedActionCount = actionFacetTotal ?? summaryNumber(plan, "action_count")
-  const actionErrors = [...actionsPage.errors, ...actionFacetErrors]
-
-  const columns: Column<PlanAction>[] = [
-    {
-      key: "sort_order",
-      header: "#",
-      cell: (action) => <span className="tabular-nums text-mute">{action.sort_order}</span>,
-      className: "w-12",
-    },
-    {
-      key: "status",
-      header: "Status",
-      cell: (action) => <StatusBadge status={action.status} iconOnly />,
-      className: "w-16 text-center",
-    },
-    {
-      key: "reason",
-      header: "Reason",
-      cell: (action) => {
-        if (!action.reason) return <span className="text-mute">—</span>
-        const described = describeBlockReason(action.reason)
-        // Unknown reasons fall back to the raw snake_case string — keep the
-        // Mono treatment for those; humanized text reads as a sentence.
-        return described === action.reason ? (
-          <Mono className="text-warning" title={action.reason}>
-            {action.reason}
-          </Mono>
-        ) : (
-          <span className="text-warning" title={action.reason}>
-            {described}
-          </span>
-        )
-      },
-      className: "min-w-[14rem]",
-    },
-    {
-      key: "action_type",
-      header: "Type",
-      cell: (action) => <span className="font-medium">{action.action_type}</span>,
-      className: "w-36",
-    },
-    {
-      key: "paths",
-      header: "Source → Target",
-      cell: (action) => (
-        <PathArrow source={action.source_path ?? ""} target={action.target_path ?? ""} max={36} />
-      ),
-      className: "min-w-[24rem]",
-    },
-    {
-      key: "hashes",
-      header: "Hashes",
-      cell: (action) => hashCell(action.content_hash_at_plan, action.metadata_hash_at_plan),
-      className: "min-w-[12rem]",
-    },
-  ]
+  // Risk metrics prefer live facet data; blocked falls back to the Plan's
+  // stable summary so the strip stays meaningful while facets load.
+  const riskBlockedCount = actionStatusCounts.blocked ?? blockedCount
+  const unknownMetadataCount = actionReasonCounts["missing_required_metadata"] ?? 0
+  const collisionCount = targetCollisions ?? 0
 
   return (
     <>
       <PageHeading
         title="Plan detail"
-        description="Inspect recorded PlanActions and target paths before CLI apply."
+        description="Review recorded PlanActions as grouped library operations before CLI apply."
         actions={
           <Button variant="outline" onClick={() => navigate({ name: "plans" })}>
             <ArrowLeft className="size-4" aria-hidden="true" /> Back
@@ -389,31 +276,56 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
         </Notice>
       ) : null}
 
-      {blockedCount > 0 ? (
+      {riskBlockedCount > 0 ? (
         <Notice
           tone="danger"
-          title={`${blockedCount} blocked action${blockedCount === 1 ? "" : "s"}`}
+          title={`${riskBlockedCount} blocked action${riskBlockedCount === 1 ? "" : "s"}`}
           className="mb-6"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span>These actions cannot be applied until the underlying issue is resolved.</span>
-            <Button variant="outline" size="sm" onClick={() => setActionStatus("blocked")}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setActionStatus("blocked")
+                setViewMode("table")
+              }}
+            >
               View blocked actions
             </Button>
           </div>
         </Notice>
       ) : null}
 
+      {actionFacetErrors.length > 0 ? (
+        <Notice tone="warning" title="Plan action summary is incomplete" className="mb-6">
+          {actionFacetErrors.join(" ")}
+        </Notice>
+      ) : null}
+
       <section
-        aria-label="Plan action summary"
-        className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
+        aria-label="Plan risk summary"
+        className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4"
       >
-        <MetricCard label="Shown" value={counts.total ?? 0} tone="neutral" />
-        <MetricCard label="Recorded" value={recordedActionCount} tone="neutral" />
-        <MetricCard label="Planned" value={counts.planned ?? 0} tone="info" />
-        <MetricCard label="Blocked" value={counts.blocked ?? 0} tone="danger" />
-        <MetricCard label="Moves" value={counts.move ?? 0} tone="neutral" />
-        <MetricCard label="Metadata" value={counts.refresh_metadata ?? 0} tone="neutral" />
+        <MetricCard label="Recorded actions" value={recordedActionCount} tone="neutral" />
+        <MetricCard
+          label="Blocked"
+          value={riskBlockedCount}
+          tone={riskBlockedCount > 0 ? "danger" : "neutral"}
+        />
+        <MetricCard
+          label="Target collisions"
+          value={collisionCount}
+          tone={collisionCount > 0 ? "danger" : "neutral"}
+          hint="Targets written by 2+ actions"
+        />
+        <MetricCard
+          label="Unknown metadata"
+          value={unknownMetadataCount}
+          tone={unknownMetadataCount > 0 ? "warning" : "neutral"}
+          hint="Missing required tags"
+        />
       </section>
 
       <div className="mb-6 grid gap-6 lg:grid-cols-3">
@@ -448,47 +360,13 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
         </Panel>
       </div>
 
-      <Panel
-        title="Actions"
-        icon={FileDiff}
-        actions={
-          <Select
-            aria-label="Action status"
-            options={ACTION_FILTERS}
-            value={actionStatus}
-            onChange={(event) => setActionStatus(event.target.value as PlanActionStatus | "all")}
-          />
-        }
-      >
-        {actionErrors.length > 0 ? (
-          <Notice tone="warning" title="Plan actions are incomplete" className="mb-4">
-            {actionErrors.join(" ")}
-          </Notice>
-        ) : null}
-        <DataTable
-          columns={columns}
-          rows={actions}
-          getRowKey={(action) => action.action_id}
-          rowIsActive={(action) => action.status === "blocked" || action.status === "failed"}
-          caption="Plan actions"
-          empty={
-            <EmptyState
-              icon={FileDiff}
-              title={
-                isLoading || !actionsPage.loaded
-                  ? "Loading actions..."
-                  : "No actions match this filter."
-              }
-            />
-          }
-          loadMore={{
-            hasMore: actionsPage.hasMore,
-            loading: actionsPage.loadingMore,
-            onLoadMore: actionsPage.loadMore,
-            total: actionsPage.page?.total ?? actions.length,
-          }}
-        />
-      </Panel>
+      <PlanActionsPanel
+        planId={planId}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        actionStatus={actionStatus}
+        onActionStatusChange={setActionStatus}
+      />
     </>
   )
 }
