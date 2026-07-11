@@ -81,6 +81,7 @@ def test_apply_creates_run_and_pending_file_event_before_file_move() -> None:
     assert run is not None
     assert run.status == RunStatus.SUCCEEDED
     assert mover.moves == [(SOURCE_PATH, f"{LIBRARY_ROOT}/{TARGET_PATH}")]
+    assert mover.target_roots == [LIBRARY_ROOT]
     assert mover.states_at_move == [("running", "applying", "pending")]
     assert _stored_plan(uow).status == PlanStatus.APPLIED
     assert _stored_action(uow).status == ActionStatus.APPLIED
@@ -370,11 +371,19 @@ class RecordingFileMover:
         self._failing_targets: set[str] = set() if failing_targets is None else set(failing_targets)
         self._root_after_first_move: str | None = root_after_first_move
         self.moves: list[tuple[str, str]] = []
+        self.target_roots: list[str | None] = []
         self.states_at_move: list[tuple[str, str, str]] = []
 
-    def move(self, source: FileSystemPath, target: FileSystemPath) -> None:
+    def move(
+        self,
+        source: FileSystemPath,
+        target: FileSystemPath,
+        *,
+        target_root: FileSystemPath | None = None,
+    ) -> None:
         """Record move inputs and fail configured targets."""
         self.moves.append((str(source), str(target)))
+        self.target_roots.append(None if target_root is None else str(target_root))
         run = self._uow.runs.get(RUN_ID)
         plan = self._uow.plans.get(PLAN_ID)
         events = tuple(self._uow.file_events.records.values())

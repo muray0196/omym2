@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from omym2.features.common_ports import FileSystemPath, PathResolver, UnitOfWork
     from omym2.features.undo.dto import CreateUndoPlanRequest
     from omym2.features.undo.ports import CreateUndoPlanPorts
-    from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
+    from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, TrackId
 
 RUN_LIBRARY_NOT_FOUND_MESSAGE = "Run Library was not found."
 RUN_NOT_FOUND_MESSAGE = "Run was not found."
@@ -79,7 +79,16 @@ class CreateUndoPlanUseCase:
                     )
                 )
             )
-            actions = self._actions(uow, library, undo_plan_id, events, source_actions_by_id)
+            lookup = _UndoLookup(
+                source_actions_by_id=source_actions_by_id,
+                tracks_by_library={},
+                verified_external_event_ids=frozenset(
+                    event.event_id
+                    for event in events
+                    if _is_verified_external_import(source_plan, event, source_actions_by_id)
+                ),
+            )
+            actions = self._actions(uow, library, undo_plan_id, events, lookup)
             plan = Plan(
                 plan_id=undo_plan_id,
                 library_id=run.library_id,
@@ -105,14 +114,13 @@ class CreateUndoPlanUseCase:
         library: Library,
         undo_plan_id: PlanId,
         events: tuple[FileEvent, ...],
-        source_actions_by_id: dict[ActionId, PlanAction],
+        lookup: _UndoLookup,
     ) -> tuple[PlanAction, ...]:
         actions: list[PlanAction] = []
         sort_order = PLAN_ACTION_SORT_ORDER_START
-        tracks_by_library: dict[LibraryId, tuple[Track, ...]] = {}
 
         for event in events:
-            candidate = self._candidate(uow, library, event, source_actions_by_id, tracks_by_library)
+            candidate = self._candidate(uow, library, event, lookup)
             actions.append(
                 PlanAction(
                     action_id=self.ports.id_generator.new_action_id(),
@@ -138,10 +146,9 @@ class CreateUndoPlanUseCase:
         uow: UnitOfWork,
         library: Library,
         event: FileEvent,
-        source_actions_by_id: dict[ActionId, PlanAction],
-        tracks_by_library: dict[LibraryId, tuple[Track, ...]],
+        lookup: _UndoLookup,
     ) -> _UndoCandidate:
-        track_id = _track_id_for_event(uow, event, source_actions_by_id, tracks_by_library)
+        track_id = _track_id_for_event(uow, event, lookup.source_actions_by_id, lookup.tracks_by_library)
         track = None if track_id is None else uow.tracks.get(track_id)
         source_path = event.target_path if track is None else track.current_path
         snapshot = None
@@ -169,11 +176,35 @@ class CreateUndoPlanUseCase:
         ):
             reason = PlanActionReason.SOURCE_CHANGED
 
+        if (
+            reason is None
+            and PurePath(event.source_path).is_absolute()
+            and event.event_id not in lookup.verified_external_event_ids
+        ):
+            reason = PlanActionReason.INVALID_PATH
+
         target_filesystem_path = _resolve_path(self.ports.path_resolver, library, event.source_path)
         if reason is None and self.ports.file_presence.exists(target_filesystem_path):
             reason = PlanActionReason.TARGET_EXISTS
 
         return _UndoCandidate(track_id=track_id, source_path=source_path, snapshot=snapshot, reason=reason)
+
+
+def _is_verified_external_import(
+    source_plan: Plan,
+    event: FileEvent,
+    source_actions_by_id: dict[ActionId, PlanAction],
+) -> bool:
+    source_action = source_actions_by_id.get(event.plan_action_id)
+    return (
+        source_plan.plan_type == PlanType.ADD
+        and source_action is not None
+        and source_action.track_id is not None
+        and source_action.source_path == event.source_path
+        and source_action.target_path == event.target_path
+        and PurePath(source_action.source_path or "").is_absolute()
+        and not PurePath(source_action.target_path or "").is_absolute()
+    )
 
 
 class UndoPlanError(ValueError):
@@ -188,6 +219,15 @@ class _UndoCandidate:
     source_path: str
     snapshot: FileSnapshot | None
     reason: PlanActionReason | None
+
+
+@dataclass(slots=True)
+class _UndoLookup:
+    """Cached source history used while judging undo candidates."""
+
+    source_actions_by_id: dict[ActionId, PlanAction]
+    tracks_by_library: dict[LibraryId, tuple[Track, ...]]
+    verified_external_event_ids: frozenset[EventId]
 
 
 def _track_id_for_event(

@@ -30,6 +30,7 @@ APPLY_FAILED_SUMMARY = "Apply failed."
 APPLY_NOT_CONFIRMED_MESSAGE = "Apply was not confirmed."
 INCOMPLETE_MOVE_ACTION_SUMMARY = "Planned move action is missing source or target path."
 EXTERNAL_RESTORE_WITHOUT_TRACK_SUMMARY = "External restore action is missing a managed Track ID."
+INVALID_EXTERNAL_RESTORE_SUMMARY = "External restore action is not backed by durable undo history."
 LIBRARY_NOT_FOUND_MESSAGE = "Plan Library was not found."
 LIBRARY_ROOT_CHANGED_SUMMARY = "Library root changed during apply."
 MOVE_FAILED_ERROR_CODE = "move_failed"
@@ -112,7 +113,13 @@ class ApplyPlanUseCase:
         if action.action_type == ActionType.REFRESH_METADATA:
             return self._process_metadata_refresh_action(started_apply.library, action)
 
-        return self._process_move_action(started_apply.run, started_apply.library, action, sequence_no)
+        return self._process_move_action(
+            started_apply.run,
+            started_apply.plan,
+            started_apply.library,
+            action,
+            sequence_no,
+        )
 
     def _start_apply(self, plan_id: PlanId) -> _StartedApply | None:
         with self.ports.uow as uow:
@@ -150,6 +157,7 @@ class ApplyPlanUseCase:
     def _process_move_action(
         self,
         run: Run,
+        plan: Plan,
         library: Library,
         action: PlanAction,
         sequence_no: int,
@@ -163,12 +171,12 @@ class ApplyPlanUseCase:
                 event_created=False,
                 failure_summary=INCOMPLETE_MOVE_ACTION_SUMMARY,
             )
-        if PurePath(target_path).is_absolute() and action.track_id is None:
+        if PurePath(target_path).is_absolute() and not self._absolute_target_is_verified_undo(plan, action):
             self._mark_action_failed(action, PlanActionReason.INVALID_PATH)
             return _ActionApplyResult(
                 succeeded=False,
                 event_created=False,
-                failure_summary=EXTERNAL_RESTORE_WITHOUT_TRACK_SUMMARY,
+                failure_summary=INVALID_EXTERNAL_RESTORE_SUMMARY,
             )
 
         source_filesystem_path = self._resolve_source_path(library, source_path)
@@ -192,7 +200,11 @@ class ApplyPlanUseCase:
         )
 
         try:
-            self.ports.file_mover.move(source_filesystem_path, target_filesystem_path)
+            self.ports.file_mover.move(
+                source_filesystem_path,
+                target_filesystem_path,
+                target_root=None if PurePath(target_path).is_absolute() else library.root_path,
+            )
         except OSError as exc:
             reason = _move_failure_reason(exc)
             self._record_failed_file_event(event, action, reason, exc)
@@ -240,6 +252,34 @@ class ApplyPlanUseCase:
 
         self._record_successful_metadata_refresh(action, snapshot, target_path)
         return _ActionApplyResult(succeeded=True, event_created=False, failure_summary="")
+
+    def _absolute_target_is_verified_undo(self, plan: Plan, action: PlanAction) -> bool:
+        if plan.plan_type != PlanType.UNDO or action.track_id is None:
+            return False
+        if action.source_path is None or action.target_path is None:
+            return False
+
+        with self.ports.uow as uow:
+            for event in uow.file_events.list_by_library(action.library_id):
+                if event.status != FileEventStatus.SUCCEEDED:
+                    continue
+                if event.source_path != action.target_path or event.target_path != action.source_path:
+                    continue
+                source_action = uow.plan_actions.get(event.plan_action_id)
+                if source_action is None:
+                    continue
+                source_plan = uow.plans.get(source_action.plan_id)
+                if (
+                    source_plan is not None
+                    and source_plan.plan_type == PlanType.ADD
+                    and source_action.track_id == action.track_id
+                    and source_action.source_path == event.source_path
+                    and source_action.target_path == event.target_path
+                    and PurePath(source_action.source_path or "").is_absolute()
+                    and not PurePath(source_action.target_path or "").is_absolute()
+                ):
+                    return True
+        return False
 
     def _verify_source_preconditions(
         self,

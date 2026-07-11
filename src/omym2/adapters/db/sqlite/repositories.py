@@ -1200,6 +1200,19 @@ class SQLiteFileEventRepository(_SQLiteRepository):
         )
         return tuple(_file_event_from_row(row) for row in rows)
 
+    def list_by_library(self, library_id: LibraryId) -> tuple[FileEvent, ...]:
+        """Return FileEvents recorded for one Library in durable order."""
+        rows = _fetch_all(
+            self._connection,
+            FILE_EVENT_SELECT_FROM
+            + """
+            WHERE library_id = ?
+            ORDER BY started_at, sequence_no, event_id
+            """,
+            (str(library_id),),
+        )
+        return tuple(_file_event_from_row(row) for row in rows)
+
     def list_pending_by_library(self, library_id: LibraryId) -> tuple[FileEvent, ...]:
         """Return PENDING FileEvents for one Library in sequence order."""
         rows = _fetch_all(

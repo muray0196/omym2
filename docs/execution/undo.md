@@ -3,7 +3,7 @@ type: Execution Spec
 title: Undo Execution
 description: Defines per-Run undo, terminal Run requirements, refresh_metadata rejection, reverse FileEvent tracing, restore-destination conflict handling, and external restore Track removal.
 tags: [undo, file-event, plan-creation, restore]
-timestamp: 2026-07-11T21:38:14+09:00
+timestamp: 2026-07-12T01:23:03+09:00
 ---
 
 # Undo Execution
@@ -51,5 +51,7 @@ overwritten automatically. A target that appears later is caught by apply's
 exclusive-create move and fails closed, requiring manual review.
 
 When undo restores a file that originally came from outside the Library, such as an add/import source, the undo Plan records the external restore destination as an absolute target path. Applying that undo moves the file out of the Library and marks the managed Track as `removed`; Track paths remain Library-root-relative and do not store the external destination.
+
+Undo Plan creation permits that absolute target only when the succeeded FileEvent exactly matches its originating add/import PlanAction. Apply verifies the same relationship again against durable history before attempting the external restore.
 
 Undo uses Run and FileEvent history. Stable `track_id` keeps the relationship between Track state and FileEvents even when paths, metadata, or hashes have changed.

@@ -680,6 +680,10 @@ def test_apply_external_undo_restore_marks_track_removed() -> None:
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library())
     uow.tracks.save(_track())
+    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plan_actions.save(_source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=TRACK_ID))
+    uow.runs.save(_run(status=RunStatus.SUCCEEDED))
+    uow.file_events.save(_event(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH))
     uow.plans.save(_plan(plan_id=UNDO_PLAN_ID, plan_type=PlanType.UNDO, status=PlanStatus.READY))
     uow.plan_actions.save(
         _source_action(
@@ -709,6 +713,49 @@ def test_apply_external_undo_restore_marks_track_removed() -> None:
     assert track is not None
     assert track.status == TrackStatus.REMOVED
     assert track.current_path == TARGET_PATH
+
+
+def test_apply_rejects_absolute_target_on_non_undo_plan() -> None:
+    """A corrupted non-undo action cannot move a Library file outside its root."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan(status=PlanStatus.READY))
+    uow.plan_actions.save(_source_action(source_path=TARGET_PATH, target_path=EXTERNAL_SOURCE_PATH, track_id=TRACK_ID))
+    mover = RecordingFileMover()
+    ports = ApplyPlanPorts(
+        uow=uow,
+        file_mover=mover,
+        file_snapshot_reader=MappingSnapshotReader({_absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH))}),
+        path_resolver=SimplePathResolver(),
+        clock=FixedClock(BASE_TIME),
+        id_generator=SequenceIdGenerator(run_ids=deque((RUN_ID,))),
+    )
+
+    run = ApplyPlanUseCase(ports).execute(ApplyPlanRequest(PLAN_ID, options=ApplyOptions(yes=True)))
+
+    assert run is not None
+    assert run.status == RunStatus.FAILED
+    assert mover.moves == []
+    action = uow.plan_actions.get(ACTION_ID)
+    assert action is not None
+    assert action.status == ActionStatus.FAILED
+    assert action.reason == PlanActionReason.INVALID_PATH
+
+
+def test_undo_blocks_absolute_target_not_matching_source_action() -> None:
+    """Corrupted event history cannot create an unverified external restore."""
+    uow = _uow_with_applied_run(second_event=False)
+    uow.file_events.save(_event(source_path=EXTERNAL_SOURCE_PATH, target_path=RESTORE_PATH))
+    ports = _undo_ports(
+        uow,
+        id_generator=SequenceIdGenerator(plan_ids=deque((UNDO_PLAN_ID,)), action_ids=deque((UNDO_ACTION_ID,))),
+    )
+
+    plan = CreateUndoPlanUseCase(ports).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert plan.actions[0].status == ActionStatus.BLOCKED
+    assert plan.actions[0].reason == PlanActionReason.INVALID_PATH
 
 
 class StaticConfigStore:
@@ -820,8 +867,15 @@ class RecordingFileMover:
         """Initialize recorded moves."""
         self.moves: list[tuple[str, str]] = []
 
-    def move(self, source: FileSystemPath, target: FileSystemPath) -> None:
+    def move(
+        self,
+        source: FileSystemPath,
+        target: FileSystemPath,
+        *,
+        target_root: FileSystemPath | None = None,
+    ) -> None:
         """Record one move."""
+        del target_root
         self.moves.append((str(source), str(target)))
 
 
@@ -879,7 +933,7 @@ def _uow_with_applied_run(*, second_event: bool = True) -> InMemoryUnitOfWork:
             action_id=SECOND_ACTION_ID,
             source_path=EXTERNAL_SOURCE_PATH,
             target_path=TARGET_PATH,
-            track_id=None,
+            track_id=TRACK_ID,
         )
     )
     uow.runs.save(_run(status=RunStatus.SUCCEEDED))

@@ -316,16 +316,22 @@ def test_file_mover_moves_file_across_filesystems(tmp_path: Path, monkeypatch: p
     source_path = tmp_path / "incoming" / AUDIO_FILE_NAME
     target_path = tmp_path / "library" / TARGET_FILE_NAME
     source_path.parent.mkdir()
+    target_path.parent.mkdir()
     _ = source_path.write_bytes(AUDIO_CONTENT)
 
-    def raise_cross_device_error(source: os.PathLike[str] | str, target: os.PathLike[str] | str) -> None:
+    def raise_cross_device_error(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        **kwargs: object,
+    ) -> None:
+        del kwargs
         del target
         raise OSError(errno.EXDEV, "Invalid cross-device link", source)
 
     # Simulate os.link failing the way it does across mounted filesystems.
     monkeypatch.setattr(os, "link", raise_cross_device_error)
 
-    FilesystemFileMover().move(source_path, target_path)
+    FilesystemFileMover().move(source_path, target_path, target_root=target_path.parent)
 
     assert not source_path.exists()
     assert target_path.read_bytes() == AUDIO_CONTENT
@@ -390,6 +396,25 @@ def test_file_mover_refuses_to_overwrite_existing_target(tmp_path: Path) -> None
 
     assert source_path.read_bytes() == AUDIO_CONTENT
     assert target_path.read_bytes() == b"existing"
+
+
+def test_file_mover_refuses_symlinked_parent_below_target_root(tmp_path: Path) -> None:
+    """Library-target traversal never follows a symlinked descendant."""
+    source_path = tmp_path / AUDIO_FILE_NAME
+    library_root = tmp_path / "library"
+    outside_root = tmp_path / "outside"
+    target_parent = library_root / NESTED_DIRECTORY_NAME
+    target_path = target_parent / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    library_root.mkdir()
+    outside_root.mkdir()
+    target_parent.symlink_to(outside_root, target_is_directory=True)
+
+    with pytest.raises(NotADirectoryError):
+        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert not (outside_root / TARGET_FILE_NAME).exists()
 
 
 def test_file_mover_does_not_silently_overwrite_on_concurrent_target_creation(

@@ -311,7 +311,7 @@ def _action(*, source_path: str, target_path: str) -> PlanAction:
         action_id=ACTION_ID,
         plan_id=PLAN_ID,
         library_id=LIBRARY_ID,
-        track_id=None,
+        track_id=TRACK_ID,
         action_type=ActionType.MOVE,
         source_path=source_path,
         target_path=target_path,

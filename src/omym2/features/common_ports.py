@@ -338,6 +338,10 @@ class FileEventRepository(Protocol):
         """Return FileEvents recorded for one Run in sequence order."""
         ...
 
+    def list_by_library(self, library_id: LibraryId) -> Sequence[FileEvent]:
+        """Return FileEvents recorded for one Library in durable order."""
+        ...
+
     def list_pending_by_library(self, library_id: LibraryId) -> Sequence[FileEvent]:
         """Return PENDING FileEvents for one Library in sequence order."""
         ...
@@ -495,7 +499,13 @@ class MetadataReader(Protocol):
 class FileMover(Protocol):
     """Filesystem mutation contract used only by apply-like usecases."""
 
-    def move(self, source: FileSystemPath, target: FileSystemPath) -> None:
+    def move(
+        self,
+        source: FileSystemPath,
+        target: FileSystemPath,
+        *,
+        target_root: FileSystemPath | None = None,
+    ) -> None:
         """Move one file without deciding PlanAction policy."""
         ...
 
