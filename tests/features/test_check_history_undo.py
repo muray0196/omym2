@@ -81,6 +81,7 @@ SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568d"))
 SECOND_LIBRARY_ROOT = "/music/second-library"
 METADATA_HASH = "metadata"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
+RELOCATED_PATH = "Relocated/Imported.flac"
 RESTORE_PATH = "Restore/Imported.flac"
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
 SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
@@ -758,6 +759,86 @@ def test_undo_blocks_absolute_target_not_matching_source_action() -> None:
     assert plan.actions[0].reason == PlanActionReason.INVALID_PATH
 
 
+def test_apply_external_undo_restore_succeeds_after_in_library_relocation() -> None:
+    """External restore stays verified after the imported Track moved inside the Library."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track(current_path=RELOCATED_PATH))
+    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plan_actions.save(_source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=TRACK_ID))
+    uow.runs.save(_run(status=RunStatus.SUCCEEDED))
+    uow.file_events.save(_event(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH))
+    undo_plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(plan_ids=deque((UNDO_PLAN_ID,)), action_ids=deque((UNDO_ACTION_ID,))),
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert undo_plan.actions[0].status == ActionStatus.PLANNED
+    assert undo_plan.actions[0].source_path == RELOCATED_PATH
+
+    mover = RecordingFileMover()
+    ports = ApplyPlanPorts(
+        uow=uow,
+        file_mover=mover,
+        file_snapshot_reader=MappingSnapshotReader({_absolute(RELOCATED_PATH): _snapshot(_absolute(RELOCATED_PATH))}),
+        path_resolver=SimplePathResolver(),
+        clock=FixedClock(BASE_TIME),
+        id_generator=SequenceIdGenerator(run_ids=deque((UNDO_RUN_ID,)), event_ids=deque((UNDO_EVENT_ID,))),
+    )
+
+    run = ApplyPlanUseCase(ports).execute(ApplyPlanRequest(UNDO_PLAN_ID, options=ApplyOptions(yes=True)))
+
+    assert run is not None
+    assert run.status == RunStatus.SUCCEEDED
+    assert mover.moves == [(_absolute(RELOCATED_PATH), EXTERNAL_SOURCE_PATH)]
+    track = uow.tracks.get(TRACK_ID)
+    assert track is not None
+    assert track.status == TrackStatus.REMOVED
+    assert track.current_path == RELOCATED_PATH
+
+
+def test_apply_rejects_external_restore_not_matching_track_current_path() -> None:
+    """A corrupted restore source cannot move an unrelated Library file outside."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plan_actions.save(_source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=TRACK_ID))
+    uow.runs.save(_run(status=RunStatus.SUCCEEDED))
+    uow.file_events.save(_event(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH))
+    uow.plans.save(_plan(plan_id=UNDO_PLAN_ID, plan_type=PlanType.UNDO, status=PlanStatus.READY))
+    uow.plan_actions.save(
+        _source_action(
+            action_id=UNDO_ACTION_ID,
+            plan_id=UNDO_PLAN_ID,
+            source_path=RESTORE_PATH,
+            target_path=EXTERNAL_SOURCE_PATH,
+            track_id=TRACK_ID,
+        )
+    )
+    mover = RecordingFileMover()
+    ports = ApplyPlanPorts(
+        uow=uow,
+        file_mover=mover,
+        file_snapshot_reader=MappingSnapshotReader({_absolute(RESTORE_PATH): _snapshot(_absolute(RESTORE_PATH))}),
+        path_resolver=SimplePathResolver(),
+        clock=FixedClock(BASE_TIME),
+        id_generator=SequenceIdGenerator(run_ids=deque((UNDO_RUN_ID,))),
+    )
+
+    run = ApplyPlanUseCase(ports).execute(ApplyPlanRequest(UNDO_PLAN_ID, options=ApplyOptions(yes=True)))
+
+    assert run is not None
+    assert run.status == RunStatus.FAILED
+    assert mover.moves == []
+    action = uow.plan_actions.get(UNDO_ACTION_ID)
+    assert action is not None
+    assert action.status == ActionStatus.FAILED
+    assert action.reason == PlanActionReason.INVALID_PATH
+
+
 class StaticConfigStore:
     """ConfigStore fake returning one AppConfig."""
 
@@ -909,6 +990,7 @@ def _undo_ports(
 ) -> CreateUndoPlanPorts:
     snapshots = {
         _absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH)),
+        _absolute(RELOCATED_PATH): _snapshot(_absolute(RELOCATED_PATH)),
         _absolute(RESTORE_PATH): _snapshot(_absolute(RESTORE_PATH)),
     }
     return CreateUndoPlanPorts(

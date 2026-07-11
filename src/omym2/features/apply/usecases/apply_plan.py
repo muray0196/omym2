@@ -205,7 +205,7 @@ class ApplyPlanUseCase:
                 target_filesystem_path,
                 target_root=None if PurePath(target_path).is_absolute() else library.root_path,
             )
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             reason = _move_failure_reason(exc)
             self._record_failed_file_event(event, action, reason, exc)
             return _ActionApplyResult(
@@ -260,10 +260,16 @@ class ApplyPlanUseCase:
             return False
 
         with self.ports.uow as uow:
+            # The restore source is the Track's current Library path, which may
+            # differ from the original import target after later in-Library
+            # moves, so it is verified against the Track instead of the event.
+            track = uow.tracks.get(action.track_id)
+            if track is None or track.status != TrackStatus.ACTIVE or track.current_path != action.source_path:
+                return False
             for event in uow.file_events.list_by_library(action.library_id):
                 if event.status != FileEventStatus.SUCCEEDED:
                     continue
-                if event.source_path != action.target_path or event.target_path != action.source_path:
+                if event.source_path != action.target_path:
                     continue
                 source_action = uow.plan_actions.get(event.plan_action_id)
                 if source_action is None:
@@ -364,7 +370,7 @@ class ApplyPlanUseCase:
         event: FileEvent,
         action: PlanAction,
         reason: PlanActionReason | None,
-        exc: OSError,
+        exc: OSError | ValueError,
     ) -> None:
         timestamp = self.ports.clock.now()
         error_code = MOVE_FAILED_ERROR_CODE if reason is None else reason.value
@@ -563,11 +569,13 @@ class ApplyNotConfirmedError(ApplyPlanError):
     """Raised when apply is requested without confirmation."""
 
 
-def _move_failure_reason(exc: OSError) -> PlanActionReason | None:
+def _move_failure_reason(exc: OSError | ValueError) -> PlanActionReason | None:
     if isinstance(exc, FileExistsError):
         return PlanActionReason.TARGET_EXISTS
     if isinstance(exc, FileNotFoundError):
         return PlanActionReason.SOURCE_MISSING
+    if isinstance(exc, ValueError):
+        return PlanActionReason.INVALID_PATH
     return None
 
 
@@ -576,7 +584,7 @@ def _require_confirmed(request: ApplyPlanRequest) -> None:
         raise ApplyNotConfirmedError(APPLY_NOT_CONFIRMED_MESSAGE)
 
 
-def _failure_summary(exc: OSError) -> str:
+def _failure_summary(exc: OSError | ValueError) -> str:
     message = str(exc)
     return MOVE_FAILED_ERROR_CODE if message == "" else message
 

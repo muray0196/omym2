@@ -12,9 +12,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from omym2.config import PARENT_DIRECTORY_REFERENCE
+
 if TYPE_CHECKING:
     from omym2.features.common_ports import FileSystemPath
 
+SOURCE_SYMLINK_MESSAGE = "Source path must not be a symbolic link."
 TARGET_BELOW_ROOT_MESSAGE = "Target path must name a file below its root."
 
 
@@ -42,6 +45,10 @@ class FilesystemFileMover:
         """
         source_path = Path(source)
         target_path = Path(target)
+        if source_path.is_symlink():
+            # Claiming a symlink source would plant a link into managed storage
+            # (or copy content the reviewed Plan never hashed as this file).
+            raise ValueError(SOURCE_SYMLINK_MESSAGE)
         if target_root is not None:
             _move_inside_root(source_path, target_path, Path(target_root))
             return
@@ -88,7 +95,9 @@ def _claim_and_copy(source_path: Path, target_path: Path) -> None:
 def _move_inside_root(source_path: Path, target_path: Path, target_root: Path) -> None:
     relative_target = target_path.relative_to(target_root)
     target_parts = relative_target.parts
-    if not target_parts:
+    # relative_to is lexical and keeps ".." parts, and O_NOFOLLOW cannot stop
+    # dot-dot traversal, so the escape must be rejected here.
+    if not target_parts or PARENT_DIRECTORY_REFERENCE in target_parts:
         raise ValueError(TARGET_BELOW_ROOT_MESSAGE)
 
     directory_fd = os.open(target_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -109,7 +118,8 @@ def _move_inside_root(source_path: Path, target_path: Path, target_root: Path) -
         try:
             source_path.unlink()
         except BaseException:
-            os.unlink(target_name, dir_fd=directory_fd)
+            with suppress(FileNotFoundError):
+                os.unlink(target_name, dir_fd=directory_fd)
             raise
     finally:
         os.close(directory_fd)
@@ -137,7 +147,8 @@ def _claim_and_copy_at(source_path: Path, target_name: str, target_directory_fd:
         os.fchmod(target_fd, source_stat.st_mode)
         os.utime(target_fd, ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns))
     except BaseException:
-        os.unlink(target_name, dir_fd=target_directory_fd)
+        with suppress(FileNotFoundError):
+            os.unlink(target_name, dir_fd=target_directory_fd)
         raise
     finally:
         os.close(target_fd)

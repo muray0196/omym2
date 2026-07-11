@@ -210,6 +210,31 @@ def test_apply_marks_run_partial_failed_when_later_move_fails() -> None:
     assert _stored_event(uow, SECOND_EVENT_ID).status == FileEventStatus.FAILED
 
 
+def test_apply_marks_action_invalid_path_when_mover_rejects_target() -> None:
+    """A mover-level boundary rejection persists as an invalid_path failure."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan())
+    uow.plan_actions.save(_move_action())
+    ports, _ = _ports(
+        uow,
+        {SOURCE_PATH: _snapshot(SOURCE_PATH)},
+        SequenceIdGenerator(run_ids=deque((RUN_ID,)), event_ids=deque((EVENT_ID,))),
+        mover=RecordingFileMover(uow, invalid_targets={f"{LIBRARY_ROOT}/{TARGET_PATH}"}),
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request())
+
+    assert run is not None
+    assert run.status == RunStatus.FAILED
+    action = _stored_action(uow)
+    assert action.status == ActionStatus.FAILED
+    assert action.reason == PlanActionReason.INVALID_PATH
+    event = _stored_event(uow)
+    assert event.status == FileEventStatus.FAILED
+    assert event.error_code == PlanActionReason.INVALID_PATH.value
+
+
 def test_plan_cannot_be_applied_twice() -> None:
     """Terminal Plans are rejected without creating another Run."""
     uow = InMemoryUnitOfWork()
@@ -364,11 +389,13 @@ class RecordingFileMover:
         uow: InMemoryUnitOfWork,
         *,
         failing_targets: set[str] | None = None,
+        invalid_targets: set[str] | None = None,
         root_after_first_move: str | None = None,
     ) -> None:
         """Store failure and root-change behavior for assertions."""
         self._uow: InMemoryUnitOfWork = uow
         self._failing_targets: set[str] = set() if failing_targets is None else set(failing_targets)
+        self._invalid_targets: set[str] = set() if invalid_targets is None else set(invalid_targets)
         self._root_after_first_move: str | None = root_after_first_move
         self.moves: list[tuple[str, str]] = []
         self.target_roots: list[str | None] = []
@@ -394,6 +421,9 @@ class RecordingFileMover:
 
         if str(target) in self._failing_targets:
             raise OSError(MOVE_FAILURE_MESSAGE)
+
+        if str(target) in self._invalid_targets:
+            raise ValueError(MOVE_FAILURE_MESSAGE)
 
         if self._root_after_first_move is not None and len(self.moves) == 1:
             library = self._uow.libraries.get(LIBRARY_ID)

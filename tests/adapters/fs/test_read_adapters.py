@@ -14,7 +14,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from omym2.adapters.fs.file_mover import FilesystemFileMover
+from omym2.adapters.fs.file_mover import (
+    SOURCE_SYMLINK_MESSAGE,
+    TARGET_BELOW_ROOT_MESSAGE,
+    FilesystemFileMover,
+)
 from omym2.adapters.fs.file_presence import FilesystemFilePresence
 from omym2.adapters.fs.file_scanner import FilesystemFileScanner
 from omym2.adapters.fs.file_snapshot_reader import (
@@ -415,6 +419,41 @@ def test_file_mover_refuses_symlinked_parent_below_target_root(tmp_path: Path) -
 
     assert source_path.read_bytes() == AUDIO_CONTENT
     assert not (outside_root / TARGET_FILE_NAME).exists()
+
+
+def test_file_mover_rejects_parent_segments_below_target_root(tmp_path: Path) -> None:
+    """Library-target traversal never walks dot-dot segments out of its root."""
+    source_path = tmp_path / AUDIO_FILE_NAME
+    library_root = tmp_path / "library"
+    outside_root = tmp_path / "outside"
+    target_path = library_root / NESTED_DIRECTORY_NAME / ".." / ".." / "outside" / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    library_root.mkdir()
+    outside_root.mkdir()
+
+    with pytest.raises(ValueError, match=TARGET_BELOW_ROOT_MESSAGE):
+        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert not (outside_root / TARGET_FILE_NAME).exists()
+
+
+def test_file_mover_refuses_symlink_source(tmp_path: Path) -> None:
+    """A symlink is never claimed into managed storage as a moved file."""
+    real_file = tmp_path / AUDIO_FILE_NAME
+    source_path = tmp_path / "incoming" / TARGET_FILE_NAME
+    library_root = tmp_path / "library"
+    target_path = library_root / TARGET_FILE_NAME
+    _ = real_file.write_bytes(AUDIO_CONTENT)
+    source_path.parent.mkdir()
+    source_path.symlink_to(real_file)
+    library_root.mkdir()
+
+    with pytest.raises(ValueError, match=SOURCE_SYMLINK_MESSAGE):
+        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+
+    assert source_path.is_symlink()
+    assert not target_path.exists()
 
 
 def test_file_mover_does_not_silently_overwrite_on_concurrent_target_creation(
