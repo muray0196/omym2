@@ -14,7 +14,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from omym2.adapters.fs.file_mover import FilesystemFileMover
+from omym2.adapters.fs.file_mover import (
+    SOURCE_REPLACED_MESSAGE,
+    SOURCE_SYMLINK_MESSAGE,
+    TARGET_BELOW_ROOT_MESSAGE,
+    FilesystemFileMover,
+)
 from omym2.adapters.fs.file_presence import FilesystemFilePresence
 from omym2.adapters.fs.file_scanner import FilesystemFileScanner
 from omym2.adapters.fs.file_snapshot_reader import (
@@ -316,16 +321,22 @@ def test_file_mover_moves_file_across_filesystems(tmp_path: Path, monkeypatch: p
     source_path = tmp_path / "incoming" / AUDIO_FILE_NAME
     target_path = tmp_path / "library" / TARGET_FILE_NAME
     source_path.parent.mkdir()
+    target_path.parent.mkdir()
     _ = source_path.write_bytes(AUDIO_CONTENT)
 
-    def raise_cross_device_error(source: os.PathLike[str] | str, target: os.PathLike[str] | str) -> None:
+    def raise_cross_device_error(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        **kwargs: object,
+    ) -> None:
+        del kwargs
         del target
         raise OSError(errno.EXDEV, "Invalid cross-device link", source)
 
     # Simulate os.link failing the way it does across mounted filesystems.
     monkeypatch.setattr(os, "link", raise_cross_device_error)
 
-    FilesystemFileMover().move(source_path, target_path)
+    FilesystemFileMover().move(source_path, target_path, target_root=target_path.parent)
 
     assert not source_path.exists()
     assert target_path.read_bytes() == AUDIO_CONTENT
@@ -340,7 +351,12 @@ def test_file_mover_moves_file_when_filesystem_refuses_hardlinks(
     target_path = tmp_path / TARGET_FILE_NAME
     _ = source_path.write_bytes(AUDIO_CONTENT)
 
-    def raise_permission_error(source: os.PathLike[str] | str, target: os.PathLike[str] | str) -> None:
+    def raise_permission_error(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        **kwargs: object,
+    ) -> None:
+        del kwargs
         del target
         raise PermissionError(errno.EPERM, "Operation not permitted", source)
 
@@ -390,6 +406,104 @@ def test_file_mover_refuses_to_overwrite_existing_target(tmp_path: Path) -> None
 
     assert source_path.read_bytes() == AUDIO_CONTENT
     assert target_path.read_bytes() == b"existing"
+
+
+def test_file_mover_refuses_symlinked_parent_below_target_root(tmp_path: Path) -> None:
+    """Library-target traversal never follows a symlinked descendant."""
+    source_path = tmp_path / AUDIO_FILE_NAME
+    library_root = tmp_path / "library"
+    outside_root = tmp_path / "outside"
+    target_parent = library_root / NESTED_DIRECTORY_NAME
+    target_path = target_parent / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    library_root.mkdir()
+    outside_root.mkdir()
+    target_parent.symlink_to(outside_root, target_is_directory=True)
+
+    with pytest.raises(NotADirectoryError):
+        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert not (outside_root / TARGET_FILE_NAME).exists()
+
+
+def test_file_mover_rejects_parent_segments_below_target_root(tmp_path: Path) -> None:
+    """Library-target traversal never walks dot-dot segments out of its root."""
+    source_path = tmp_path / AUDIO_FILE_NAME
+    library_root = tmp_path / "library"
+    outside_root = tmp_path / "outside"
+    target_path = library_root / NESTED_DIRECTORY_NAME / ".." / ".." / "outside" / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    library_root.mkdir()
+    outside_root.mkdir()
+
+    with pytest.raises(ValueError, match=TARGET_BELOW_ROOT_MESSAGE):
+        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert not (outside_root / TARGET_FILE_NAME).exists()
+
+
+def test_file_mover_refuses_symlink_source(tmp_path: Path) -> None:
+    """A symlink is never claimed into managed storage as a moved file."""
+    real_file = tmp_path / AUDIO_FILE_NAME
+    source_path = tmp_path / "incoming" / TARGET_FILE_NAME
+    library_root = tmp_path / "library"
+    target_path = library_root / TARGET_FILE_NAME
+    _ = real_file.write_bytes(AUDIO_CONTENT)
+    source_path.parent.mkdir()
+    source_path.symlink_to(real_file)
+    library_root.mkdir()
+
+    with pytest.raises(ValueError, match=SOURCE_SYMLINK_MESSAGE):
+        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+
+    assert source_path.is_symlink()
+    assert not target_path.exists()
+
+
+def test_file_mover_refuses_source_replaced_with_symlink_during_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A source pathname swap cannot plant a symlink inside the Library."""
+    source_path = tmp_path / "incoming" / AUDIO_FILE_NAME
+    outside_file = tmp_path / "outside" / AUDIO_FILE_NAME
+    library_root = tmp_path / "library"
+    target_path = library_root / TARGET_FILE_NAME
+    source_path.parent.mkdir()
+    outside_file.parent.mkdir()
+    library_root.mkdir()
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    _ = outside_file.write_bytes(b"outside")
+    real_link = os.link
+
+    def replace_source_then_link(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
+        Path(source).unlink()
+        Path(source).symlink_to(outside_file)
+        real_link(
+            source,
+            target,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+
+    monkeypatch.setattr(os, "link", replace_source_then_link)
+
+    with pytest.raises(ValueError, match=SOURCE_REPLACED_MESSAGE):
+        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+
+    assert source_path.is_symlink()
+    assert source_path.resolve() == outside_file
+    assert not target_path.exists()
 
 
 def test_file_mover_does_not_silently_overwrite_on_concurrent_target_creation(

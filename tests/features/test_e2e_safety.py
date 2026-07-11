@@ -270,7 +270,13 @@ class AssertingFileMover:
     database_file: Path
     delegate: FileMover = field(default_factory=FilesystemFileMover)
 
-    def move(self, source: FileSystemPath, target: FileSystemPath) -> None:
+    def move(
+        self,
+        source: FileSystemPath,
+        target: FileSystemPath,
+        *,
+        target_root: FileSystemPath | None = None,
+    ) -> None:
         """Assert pending FileEvent state exists before the filesystem mutation."""
         with SQLiteUnitOfWork(self.database_file) as uow:
             run = uow.runs.get(RUN_ID)
@@ -283,7 +289,7 @@ class AssertingFileMover:
         assert plan.status == PlanStatus.APPLYING
         assert len(events) == 1
         assert events[0].status == FileEventStatus.PENDING
-        self.delegate.move(source, target)
+        self.delegate.move(source, target, target_root=target_root)
 
 
 @dataclass(frozen=True, slots=True)

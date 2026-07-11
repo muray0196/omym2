@@ -3,7 +3,7 @@ type: Execution Spec
 title: Apply Execution
 description: Defines apply state transitions, mandatory full source verification, verified Track baseline writes, FileEvent ordering, and Library-root preconditions.
 tags: [apply, plan-state, run, file-event]
-timestamp: 2026-07-11T10:21:41+09:00
+timestamp: 2026-07-12T02:13:19+09:00
 ---
 
 # Apply Execution
@@ -42,6 +42,10 @@ Expected apply flow:
 A Plan may be applied even if it contains blocked PlanActions. `apply` executes eligible planned actions and ignores blocked actions.
 
 `apply` is the first implementation area that mutates Library music files.
+
+Library-relative move targets are executed through a filesystem boundary anchored to the open Library root. Each descendant directory is opened without following symlinks, parent-directory segments are rejected inside the boundary itself, and final target creation is relative to the verified directory descriptor. A symlinked Library descendant, a symlinked move source, or a pathname replacement between review and mutation must fail with `invalid_path` instead of redirecting the target outside the Library or claiming a link into managed storage.
+
+An absolute move target is accepted only for an undo Plan action that restores a succeeded external add/import FileEvent for the same Track: the action's target must equal that FileEvent's external source, and the action's source must equal the Track's current Library path. The current path may differ from the original import target after later in-Library moves; that relocation does not invalidate the undo. Other absolute targets fail before FileEvent creation with `invalid_path`.
 
 ## Plan Status
 
@@ -113,6 +117,7 @@ Per-action apply-time precondition failures include:
 
 * source file missing at apply
 * source hash changed after plan creation at apply
+* absolute target is not verified external-import undo history
 
 The Run is marked `failed` or `partial_failed` depending on whether prior eligible move or refresh_metadata actions succeeded.
 

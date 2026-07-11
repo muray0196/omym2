@@ -455,6 +455,7 @@ def test_sqlite_repositories_round_trip_domain_models(tmp_path: Path) -> None:
         assert uow.runs.list_by_plan(PLAN_ID) == (run,)
         assert uow.file_events.get(EVENT_ID) == event_early
         assert uow.file_events.list_by_run(RUN_ID) == (event_early, event_late)
+        assert uow.file_events.list_by_library(LIBRARY_ID) == (event_early, event_late)
 
 
 def test_sqlite_file_events_list_pending_by_library_filters_status_and_orders_by_sequence(tmp_path: Path) -> None:

@@ -3,7 +3,7 @@ type: Contract
 title: Path Identity And Storage Contract
 description: Defines the authoritative rules for Library and Track identity stability, stored path representation, PathResolver boundaries, absolute-path exceptions, and path escape prevention.
 tags: [paths, identity, storage, library]
-timestamp: 2026-07-11T21:32:08+09:00
+timestamp: 2026-07-12T02:13:19+09:00
 ---
 
 # Path Identity And Storage Contract
@@ -58,6 +58,8 @@ PathPolicy generates Library-root-relative canonical paths. It does not join pat
 
 Target-path collision comparison is an exact string match on the normalized Library-root-relative path — intentionally platform-independent, so it is case- and Unicode-form-sensitive rather than folding for case-insensitive or Unicode-normalization-insensitive filesystems. Filesystem-level differences that this comparison cannot see, such as a case-insensitive filesystem treating two distinct normalized paths as the same file, are caught fail-closed at apply time by the exclusive-create FileMover.
 
+Apply executes Library-relative targets through traversal anchored to the Library root; the traversal must not follow symlinked descendants, must reject parent-directory segments itself, and must not claim a symlinked source file into managed storage. Lexical normalization and a separate resolved-path precheck are insufficient because a filesystem entry can change between checking and mutation.
+
 ## Absolute External Path Exceptions
 
 Absolute paths are allowed only where the path points outside Library-managed storage:
@@ -68,6 +70,8 @@ Absolute paths are allowed only where the path points outside Library-managed st
 * `libraries.root_path`
 
 Library-managed Track paths must not be stored as absolute paths.
+
+An absolute undo target must equal the external source of a succeeded add/import FileEvent whose originating PlanAction imported the same Track, and the restore source must equal that Track's current Library path, which may differ from the original import target after later in-Library moves. Merely attaching a Track ID to an absolute PlanAction target is not sufficient provenance.
 
 ## PathPolicy Change
 
