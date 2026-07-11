@@ -27,6 +27,8 @@ OMYM2 uses TOML for editable application settings and SQLite for managed state, 
 
 Config files, DB files, and internal directories are created lazily when commands need them. Missing config or DB is not an error by itself; missing required paths are errors only for commands that need those paths.
 
+By default, the application root is `~/omym2`. Explicit test or runtime wiring may pass a different application root, but default CLI and Web startup must not infer trusted application storage from the current working directory.
+
 Config files and internal DB files must stay under the application root so OMYM2 remains portable, excluding user-selected Library and Incoming paths.
 
 ## TOML Responsibility

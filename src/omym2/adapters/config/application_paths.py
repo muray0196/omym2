@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from omym2.config import (
+    APP_ROOT_DIRECTORY_NAME,
     CONFIG_DIRECTORY_NAME,
     CONFIG_FILE_NAME,
     DATA_DIRECTORY_NAME,
@@ -44,5 +45,6 @@ class ApplicationPaths:
 
 
 def default_application_paths(app_root: Path | None = None) -> ApplicationPaths:
-    """Resolve application paths from the runtime application root."""
-    return ApplicationPaths(app_root=Path.cwd() if app_root is None else app_root)
+    """Resolve application paths from the trusted default root unless overridden."""
+    resolved_app_root = Path.home() / APP_ROOT_DIRECTORY_NAME if app_root is None else app_root
+    return ApplicationPaths(app_root=resolved_app_root)

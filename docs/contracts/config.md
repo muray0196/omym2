@@ -16,10 +16,10 @@ Config files must stay under the application root so OMYM2 remains portable, exc
 
 ## Location
 
-Expected settings file:
+Expected default settings file:
 
 ```text
-.config/config.toml
+~/omym2/.config/config.toml
 ```
 
 The `.config/` directory is reserved for OMYM2 internal data under the application root.

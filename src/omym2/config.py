@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Final
 
+APP_ROOT_DIRECTORY_NAME: Final = "omym2"  # trusted default application root under the user home directory
 CONFIG_DIRECTORY_NAME: Final = ".config"  # user config directory under the application root
 CONFIG_FILE_ENCODING: Final = "utf-8"  # TOML config file encoding
 CONFIG_FILE_NAME: Final = "config.toml"  # TOML settings file name

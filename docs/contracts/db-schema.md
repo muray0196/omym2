@@ -27,10 +27,10 @@ Schema changes require migration and integration tests.
 
 ## Location
 
-Expected SQLite DB:
+Expected default SQLite DB:
 
 ```text
-.data/omym2.sqlite3
+~/omym2/.data/omym2.sqlite3
 ```
 
 The `.data/` directory is reserved for OMYM2 internal data under the application root.
