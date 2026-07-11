@@ -293,6 +293,41 @@ def test_plan_actions_api_filters_by_status(tmp_path: Path) -> None:
     assert page["total"] == 1
 
 
+def test_plan_actions_api_drills_into_group_and_rejects_unpaired_group_filters(tmp_path: Path) -> None:
+    """group_by/group_key select one group together and are rejected when only one is present."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_groups(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/actions",
+        params={"group_by": "artist_album", "group_key": "Artist/2026_Album"},
+    )
+    group_by_only = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/actions",
+        params={"group_by": "artist_album"},
+    )
+    group_key_only = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/actions",
+        params={"group_key": "Artist/2026_Album"},
+    )
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    assert [item["action_id"] for item in _object_list_payload(payload, "items")] == [
+        str(ACTION_ID),
+        str(BLOCKED_ACTION_ID),
+    ]
+    assert _object_payload(payload, "page")["total"] == SEEDED_ACTION_COUNT
+    expected_error = ["Query parameters group_by and group_key must be provided together."]
+    assert group_by_only.status_code == ERROR_STATUS_CODE
+    assert group_by_only.json() == {"items": [], "page": None, "errors": expected_error}
+    assert group_key_only.status_code == ERROR_STATUS_CODE
+    assert group_key_only.json() == {"items": [], "page": None, "errors": expected_error}
+
+
 def test_plan_actions_api_rejects_invalid_status_and_cursor(tmp_path: Path) -> None:
     """Unknown status filters and malformed cursors return the documented 400 envelope."""
     app_paths = default_application_paths(tmp_path)
@@ -328,8 +363,8 @@ def test_plan_actions_api_returns_not_found_for_unknown_plan(tmp_path: Path) -> 
     assert response.json() == {"items": [], "page": None, "errors": ["Plan was not found."]}
 
 
-def test_plan_facets_api_returns_status_and_action_type_counts(tmp_path: Path) -> None:
-    """Facets carry both status and action_type breakdowns plus the unfiltered action total."""
+def test_plan_facets_api_returns_risk_summary_counts(tmp_path: Path) -> None:
+    """Plan facets expose status/type/reason breakdowns, total actions, and target collisions."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     library_root.mkdir()
@@ -346,7 +381,9 @@ def test_plan_facets_api_returns_status_and_action_type_counts(tmp_path: Path) -
         {"value": ActionStatus.PLANNED.value, "count": 1},
     ]
     assert facets["action_type"] == [{"value": ActionType.MOVE.value, "count": 2}]
+    assert facets["reason"] == [{"value": PlanActionReason.TARGET_EXISTS.value, "count": 1}]
     assert payload["total"] == SEEDED_ACTION_COUNT
+    assert payload["target_collisions"] == 1
     assert payload["errors"] == []
 
 
@@ -376,8 +413,20 @@ def test_plan_groups_api_returns_target_directory_groups_with_root_label(tmp_pat
     assert payload["group_by"] == "target_directory"
     items = _object_list_payload(payload, "items")
     assert items == [
-        {"key": TARGET_DIRECTORY, "label": TARGET_DIRECTORY, "count": 2},
-        {"key": ROOT_GROUP_LABEL, "label": ROOT_GROUP_LABEL, "count": 1},
+        {
+            "key": TARGET_DIRECTORY,
+            "label": TARGET_DIRECTORY,
+            "count": 2,
+            "blocked_count": 1,
+            "top_reason": PlanActionReason.TARGET_EXISTS.value,
+        },
+        {
+            "key": ROOT_GROUP_LABEL,
+            "label": ROOT_GROUP_LABEL,
+            "count": 1,
+            "blocked_count": 0,
+            "top_reason": None,
+        },
     ]
     page = _object_payload(payload, "page")
     assert page["total"] == SEEDED_ACTION_COUNT
@@ -407,12 +456,24 @@ def test_plan_groups_api_paginates_with_count_then_key_keyset(tmp_path: Path) ->
 
     assert first_response.status_code == SUCCESS_STATUS_CODE
     assert _object_list_payload(first_payload, "items") == [
-        {"key": TARGET_DIRECTORY, "label": TARGET_DIRECTORY, "count": 2}
+        {
+            "key": TARGET_DIRECTORY,
+            "label": TARGET_DIRECTORY,
+            "count": 2,
+            "blocked_count": 1,
+            "top_reason": PlanActionReason.TARGET_EXISTS.value,
+        }
     ]
     assert second_response.status_code == SUCCESS_STATUS_CODE
     second_payload = _json_payload(second_response)
     assert _object_list_payload(second_payload, "items") == [
-        {"key": ROOT_GROUP_LABEL, "label": ROOT_GROUP_LABEL, "count": 1}
+        {
+            "key": ROOT_GROUP_LABEL,
+            "label": ROOT_GROUP_LABEL,
+            "count": 1,
+            "blocked_count": 0,
+            "top_reason": None,
+        }
     ]
     assert _object_payload(second_payload, "page")["next_cursor"] is None
 
@@ -704,8 +765,8 @@ def _seed_plan_groups(database_file: Path, library_root: str) -> None:
         uow.plan_actions.save(
             _action(
                 action_id=BLOCKED_ACTION_ID,
-                status=ActionStatus.PLANNED,
-                reason=None,
+                status=ActionStatus.BLOCKED,
+                reason=PlanActionReason.TARGET_EXISTS,
                 sort_order=2,
                 target_path="Artist/2026_Album/1-03_Title.flac",
             )

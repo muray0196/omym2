@@ -19,6 +19,7 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
+from omym2.features.common_ports import PlanActionGroupRow
 from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId, parse_uuid
 from omym2.shared.pagination import INVALID_CURSOR_MESSAGE, CursorDecodeError, FacetValue, GroupCount, Page
 from omym2.shared.time import as_utc
@@ -784,19 +785,68 @@ class SQLitePlanActionRepository(_SQLiteRepository):
         )
         return tuple(FacetValue(value=_row_text(row, "action_type"), count=_row_int(row, "count")) for row in rows)
 
-    def list_target_paths(self, plan_id: PlanId) -> tuple[str, ...]:
-        """Return the non-null target_path values recorded for one Plan's actions."""
+    def reason_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+        """Return non-null PlanAction reason facets for one Plan, ordered count DESC then value ASC."""
         rows = _fetch_all(
             self._connection,
             """
-            SELECT target_path
+            SELECT reason, COUNT(*) AS count
             FROM plan_actions
-            WHERE plan_id = ? AND target_path IS NOT NULL
+            WHERE plan_id = ? AND reason IS NOT NULL
+            GROUP BY reason
+            ORDER BY count DESC, reason ASC
+            """,
+            (str(plan_id),),
+        )
+        return tuple(FacetValue(value=_row_text(row, "reason"), count=_row_int(row, "count")) for row in rows)
+
+    def count_target_collisions(self, plan_id: PlanId) -> int:
+        """Return how many distinct non-null target_path values are recorded by 2+ of the Plan's actions."""
+        return _scalar_int(
+            self._connection,
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT 1
+                FROM plan_actions
+                WHERE plan_id = ? AND target_path IS NOT NULL
+                GROUP BY target_path
+                HAVING COUNT(*) > 1
+            )
+            """,
+            (str(plan_id),),
+        )
+
+    def list_by_ids(self, action_ids: Sequence[ActionId]) -> tuple[PlanAction, ...]:
+        """Return the PlanActions with the given IDs, ordered (sort_order, action_id)."""
+        if not action_ids:
+            return ()
+        placeholders = ", ".join("?" for _ in action_ids)
+        # SQL-injection safety note: placeholders is only comma-joined `?` markers; values bind with `?`.
+        rows = _fetch_all(
+            self._connection,
+            PLAN_ACTION_SELECT_FROM
+            + f"""
+            WHERE action_id IN ({placeholders})
+            ORDER BY sort_order, action_id
+            """,
+            tuple(str(action_id) for action_id in action_ids),
+        )
+        return tuple(_plan_action_from_row(row) for row in rows)
+
+    def list_group_rows(self, plan_id: PlanId) -> tuple[PlanActionGroupRow, ...]:
+        """Return per-action group projections for one Plan, ordered (sort_order, action_id)."""
+        rows = _fetch_all(
+            self._connection,
+            """
+            SELECT action_id, sort_order, status, reason, action_type, source_path, target_path
+            FROM plan_actions
+            WHERE plan_id = ?
             ORDER BY sort_order, action_id
             """,
             (str(plan_id),),
         )
-        return tuple(_row_text(row, "target_path") for row in rows)
+        return tuple(_plan_action_group_row_from_row(row) for row in rows)
 
     def save(self, action: PlanAction) -> None:
         """Persist a PlanAction without recalculating target paths."""
@@ -1207,6 +1257,19 @@ def _plan_action_from_row(row: sqlite3.Row) -> PlanAction:
         status=ActionStatus(_row_text(row, "status")),
         reason=None if reason is None else PlanActionReason(reason),
         sort_order=_row_int(row, "sort_order"),
+    )
+
+
+def _plan_action_group_row_from_row(row: sqlite3.Row) -> PlanActionGroupRow:
+    reason = _row_optional_text(row, "reason")
+    return PlanActionGroupRow(
+        action_id=ActionId(parse_uuid(_row_text(row, "action_id"))),
+        sort_order=_row_int(row, "sort_order"),
+        status=ActionStatus(_row_text(row, "status")),
+        reason=None if reason is None else PlanActionReason(reason),
+        action_type=ActionType(_row_text(row, "action_type")),
+        source_path=_row_optional_text(row, "source_path"),
+        target_path=_row_optional_text(row, "target_path"),
     )
 
 

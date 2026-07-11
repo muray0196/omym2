@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.track_metadata import TrackMetadata
     from omym2.features.artist_ids.dto import GenerateArtistIdsResult
     from omym2.features.organize.dto import OrganizeLibraryResult
+    from omym2.features.plans.dto import PlanActionGroup
     from omym2.features.settings.dto import PathPolicyPreviewResult, ValidateSettingsResult
     from omym2.shared.pagination import FacetValue, GroupCount
 
@@ -196,6 +197,17 @@ def serialize_facet_value(facet: FacetValue) -> dict[str, object]:
 def serialize_group_count(group: GroupCount) -> dict[str, object]:
     """Return a JSON-safe GroupCount payload."""
     return {"key": group.key, "label": group.label, "count": group.count}
+
+
+def serialize_plan_action_group(group: PlanActionGroup) -> dict[str, object]:
+    """Return a JSON-safe enriched Plan action group payload."""
+    return {
+        "key": group.key,
+        "label": group.label,
+        "count": group.count,
+        "blocked_count": group.blocked_count,
+        "top_reason": group.top_reason,
+    }
 
 
 def serialize_page_info(*, limit: int, next_cursor_key: tuple[str, ...] | None, total: int) -> dict[str, object]:
