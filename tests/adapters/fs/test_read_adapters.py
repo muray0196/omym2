@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from omym2.adapters.fs.file_mover import (
+    SOURCE_REPLACED_MESSAGE,
     SOURCE_SYMLINK_MESSAGE,
     TARGET_BELOW_ROOT_MESSAGE,
     FilesystemFileMover,
@@ -350,7 +351,12 @@ def test_file_mover_moves_file_when_filesystem_refuses_hardlinks(
     target_path = tmp_path / TARGET_FILE_NAME
     _ = source_path.write_bytes(AUDIO_CONTENT)
 
-    def raise_permission_error(source: os.PathLike[str] | str, target: os.PathLike[str] | str) -> None:
+    def raise_permission_error(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        **kwargs: object,
+    ) -> None:
+        del kwargs
         del target
         raise PermissionError(errno.EPERM, "Operation not permitted", source)
 
@@ -453,6 +459,50 @@ def test_file_mover_refuses_symlink_source(tmp_path: Path) -> None:
         FilesystemFileMover().move(source_path, target_path, target_root=library_root)
 
     assert source_path.is_symlink()
+    assert not target_path.exists()
+
+
+def test_file_mover_refuses_source_replaced_with_symlink_during_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A source pathname swap cannot plant a symlink inside the Library."""
+    source_path = tmp_path / "incoming" / AUDIO_FILE_NAME
+    outside_file = tmp_path / "outside" / AUDIO_FILE_NAME
+    library_root = tmp_path / "library"
+    target_path = library_root / TARGET_FILE_NAME
+    source_path.parent.mkdir()
+    outside_file.parent.mkdir()
+    library_root.mkdir()
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    _ = outside_file.write_bytes(b"outside")
+    real_link = os.link
+
+    def replace_source_then_link(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
+        Path(source).unlink()
+        Path(source).symlink_to(outside_file)
+        real_link(
+            source,
+            target,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+
+    monkeypatch.setattr(os, "link", replace_source_then_link)
+
+    with pytest.raises(ValueError, match=SOURCE_REPLACED_MESSAGE):
+        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+
+    assert source_path.is_symlink()
+    assert source_path.resolve() == outside_file
     assert not target_path.exists()
 
 
