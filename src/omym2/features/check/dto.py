@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 class CheckLibraryRequest:
     """Request to recompute and persist check findings for one Library or every known Library."""
 
+    trust_stat: bool
     library_id: LibraryId | None = None
 
 

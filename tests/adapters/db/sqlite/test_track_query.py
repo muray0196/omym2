@@ -268,6 +268,8 @@ def _track(
         canonical_path=current_path,
         content_hash=CONTENT_HASH,
         metadata_hash=METADATA_HASH,
+        size=None,
+        mtime=None,
         metadata=TrackMetadata(title="Title", artist="Artist", album="Album") if metadata is None else metadata,
         status=status,
         first_seen_at=BASE_TIME,

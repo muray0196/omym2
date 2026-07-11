@@ -5,7 +5,7 @@ Why: Protects identity, path storage, and execution status semantics.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -41,6 +41,7 @@ UPDATED_LIBRARY_ROOT = "/music/moved-library"
 UPDATED_PATH = "Artist/Album/03_Title.flac"
 SORT_ORDER = 1
 SEQUENCE_NO = 1
+TRACK_SIZE = 1024
 
 
 def test_library_identity_is_not_derived_from_root_path() -> None:
@@ -84,6 +85,35 @@ def test_track_id_is_not_derived_from_path_hash_or_metadata() -> None:
 
     assert updated_track.track_id == track.track_id
     assert updated_track.current_path == UPDATED_PATH
+
+
+def test_track_normalizes_and_preserves_stat_baseline() -> None:
+    """Track keeps a verified stat baseline while normalizing its mtime to UTC."""
+    observed_mtime = datetime(2026, 1, 1, 9, tzinfo=timezone(timedelta(hours=9)))
+    track = _track(
+        current_path=NORMALIZED_PATH,
+        canonical_path=NORMALIZED_PATH,
+        size=TRACK_SIZE,
+        mtime=observed_mtime,
+    )
+
+    updated_track = track.with_paths(UPDATED_PATH, UPDATED_PATH, FINISHED_TIME)
+
+    assert track.size == TRACK_SIZE
+    assert track.mtime == BASE_TIME
+    assert updated_track.size == TRACK_SIZE
+    assert updated_track.mtime == BASE_TIME
+
+
+def test_track_rejects_negative_stat_baseline_size() -> None:
+    """A persisted Track stat baseline cannot contain a negative size."""
+    with pytest.raises(ValueError, match="must not be negative"):
+        _ = _track(
+            current_path=NORMALIZED_PATH,
+            canonical_path=NORMALIZED_PATH,
+            size=-1,
+            mtime=BASE_TIME,
+        )
 
 
 def test_plan_terminal_status_blocks_reapply_by_state() -> None:
@@ -167,7 +197,13 @@ def test_file_event_records_pending_before_result() -> None:
     assert failed_event.error_code == ERROR_CODE
 
 
-def _track(current_path: str, canonical_path: str) -> Track:
+def _track(
+    current_path: str,
+    canonical_path: str,
+    *,
+    size: int | None = None,
+    mtime: datetime | None = None,
+) -> Track:
     return Track(
         track_id=new_track_id(),
         library_id=new_library_id(),
@@ -175,6 +211,8 @@ def _track(current_path: str, canonical_path: str) -> Track:
         canonical_path=canonical_path,
         content_hash=CONTENT_HASH,
         metadata_hash=METADATA_HASH,
+        size=size,
+        mtime=mtime,
         metadata=TrackMetadata(title="Title", artist="Artist"),
         status=TrackStatus.ACTIVE,
         first_seen_at=BASE_TIME,

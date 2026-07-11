@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from omym2.features.common_ports import (
+        BatchFileSnapshotReader,
         Clock,
         ConfigStore,
         FileScanner,
-        FileSnapshotReader,
         IdGenerator,
         PathResolver,
         UnitOfWork,
@@ -26,7 +26,7 @@ class CreateOrganizePlanPorts:
 
     uow: UnitOfWork
     file_scanner: FileScanner
-    file_snapshot_reader: FileSnapshotReader
+    file_snapshot_reader: BatchFileSnapshotReader
     config_store: ConfigStore
     path_resolver: PathResolver
     clock: Clock

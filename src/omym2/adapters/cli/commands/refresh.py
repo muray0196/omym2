@@ -32,8 +32,9 @@ if TYPE_CHECKING:
 ALL_FLAG = "--all"
 APPLY_FLAG = "--apply"
 ERROR_EXIT_CODE = 1
-REFRESH_USAGE_MESSAGE = "Usage: omym2 refresh (<file|dir>|--all) [--apply]"
+REFRESH_USAGE_MESSAGE = "Usage: omym2 refresh (<file|dir>|--all) [--apply] [--trust-stat]"
 SUCCESS_EXIT_CODE = 0
+TRUST_STAT_FLAG = "--trust-stat"
 USAGE_EXIT_CODE = 2
 
 
@@ -73,7 +74,11 @@ def _run_refresh(
 
     try:
         plan = CreateRefreshPlanUseCase(ports).execute(
-            CreateRefreshPlanRequest(target_path=target_path, include_all=options.include_all)
+            CreateRefreshPlanRequest(
+                trust_stat=options.trust_stat,
+                target_path=target_path,
+                include_all=options.include_all,
+            )
         )
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
@@ -108,16 +113,20 @@ class _RefreshCommandOptions:
     target_path: str | None
     include_all: bool
     should_apply: bool
+    trust_stat: bool
 
 
 def _parse_args(args: Sequence[str]) -> _RefreshCommandOptions:
     target_path: str | None = None
     include_all = False
     should_apply = False
+    trust_stat = False
 
     for arg in args:
         if arg == APPLY_FLAG:
             should_apply = True
+        elif arg == TRUST_STAT_FLAG:
+            trust_stat = True
         elif arg == ALL_FLAG:
             include_all = True
         elif not arg.startswith("-") and target_path is None:
@@ -128,7 +137,12 @@ def _parse_args(args: Sequence[str]) -> _RefreshCommandOptions:
     if sum((target_path is not None, include_all)) != 1:
         raise ValueError(REFRESH_USAGE_MESSAGE)
 
-    return _RefreshCommandOptions(target_path=target_path, include_all=include_all, should_apply=should_apply)
+    return _RefreshCommandOptions(
+        target_path=target_path,
+        include_all=include_all,
+        should_apply=should_apply,
+        trust_stat=trust_stat,
+    )
 
 
 def _write_result(stdout: TextIO, plan: Plan) -> None:

@@ -6,18 +6,27 @@ Why: Separates the recompute-and-persist write path from read-only browsing port
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from omym2.features.common_ports import (
+        BatchFileSnapshotReader,
         Clock,
         ConfigStore,
         FileScanner,
-        FileSnapshotReader,
+        FileSystemPath,
         IdGenerator,
         PathResolver,
         UnitOfWork,
     )
+
+
+class FileContentHasher(Protocol):
+    """Hash-only filesystem observation required by unmanaged-file checks."""
+
+    def calculate(self, path: FileSystemPath) -> str:
+        """Return the configured content hash without reading metadata."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +35,8 @@ class CheckLibraryPorts:
 
     uow: UnitOfWork
     file_scanner: FileScanner
-    file_snapshot_reader: FileSnapshotReader
+    file_snapshot_reader: BatchFileSnapshotReader
+    file_content_hasher: FileContentHasher
     config_store: ConfigStore
     path_resolver: PathResolver
     clock: Clock

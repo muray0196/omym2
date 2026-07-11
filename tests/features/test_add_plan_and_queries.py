@@ -48,9 +48,10 @@ from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
-    from omym2.features.common_ports import FileSystemPath
+    from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
@@ -219,6 +220,7 @@ def test_add_uses_configured_incoming_and_persists_move_action() -> None:
 
     assert scanner.scanned_roots == [INCOMING_ROOT]
     assert snapshot_reader.captured_paths == [INCOMING_FILE]
+    assert snapshot_reader.captured_observations == [None]
     assert plan.plan_type == PlanType.ADD
     assert plan.status == PlanStatus.READY
     assert plan.config_hash == calculate_config_fingerprint(config)
@@ -652,11 +654,31 @@ class MappingSnapshotReader:
         """Store snapshots by source path."""
         self._snapshots: dict[str, FileSnapshot] = snapshots
         self.captured_paths: list[FileSystemPath] = []
+        self.captured_observations: list[FileScanEntry | None] = []
 
-    def capture(self, path: FileSystemPath) -> FileSnapshot:
+    def capture(
+        self,
+        path: FileSystemPath,
+        *,
+        observation: FileScanEntry | None = None,
+    ) -> FileSnapshot:
         """Return the configured snapshot for a source path."""
         self.captured_paths.append(path)
+        self.captured_observations.append(observation)
         return self._snapshots[str(path)]
+
+    def capture_many(
+        self,
+        requests: Sequence[FileSnapshotCaptureRequest],
+    ) -> tuple[FileSnapshot | None, ...]:
+        """Capture requests serially while preserving the production batch contract."""
+        snapshots: list[FileSnapshot | None] = []
+        for request in requests:
+            try:
+                snapshots.append(self.capture(request.path, observation=request.observation))
+            except FileNotFoundError:
+                snapshots.append(None)
+        return tuple(snapshots)
 
 
 class StaticFilePresence:
@@ -766,6 +788,8 @@ def _track(
         canonical_path=current_path,
         content_hash=content_hash,
         metadata_hash=calculate_metadata_fingerprint(metadata),
+        size=None,
+        mtime=None,
         metadata=metadata,
         status=status,
         first_seen_at=BASE_TIME,

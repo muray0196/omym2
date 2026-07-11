@@ -31,8 +31,9 @@ APPLY_FLAG = "--apply"
 ERROR_EXIT_CODE = 1
 LIBRARY_OPTION = "--library"
 LIBRARY_OPTION_ARG_COUNT = 2
-ORGANIZE_USAGE_MESSAGE = "Usage: omym2 organize [--library PATH] [--apply]"
+ORGANIZE_USAGE_MESSAGE = "Usage: omym2 organize [--library PATH] [--apply] [--trust-stat]"
 SUCCESS_EXIT_CODE = 0
+TRUST_STAT_FLAG = "--trust-stat"
 USAGE_EXIT_CODE = 2
 
 
@@ -75,7 +76,10 @@ def _run_organize(
 
     try:
         result = CreateOrganizePlanUseCase(ports).execute(
-            CreateOrganizePlanRequest(library_root=normalized_library_root)
+            CreateOrganizePlanRequest(
+                trust_stat=options.trust_stat,
+                library_root=normalized_library_root,
+            )
         )
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
@@ -109,17 +113,24 @@ class _OrganizeCommandOptions:
 
     library_root: str | None
     should_apply: bool
+    trust_stat: bool
 
 
 def _parse_args(args: Sequence[str]) -> _OrganizeCommandOptions:
     library_root: str | None = None
     should_apply = False
+    trust_stat = False
     index = 0
 
     while index < len(args):
         arg = args[index]
         if arg == APPLY_FLAG:
             should_apply = True
+            index += 1
+            continue
+
+        if arg == TRUST_STAT_FLAG:
+            trust_stat = True
             index += 1
             continue
 
@@ -132,7 +143,11 @@ def _parse_args(args: Sequence[str]) -> _OrganizeCommandOptions:
 
         raise ValueError(ORGANIZE_USAGE_MESSAGE)
 
-    return _OrganizeCommandOptions(library_root=library_root, should_apply=should_apply)
+    return _OrganizeCommandOptions(
+        library_root=library_root,
+        should_apply=should_apply,
+        trust_stat=trust_stat,
+    )
 
 
 def _write_result(stdout: TextIO, result: OrganizeLibraryResult) -> None:

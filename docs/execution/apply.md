@@ -1,9 +1,9 @@
 ---
 type: Execution Spec
 title: Apply Execution
-description: Defines the apply flow and the Plan, PlanAction, Run, and FileEvent state transitions, including library_root_at_plan checks and apply-time precondition failures.
+description: Defines apply state transitions, mandatory full source verification, verified Track baseline writes, FileEvent ordering, and Library-root preconditions.
 tags: [apply, plan-state, run, file-event]
-timestamp: 2026-07-04T12:54:48+09:00
+timestamp: 2026-07-11T10:21:41+09:00
 ---
 
 # Apply Execution
@@ -115,3 +115,9 @@ Per-action apply-time precondition failures include:
 * source hash changed after plan creation at apply
 
 The Run is marked `failed` or `partial_failed` depending on whether prior eligible move or refresh_metadata actions succeeded.
+
+## Mandatory Source Verification And Track Baseline
+
+Apply has no stat-trust mode. Before every eligible move or `refresh_metadata` action, it captures a complete fresh source snapshot and compares its content and metadata hashes with the recorded PlanAction. A matching persisted Track size and modification time never bypass this SOURCE_CHANGED gate.
+
+After a successful move or `refresh_metadata` action, the Track update persists the complete snapshot's `size` and `mtime` together with its hashes and metadata. A successful move uses the pre-mutation source snapshot because the confirmed move preserves that file state at the recorded target. Failed preconditions and failed mutations do not update the Track baseline.

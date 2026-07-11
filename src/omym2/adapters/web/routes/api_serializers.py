@@ -267,20 +267,6 @@ def serialize_plan_header_response(plan: Plan) -> dict[str, object]:
     return {"plan": serialize_plan_header(plan)}
 
 
-def serialize_plan_detail_parts(
-    plan: Plan,
-    actions: tuple[PlanAction, ...],
-    *,
-    total_action_count: int | None = None,
-) -> dict[str, object]:
-    """Return Plan detail fields from a Plan and selected actions."""
-    return {
-        "plan": serialize_plan_header(plan),
-        "actions": [serialize_plan_action(action) for action in actions],
-        "total_action_count": len(actions) if total_action_count is None else total_action_count,
-    }
-
-
 def serialize_organize_registration(result: OrganizeLibraryResult) -> dict[str, object]:
     """Return the clean registration payload for organize without a Plan."""
     return {

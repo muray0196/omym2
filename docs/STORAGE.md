@@ -1,9 +1,9 @@
 ---
 type: Storage Design
 title: Storage
-description: Defines the TOML-vs-SQLite storage boundary, repository responsibilities, DB consistency and reproducibility principles, and the high-level Library-root-relative stored path policy.
+description: Defines the TOML-vs-SQLite boundary, repository and Track stat-baseline responsibilities, SQLite durability rules, reproducibility, and Library-relative path policy.
 tags: [storage, sqlite, toml, persistence]
-timestamp: 2026-07-10T02:07:23+09:00
+timestamp: 2026-07-11T10:21:41+09:00
 ---
 
 # Storage
@@ -75,6 +75,16 @@ The DB adapter persists and restores domain models. It must not contain business
 
 Repositories must preserve `library_id` on Library-managed records and restore path fields according to [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 
+## Track Stat Baselines
+
+SQLite may store nullable Track `size` and `mtime` values associated with the last verified snapshot. The exact columns, constraints, and migration behavior are defined in [contracts/db-schema.md](contracts/db-schema.md#tracks). Existing rows remain ineligible for stat trust while either value is `NULL`.
+
+Verified workflows populate or refresh the baseline when they persist a Track from a complete snapshot: organize does so while accepting a scanned candidate, and successful apply does so after its mandatory full source precondition for a move or `refresh_metadata` action. Reusing an already eligible baseline during opted-in organize preserves that same verified state.
+
+Refresh plan creation and check never backfill or update Track baselines. A no-action refresh therefore leaves an existing null baseline unchanged; users can backfill through organize, while a later applied refresh action updates it through apply.
+
+Stat trust is an explicit per-command runtime choice, not TOML application configuration. Its command-specific eligibility and risk rules are authoritative in [execution/organize.md](execution/organize.md), [execution/refresh.md](execution/refresh.md), and [execution/check.md](execution/check.md). Apply never honors stat trust.
+
 ## DB Consistency
 
 The DB must preserve enough state to inspect interrupted or partially failed apply attempts:
@@ -86,7 +96,11 @@ The DB must preserve enough state to inspect interrupted or partially failed app
 
 If the process crashes, pending or partially recorded FileEvents remain available for inspection. Recovery behavior is defined in [execution/model.md](execution/model.md#durable-operation-log).
 
-Connections enable `journal_mode = WAL` for read/write concurrency, but `synchronous` stays at its FULL default rather than being lowered to NORMAL: NORMAL only guarantees a WAL fsync at the next checkpoint, so a committed PENDING FileEvent could remain unsynced in the WAL file while the subsequent Library music file move already executed, reopening the crash-safety gap the pending-FileEvent-before-mutation ordering exists to close. WAL also backs each database with a `-wal` and `-shm` shared-memory file, which can misbehave over Windows-mounted 9p/DrvFs paths (for example, running from `/mnt/c` under WSL2); the database should live on a native filesystem.
+Apply retains one lazily opened SQLite connection for the lifetime of one apply usecase. Every inner UnitOfWork block remains an independent `BEGIN` / commit-or-rollback transaction, including the commit that persists a PENDING FileEvent before its Library music file mutation. The connection is closed deterministically on the same thread when the usecase ends. UnitOfWork blocks outside that outer scope keep their close-per-transaction behavior; connections are not process-global or shared across Web requests or threads.
+
+Connections enable `journal_mode = WAL` for read/write concurrency, but `synchronous` stays at its FULL default rather than being lowered to NORMAL: NORMAL only guarantees a WAL fsync at the next checkpoint, so a committed PENDING FileEvent could remain unsynced in the WAL file while the subsequent Library music file move already executed, reopening the crash-safety gap the pending-FileEvent-before-mutation ordering exists to close. Reusing the apply connection changes checkpoint timing only: normal WAL auto-checkpointing bounds growth, and deterministic final connection close allows SQLite's last-connection checkpoint. OMYM2 does not force an extra per-transaction or apply-end checkpoint.
+
+WAL backs each database with a `-wal` and `-shm` shared-memory file, which can misbehave over Windows-mounted 9p/DrvFs paths (for example, running from `/mnt/c` under WSL2); the database should live on a native filesystem.
 
 ## Reproducibility
 

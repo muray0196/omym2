@@ -19,6 +19,8 @@ from omym2.domain.services.album_year import metadata_with_resolved_album_year, 
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
+from omym2.domain.services.snapshot_baseline import snapshot_from_trusted_stat
+from omym2.features.common_ports import FileSnapshotCaptureRequest
 from omym2.features.organize.dto import OrganizeLibraryResult
 from omym2.shared.paths import normalize_library_relative_path
 
@@ -67,10 +69,41 @@ class CreateOrganizePlanUseCase:
 
         with self.ports.uow as uow:
             library = self._select_library(uow, request.library_root, path_policy_hash, timestamp)
-            scan_entries = self.ports.file_scanner.scan(library.root_path)
-            candidates = tuple(self._candidate(library.root_path, entry, config) for entry in scan_entries)
+            existing_track_records = tuple(uow.tracks.list_by_library(library.library_id))
+            existing_tracks = {track.current_path: track for track in existing_track_records}
+            trust_eligible_tracks = _unique_tracks_by_current_path(existing_track_records)
+            scan_entries = tuple(self.ports.file_scanner.scan(library.root_path))
+            capture_inputs = tuple(self._capture_input(library.root_path, entry) for entry in scan_entries)
+            valid_capture_inputs = tuple(
+                capture_input for capture_input in capture_inputs if isinstance(capture_input, _OrganizeCaptureInput)
+            )
+            snapshots = self._capture_snapshots(
+                valid_capture_inputs,
+                trust_eligible_tracks,
+                timestamp,
+                trust_stat=request.trust_stat,
+            )
+            captured_candidates = iter(
+                tuple(
+                    self._candidate(capture_input.source_path, snapshot, config)
+                    for capture_input, snapshot in zip(valid_capture_inputs, snapshots, strict=True)
+                )
+            )
+            candidates = tuple(
+                capture_input if isinstance(capture_input, _OrganizeCandidate) else next(captured_candidates)
+                for capture_input in capture_inputs
+            )
             candidates = self._with_target_paths(candidates, config, path_policy)
-            result = self._persist_result(uow, library, candidates, config_hash, timestamp)
+            result = self._persist_result(
+                uow,
+                library,
+                candidates,
+                _OrganizePersistence(
+                    existing_tracks=existing_tracks,
+                    config_hash=config_hash,
+                    timestamp=timestamp,
+                ),
+            )
             uow.commit()
             return result
 
@@ -106,12 +139,11 @@ class CreateOrganizePlanUseCase:
             raise OrganizeLibrarySelectionError(AMBIGUOUS_LIBRARY_SELECTION_MESSAGE)
         return _with_path_policy_hash(libraries[0], path_policy_hash, timestamp)
 
-    def _candidate(
+    def _capture_input(
         self,
         library_root: str,
         entry: FileScanEntry,
-        config: AppConfig,
-    ) -> _OrganizeCandidate:
+    ) -> _OrganizeCaptureInput | _OrganizeCandidate:
         try:
             source_path = self.ports.path_resolver.relative_to_library(library_root, entry.path)
         except ValueError:
@@ -120,10 +152,52 @@ class CreateOrganizePlanUseCase:
                 snapshot=None,
                 block_reason=PlanActionReason.INVALID_PATH,
             )
+        return _OrganizeCaptureInput(entry=entry, source_path=source_path)
 
-        try:
-            snapshot = self.ports.file_snapshot_reader.capture(entry.path)
-        except FileNotFoundError:
+    def _capture_snapshots(
+        self,
+        capture_inputs: Sequence[_OrganizeCaptureInput],
+        existing_tracks: dict[str, Track],
+        timestamp: datetime,
+        *,
+        trust_stat: bool,
+    ) -> tuple[FileSnapshot | None, ...]:
+        snapshots: list[FileSnapshot | None] = [None] * len(capture_inputs)
+        uncached_indexes: list[int] = []
+        uncached_requests: list[FileSnapshotCaptureRequest] = []
+
+        for index, capture_input in enumerate(capture_inputs):
+            trusted_snapshot = None
+            existing_track = existing_tracks.get(capture_input.source_path)
+            if trust_stat and existing_track is not None:
+                trusted_snapshot = snapshot_from_trusted_stat(
+                    existing_track,
+                    capture_input.source_path,
+                    capture_input.entry.path,
+                    capture_input.entry,
+                    timestamp,
+                )
+            if trusted_snapshot is not None:
+                snapshots[index] = trusted_snapshot
+                continue
+
+            uncached_indexes.append(index)
+            uncached_requests.append(FileSnapshotCaptureRequest(capture_input.entry.path))
+
+        if len(uncached_requests) > 0:
+            captured = self.ports.file_snapshot_reader.capture_many(tuple(uncached_requests))
+            for index, snapshot in zip(uncached_indexes, captured, strict=True):
+                snapshots[index] = snapshot
+
+        return tuple(snapshots)
+
+    def _candidate(
+        self,
+        source_path: str,
+        snapshot: FileSnapshot | None,
+        config: AppConfig,
+    ) -> _OrganizeCandidate:
+        if snapshot is None:
             return _blocked_candidate(
                 source_path=source_path,
                 snapshot=None,
@@ -203,10 +277,10 @@ class CreateOrganizePlanUseCase:
         uow: UnitOfWork,
         library: Library,
         candidates: Sequence[_OrganizeCandidate],
-        config_hash: str,
-        timestamp: datetime,
+        persistence: _OrganizePersistence,
     ) -> OrganizeLibraryResult:
-        existing_tracks = {track.current_path: track for track in uow.tracks.list_by_library(library.library_id)}
+        existing_tracks = persistence.existing_tracks
+        timestamp = persistence.timestamp
         occupied_paths = OccupiedPaths.from_paths(
             candidate.source_path for candidate in candidates if candidate.snapshot is not None
         )
@@ -237,7 +311,7 @@ class CreateOrganizePlanUseCase:
         for track in tracks:
             uow.tracks.save(track)
 
-        plan = self._plan(final_library, actions, config_hash, timestamp)
+        plan = self._plan(final_library, actions, persistence.config_hash, timestamp)
         if plan is not None:
             uow.plans.save(plan)
             for action in actions:
@@ -270,6 +344,8 @@ class CreateOrganizePlanUseCase:
             canonical_path=target_path,
             content_hash=snapshot.content_hash,
             metadata_hash=snapshot.metadata_hash,
+            size=snapshot.size,
+            mtime=snapshot.mtime,
             metadata=snapshot.metadata,
             status=TrackStatus.ACTIVE,
             first_seen_at=timestamp if existing_track is None else existing_track.first_seen_at,
@@ -352,12 +428,29 @@ class _OrganizeCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class _OrganizeCaptureInput:
+    """One valid Library source awaiting full snapshot capture."""
+
+    entry: FileScanEntry
+    source_path: str
+
+
+@dataclass(frozen=True, slots=True)
 class _ActionRecord:
     """Intermediate action data before the shared Plan ID is generated."""
 
     candidate: _OrganizeCandidate
     track_id: TrackId | None
     reason: PlanActionReason | None
+
+
+@dataclass(frozen=True, slots=True)
+class _OrganizePersistence:
+    """Inputs shared across organize Track and Plan persistence."""
+
+    existing_tracks: dict[str, Track]
+    config_hash: str
+    timestamp: datetime
 
 
 def _blocked_candidate(
@@ -372,6 +465,19 @@ def _blocked_candidate(
         target_path=None,
         block_reason=block_reason,
     )
+
+
+def _unique_tracks_by_current_path(tracks: Sequence[Track]) -> dict[str, Track]:
+    unique_tracks: dict[str, Track] = {}
+    duplicate_paths: set[str] = set()
+    for track in tracks:
+        if track.status != TrackStatus.ACTIVE:
+            continue
+        if track.current_path in unique_tracks:
+            duplicate_paths.add(track.current_path)
+        else:
+            unique_tracks[track.current_path] = track
+    return {path: track for path, track in unique_tracks.items() if path not in duplicate_paths}
 
 
 def _with_path_policy_hash(library: Library, path_policy_hash: str, timestamp: datetime) -> Library:

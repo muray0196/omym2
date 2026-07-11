@@ -24,6 +24,7 @@ from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, PlanActionReason
+from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
@@ -42,7 +43,9 @@ from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
 if TYPE_CHECKING:
-    from omym2.features.common_ports import FileSystemPath
+    from collections.abc import Sequence
+
+    from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
@@ -97,17 +100,21 @@ MISPLACED_ABSOLUTE_PATH = f"{LIBRARY_ROOT}/{MISPLACED_PATH}"
 def test_organize_registers_clean_library_without_mutation_plan() -> None:
     """A clean first Library is registered and tracked without creating a Plan."""
     uow = InMemoryUnitOfWork()
+    entry = _entry(CANONICAL_ABSOLUTE_PATH)
     ports, scanner, snapshot_reader = _ports(
         uow,
-        (_entry(CANONICAL_ABSOLUTE_PATH),),
+        (entry,),
         {CANONICAL_ABSOLUTE_PATH: _snapshot(CANONICAL_ABSOLUTE_PATH, METADATA)},
         SequenceIdGenerator(library_ids=deque((LIBRARY_ID,)), track_ids=deque((TRACK_ID,))),
     )
 
-    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT)
+    )
 
     assert scanner.scanned_roots == [LIBRARY_ROOT]
     assert snapshot_reader.captured_paths == [CANONICAL_ABSOLUTE_PATH]
+    assert snapshot_reader.captured_observations == [None]
     assert result.plan is None
     assert result.actions == ()
     assert result.track_count == 1
@@ -123,8 +130,68 @@ def test_organize_registers_clean_library_without_mutation_plan() -> None:
     assert track.current_path == EXPECTED_CANONICAL_PATH
     assert track.canonical_path == EXPECTED_CANONICAL_PATH
     assert track.content_hash == CONTENT_HASH
+    assert track.size == FILE_SIZE
+    assert track.mtime == BASE_TIME
     assert uow.plans.list_by_library(LIBRARY_ID) == ()
     assert uow.commit_count == 1
+
+
+def test_organize_trust_stat_skips_full_capture_for_matching_active_track() -> None:
+    """Opted-in organize reconstructs a snapshot only from a complete matching baseline."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track(size=FILE_SIZE, mtime=BASE_TIME))
+    ports, _, snapshot_reader = _ports(
+        uow,
+        (_entry(CANONICAL_ABSOLUTE_PATH),),
+        {},
+        SequenceIdGenerator(),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=True, library_root=LIBRARY_ROOT)
+    )
+
+    assert snapshot_reader.captured_paths == []
+    assert result.plan is None
+    assert result.track_count == 1
+    assert uow.tracks.get(TRACK_ID) is not None
+
+
+def test_organize_trust_stat_full_captures_track_without_complete_baseline() -> None:
+    """An opted-in organize still hashes when an existing Track has no verified baseline."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track())
+    ports, _, snapshot_reader = _ports(
+        uow,
+        (_entry(CANONICAL_ABSOLUTE_PATH),),
+        {CANONICAL_ABSOLUTE_PATH: _snapshot(CANONICAL_ABSOLUTE_PATH, METADATA)},
+        SequenceIdGenerator(),
+    )
+
+    _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(trust_stat=True, library_root=LIBRARY_ROOT))
+
+    assert snapshot_reader.captured_paths == [CANONICAL_ABSOLUTE_PATH]
+    assert snapshot_reader.captured_observations == [None]
+
+
+def test_organize_trust_stat_full_captures_duplicate_active_path() -> None:
+    """Ambiguous duplicate active Track paths are never eligible for stat trust."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track(size=FILE_SIZE, mtime=BASE_TIME))
+    uow.tracks.save(_track(track_id=SECOND_TRACK_ID, size=FILE_SIZE, mtime=BASE_TIME))
+    ports, _, snapshot_reader = _ports(
+        uow,
+        (_entry(CANONICAL_ABSOLUTE_PATH),),
+        {CANONICAL_ABSOLUTE_PATH: _snapshot(CANONICAL_ABSOLUTE_PATH, METADATA)},
+        SequenceIdGenerator(),
+    )
+
+    _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(trust_stat=True, library_root=LIBRARY_ROOT))
+
+    assert snapshot_reader.captured_paths == [CANONICAL_ABSOLUTE_PATH]
 
 
 def test_organize_creates_plan_for_misplaced_library_file() -> None:
@@ -142,7 +209,9 @@ def test_organize_creates_plan_for_misplaced_library_file() -> None:
         ),
     )
 
-    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT)
+    )
 
     plan = result.plan
     assert plan is not None
@@ -190,7 +259,9 @@ def test_organize_resolves_latest_album_year_across_scanned_album_group() -> Non
         ),
     )
 
-    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT)
+    )
 
     assert tuple(action.target_path for action in result.actions) == (
         "Artist/2004_Album/1-01_Song-1.flac",
@@ -229,7 +300,9 @@ def test_organize_renders_disc_numbers_when_scanned_album_is_multi_disc() -> Non
         options=PortOptions(config=config),
     )
 
-    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT)
+    )
 
     assert tuple(action.target_path for action in result.actions) == (
         EXPECTED_D_PREFIXED_PATH,
@@ -251,7 +324,9 @@ def test_organize_blocks_missing_required_metadata() -> None:
         ),
     )
 
-    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT)
+    )
 
     assert result.library.status == LibraryStatus.BLOCKED
     assert result.track_count == 0
@@ -279,7 +354,9 @@ def test_organize_blocks_missing_source_after_scan() -> None:
         options=PortOptions(missing_paths={MISPLACED_ABSOLUTE_PATH}),
     )
 
-    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT)
+    )
 
     assert snapshot_reader.captured_paths == [MISPLACED_ABSOLUTE_PATH]
     assert result.library.status == LibraryStatus.BLOCKED
@@ -308,7 +385,9 @@ def test_organize_blocks_invalid_path_with_library_relative_source() -> None:
     assert isinstance(ports.path_resolver, SimplePathResolver)
     ports.path_resolver.invalid_paths.add(invalid_absolute_path)
 
-    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT)
+    )
 
     assert snapshot_reader.captured_paths == []
     assert result.library.status == LibraryStatus.BLOCKED
@@ -338,7 +417,9 @@ def test_organize_blocks_target_conflict_without_overwriting() -> None:
         ),
     )
 
-    result = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(LIBRARY_ROOT))
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT)
+    )
 
     assert result.library.status == LibraryStatus.BLOCKED
     assert result.track_count == 1
@@ -355,7 +436,7 @@ def test_plain_organize_refuses_when_no_library_can_be_selected() -> None:
     ports, _, _ = _ports(InMemoryUnitOfWork(), (), {}, SequenceIdGenerator())
 
     with pytest.raises(OrganizeLibrarySelectionError, match=NO_LIBRARY_SELECTION_MESSAGE):
-        _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest())
+        _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(trust_stat=False))
 
 
 def test_plain_organize_refuses_ambiguous_library_selection() -> None:
@@ -366,7 +447,7 @@ def test_plain_organize_refuses_ambiguous_library_selection() -> None:
     ports, _, _ = _ports(uow, (), {}, SequenceIdGenerator())
 
     with pytest.raises(OrganizeLibrarySelectionError, match=AMBIGUOUS_LIBRARY_SELECTION_MESSAGE):
-        _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest())
+        _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(trust_stat=False))
 
 
 def test_organize_refuses_unregistered_path_when_library_exists() -> None:
@@ -376,7 +457,9 @@ def test_organize_refuses_unregistered_path_when_library_exists() -> None:
     ports, _, _ = _ports(uow, (), {}, SequenceIdGenerator())
 
     with pytest.raises(OrganizeLibrarySelectionError, match=UNREGISTERED_PATH_MESSAGE):
-        _ = CreateOrganizePlanUseCase(ports).execute(CreateOrganizePlanRequest(UNREGISTERED_LIBRARY_ROOT))
+        _ = CreateOrganizePlanUseCase(ports).execute(
+            CreateOrganizePlanRequest(trust_stat=False, library_root=UNREGISTERED_LIBRARY_ROOT)
+        )
 
 
 class StaticConfigStore:
@@ -417,14 +500,34 @@ class MappingSnapshotReader:
         self._snapshots: dict[str, FileSnapshot] = snapshots
         self._missing_paths: set[str] = set() if missing_paths is None else set(missing_paths)
         self.captured_paths: list[FileSystemPath] = []
+        self.captured_observations: list[FileScanEntry | None] = []
 
-    def capture(self, path: FileSystemPath) -> FileSnapshot:
+    def capture(
+        self,
+        path: FileSystemPath,
+        *,
+        observation: FileScanEntry | None = None,
+    ) -> FileSnapshot:
         """Return a snapshot or raise FileNotFoundError for vanished files."""
         self.captured_paths.append(path)
+        self.captured_observations.append(observation)
         path_key = str(path)
         if path_key in self._missing_paths:
             raise FileNotFoundError(path_key)
         return self._snapshots[path_key]
+
+    def capture_many(
+        self,
+        requests: Sequence[FileSnapshotCaptureRequest],
+    ) -> tuple[FileSnapshot | None, ...]:
+        """Capture requests serially while preserving observations and order."""
+        snapshots: list[FileSnapshot | None] = []
+        for request in requests:
+            try:
+                snapshots.append(self.capture(request.path, observation=request.observation))
+            except FileNotFoundError:
+                snapshots.append(None)
+        return tuple(snapshots)
 
 
 class SimplePathResolver:
@@ -483,6 +586,29 @@ def _ports(
 
 def _entry(path: str) -> FileScanEntry:
     return FileScanEntry(path=path, size=FILE_SIZE, mtime=BASE_TIME, file_extension=FILE_EXTENSION)
+
+
+def _track(
+    *,
+    track_id: TrackId = TRACK_ID,
+    size: int | None = None,
+    mtime: datetime | None = None,
+) -> Track:
+    return Track(
+        track_id=track_id,
+        library_id=LIBRARY_ID,
+        current_path=EXPECTED_CANONICAL_PATH,
+        canonical_path=EXPECTED_CANONICAL_PATH,
+        content_hash=CONTENT_HASH,
+        metadata_hash=calculate_metadata_fingerprint(METADATA),
+        size=size,
+        mtime=mtime,
+        metadata=METADATA,
+        status=TrackStatus.ACTIVE,
+        first_seen_at=BASE_TIME,
+        last_seen_at=BASE_TIME,
+        updated_at=BASE_TIME,
+    )
 
 
 def _snapshot(path: str, metadata: TrackMetadata) -> FileSnapshot:

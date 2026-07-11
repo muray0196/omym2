@@ -28,6 +28,7 @@ from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
 if TYPE_CHECKING:
+    from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.features.common_ports import FileSystemPath
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
@@ -41,6 +42,7 @@ LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 LIBRARY_ROOT = "/music/library"
 METADATA_HASH = "metadata-hash"
 MOVE_FAILURE_MESSAGE = "move failed"
+SUCCESSFUL_MOVE_COMMIT_COUNT = 4
 OTHER_LIBRARY_ROOT = "/music/moved-library"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
@@ -53,6 +55,7 @@ TARGET_PATH = "Artist/2026_Album/1-02_Title.flac"
 TRACK_ARTIST = "Artist"
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 TRACK_TITLE = "Title"
+USECASE_SCOPE_CALL_COUNT = 1
 
 LIBRARY_SOURCE_PATH = "Unsorted/Title.flac"
 LIBRARY_SOURCE_FILESYSTEM_PATH = f"{LIBRARY_ROOT}/{LIBRARY_SOURCE_PATH}"
@@ -83,9 +86,14 @@ def test_apply_creates_run_and_pending_file_event_before_file_move() -> None:
     assert _stored_plan(uow).status == PlanStatus.APPLIED
     assert _stored_action(uow).status == ActionStatus.APPLIED
     assert _stored_event(uow).status == FileEventStatus.SUCCEEDED
+    assert uow.commit_count == SUCCESSFUL_MOVE_COMMIT_COUNT
+    assert uow.usecase_scope_enter_count == USECASE_SCOPE_CALL_COUNT
+    assert uow.usecase_scope_exit_count == USECASE_SCOPE_CALL_COUNT
     track = _stored_track(uow)
     assert track.current_path == TARGET_PATH
     assert track.canonical_path == TARGET_PATH
+    assert track.size == FILE_SIZE
+    assert track.mtime == BASE_TIME
 
 
 def test_apply_marks_skip_action_applied_without_file_event() -> None:
@@ -228,6 +236,27 @@ def test_apply_requires_confirmation_option() -> None:
 
     assert uow.runs.records == {}
     assert uow.file_events.records == {}
+    assert uow.usecase_scope_enter_count == 0
+    assert uow.usecase_scope_exit_count == 0
+
+
+def test_apply_disposes_usecase_scope_when_unexpected_error_escapes() -> None:
+    """An unexpected apply error still exits the outer UnitOfWork resource scope."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan())
+    uow.plan_actions.save(_move_action())
+    ports, _ = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(run_ids=deque((RUN_ID,))),
+    )
+
+    with pytest.raises(KeyError):
+        _ = ApplyPlanUseCase(ports).execute(_apply_request())
+
+    assert uow.usecase_scope_enter_count == USECASE_SCOPE_CALL_COUNT
+    assert uow.usecase_scope_exit_count == USECASE_SCOPE_CALL_COUNT
 
 
 def test_apply_expires_plan_when_library_root_changed_before_run() -> None:
@@ -277,7 +306,7 @@ def test_apply_registers_library_after_successful_organize_plan() -> None:
     """Successful organize moves register the Library when no blocks remain."""
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library(status=LibraryStatus.UNREGISTERED))
-    uow.tracks.save(_track())
+    uow.tracks.save(_track(size=FILE_SIZE, mtime=BASE_TIME))
     uow.plans.save(_plan(plan_type=PlanType.ORGANIZE))
     uow.plan_actions.save(_move_action(source_path=LIBRARY_SOURCE_PATH, track_id=TRACK_ID))
     ports, _ = _ports(
@@ -296,6 +325,8 @@ def test_apply_registers_library_after_successful_organize_plan() -> None:
     track = _stored_track(uow)
     assert track.current_path == TARGET_PATH
     assert track.track_id == TRACK_ID
+    assert isinstance(ports.file_snapshot_reader, MappingSnapshotReader)
+    assert ports.file_snapshot_reader.captured_paths == [LIBRARY_SOURCE_FILESYSTEM_PATH]
 
 
 class MappingSnapshotReader:
@@ -304,10 +335,19 @@ class MappingSnapshotReader:
     def __init__(self, snapshots: dict[str, FileSnapshot]) -> None:
         """Store snapshots by path."""
         self._snapshots: dict[str, FileSnapshot] = snapshots
+        self.captured_paths: list[str] = []
 
-    def capture(self, path: FileSystemPath) -> FileSnapshot:
+    def capture(
+        self,
+        path: FileSystemPath,
+        *,
+        observation: FileScanEntry | None = None,
+    ) -> FileSnapshot:
         """Return the configured snapshot for a path."""
-        return self._snapshots[str(path)]
+        del observation
+        path_text = str(path)
+        self.captured_paths.append(path_text)
+        return self._snapshots[path_text]
 
 
 class SimplePathResolver:
@@ -471,7 +511,11 @@ def _blocked_action() -> PlanAction:
     )
 
 
-def _track() -> Track:
+def _track(
+    *,
+    size: int | None = None,
+    mtime: datetime | None = None,
+) -> Track:
     return Track(
         track_id=TRACK_ID,
         library_id=LIBRARY_ID,
@@ -479,6 +523,8 @@ def _track() -> Track:
         canonical_path=TARGET_PATH,
         content_hash=CONTENT_HASH,
         metadata_hash=METADATA_HASH,
+        size=size,
+        mtime=mtime,
         metadata=_metadata(),
         status=TrackStatus.ACTIVE,
         first_seen_at=BASE_TIME,

@@ -339,6 +339,8 @@ def _track() -> Track:
         canonical_path=TARGET_PATH,
         content_hash=CONTENT_HASH,
         metadata_hash=METADATA_HASH,
+        size=None,
+        mtime=None,
         metadata=TrackMetadata(title="Title", artist="Artist"),
         status=TrackStatus.ACTIVE,
         first_seen_at=BASE_TIME,

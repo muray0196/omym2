@@ -5,6 +5,7 @@ Why: Lets feature tests exercise ports before SQLite adapters exist.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
@@ -20,7 +21,7 @@ from omym2.shared.pagination import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Generator, Sequence
     from datetime import datetime
     from types import TracebackType
 
@@ -575,6 +576,17 @@ class InMemoryUnitOfWork:
     file_events: InMemoryFileEventRepository = field(default_factory=InMemoryFileEventRepository)
     commit_count: int = 0
     rollback_count: int = 0
+    usecase_scope_enter_count: int = 0
+    usecase_scope_exit_count: int = 0
+
+    @contextmanager
+    def usecase_scope(self) -> Generator[None]:
+        """Record one outer usecase lifetime without changing transaction behavior."""
+        self.usecase_scope_enter_count += 1
+        try:
+            yield
+        finally:
+            self.usecase_scope_exit_count += 1
 
     def __enter__(self) -> Self:
         """Open the fake transaction boundary."""

@@ -11,8 +11,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, TextIO
 from urllib.parse import urlunparse
 
-import uvicorn
-
 from omym2.adapters.cli.commands.output import write_line, write_usage
 from omym2.config import WEB_DEFAULT_HOST, WEB_DEFAULT_PORT, WEB_SETTINGS_ROUTE, WEB_URL_SCHEME
 
@@ -29,6 +27,8 @@ type ServerRunner = Callable[["FastAPI", str, int], None]
 
 
 def _run_server(app: FastAPI, host: str, port: int) -> None:
+    import uvicorn  # noqa: PLC0415  # Intentional settings-only server import.
+
     uvicorn.run(app, host=host, port=port)
 
 

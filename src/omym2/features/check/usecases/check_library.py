@@ -6,7 +6,9 @@ DB read instead of recomputing them on every request.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
+from os import fspath
 from pathlib import PurePath
 from typing import TYPE_CHECKING
 
@@ -17,7 +19,9 @@ from omym2.domain.models.plan import PlanStatus
 from omym2.domain.models.plan_action import ActionStatus
 from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
+from omym2.domain.services.snapshot_baseline import snapshot_from_trusted_stat
 from omym2.features.check.dto import CheckLibraryResult
+from omym2.features.common_ports import FileSnapshotCaptureRequest
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -25,12 +29,14 @@ if TYPE_CHECKING:
 
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.file_scan_entry import FileScanEntry
+    from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.library import Library
     from omym2.domain.models.plan import Plan
+    from omym2.domain.models.plan_action import PlanAction
     from omym2.domain.models.track import Track
     from omym2.features.check.dto import CheckLibraryRequest
     from omym2.features.check.ports import CheckLibraryPorts
-    from omym2.features.common_ports import FileSystemPath, PathResolver, UnitOfWork
+    from omym2.features.common_ports import BatchFileSnapshotReader, FileSystemPath, PathResolver, UnitOfWork
     from omym2.shared.ids import LibraryId, RunId
 
 LIBRARY_NOT_FOUND_MESSAGE = "Library was not found."
@@ -55,6 +61,7 @@ class CheckLibraryUseCase:
             config.metadata.album_year_resolution,
         )
         checked_at = self.ports.clock.now()
+        snapshot_memo = _SnapshotMemo(self.ports.file_snapshot_reader)
 
         with self.ports.uow as uow:
             libraries = _selected_libraries(uow, request)
@@ -66,12 +73,23 @@ class CheckLibraryUseCase:
                     if track.status == TrackStatus.ACTIVE
                 )
                 plans = tuple(uow.plans.list_by_library(library.library_id))
+                scan_entries = tuple(self.ports.file_scanner.scan(library.root_path)) if request.trust_stat else ()
 
                 library_issues: list[CheckIssue] = []
                 library_issues.extend(_library_state_issues(library, current_path_policy_hash))
-                library_issues.extend(self._track_issues(library, active_tracks))
-                library_issues.extend(self._scan_issues(library, active_tracks))
-                library_issues.extend(self._plan_source_issues(uow, library, plans))
+                if request.trust_stat:
+                    for path, snapshot in self._trusted_track_snapshots(
+                        library,
+                        active_tracks,
+                        scan_entries,
+                        checked_at,
+                    ):
+                        snapshot_memo.remember(path, snapshot)
+                library_issues.extend(self._track_issues(library, active_tracks, snapshot_memo))
+                if not request.trust_stat:
+                    scan_entries = tuple(self.ports.file_scanner.scan(library.root_path))
+                library_issues.extend(self._scan_issues(library, active_tracks, scan_entries))
+                library_issues.extend(self._plan_source_issues(uow, library, plans, snapshot_memo))
                 library_issues.extend(_pending_event_issues(uow, library))
 
                 self._persist_check_run(uow, library.library_id, library_issues, checked_at)
@@ -99,9 +117,18 @@ class CheckLibraryUseCase:
         uow.check_runs.save(check_run)
         uow.check_issues.save_many(check_run.check_run_id, issues)
 
-    def _track_issues(self, library: Library, tracks: Sequence[Track]) -> tuple[CheckIssue, ...]:
+    def _track_issues(
+        self,
+        library: Library,
+        tracks: Sequence[Track],
+        snapshot_memo: _SnapshotMemo,
+    ) -> tuple[CheckIssue, ...]:
+        filesystem_paths = tuple(
+            self.ports.path_resolver.resolve_library_path(library.root_path, track.current_path) for track in tracks
+        )
+        snapshots = snapshot_memo.capture_many(filesystem_paths)
         issues: list[CheckIssue] = []
-        for track in tracks:
+        for track, snapshot in zip(tracks, snapshots, strict=True):
             if track.current_path != track.canonical_path:
                 issues.append(
                     CheckIssue(
@@ -112,10 +139,7 @@ class CheckLibraryUseCase:
                     )
                 )
 
-            filesystem_path = self.ports.path_resolver.resolve_library_path(library.root_path, track.current_path)
-            try:
-                snapshot = self.ports.file_snapshot_reader.capture(filesystem_path)
-            except FileNotFoundError:
+            if snapshot is None:
                 issues.append(
                     CheckIssue(
                         issue_type=CheckIssueType.DB_FILE_MISSING,
@@ -148,12 +172,52 @@ class CheckLibraryUseCase:
         issues.extend(_duplicate_track_issues(library, tracks))
         return tuple(issues)
 
-    def _scan_issues(self, library: Library, tracks: Sequence[Track]) -> tuple[CheckIssue, ...]:
+    def _trusted_track_snapshots(
+        self,
+        library: Library,
+        tracks: Sequence[Track],
+        scan_entries: Sequence[FileScanEntry],
+        checked_at: datetime,
+    ) -> tuple[tuple[FileSystemPath, FileSnapshot], ...]:
+        trust_eligible_paths = {
+            path for path, count in Counter(track.current_path for track in tracks).items() if count == 1
+        }
+        entries_by_path = {
+            self.ports.path_resolver.relative_to_library(library.root_path, entry.path): entry for entry in scan_entries
+        }
+        trusted: list[tuple[FileSystemPath, FileSnapshot]] = []
+        for track in tracks:
+            if track.current_path not in trust_eligible_paths:
+                continue
+            observation = entries_by_path.get(track.current_path)
+            if observation is None:
+                continue
+            filesystem_path = self.ports.path_resolver.resolve_library_path(
+                library.root_path,
+                track.current_path,
+            )
+            snapshot = snapshot_from_trusted_stat(
+                track,
+                track.current_path,
+                fspath(filesystem_path),
+                observation,
+                checked_at,
+            )
+            if snapshot is not None:
+                trusted.append((filesystem_path, snapshot))
+        return tuple(trusted)
+
+    def _scan_issues(
+        self,
+        library: Library,
+        tracks: Sequence[Track],
+        scan_entries: Sequence[FileScanEntry],
+    ) -> tuple[CheckIssue, ...]:
         managed_paths = {track.current_path for track in tracks}
         managed_hashes = {track.content_hash for track in tracks}
         issues: list[CheckIssue] = []
 
-        for entry in self.ports.file_scanner.scan(library.root_path):
+        for entry in scan_entries:
             relative_path = self.ports.path_resolver.relative_to_library(library.root_path, entry.path)
             if relative_path in managed_paths:
                 continue
@@ -178,19 +242,19 @@ class CheckLibraryUseCase:
 
     def _is_duplicate_candidate(self, entry: FileScanEntry, managed_hashes: set[str]) -> bool:
         try:
-            snapshot = self.ports.file_snapshot_reader.capture(entry.path)
+            content_hash = self.ports.file_content_hasher.calculate(entry.path)
         except FileNotFoundError:
             return False
-        return snapshot.content_hash in managed_hashes
+        return content_hash in managed_hashes
 
     def _plan_source_issues(
         self,
         uow: UnitOfWork,
         library: Library,
         plans: Sequence[Plan],
+        snapshot_memo: _SnapshotMemo,
     ) -> tuple[CheckIssue, ...]:
-        issues: list[CheckIssue] = []
-
+        source_checks: list[_PlanSourceCheck] = []
         for plan in plans:
             if plan.status != PlanStatus.READY:
                 continue
@@ -201,42 +265,85 @@ class CheckLibraryUseCase:
                     continue
 
                 source_filesystem_path = _resolve_action_path(self.ports.path_resolver, library, action.source_path)
-                try:
-                    snapshot = self.ports.file_snapshot_reader.capture(source_filesystem_path)
-                except FileNotFoundError:
-                    issues.append(
-                        CheckIssue(
-                            issue_type=CheckIssueType.PLAN_SOURCE_CHANGED,
-                            library_id=library.library_id,
-                            path=action.source_path,
-                            plan_id=plan.plan_id,
-                            detail="source_missing",
-                        )
-                    )
-                    continue
+                source_checks.append(_PlanSourceCheck(plan=plan, action=action, path=source_filesystem_path))
 
-                content_changed = (
-                    action.content_hash_at_plan is not None and snapshot.content_hash != action.content_hash_at_plan
-                )
-                metadata_changed = (
-                    action.metadata_hash_at_plan is not None and snapshot.metadata_hash != action.metadata_hash_at_plan
-                )
-                if content_changed or metadata_changed:
-                    issues.append(
-                        CheckIssue(
-                            issue_type=CheckIssueType.PLAN_SOURCE_CHANGED,
-                            library_id=library.library_id,
-                            path=action.source_path,
-                            plan_id=plan.plan_id,
-                            detail="source_changed",
-                        )
+        snapshots = snapshot_memo.capture_many(tuple(source_check.path for source_check in source_checks))
+        issues: list[CheckIssue] = []
+        for source_check, snapshot in zip(source_checks, snapshots, strict=True):
+            plan = source_check.plan
+            action = source_check.action
+            if snapshot is None:
+                issues.append(
+                    CheckIssue(
+                        issue_type=CheckIssueType.PLAN_SOURCE_CHANGED,
+                        library_id=library.library_id,
+                        path=action.source_path,
+                        plan_id=plan.plan_id,
+                        detail="source_missing",
                     )
+                )
+                continue
+
+            content_changed = (
+                action.content_hash_at_plan is not None and snapshot.content_hash != action.content_hash_at_plan
+            )
+            metadata_changed = (
+                action.metadata_hash_at_plan is not None and snapshot.metadata_hash != action.metadata_hash_at_plan
+            )
+            if content_changed or metadata_changed:
+                issues.append(
+                    CheckIssue(
+                        issue_type=CheckIssueType.PLAN_SOURCE_CHANGED,
+                        library_id=library.library_id,
+                        path=action.source_path,
+                        plan_id=plan.plan_id,
+                        detail="source_changed",
+                    )
+                )
 
         return tuple(issues)
 
 
 class CheckLibraryError(ValueError):
     """Raised when check cannot select the requested Library."""
+
+
+@dataclass(frozen=True, slots=True)
+class _PlanSourceCheck:
+    """One READY Plan source awaiting a full snapshot comparison."""
+
+    plan: Plan
+    action: PlanAction
+    path: FileSystemPath
+
+
+@dataclass(slots=True)
+class _SnapshotMemo:
+    """Reuse each full file observation for one check invocation."""
+
+    reader: BatchFileSnapshotReader
+    _snapshots_by_path: dict[str, FileSnapshot | None] = field(default_factory=dict)
+
+    def remember(self, path: FileSystemPath, snapshot: FileSnapshot | None) -> None:
+        """Cache a trusted point-in-time observation for later check phases."""
+        _ = self._snapshots_by_path.setdefault(fspath(path), snapshot)
+
+    def capture_many(self, paths: Sequence[FileSystemPath]) -> tuple[FileSnapshot | None, ...]:
+        path_keys = tuple(fspath(path) for path in paths)
+        queued_keys: set[str] = set()
+        uncached: list[tuple[str, FileSystemPath]] = []
+        for path, path_key in zip(paths, path_keys, strict=True):
+            if path_key in self._snapshots_by_path or path_key in queued_keys:
+                continue
+            queued_keys.add(path_key)
+            uncached.append((path_key, path))
+
+        if len(uncached) > 0:
+            snapshots = self.reader.capture_many(tuple(FileSnapshotCaptureRequest(path) for _, path in uncached))
+            for (path_key, _), snapshot in zip(uncached, snapshots, strict=True):
+                self._snapshots_by_path[path_key] = snapshot
+
+        return tuple(self._snapshots_by_path[path_key] for path_key in path_keys)
 
 
 def _selected_libraries(uow: UnitOfWork, request: CheckLibraryRequest) -> tuple[Library, ...]:

@@ -8,9 +8,10 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
+from omym2.adapters.cli.commands.check import run_check_command
 from omym2.adapters.config.application_paths import ApplicationPaths, default_application_paths
 from omym2.adapters.config.default_config import default_app_config
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
@@ -25,6 +26,7 @@ from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
+from omym2.features.check.dto import CheckLibraryRequest, CheckLibraryResult
 from omym2.platform.cli_entry_point import run_cli as main
 from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
 from omym2.shared.pagination import PageRequest
@@ -34,6 +36,7 @@ if TYPE_CHECKING:
 
     import pytest
 
+    from omym2.features.check.ports import CheckLibraryPorts
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
@@ -52,6 +55,52 @@ TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 METADATA = TrackMetadata(title="Title", artist="Artist", album="Album", year=2026, track_number=2, disc_number=1)
 CONTENT_HASH = calculate_content_fingerprint(AUDIO_CONTENT)
 METADATA_HASH = calculate_metadata_fingerprint(METADATA)
+
+
+def test_check_command_passes_trust_stat_to_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """check forwards the explicit trust-stat opt-in to its usecase request."""
+    captured_requests: list[CheckLibraryRequest] = []
+
+    class CapturingCheckLibraryUseCase:
+        """Usecase test double that records the inbound request."""
+
+        def __init__(self, ports: object) -> None:
+            """Accept the injected ports without using them."""
+            del ports
+
+        def execute(self, request: CheckLibraryRequest) -> CheckLibraryResult:
+            """Capture the request and return a clean check result."""
+            captured_requests.append(request)
+            return CheckLibraryResult(issues=(), checked_at=BASE_TIME)
+
+    monkeypatch.setattr(
+        "omym2.adapters.cli.commands.check.CheckLibraryUseCase",
+        CapturingCheckLibraryUseCase,
+    )
+    stdout = StringIO()
+    stderr = StringIO()
+
+    default_exit_code = run_check_command(
+        [],
+        stdout,
+        stderr,
+        cast("CheckLibraryPorts", object()),
+    )
+    trusted_exit_code = run_check_command(
+        ["--trust-stat"],
+        stdout,
+        stderr,
+        cast("CheckLibraryPorts", object()),
+    )
+
+    assert default_exit_code == SUCCESS_EXIT_CODE
+    assert trusted_exit_code == SUCCESS_EXIT_CODE
+    assert captured_requests == [
+        CheckLibraryRequest(trust_stat=False),
+        CheckLibraryRequest(trust_stat=True),
+    ]
+    assert stdout.getvalue() == "No issues.\nNo issues.\n"
+    assert stderr.getvalue() == ""
 
 
 def test_check_command_reports_missing_db_file(tmp_path: Path) -> None:
@@ -235,6 +284,8 @@ def _track() -> Track:
         content_hash=CONTENT_HASH,
         metadata_hash=METADATA_HASH,
         metadata=METADATA,
+        size=None,
+        mtime=None,
         status=TrackStatus.ACTIVE,
         first_seen_at=BASE_TIME,
         last_seen_at=BASE_TIME,

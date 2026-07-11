@@ -19,10 +19,11 @@ if TYPE_CHECKING:
     from omym2.domain.models.check_issue import CheckIssue
     from omym2.features.check.ports import CheckLibraryPorts
 
-CHECK_USAGE_MESSAGE = "Usage: omym2 check"
+CHECK_USAGE_MESSAGE = "Usage: omym2 check [--trust-stat]"
 ERROR_EXIT_CODE = 1
 NO_ISSUES_MESSAGE = "No issues."
 SUCCESS_EXIT_CODE = 0
+TRUST_STAT_FLAG = "--trust-stat"
 USAGE_EXIT_CODE = 2
 
 
@@ -33,20 +34,22 @@ def run_check_command(
     ports: CheckLibraryPorts,
 ) -> int:
     """Run check and return a process exit code."""
-    if len(args) != 0:
+    if len(args) > 1 or (len(args) == 1 and args[0] != TRUST_STAT_FLAG):
         write_usage(stderr, CHECK_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
 
-    return _run_check(ports, stdout, stderr)
+    return _run_check(ports, stdout, stderr, trust_stat=len(args) == 1)
 
 
 def _run_check(
     ports: CheckLibraryPorts,
     stdout: TextIO,
     stderr: TextIO,
+    *,
+    trust_stat: bool,
 ) -> int:
     try:
-        result = CheckLibraryUseCase(ports).execute(CheckLibraryRequest())
+        result = CheckLibraryUseCase(ports).execute(CheckLibraryRequest(trust_stat=trust_stat))
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
         return ERROR_EXIT_CODE

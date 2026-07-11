@@ -68,5 +68,5 @@ exclude = ["**/__pycache__"]
 stubPath = ""
 typeCheckingMode = "recommended"
 executionEnvironments = [
-  { root = "scripts", extraPaths = ["scripts"] },
+  { root = "scripts", extraPaths = ["src", "scripts"] },
 ]

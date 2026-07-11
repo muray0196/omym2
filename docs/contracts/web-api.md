@@ -1,14 +1,14 @@
 ---
 type: Contract
 title: Web API Contract
-description: Defines the authoritative JSON envelope, pagination/cursor, facet, and group-by contract for OMYM2's local Web API browsing endpoints (tracks, plans, check, history).
+description: Defines OMYM2's local Web API envelopes, browsing and Plan-creation requests, pagination/facets/groups, and exclusion of CLI-only trust-stat flags.
 tags: [web-api, pagination, json, contract]
-timestamp: 2026-07-10T01:21:53+09:00
+timestamp: 2026-07-11T10:21:41+09:00
 ---
 
 # Web API Contract
 
-This document is authoritative for the JSON envelope shape, keyset pagination, cursor encoding, facet endpoints, group-by endpoints, and the browsing endpoint list of OMYM2's local Web API.
+This document is authoritative for the JSON response shapes, keyset pagination, cursor encoding, facet endpoints, group-by endpoints, and Plan-creation endpoints of OMYM2's local Web API.
 
 The frontend/backend boundary is summarized in [../codebase/web-frontend.md](../codebase/web-frontend.md). Row/item field shapes (`TrackSummary`, `PlanSummary`, `PlanAction`, `CheckIssue`, `RunSummary`, `FileEvent`) are owned by the serializers in `src/omym2/adapters/web/routes/api_serializers.py`; this document does not restate their fields. Status, action type, event type, and issue type values are owned by [status-reason-catalog.md](status-reason-catalog.md). DB field responsibilities are owned by [db-schema.md](db-schema.md). The pure pagination primitives (`PageRequest`, `Page`, `GroupCount`, `FacetValue`, cursor encode/decode, limit clamping) are implemented in `src/omym2/shared/pagination.py`.
 
@@ -96,6 +96,13 @@ Plan ordering: `created_at DESC, plan_id DESC`. Action ordering: `sort_order ASC
 * `GET /api/plans/{plan_id}/actions?status=&limit=&cursor=` — list envelope of `PlanAction` items.
 * `GET /api/plans/{plan_id}/facets` — facet envelope; facet fields: `status`, `action_type`.
 * `GET /api/plans/{plan_id}/groups?group_by=target_directory&limit=&cursor=` — group envelope.
+* `POST /api/plans/add` — creates an add Plan; the body may carry `source_path` as a string or `null`.
+* `POST /api/plans/organize` — registers or organizes a Library; the body may carry `library_root` as a string or `null`.
+* `POST /api/plans/refresh` — creates a refresh Plan; the body may carry `target_path` as a string or `null` and `include_all` as a boolean.
+
+All Plan-creation POSTs require the `X-OMYM2-CSRF-Token` header. Their shared response envelope is `{ "created": <boolean>, "detail": { "plan": {...} } | null, "registration": {...} | null, "errors": [...] }`. `detail` is header-only: it never embeds `actions` or `total_action_count`; clients fetch actions through `GET /api/plans/{plan_id}/actions`. `registration` is populated only by organize, including when clean registration needs no Plan and therefore returns `created: false` with `detail: null`.
+
+Plan-creation JSON does not accept `trust_stat`. Web organize and refresh always use complete snapshot capture; the optimization is an explicit CLI command flag only.
 
 ### Check
 
@@ -105,6 +112,8 @@ Check findings are persisted, not recomputed per request. Ordering: `issue_seq A
 * `GET /api/check/facets?library_id=` — facet envelope; facet field: `issue_type`; carries `checked_at` per the Facet Envelope section above.
 * `GET /api/check/groups?group_by=issue_type&library_id=&limit=&cursor=` — group envelope.
 * `POST /api/check/run` — CSRF-protected via the `X-OMYM2-CSRF-Token` header; body may carry an optional `library_id`. Returns `{ "checked_at": "<iso>", "total": N, "errors": [] }`.
+
+The check-run body does not accept `trust_stat`; Web recomputation always uses complete managed-file snapshots.
 
 Behavior change: `GET /api/check` no longer recomputes findings on every request. Findings are persisted by either the `omym2 check` CLI command or `POST /api/check/run`, and all `GET /api/check*` endpoints read the stored findings of the most recent check run.
 

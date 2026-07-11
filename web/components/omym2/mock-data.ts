@@ -19,7 +19,6 @@ import type {
   PagedResponse,
   PlanAction,
   PlanActionStatus,
-  PlanCreatedDetail,
   PlanCreateResult,
   PlanDetailResponse,
   PlanStatus,
@@ -553,33 +552,18 @@ export function mockCreatePlan(planType: PlanType): PlanCreateResult {
     created_at: new Date().toISOString(),
     summary: { action_count: "1", blocked_actions: "0" },
   }
-  const action: PlanAction = {
-    action_id: `act_mock_${planType}`,
-    plan_id: createdPlan.plan_id,
-    library_id: LIBRARY_ID,
-    track_id: planType === "add" ? null : "trk_mock_created",
-    action_type: planType === "refresh" ? "refresh_metadata" : "move",
-    source_path:
-      planType === "add"
-        ? "/music/incoming/Example Song.flac"
-        : "Aimer/2024_Album/1-03_Example.flac",
-    target_path: "Aimer/2024_Album/1-03_Example-Song.flac",
-    content_hash_at_plan: "sha256:mock-created-content",
-    metadata_hash_at_plan: "sha256:mock-created-metadata",
-    status: "planned",
-    reason: null,
-    sort_order: 1,
-  }
-  const detail: PlanCreatedDetail = {
-    plan: {
-      ...createdPlan,
-      config_hash: "mock-created-config-hash",
-      library_root_at_plan: defaultConfig.paths.library ?? "/music/library",
+  return {
+    created: true,
+    detail: {
+      plan: {
+        ...createdPlan,
+        config_hash: "mock-created-config-hash",
+        library_root_at_plan: defaultConfig.paths.library ?? "/music/library",
+      },
     },
-    actions: [action],
-    total_action_count: 1,
+    registration: null,
+    errors: [],
   }
-  return { created: true, detail, registration: null, errors: [] }
 }
 
 export const mockRuns: RunSummary[] = [

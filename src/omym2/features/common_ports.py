@@ -14,6 +14,7 @@ from omym2.shared.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from contextlib import AbstractContextManager
     from datetime import datetime
     from types import TracebackType
 
@@ -324,6 +325,10 @@ class FileEventRepository(Protocol):
 class UnitOfWork(Protocol):
     """Transaction boundary for one usecase interaction with repositories."""
 
+    def usecase_scope(self) -> AbstractContextManager[None]:
+        """Retain adapter resources across this usecase's transaction scopes."""
+        ...
+
     @property
     def libraries(self) -> LibraryRepository:
         """Repository for Library identity and registration state."""
@@ -394,11 +399,40 @@ class FileScanner(Protocol):
         ...
 
 
+class FileStatReader(Protocol):
+    """Filesystem contract for one cheap file stat observation."""
+
+    def observe(self, path: FileSystemPath) -> FileScanEntry:
+        """Return size, mtime, and extension without tags or hashes."""
+        ...
+
+
 class FileSnapshotReader(Protocol):
     """Filesystem observation contract for full file snapshots."""
 
-    def capture(self, path: FileSystemPath) -> FileSnapshot:
-        """Capture stat, metadata, and hash data for one file."""
+    def capture(
+        self,
+        path: FileSystemPath,
+        *,
+        observation: FileScanEntry | None = None,
+    ) -> FileSnapshot:
+        """Capture metadata and hashes, optionally reusing a scan observation."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class FileSnapshotCaptureRequest:
+    """One full-snapshot request with an optional prior scan observation."""
+
+    path: FileSystemPath
+    observation: FileScanEntry | None = None
+
+
+class BatchFileSnapshotReader(Protocol):
+    """Bounded, input-order-preserving full file snapshot capture."""
+
+    def capture_many(self, requests: Sequence[FileSnapshotCaptureRequest]) -> Sequence[FileSnapshot | None]:
+        """Return results in request order, using None only for files that disappeared."""
         ...
 
 

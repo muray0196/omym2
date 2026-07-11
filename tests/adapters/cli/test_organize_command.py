@@ -48,10 +48,10 @@ USAGE_EXIT_CODE = 2
 YEAR = 2026
 
 
-def test_organize_command_passes_normalized_library_root_to_request(
+def test_organize_command_passes_normalized_library_root_and_trust_stat_to_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """organize delegates Library-root normalization before creating the request."""
+    """organize forwards normalized Library-root and trust-stat values."""
     captured_requests: list[CreateOrganizePlanRequest] = []
 
     class CapturingCreateOrganizePlanUseCase:
@@ -78,7 +78,7 @@ def test_organize_command_passes_normalized_library_root_to_request(
     stdout = StringIO()
     stderr = StringIO()
 
-    exit_code = run_organize_command(
+    default_exit_code = run_organize_command(
         ["--library", RAW_LIBRARY_ROOT],
         stdout,
         stderr,
@@ -88,9 +88,29 @@ def test_organize_command_passes_normalized_library_root_to_request(
             normalize_library_root=lambda path: f"normalized:{path}",
         ),
     )
+    trusted_exit_code = run_organize_command(
+        ["--library", RAW_LIBRARY_ROOT, "--trust-stat"],
+        stdout,
+        stderr,
+        OrganizeCommandDependencies(
+            create_organize_plan_ports_factory=_stub_create_organize_plan_ports,
+            apply_plan_ports_factory=_stub_apply_plan_ports,
+            normalize_library_root=lambda path: f"normalized:{path}",
+        ),
+    )
 
-    assert exit_code == SUCCESS_EXIT_CODE
-    assert captured_requests == [CreateOrganizePlanRequest(library_root=NORMALIZED_LIBRARY_ROOT)]
+    assert default_exit_code == SUCCESS_EXIT_CODE
+    assert trusted_exit_code == SUCCESS_EXIT_CODE
+    assert captured_requests == [
+        CreateOrganizePlanRequest(
+            trust_stat=False,
+            library_root=NORMALIZED_LIBRARY_ROOT,
+        ),
+        CreateOrganizePlanRequest(
+            trust_stat=True,
+            library_root=NORMALIZED_LIBRARY_ROOT,
+        ),
+    ]
 
 
 def test_organize_command_registers_clean_library(
@@ -155,7 +175,7 @@ def test_organize_command_reports_usage_for_wrong_argument_count() -> None:
 
     assert exit_code == USAGE_EXIT_CODE
     assert stdout.getvalue() == ""
-    assert "Usage: omym2 organize [--library PATH]" in stderr.getvalue()
+    assert "Usage: omym2 organize [--library PATH] [--apply] [--trust-stat]" in stderr.getvalue()
 
 
 def test_organize_command_apply_moves_file_and_registers_library(

@@ -6,7 +6,7 @@ Why: Protects Plan-centered tag-correction relocation behavior.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -19,6 +19,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
 from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
+from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
@@ -44,7 +45,9 @@ from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
 if TYPE_CHECKING:
-    from omym2.features.common_ports import FileSystemPath
+    from collections.abc import Sequence
+
+    from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
@@ -118,7 +121,7 @@ def test_refresh_records_existing_track_id_for_relocation_after_metadata_change(
         SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
     )
 
-    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(track_id=TRACK_ID))
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
 
     assert snapshot_reader.captured_paths == [source_path]
     assert plan.plan_type == PlanType.REFRESH
@@ -168,14 +171,15 @@ def test_refresh_renders_disc_number_from_active_peer_context() -> None:
         options=PortOptions(config=config),
     )
 
-    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(track_id=TRACK_ID))
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
 
     assert plan.actions[0].target_path == NEW_D_PREFIXED_PATH
 
 
 def test_refresh_persists_zero_action_plan_when_canonical_path_is_unchanged() -> None:
     """Refresh observes unchanged metadata without updating Track state."""
-    uow = _uow_with_library_and_tracks(_track(current_path=NEW_PATH, metadata=NEW_METADATA))
+    track = _track(current_path=NEW_PATH, metadata=NEW_METADATA)
+    uow = _uow_with_library_and_tracks(track)
     source_path = _absolute(NEW_PATH)
     ports, _ = _ports(
         uow,
@@ -183,12 +187,79 @@ def test_refresh_persists_zero_action_plan_when_canonical_path_is_unchanged() ->
         SequenceIdGenerator(plan_ids=deque((PLAN_ID,))),
     )
 
-    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(track_id=TRACK_ID))
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
 
     assert plan.actions == ()
     assert plan.summary["action_count"] == "0"
     assert uow.plan_actions.records == {}
     assert uow.plans.get(PLAN_ID) == plan
+    assert uow.tracks.get(TRACK_ID) == track
+
+
+def test_refresh_trust_stat_skips_full_capture_for_matching_unique_track() -> None:
+    """Opted-in refresh reuses a complete baseline for one unambiguous active path."""
+    track = replace(
+        _track(current_path=NEW_PATH, metadata=NEW_METADATA),
+        size=FILE_SIZE,
+        mtime=BASE_TIME,
+    )
+    uow = _uow_with_library_and_tracks(track)
+    source_path = _absolute(NEW_PATH)
+    ports, snapshot_reader = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,))),
+        options=PortOptions(stat_entries={source_path: _stat_entry(source_path)}),
+    )
+
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=True, track_id=TRACK_ID))
+
+    assert plan.actions == ()
+    assert snapshot_reader.captured_paths == []
+    assert uow.tracks.get(TRACK_ID) == track
+
+
+def test_refresh_trust_stat_full_captures_mismatching_baseline() -> None:
+    """A stat mismatch falls back to a fresh full snapshot in opted-in refresh."""
+    track = replace(
+        _track(current_path=NEW_PATH, metadata=NEW_METADATA),
+        size=FILE_SIZE,
+        mtime=BASE_TIME,
+    )
+    uow = _uow_with_library_and_tracks(track)
+    source_path = _absolute(NEW_PATH)
+    ports, snapshot_reader = _ports(
+        uow,
+        {source_path: _snapshot(source_path, NEW_METADATA)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,))),
+        options=PortOptions(stat_entries={source_path: _stat_entry(source_path, size=FILE_SIZE + 1)}),
+    )
+
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=True, track_id=TRACK_ID))
+
+    assert plan.actions == ()
+    assert snapshot_reader.captured_paths == [source_path]
+
+
+def test_refresh_trust_stat_full_captures_duplicate_active_path() -> None:
+    """Duplicate active Track paths cannot derive a shared synthetic snapshot."""
+    first = replace(_track(), size=FILE_SIZE, mtime=BASE_TIME)
+    second = replace(_track(SECOND_TRACK_ID, OLD_PATH), size=FILE_SIZE, mtime=BASE_TIME)
+    uow = _uow_with_library_and_tracks(first, second)
+    source_path = _absolute(OLD_PATH)
+    ports, snapshot_reader = _ports(
+        uow,
+        {source_path: _snapshot(source_path, NEW_METADATA)},
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, DUPLICATE_ACTION_ID)),
+        ),
+        options=PortOptions(stat_entries={source_path: _stat_entry(source_path)}),
+    )
+
+    _ = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=True, include_all=True))
+
+    assert snapshot_reader.captured_paths == [source_path, source_path]
 
 
 def test_refresh_plans_metadata_action_when_hashes_change_without_relocation() -> None:
@@ -210,7 +281,7 @@ def test_refresh_plans_metadata_action_when_hashes_change_without_relocation() -
         SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
     )
 
-    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(track_id=TRACK_ID))
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
 
     assert plan.summary["action_count"] == "1"
     assert plan.summary["move_actions"] == "0"
@@ -233,7 +304,7 @@ def test_refresh_selects_exact_file_target() -> None:
         SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
     )
 
-    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(target_path=source_path))
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, target_path=source_path))
 
     assert len(plan.actions) == 1
     assert plan.actions[0].source_path == OLD_PATH
@@ -255,7 +326,9 @@ def test_refresh_selects_directory_target_prefix() -> None:
         ),
     )
 
-    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(target_path=_absolute("Artist/2026_Album")))
+    plan = CreateRefreshPlanUseCase(ports).execute(
+        CreateRefreshPlanRequest(trust_stat=False, target_path=_absolute("Artist/2026_Album"))
+    )
 
     assert tuple(action.source_path for action in plan.actions) == (OLD_PATH, SECOND_OLD_PATH)
     assert tuple(action.target_path for action in plan.actions) == (NEW_PATH, SECOND_NEW_PATH)
@@ -281,7 +354,7 @@ def test_refresh_all_selects_all_active_tracks() -> None:
         ),
     )
 
-    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(include_all=True))
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, include_all=True))
 
     assert plan.summary["action_count"] == "2"
     assert tuple(action.track_id for action in plan.actions) == (TRACK_ID, SECOND_TRACK_ID)
@@ -306,7 +379,7 @@ def test_refresh_resolves_latest_album_year_across_selected_album_group() -> Non
         SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
     )
 
-    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(include_all=True))
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, include_all=True))
 
     assert plan.summary["action_count"] == "1"
     action = plan.actions[0]
@@ -321,7 +394,7 @@ def test_refresh_refuses_when_no_registered_library_can_be_selected() -> None:
     ports, _ = _ports(InMemoryUnitOfWork(), {}, SequenceIdGenerator())
 
     with pytest.raises(RefreshLibrarySelectionError, match=NO_REGISTERED_LIBRARY_MESSAGE):
-        _ = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(include_all=True))
+        _ = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, include_all=True))
 
 
 def test_refresh_refuses_ambiguous_registered_libraries() -> None:
@@ -331,7 +404,7 @@ def test_refresh_refuses_ambiguous_registered_libraries() -> None:
     ports, _ = _ports(uow, {}, SequenceIdGenerator())
 
     with pytest.raises(RefreshLibrarySelectionError, match=AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE):
-        _ = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(include_all=True))
+        _ = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, include_all=True))
 
 
 def test_refresh_refuses_stale_path_policy_registration() -> None:
@@ -342,7 +415,7 @@ def test_refresh_refuses_stale_path_policy_registration() -> None:
     ports, _ = _ports(uow, {}, SequenceIdGenerator())
 
     with pytest.raises(RefreshLibrarySelectionError, match=STALE_LIBRARY_MESSAGE):
-        _ = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(include_all=True))
+        _ = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, include_all=True))
 
 
 def test_refresh_refuses_unmatched_target() -> None:
@@ -351,7 +424,9 @@ def test_refresh_refuses_unmatched_target() -> None:
     ports, _ = _ports(uow, {}, SequenceIdGenerator())
 
     with pytest.raises(RefreshTargetSelectionError, match=REFRESH_TARGET_NOT_FOUND_MESSAGE):
-        _ = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(target_path=_absolute("Missing")))
+        _ = CreateRefreshPlanUseCase(ports).execute(
+            CreateRefreshPlanRequest(trust_stat=False, target_path=_absolute("Missing"))
+        )
 
 
 def test_refresh_blocks_missing_source() -> None:
@@ -406,7 +481,7 @@ def test_refresh_blocks_duplicate_planned_targets() -> None:
         ),
     )
 
-    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(include_all=True))
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, include_all=True))
 
     assert tuple(action.status for action in plan.actions) == (ActionStatus.BLOCKED, ActionStatus.BLOCKED)
     assert tuple(action.reason for action in plan.actions) == (
@@ -425,7 +500,7 @@ def test_refresh_blocks_db_target_conflict() -> None:
         SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
     )
 
-    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(track_id=TRACK_ID))
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
 
     action = plan.actions[0]
     assert action.status == ActionStatus.BLOCKED
@@ -472,13 +547,48 @@ class MappingSnapshotReader:
         self._missing_paths: set[str] = set() if missing_paths is None else set(missing_paths)
         self.captured_paths: list[FileSystemPath] = []
 
-    def capture(self, path: FileSystemPath) -> FileSnapshot:
+    def capture(
+        self,
+        path: FileSystemPath,
+        *,
+        observation: FileScanEntry | None = None,
+    ) -> FileSnapshot:
         """Return a snapshot or raise FileNotFoundError for vanished files."""
+        del observation
         self.captured_paths.append(path)
         path_key = str(path)
         if path_key in self._missing_paths:
             raise FileNotFoundError(path_key)
         return self._snapshots[path_key]
+
+    def capture_many(
+        self,
+        requests: Sequence[FileSnapshotCaptureRequest],
+    ) -> tuple[FileSnapshot | None, ...]:
+        """Capture requests serially while preserving the production batch contract."""
+        snapshots: list[FileSnapshot | None] = []
+        for request in requests:
+            try:
+                snapshots.append(self.capture(request.path, observation=request.observation))
+            except FileNotFoundError:
+                snapshots.append(None)
+        return tuple(snapshots)
+
+
+class StaticFileStatReader:
+    """FileStatReader fake keyed by filesystem path text."""
+
+    def __init__(self, entries: dict[str, FileScanEntry] | None = None) -> None:
+        """Store the cheap observations available at refresh time."""
+        self._entries: dict[str, FileScanEntry] = {} if entries is None else entries
+
+    def observe(self, path: FileSystemPath) -> FileScanEntry:
+        """Return an observation or report that the managed source disappeared."""
+        path_text = str(path)
+        try:
+            return self._entries[path_text]
+        except KeyError as exc:
+            raise FileNotFoundError(path_text) from exc
 
 
 class StaticFilePresence:
@@ -517,6 +627,7 @@ class PortOptions:
     config: AppConfig | None = None
     existing_files: set[str] | None = None
     missing_paths: set[str] | None = None
+    stat_entries: dict[str, FileScanEntry] | None = None
 
 
 def _ports(
@@ -531,6 +642,7 @@ def _ports(
     ports = CreateRefreshPlanPorts(
         uow=uow,
         file_snapshot_reader=snapshot_reader,
+        file_stat_reader=StaticFileStatReader(port_options.stat_entries),
         file_presence=StaticFilePresence(port_options.existing_files),
         config_store=StaticConfigStore(port_options.config),
         path_resolver=SimplePathResolver(),
@@ -561,7 +673,7 @@ def _single_action_plan(
         SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
         options=PortOptions(config=config, existing_files=existing_files, missing_paths=missing_paths),
     )
-    return CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(track_id=TRACK_ID))
+    return CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
 
 
 def _uow_with_library_and_tracks(*tracks: Track) -> InMemoryUnitOfWork:
@@ -607,6 +719,8 @@ def _track(
         canonical_path=current_path,
         content_hash=CONTENT_HASH,
         metadata_hash=calculate_metadata_fingerprint(metadata),
+        size=None,
+        mtime=None,
         metadata=metadata,
         status=status,
         first_seen_at=BASE_TIME,
@@ -625,6 +739,15 @@ def _snapshot(path: str, metadata: TrackMetadata) -> FileSnapshot:
         metadata_hash=calculate_metadata_fingerprint(metadata),
         metadata=metadata,
         captured_at=BASE_TIME,
+    )
+
+
+def _stat_entry(path: str, *, size: int = FILE_SIZE) -> FileScanEntry:
+    return FileScanEntry(
+        path=path,
+        size=size,
+        mtime=BASE_TIME,
+        file_extension=FILE_EXTENSION,
     )
 
 

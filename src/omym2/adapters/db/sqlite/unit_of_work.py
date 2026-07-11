@@ -1,10 +1,11 @@
 """
-Summary: Implements SQLite transaction-scoped UnitOfWork.
-Why: Gives usecases one durable repository boundary per interaction.
+Summary: Implements SQLite transactions with usecase-scoped connection reuse.
+Why: Preserves durable boundaries without reconnecting for each apply step.
 """
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
@@ -23,6 +24,7 @@ from omym2.adapters.db.sqlite.repositories import (
 
 if TYPE_CHECKING:
     import sqlite3
+    from collections.abc import Generator
     from os import PathLike
     from types import TracebackType
 
@@ -45,6 +47,21 @@ class SQLiteUnitOfWork:
     _runs: SQLiteRunRepository | None = field(default=None, init=False)
     _file_events: SQLiteFileEventRepository | None = field(default=None, init=False)
     _is_completed: bool = field(default=True, init=False)
+    _is_transaction_open: bool = field(default=False, init=False)
+    _is_usecase_scope_open: bool = field(default=False, init=False)
+
+    @contextmanager
+    def usecase_scope(self) -> Generator[None]:
+        """Keep one lazy SQLite connection across this usecase's transactions."""
+        if self._is_usecase_scope_open or self._is_transaction_open or self._connection is not None:
+            raise RuntimeError(UNIT_OF_WORK_ALREADY_OPEN_MESSAGE)
+
+        self._is_usecase_scope_open = True
+        try:
+            yield
+        finally:
+            self._is_usecase_scope_open = False
+            self._close_connection()
 
     @property
     def libraries(self) -> SQLiteLibraryRepository:
@@ -104,14 +121,20 @@ class SQLiteUnitOfWork:
 
     def __enter__(self) -> Self:
         """Open the SQLite transaction boundary."""
-        if self._connection is not None:
+        if self._is_transaction_open:
             raise RuntimeError(UNIT_OF_WORK_ALREADY_OPEN_MESSAGE)
 
-        ensure_database_migrated(self.database_path)
-        connection = open_sqlite_connection(self.database_path)
-        _ = connection.execute("BEGIN")
+        connection = self._connection
+        if connection is None:
+            ensure_database_migrated(self.database_path)
+            connection = open_sqlite_connection(self.database_path)
+            self._connection = connection
+        try:
+            _ = connection.execute("BEGIN")
+        except BaseException:
+            self._close_connection()
+            raise
 
-        self._connection = connection
         self._libraries = SQLiteLibraryRepository(connection)
         self._check_runs = SQLiteCheckRunRepository(connection)
         self._check_issues = SQLiteCheckIssueRepository(connection)
@@ -121,6 +144,7 @@ class SQLiteUnitOfWork:
         self._runs = SQLiteRunRepository(connection)
         self._file_events = SQLiteFileEventRepository(connection)
         self._is_completed = False
+        self._is_transaction_open = True
         return self
 
     def __exit__(
@@ -132,24 +156,16 @@ class SQLiteUnitOfWork:
         """Close the transaction, rolling back any uncommitted changes."""
         del exc, tb
         connection = self._connection
-        if connection is None:
+        if connection is None or not self._is_transaction_open:
             return None
 
         try:
             if not self._is_completed:
                 connection.rollback()
         finally:
-            self._connection = None
-            self._libraries = None
-            self._check_runs = None
-            self._check_issues = None
-            self._tracks = None
-            self._plans = None
-            self._plan_actions = None
-            self._runs = None
-            self._file_events = None
-            self._is_completed = True
-            connection.close()
+            self._reset_transaction()
+            if not self._is_usecase_scope_open:
+                self._close_connection()
 
         return None
 
@@ -169,6 +185,31 @@ class SQLiteUnitOfWork:
 
     def _require_connection(self) -> sqlite3.Connection:
         connection = self._connection
-        if connection is None:
+        if connection is None or not self._is_transaction_open:
             raise RuntimeError(UNIT_OF_WORK_NOT_OPEN_MESSAGE)
         return connection
+
+    def _reset_transaction(self) -> None:
+        self._libraries = None
+        self._check_runs = None
+        self._check_issues = None
+        self._tracks = None
+        self._plans = None
+        self._plan_actions = None
+        self._runs = None
+        self._file_events = None
+        self._is_completed = True
+        self._is_transaction_open = False
+
+    def _close_connection(self) -> None:
+        connection = self._connection
+        if connection is None:
+            return
+
+        try:
+            if self._is_transaction_open and not self._is_completed:
+                connection.rollback()
+        finally:
+            self._reset_transaction()
+            self._connection = None
+            connection.close()
