@@ -14,7 +14,7 @@ env_file="$config_home/omym2/symphony.env"
 state_root="$state_home/omym2/symphony"
 workspace_root="$HOME/code/omym2-symphony-workspaces"
 symphony_root="$HOME/repos/symphony/elixir"
-workflow_file="$repo_root/WORKFLOW.md"
+workflow_file="$repo_root/.symphony/WORKFLOW.md"
 mise_bin="${commands[mise]:-}"
 flock_bin="${commands[flock]:-}"
 

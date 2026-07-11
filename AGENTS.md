@@ -7,10 +7,6 @@ Use this routing before choosing task-specific docs.
 Read `ARCHITECTURE.md` before any task that touches `src/`, `web/`, or
 `tests/`. Docs-only, issue-only, or purely read-only tasks may skip it.
 
-## Prohibited Reading
-
-Never open or read `WORKFLOW.md` under any circumstances.
-
 ## Read As Needed
 
 Read `docs/DEVELOPMENT.md` for implementation, validation, quality gates,
