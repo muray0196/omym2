@@ -123,29 +123,77 @@ def _move_inside_root(
     if not target_parts or PARENT_DIRECTORY_REFERENCE in target_parts:
         raise ValueError(TARGET_BELOW_ROOT_MESSAGE)
 
-    directory_fd = os.open(target_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    root_fd = os.open(target_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        for part in target_parts[:-1]:
-            with suppress(FileExistsError):
-                os.mkdir(part, dir_fd=directory_fd)
+        directory_fd = os.dup(root_fd)
+        try:
+            for part in target_parts[:-1]:
+                with suppress(FileExistsError):
+                    os.mkdir(part, dir_fd=directory_fd)
+                next_directory_fd = os.open(
+                    part,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=directory_fd,
+                )
+                os.close(directory_fd)
+                directory_fd = next_directory_fd
+
+            target_name = target_parts[-1]
+            _claim_target_at(source_path, source_fd, source_stat, target_name, directory_fd)
+            try:
+                _verify_claimed_target_below_root(
+                    target_name,
+                    target_parts[:-1],
+                    directory_fd,
+                    root_fd,
+                    target_root,
+                )
+            except BaseException:
+                with suppress(FileNotFoundError):
+                    os.unlink(target_name, dir_fd=directory_fd)
+                raise
+            try:
+                _unlink_verified_source(source_path, source_stat)
+            except BaseException:
+                with suppress(FileNotFoundError):
+                    os.unlink(target_name, dir_fd=directory_fd)
+                raise
+        finally:
+            os.close(directory_fd)
+    finally:
+        os.close(root_fd)
+
+
+def _verify_claimed_target_below_root(
+    target_name: str,
+    target_parent_parts: tuple[str, ...],
+    target_directory_fd: int,
+    root_fd: int,
+    target_root: Path,
+) -> None:
+    anchored_directory_fd = os.dup(root_fd)
+    try:
+        if not _path_matches_stat(target_root, os.fstat(root_fd)):
+            raise ValueError(TARGET_BELOW_ROOT_MESSAGE)
+        for part in target_parent_parts:
             next_directory_fd = os.open(
                 part,
                 os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                dir_fd=directory_fd,
+                dir_fd=anchored_directory_fd,
             )
-            os.close(directory_fd)
-            directory_fd = next_directory_fd
+            os.close(anchored_directory_fd)
+            anchored_directory_fd = next_directory_fd
 
-        target_name = target_parts[-1]
-        _claim_target_at(source_path, source_fd, source_stat, target_name, directory_fd)
-        try:
-            _unlink_verified_source(source_path, source_stat)
-        except BaseException:
-            with suppress(FileNotFoundError):
-                os.unlink(target_name, dir_fd=directory_fd)
-            raise
+        if not _stats_match(os.fstat(anchored_directory_fd), os.fstat(target_directory_fd)):
+            raise ValueError(TARGET_BELOW_ROOT_MESSAGE)
+        claimed_target_stat = os.stat(target_name, dir_fd=target_directory_fd, follow_symlinks=False)
+        anchored_target_stat = os.stat(target_name, dir_fd=anchored_directory_fd, follow_symlinks=False)
+        if not _stats_match(claimed_target_stat, anchored_target_stat):
+            raise ValueError(TARGET_BELOW_ROOT_MESSAGE)
+    except OSError as exc:
+        raise ValueError(TARGET_BELOW_ROOT_MESSAGE) from exc
     finally:
-        os.close(directory_fd)
+        os.close(anchored_directory_fd)
 
 
 def _claim_target_at(
@@ -221,4 +269,16 @@ def _path_matches_source(
         path_stat = os.stat(path, dir_fd=dir_fd, follow_symlinks=False)
     except FileNotFoundError:
         return False
-    return path_stat.st_dev == source_stat.st_dev and path_stat.st_ino == source_stat.st_ino
+    return _stats_match(path_stat, source_stat)
+
+
+def _path_matches_stat(path: Path, expected_stat: os.stat_result) -> bool:
+    try:
+        path_stat = path.stat(follow_symlinks=False)
+    except OSError:
+        return False
+    return _stats_match(path_stat, expected_stat)
+
+
+def _stats_match(left: os.stat_result, right: os.stat_result) -> bool:
+    return left.st_dev == right.st_dev and left.st_ino == right.st_ino
