@@ -4,7 +4,8 @@
 
 The large-data browsing foundation, grouped Plan review, grouped Check triage,
 Tracks library browser, consistent faceted search, cross-links, dashboard next
-actions, and global command-palette navigation and search are complete.
+actions, global command-palette navigation and search, and the Settings safety
+split are complete.
 
 ## Outcome and Boundary
 
@@ -15,8 +16,6 @@ player.
 
 ## Remaining Ordered Work
 
-8. **Settings split** — Separate ordinary settings from safety-sensitive or
-   advanced controls.
 9. **GUI apply decision** — Consider only after the preceding review and
    diagnosis workflows are mature; retain the reviewed-Plan safety model.
 

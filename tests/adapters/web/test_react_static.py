@@ -42,6 +42,12 @@ DISALLOWED_STATIC_EXPORT_TEXT = (
     'omym2 refresh "',
 )
 STATIC_EXPORT_TEXT_SUFFIXES = (".css", ".html", ".js", ".json", ".svg", ".txt", ".webmanifest", ".xml")
+SETTINGS_SPLIT_STATIC_EXPORT_TEXT = (
+    "General settings",
+    "Advanced controls",
+    "Hiding these controls does not reset their saved values.",
+    "Safety-sensitive controls",
+)
 
 
 def test_spa_routes_return_react_index(tmp_path: Path) -> None:
@@ -83,6 +89,22 @@ def test_default_packaged_web_build_excludes_risky_static_artifacts() -> None:
         content = static_file.read_text(encoding=CONFIG_FILE_ENCODING)
         for disallowed_text in DISALLOWED_STATIC_EXPORT_TEXT:
             assert disallowed_text not in content
+
+
+def test_packaged_web_build_includes_settings_safety_split() -> None:
+    """The exported settings console distinguishes routine and advanced controls."""
+    static_dist = Path(__file__).parents[3] / "src" / "omym2" / "adapters" / "web" / "static_dist"
+    if not static_dist.exists():
+        pytest.skip("Generated Web static export is created by the Web build.")
+
+    export_text = "\n".join(
+        static_file.read_text(encoding=CONFIG_FILE_ENCODING)
+        for static_file in static_dist.rglob("*")
+        if static_file.is_file() and static_file.suffix.lower() in STATIC_EXPORT_TEXT_SUFFIXES
+    )
+
+    for required_text in SETTINGS_SPLIT_STATIC_EXPORT_TEXT:
+        assert required_text in export_text
 
 
 def test_next_static_assets_are_served_from_web_build(tmp_path: Path) -> None:

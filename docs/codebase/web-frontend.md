@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Authoritative reference for the Next.js web/ frontend layout, its audited static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
 tags: [web-frontend, nextjs, static-export, api-boundary]
-timestamp: 2026-07-12T21:25:28+09:00
+timestamp: 2026-07-12T22:30:28+09:00
 ---
 
 # Web Frontend
@@ -24,6 +24,14 @@ copyable CLI operations. Non-blank input is debounced and searches the paged
 Track, Plan, Run, and persisted Check issue APIs in parallel; result rows link
 to the corresponding detail or filtered browse screen. A failed source does
 not discard successful results from the other sources.
+
+The Settings editor separates routine controls from safety-sensitive and
+advanced controls. Paths, metadata and artist IDs, and appearance remain in the
+General settings area. The persisted `ui.show_advanced_settings` value exposes
+a distinct Advanced controls area for automation defaults, path construction,
+and collision or missing-data policies. Hiding the advanced area changes only
+editor visibility; it does not reset those persisted values. Both areas use the
+same validation, diff, and save flow, and neither adds a Web apply path.
 
 ## Layout
 
