@@ -487,6 +487,50 @@ def test_file_mover_removes_target_if_parent_directory_escapes_root_during_claim
     assert not (escaped_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME).exists()
 
 
+def test_file_mover_rejects_escaped_parent_when_root_path_is_also_replaced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A replacement root path cannot validate a target claimed through the opened root."""
+    source_path = tmp_path / AUDIO_FILE_NAME
+    library_root = tmp_path / "library"
+    moved_library_root = tmp_path / "moved-library"
+    escaped_root = tmp_path / "escaped"
+    target_parent = library_root / NESTED_DIRECTORY_NAME
+    target_path = target_parent / TARGET_FILE_NAME
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    library_root.mkdir()
+    escaped_root.mkdir()
+    real_link = os.link
+
+    def escape_target_parent_replace_root_then_link(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
+        _ = target_parent.rename(escaped_root / NESTED_DIRECTORY_NAME)
+        _ = library_root.rename(moved_library_root)
+        library_root.symlink_to(tmp_path, target_is_directory=True)
+        real_link(
+            source,
+            target,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+
+    monkeypatch.setattr(os, "link", escape_target_parent_replace_root_then_link)
+
+    with pytest.raises(ValueError, match=TARGET_BELOW_ROOT_MESSAGE):
+        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert not (escaped_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME).exists()
+
+
 def test_file_mover_refuses_symlink_source(tmp_path: Path) -> None:
     """A symlink is never claimed into managed storage as a moved file."""
     real_file = tmp_path / AUDIO_FILE_NAME
