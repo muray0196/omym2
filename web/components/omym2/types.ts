@@ -35,6 +35,7 @@ export type CheckIssueType =
   | "library_blocked"
 
 export type IssueSeverity = "info" | "warning" | "error"
+export type CheckViewMode = "triage" | "grouped" | "table"
 
 export interface AppConfig {
   version: number

@@ -5,12 +5,23 @@ Why: Summarizes settings, runs, checks, and tracks without loading full tables.
 
 "use client"
 
-import { Database, FolderTree, ListChecks, Music, ShieldCheck, Terminal } from "lucide-react"
+import {
+  CircleAlert,
+  Database,
+  FolderTree,
+  ListChecks,
+  Music,
+  Settings2,
+  ShieldCheck,
+  Terminal,
+} from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import {
   getCheckFacets,
   getHistoryFacets,
   getHistoryPage,
+  getPlansPage,
   getTrackFacets,
   getTracksPage,
 } from "../api-client"
@@ -18,7 +29,7 @@ import { useApp } from "../app-context"
 import { CommandPaletteTrigger } from "../command-palette"
 import { AppIconTile, CommandRow } from "../command-kit"
 import { formatTimestamp, severityForIssue, truncateMiddle, validateConfig } from "../lib"
-import type { CheckIssueType, RunStatus, RunSummary, TrackStatus } from "../types"
+import type { CheckIssueType, PlanSummary, RunStatus, RunSummary, TrackStatus } from "../types"
 import {
   Button,
   EmptyState,
@@ -28,11 +39,37 @@ import {
   Panel,
   StatusBadge,
   toneForStatus,
+  type Tone,
   truncateLabel,
 } from "../primitives"
 import { CliCommand } from "../widgets"
 
 const DASHBOARD_RUN_LIMIT = 4
+const DASHBOARD_PLAN_LIMIT = 8
+
+interface NextAction {
+  icon: LucideIcon
+  tone: Tone
+  title: string
+  description: string
+  label: string
+  onSelect: () => void
+}
+
+function NextActionRow({ action }: { action: NextAction }) {
+  return (
+    <div className="flex flex-col gap-3 rounded-md border border-hairline bg-surface-elevated p-3 sm:flex-row sm:items-center">
+      <AppIconTile icon={action.icon} size={32} tone={action.tone} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-ink">{action.title}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-mute">{action.description}</p>
+      </div>
+      <Button variant="outline" size="sm" onClick={action.onSelect}>
+        {action.label}
+      </Button>
+    </div>
+  )
+}
 
 function facetCounts<T extends string>(
   facets: Record<string, { value: string; count: number }[]>,
@@ -47,6 +84,13 @@ function sumCounts<T extends string>(counts: Partial<Record<T, number>>, values:
   return values.reduce((total, value) => total + (counts[value] ?? 0), 0)
 }
 
+function summaryNumber(plan: PlanSummary, key: string): number {
+  const raw = plan.summary[key]
+  if (!raw) return 0
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
 }
@@ -59,6 +103,9 @@ export function DashboardScreen() {
   >({})
   const [historyErrors, setHistoryErrors] = useState<string[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [recentPlans, setRecentPlans] = useState<PlanSummary[]>([])
+  const [planErrors, setPlanErrors] = useState<string[]>([])
+  const [plansLoaded, setPlansLoaded] = useState(false)
   const [checkIssueCounts, setCheckIssueCounts] = useState<Partial<Record<CheckIssueType, number>>>(
     {},
   )
@@ -80,12 +127,14 @@ export function DashboardScreen() {
       const [
         historyPageResult,
         historyFacetsResult,
+        plansPageResult,
         checkFacetsResult,
         trackFacetsResult,
         trackSampleResult,
       ] = await Promise.allSettled([
         getHistoryPage({ limit: DASHBOARD_RUN_LIMIT }),
         getHistoryFacets(),
+        getPlansPage({ limit: DASHBOARD_PLAN_LIMIT }),
         getCheckFacets(),
         getTrackFacets(),
         getTracksPage({ limit: 1 }),
@@ -111,6 +160,15 @@ export function DashboardScreen() {
       }
       setHistoryErrors(nextHistoryErrors)
       setHistoryLoaded(true)
+
+      if (plansPageResult.status === "fulfilled") {
+        setRecentPlans(plansPageResult.value.items)
+        setPlanErrors(plansPageResult.value.errors)
+      } else {
+        setRecentPlans([])
+        setPlanErrors([errorMessage(plansPageResult.reason, "Plan summary failed to load.")])
+      }
+      setPlansLoaded(true)
 
       if (checkFacetsResult.status === "fulfilled") {
         setCheckIssueCounts(
@@ -181,7 +239,72 @@ export function DashboardScreen() {
   const errorIssues = issueSeverityCounts.error
   const warningIssues = issueSeverityCounts.warning
   const knownLibraryId = trackSampleLibraryId ?? recentRuns[0]?.library_id ?? null
-  const inspectionErrors = [...historyErrors, ...checkErrors, ...trackErrors]
+  const inspectionErrors = [...historyErrors, ...planErrors, ...checkErrors, ...trackErrors]
+  const blockedPlans = recentPlans.filter((plan) => summaryNumber(plan, "blocked_actions") > 0)
+  const blockedPlan = blockedPlans[0]
+  const failedRun = recentRuns
+    .filter((run) => run.status === "failed" || run.status === "partial_failed")
+    .sort((a, b) => b.started_at.localeCompare(a.started_at))[0]
+  const nextActions: NextAction[] = []
+
+  if (settingsLoaded) {
+    if (settingsFailed) {
+      nextActions.push({
+        icon: Settings2,
+        tone: "danger",
+        title: "Settings could not be loaded",
+        description: "Open Settings to inspect the configuration before using the CLI.",
+        label: "Open Settings",
+        onSelect: () => navigate({ name: "settings" }),
+      })
+    } else if (!validation.valid || !libraryConfigured || !incomingConfigured) {
+      nextActions.push({
+        icon: Settings2,
+        tone: "warning",
+        title: "Complete settings",
+        description: "Resolve the configuration gaps before creating or applying Plans.",
+        label: "Open Settings",
+        onSelect: () => navigate({ name: "settings" }),
+      })
+    }
+  }
+
+  if (checkLoaded && issueCount > 0) {
+    nextActions.push({
+      icon: CircleAlert,
+      tone: errorIssues > 0 ? "danger" : "warning",
+      title: `Review ${issueCount} check issue${issueCount === 1 ? "" : "s"}`,
+      description: "Open the grouped severity view to focus on material consistency risks.",
+      label: "Review issues",
+      onSelect: () => navigate({ name: "check", view: "grouped", groupBy: "severity" }),
+    })
+  }
+
+  if (plansLoaded && blockedPlan) {
+    const blockedCount = summaryNumber(blockedPlan, "blocked_actions")
+    nextActions.push({
+      icon: ListChecks,
+      tone: "danger",
+      title: `${blockedCount} blocked Plan action${blockedCount === 1 ? "" : "s"}`,
+      description: `Review the recorded blockers in this ${blockedPlan.plan_type} Plan before CLI apply.`,
+      label: "Review Plan",
+      onSelect: () =>
+        navigate({ name: "plan-detail", planId: blockedPlan.plan_id, actionStatus: "blocked" }),
+    })
+  }
+
+  if (historyLoaded && failedRun) {
+    nextActions.push({
+      icon: CircleAlert,
+      tone: "warning",
+      title: `Diagnose ${failedRun.status.replace("_", " ")} run`,
+      description: "Inspect the run and its recorded file events before retrying any work.",
+      label: "View run",
+      onSelect: () => navigate({ name: "run-detail", runId: failedRun.run_id }),
+    })
+  }
+
+  const nextActionsLoading = !settingsLoaded || !historyLoaded || !plansLoaded || !checkLoaded
 
   // Recommended next CLI command.
   const primaryCommand = !libraryConfigured
@@ -305,6 +428,30 @@ export function DashboardScreen() {
           icon={Music}
         />
       </section>
+
+      <div className="mb-6">
+        <Panel
+          title="Next actions"
+          description="Start with the highest-signal review path. These links open filtered or grouped views; the console never changes files."
+          icon={ShieldCheck}
+        >
+          {nextActionsLoading ? (
+            <Notice tone="info" title="Loading next actions">
+              Checking settings, diagnostics, Plans, and recent runs.
+            </Notice>
+          ) : nextActions.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {nextActions.map((action) => (
+                <NextActionRow key={action.title} action={action} />
+              ))}
+            </div>
+          ) : (
+            <Notice tone="success" title="No urgent review actions">
+              Settings are ready and no blocked Plans or recorded check issues need attention.
+            </Notice>
+          )}
+        </Panel>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 flex flex-col gap-6">

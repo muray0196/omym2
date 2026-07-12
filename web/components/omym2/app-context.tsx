@@ -30,7 +30,11 @@ import { savedArtistIdEntries } from "./lib"
 import { defaultConfig, mockSettingsState } from "./mock-data"
 import type {
   AppConfig,
+  CheckGroupBy,
+  CheckIssueType,
+  CheckViewMode,
   PathPreview,
+  PlanActionStatus,
   PlanCreateResult,
   PlanDetail,
   PlanSummary,
@@ -49,10 +53,16 @@ export type Route =
   | { name: "settings" }
   | { name: "path-policy"; trackId?: string }
   | { name: "plans" }
-  | { name: "plan-detail"; planId: string; actionId?: string }
+  | { name: "plan-detail"; planId: string; actionId?: string; actionStatus?: PlanActionStatus }
   | { name: "runs" }
   | { name: "run-detail"; runId: string }
-  | { name: "check"; query?: string }
+  | {
+      name: "check"
+      query?: string
+      issueType?: CheckIssueType
+      view?: CheckViewMode
+      groupBy?: CheckGroupBy
+    }
   | { name: "tracks"; trackId?: string }
 
 export type NavKey =
@@ -491,11 +501,14 @@ function routeFromPath(pathname: string, search = ""): Route {
   }
   if (pathname === "/plans") return { name: "plans" }
   if (pathname.startsWith("/plans/")) {
-    const actionId = new URLSearchParams(search).get("action")
+    const params = new URLSearchParams(search)
+    const actionId = params.get("action")
+    const actionStatus = planActionStatusFromValue(params.get("status"))
     return {
       name: "plan-detail",
       planId: decodeURIComponent(pathname.replace("/plans/", "")),
       actionId: actionId ?? undefined,
+      actionStatus,
     }
   }
   if (pathname === "/history") return { name: "runs" }
@@ -503,8 +516,14 @@ function routeFromPath(pathname: string, search = ""): Route {
     return { name: "run-detail", runId: decodeURIComponent(pathname.replace("/history/", "")) }
   }
   if (pathname === "/check") {
-    const query = new URLSearchParams(search).get("query")
-    return { name: "check", query: query ?? undefined }
+    const params = new URLSearchParams(search)
+    return {
+      name: "check",
+      query: params.get("query") ?? undefined,
+      issueType: checkIssueTypeFromValue(params.get("issue_type")),
+      view: checkViewModeFromValue(params.get("view")),
+      groupBy: checkGroupByFromValue(params.get("group_by")),
+    }
   }
   if (pathname === "/tracks") {
     const trackId = new URLSearchParams(search).get("track")
@@ -523,16 +542,26 @@ function routeToPath(route: Route): string {
         : "/path-policy"
     case "plans":
       return "/plans"
-    case "plan-detail":
-      return route.actionId
-        ? `/plans/${encodeURIComponent(route.planId)}?action=${encodeURIComponent(route.actionId)}`
-        : `/plans/${encodeURIComponent(route.planId)}`
+    case "plan-detail": {
+      const params = new URLSearchParams()
+      if (route.actionId) params.set("action", route.actionId)
+      if (route.actionStatus) params.set("status", route.actionStatus)
+      const query = params.toString()
+      return `/plans/${encodeURIComponent(route.planId)}${query ? `?${query}` : ""}`
+    }
     case "runs":
       return "/history"
     case "run-detail":
       return `/history/${encodeURIComponent(route.runId)}`
-    case "check":
-      return route.query ? `/check?query=${encodeURIComponent(route.query)}` : "/check"
+    case "check": {
+      const params = new URLSearchParams()
+      if (route.query) params.set("query", route.query)
+      if (route.issueType) params.set("issue_type", route.issueType)
+      if (route.view) params.set("view", route.view)
+      if (route.groupBy) params.set("group_by", route.groupBy)
+      const query = params.toString()
+      return `/check${query ? `?${query}` : ""}`
+    }
     case "tracks":
       return route.trackId ? `/tracks?track=${encodeURIComponent(route.trackId)}` : "/tracks"
     case "dashboard":
@@ -543,6 +572,54 @@ function routeToPath(route: Route): string {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
+}
+
+const PLAN_ACTION_STATUSES: PlanActionStatus[] = ["planned", "blocked", "applied", "failed"]
+const CHECK_ISSUE_TYPES: CheckIssueType[] = [
+  "db_file_missing",
+  "unmanaged_file_exists",
+  "content_hash_changed",
+  "metadata_hash_changed",
+  "current_path_differs_from_canonical_path",
+  "duplicate_candidate",
+  "plan_source_changed",
+  "pending_file_event_exists",
+  "library_unregistered",
+  "library_stale",
+  "library_blocked",
+]
+const CHECK_VIEW_MODES: CheckViewMode[] = ["triage", "grouped", "table"]
+const CHECK_GROUP_BY_VALUES: CheckGroupBy[] = [
+  "issue_type",
+  "severity",
+  "path_root",
+  "artist_album",
+  "suggested_command",
+  "library_id",
+]
+
+function planActionStatusFromValue(value: string | null): PlanActionStatus | undefined {
+  return value && PLAN_ACTION_STATUSES.includes(value as PlanActionStatus)
+    ? (value as PlanActionStatus)
+    : undefined
+}
+
+function checkIssueTypeFromValue(value: string | null): CheckIssueType | undefined {
+  return value && CHECK_ISSUE_TYPES.includes(value as CheckIssueType)
+    ? (value as CheckIssueType)
+    : undefined
+}
+
+function checkViewModeFromValue(value: string | null): CheckViewMode | undefined {
+  return value && CHECK_VIEW_MODES.includes(value as CheckViewMode)
+    ? (value as CheckViewMode)
+    : undefined
+}
+
+function checkGroupByFromValue(value: string | null): CheckGroupBy | undefined {
+  return value && CHECK_GROUP_BY_VALUES.includes(value as CheckGroupBy)
+    ? (value as CheckGroupBy)
+    : undefined
 }
 
 function upsertPlan(plans: PlanSummary[], next: PlanSummary): PlanSummary[] {

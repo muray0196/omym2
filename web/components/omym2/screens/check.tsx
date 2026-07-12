@@ -29,6 +29,7 @@ import type {
   CheckGroupCount,
   CheckIssue,
   CheckIssueType,
+  CheckViewMode,
   FacetValue,
   IssueSeverity,
 } from "../types"
@@ -78,8 +79,6 @@ const UNMANAGED_TYPES: CheckIssueType[] = ["unmanaged_file_exists"]
 const HASH_TYPES: CheckIssueType[] = ["content_hash_changed", "metadata_hash_changed"]
 const PATH_TYPES: CheckIssueType[] = ["current_path_differs_from_canonical_path"]
 const LIBRARY_TYPES: CheckIssueType[] = ["library_unregistered", "library_stale", "library_blocked"]
-
-type CheckViewMode = "triage" | "grouped" | "table"
 
 const VIEW_MODE_OPTIONS: SegmentedOption<CheckViewMode>[] = [
   { value: "triage", label: "Triage", icon: ShieldCheck },
@@ -769,10 +768,20 @@ function CheckIssueTable({
   )
 }
 
-export function CheckScreen({ query: routeQuery }: { query?: string }) {
-  const [viewMode, setViewMode] = useState<CheckViewMode>("triage")
-  const [groupBy, setGroupBy] = useState<CheckGroupBy>("path_root")
-  const [typeFilter, setTypeFilter] = useState<CheckIssueType | "all">("all")
+export function CheckScreen({
+  query: routeQuery,
+  issueType: routeIssueType,
+  view: routeView,
+  groupBy: routeGroupBy,
+}: {
+  query?: string
+  issueType?: CheckIssueType
+  view?: CheckViewMode
+  groupBy?: CheckGroupBy
+}) {
+  const [viewMode, setViewMode] = useState<CheckViewMode>(routeView ?? "triage")
+  const [groupBy, setGroupBy] = useState<CheckGroupBy>(routeGroupBy ?? "path_root")
+  const [typeFilter, setTypeFilter] = useState<CheckIssueType | "all">(routeIssueType ?? "all")
   const [query, setQuery] = useState(routeQuery ?? "")
   const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
   const [issueTypeCounts, setIssueTypeCounts] = useState<Partial<Record<CheckIssueType, number>>>(
@@ -784,7 +793,10 @@ export function CheckScreen({ query: routeQuery }: { query?: string }) {
 
   useEffect(() => {
     setQuery(routeQuery ?? "")
-  }, [routeQuery])
+    setTypeFilter(routeIssueType ?? "all")
+    setViewMode(routeView ?? "triage")
+    if (routeGroupBy) setGroupBy(routeGroupBy)
+  }, [routeGroupBy, routeIssueType, routeQuery, routeView])
 
   useEffect(() => {
     let cancelled = false

@@ -24,13 +24,26 @@ function ActiveScreen() {
     case "plans":
       return <PlansScreen />
     case "plan-detail":
-      return <PlanDetailScreen planId={route.planId} actionId={route.actionId} />
+      return (
+        <PlanDetailScreen
+          planId={route.planId}
+          actionId={route.actionId}
+          actionStatus={route.actionStatus}
+        />
+      )
     case "runs":
       return <RunsScreen />
     case "run-detail":
       return <RunDetailScreen runId={route.runId} />
     case "check":
-      return <CheckScreen query={route.query} />
+      return (
+        <CheckScreen
+          query={route.query}
+          issueType={route.issueType}
+          view={route.view}
+          groupBy={route.groupBy}
+        />
+      )
     case "tracks":
       return <TracksScreen />
     default:
