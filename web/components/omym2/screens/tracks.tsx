@@ -9,7 +9,8 @@ import { ListTree, Music, Table2, TriangleAlert } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { getTrackFacets, getTracksPage } from "../api-client"
 import { useApp } from "../app-context"
-import { BrowseFilters, countedFacetOptions } from "../browse-filters"
+import { BrowseFilters, countedFacetOptions, SEARCH_DEBOUNCE_MS } from "../browse-filters"
+import { useDebouncedValue } from "../use-debounced-value"
 import { TracksBrowser } from "../tracks-browser"
 import { cn, truncateMiddle, truncatePathTail } from "../lib"
 import type { FacetValue, TrackStatus, TrackSummary } from "../types"
@@ -151,6 +152,7 @@ export function TracksScreen() {
   const { navigate, route } = useApp()
   const [viewMode, setViewMode] = useState<TracksViewMode>("browser")
   const [query, setQuery] = useState("")
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
   const [status, setStatus] = useState<TrackStatus | "all">("all")
   const [statusFacets, setStatusFacets] = useState<FacetValue[]>([])
   const [facetTotal, setFacetTotal] = useState<number | null>(null)
@@ -174,11 +176,11 @@ export function TracksScreen() {
       return getTracksPage({
         cursor,
         limit: TRACK_PAGE_LIMIT,
-        query: query.trim() || undefined,
+        query: debouncedQuery.trim() || undefined,
         status,
       })
     },
-    [query, status, viewMode],
+    [debouncedQuery, status, viewMode],
   )
   const tracksPage = usePagedList({
     errorMessage: "Tracks failed to load.",
@@ -191,7 +193,7 @@ export function TracksScreen() {
 
   useEffect(() => {
     let cancelled = false
-    getTrackFacets({ query: query.trim() || undefined })
+    getTrackFacets({ query: debouncedQuery.trim() || undefined })
       .then((response) => {
         if (cancelled) return
         setStatusFacets(response.facets.status ?? [])
@@ -207,7 +209,7 @@ export function TracksScreen() {
     return () => {
       cancelled = true
     }
-  }, [query])
+  }, [debouncedQuery])
 
   useEffect(() => {
     if (!selectedId) {
@@ -355,7 +357,7 @@ export function TracksScreen() {
             ) : null}
             {viewMode === "browser" ? (
               <TracksBrowser
-                query={query.trim() || undefined}
+                query={debouncedQuery.trim() || undefined}
                 status={status}
                 selectedTrackId={selectedId}
                 onSelectTrack={selectTrack}

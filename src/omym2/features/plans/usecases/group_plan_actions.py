@@ -13,6 +13,7 @@ from omym2.domain.models.plan_action import ActionStatus
 from omym2.features.plans.dto import PlanActionGroup, PlanActionGrouping
 from omym2.features.plans.usecases.get_plan_header import PLAN_NOT_FOUND_MESSAGE, PlanNotFoundError
 from omym2.shared.pagination import paginate_group_counts
+from omym2.shared.text import ascii_lower
 
 if TYPE_CHECKING:
     from omym2.domain.models.plan_action import ActionType, PlanActionReason
@@ -55,7 +56,7 @@ def plan_action_group_row_matches_filters(
         return False
     if not search:
         return True
-    needle = search.casefold()
+    needle = ascii_lower(search)
     values = (
         str(row.action_id),
         None if row.track_id is None else str(row.track_id),
@@ -64,7 +65,7 @@ def plan_action_group_row_matches_filters(
         row.content_hash_at_plan,
         row.metadata_hash_at_plan,
     )
-    return any(value is not None and needle in value.casefold() for value in values)
+    return any(value is not None and needle in ascii_lower(value) for value in values)
 
 
 def derive_plan_action_group_key(row: PlanActionGroupRow, grouping: PlanActionGrouping) -> PlanActionGroupKey | None:

@@ -11,6 +11,9 @@ import type { FacetValue } from "./types"
 import { Button } from "./primitives"
 import { Field, Select, TextInput } from "./forms"
 
+/** Delay between the last search keystroke and the query-scoped refetches. */
+export const SEARCH_DEBOUNCE_MS = 250
+
 export interface BrowseFacet {
   key: string
   label: string
@@ -88,7 +91,7 @@ export function BrowseFilters({
         ))}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs tabular-nums text-mute">
+        <span role="status" className="text-xs tabular-nums text-mute">
           {total === null
             ? "Counting matches…"
             : `${total} matching result${total === 1 ? "" : "s"}`}

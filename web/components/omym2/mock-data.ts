@@ -1222,6 +1222,21 @@ export function groupsMock<T>(
 
 // --- Filter predicates mirroring server semantics (see filterPlanRows above)
 
+// The live API folds case with SQLite's LOWER(), which is ASCII-only, and
+// matches each stored field independently — never across field boundaries.
+function asciiLowerCase(text: string): string {
+  return text.replace(/[A-Z]/g, (letter) => letter.toLowerCase())
+}
+
+function matchesSearch(values: (string | null | undefined)[], needle: string): boolean {
+  return values.some((value) => value != null && asciiLowerCase(value).includes(needle))
+}
+
+function searchNeedle(query: string | undefined): string | undefined {
+  const trimmed = query?.trim()
+  return trimmed ? asciiLowerCase(trimmed) : undefined
+}
+
 function buildTrackPredicate(options: {
   query?: string
   status?: TrackStatus | "all"
@@ -1230,7 +1245,7 @@ function buildTrackPredicate(options: {
   groupBy?: TrackGroupBy
   groupKey?: string
 }): (row: TrackSummary) => boolean {
-  const query = options.query?.trim().toLowerCase()
+  const query = searchNeedle(options.query)
   return (row) => {
     if (options.libraryId && row.library_id !== options.libraryId) {
       return false
@@ -1248,20 +1263,20 @@ function buildTrackPredicate(options: {
     ) {
       return false
     }
-    if (query) {
-      const haystack = [
-        row.metadata.title,
-        row.metadata.artist,
-        row.metadata.album,
-        row.current_path,
-        row.track_id,
-      ]
-        .filter((value): value is string => Boolean(value))
-        .join(" ")
-        .toLowerCase()
-      if (!haystack.includes(query)) {
-        return false
-      }
+    if (
+      query &&
+      !matchesSearch(
+        [
+          row.metadata.title,
+          row.metadata.artist,
+          row.metadata.album,
+          row.current_path,
+          row.track_id,
+        ],
+        query,
+      )
+    ) {
+      return false
     }
     return true
   }
@@ -1378,7 +1393,7 @@ function buildPlanActionPredicate(options: {
   groupBy?: PlanGroupBy
   groupKey?: string
 }): (row: PlanAction) => boolean {
-  const query = options.query?.trim().toLowerCase()
+  const query = searchNeedle(options.query)
   return (row) => {
     if (options.status && options.status !== "all" && row.status !== options.status) {
       return false
@@ -1399,19 +1414,21 @@ function buildPlanActionPredicate(options: {
         return false
       }
     }
-    if (query) {
-      const haystack = [
-        row.action_id,
-        row.track_id,
-        row.source_path,
-        row.target_path,
-        row.content_hash_at_plan,
-        row.metadata_hash_at_plan,
-      ]
-        .filter((value): value is string => Boolean(value))
-        .join(" ")
-        .toLowerCase()
-      if (!haystack.includes(query)) return false
+    if (
+      query &&
+      !matchesSearch(
+        [
+          row.action_id,
+          row.track_id,
+          row.source_path,
+          row.target_path,
+          row.content_hash_at_plan,
+          row.metadata_hash_at_plan,
+        ],
+        query,
+      )
+    ) {
+      return false
     }
     return true
   }
@@ -1534,7 +1551,7 @@ function buildCheckPredicate(options: {
   groupBy?: CheckGroupBy
   groupKey?: string
 }): (row: CheckIssue) => boolean {
-  const query = options.query?.trim().toLowerCase()
+  const query = searchNeedle(options.query)
   return (row) => {
     if (options.libraryId && row.library_id !== options.libraryId) {
       return false
@@ -1548,12 +1565,11 @@ function buildCheckPredicate(options: {
         return false
       }
     }
-    if (query) {
-      const haystack = [row.library_id, row.path, row.track_id, row.plan_id, row.detail]
-        .filter((value): value is string => Boolean(value))
-        .join(" ")
-        .toLowerCase()
-      if (!haystack.includes(query)) return false
+    if (
+      query &&
+      !matchesSearch([row.library_id, row.path, row.track_id, row.plan_id, row.detail], query)
+    ) {
+      return false
     }
     return true
   }

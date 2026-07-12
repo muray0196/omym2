@@ -8,7 +8,8 @@ Why: Lets a Plan with thousands of actions read as meaningful library operations
 import { ChevronDown, ChevronRight, FileDiff, Hash, ListTree, Table2 } from "lucide-react"
 import { useCallback, useEffect, useId, useState } from "react"
 import { getPlanActionsPage, getPlanFacets, getPlanGroups } from "../api-client"
-import { BrowseFilters, countedFacetOptions } from "../browse-filters"
+import { BrowseFilters, countedFacetOptions, SEARCH_DEBOUNCE_MS } from "../browse-filters"
+import { useDebouncedValue } from "../use-debounced-value"
 import { cn, describeBlockReason, truncateMiddle } from "../lib"
 import type {
   FacetValue,
@@ -178,17 +179,23 @@ export function PlanActionsPanel({
 }) {
   const [groupBy, setGroupBy] = useState<PlanGroupBy>("artist_album")
   const [query, setQuery] = useState("")
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
   const [actionType, setActionType] = useState<PlanActionType | "all">("all")
   const [reason, setReason] = useState<PlanActionReason | "all">("all")
   const [facets, setFacets] = useState<Record<string, FacetValue[]>>({})
   const [facetTotal, setFacetTotal] = useState<number | null>(null)
   const [facetErrors, setFacetErrors] = useState<string[]>([])
-  const filters: PlanActionFilters = { query, status: actionStatus, actionType, reason }
+  const filters: PlanActionFilters = {
+    query: debouncedQuery,
+    status: actionStatus,
+    actionType,
+    reason,
+  }
 
   useEffect(() => {
     let cancelled = false
     getPlanFacets(planId, {
-      query: query.trim() || undefined,
+      query: debouncedQuery.trim() || undefined,
       status: actionStatus,
       actionType,
       reason,
@@ -208,7 +215,7 @@ export function PlanActionsPanel({
     return () => {
       cancelled = true
     }
-  }, [actionStatus, actionType, planId, query, reason])
+  }, [actionStatus, actionType, debouncedQuery, planId, reason])
 
   return (
     <Panel

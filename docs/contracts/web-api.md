@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines OMYM2's local Web API envelopes, browsing and Plan-creation requests, pagination/facets/groups, and exclusion of CLI-only trust-stat flags.
 tags: [web-api, pagination, json, contract]
-timestamp: 2026-07-12T16:19:06+09:00
+timestamp: 2026-07-12T18:25:09+09:00
 ---
 
 # Web API Contract
@@ -262,4 +262,4 @@ Run ordering: `started_at DESC, run_id DESC`. Event ordering: `sequence_no ASC, 
 
 ## Search Implementation
 
-Search (`query` filters and substring matching) is implemented with SQL `LIKE` and, for Track metadata, `json_extract`, not a full-text index. `%`, `_`, and the escape character in user input are matched literally. FTS5 is explicitly deferred; it is the escalation path if browse-search volume makes `LIKE`-based search too slow.
+Search (`query` filters and substring matching) is implemented with SQL `LIKE` and, for Track metadata, `json_extract`, not a full-text index. `%`, `_`, and the escape character in user input are matched literally. Case-insensitivity is ASCII-only in every browse mode: SQL paths fold with SQLite's `LOWER()`, and the in-process Plan action group filters apply the same ASCII-only fold, so non-ASCII characters match case-sensitively everywhere. FTS5 is explicitly deferred; it is the escalation path if browse-search volume makes `LIKE`-based search too slow.

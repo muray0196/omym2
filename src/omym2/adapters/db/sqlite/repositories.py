@@ -71,14 +71,14 @@ TRACK_SEARCH_WHERE_CLAUSE = f"""(
                 LOWER(current_path) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
                 LOWER(track_id) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}'
             )"""
-PLAN_ACTION_SEARCH_WHERE_CLAUSE = f"""(
-                LOWER(action_id) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
-                LOWER(track_id) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
-                LOWER(source_path) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
-                LOWER(target_path) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
-                LOWER(content_hash_at_plan) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
-                LOWER(metadata_hash_at_plan) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}'
-            )"""
+PLAN_ACTION_SEARCH_COLUMN_NAMES = (
+    "action_id",
+    "track_id",
+    "source_path",
+    "target_path",
+    "content_hash_at_plan",
+    "metadata_hash_at_plan",
+)
 CHECK_ISSUE_SEARCH_COLUMN_NAMES = ("library_id", "path", "track_id", "plan_id", "detail")
 TRACK_GROUP_SOURCE_SELECT = """
             SELECT
@@ -1985,7 +1985,7 @@ def _check_issue_filter_where(
         clauses.append("issue_type = ?")
         params.append(issue_type.value)
     if search:
-        clauses.append(_check_issue_search_clause(alias=""))
+        clauses.append(_like_search_clause(CHECK_ISSUE_SEARCH_COLUMN_NAMES))
         params.extend([_like_pattern(search)] * len(CHECK_ISSUE_SEARCH_COLUMN_NAMES))
     if not clauses:
         return "", params
@@ -2007,19 +2007,16 @@ def _check_issue_group_filter_where(
         clauses.append("ci.issue_type = ?")
         params.append(issue_type.value)
     if search:
-        clauses.append(_check_issue_search_clause(alias="ci."))
+        clauses.append(_like_search_clause(CHECK_ISSUE_SEARCH_COLUMN_NAMES, alias="ci."))
         params.extend([_like_pattern(search)] * len(CHECK_ISSUE_SEARCH_COLUMN_NAMES))
     if not clauses:
         return "", params
     return " WHERE " + " AND ".join(clauses), params
 
 
-def _check_issue_search_clause(*, alias: str) -> str:
-    """Return a static substring-search clause with an optional trusted table alias."""
-    comparisons = [
-        f"LOWER({alias}{column}) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}'"
-        for column in CHECK_ISSUE_SEARCH_COLUMN_NAMES
-    ]
+def _like_search_clause(column_names: tuple[str, ...], *, alias: str = "") -> str:
+    """Return a static substring-search clause over trusted column names and table alias."""
+    comparisons = [f"LOWER({alias}{column}) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}'" for column in column_names]
     return "(" + " OR ".join(comparisons) + ")"
 
 
@@ -2158,8 +2155,8 @@ def _plan_action_filter_where(
         clauses.append("reason = ?")
         params.append(reason.value)
     if search:
-        clauses.append(PLAN_ACTION_SEARCH_WHERE_CLAUSE)
-        params.extend([_like_pattern(search)] * 6)
+        clauses.append(_like_search_clause(PLAN_ACTION_SEARCH_COLUMN_NAMES))
+        params.extend([_like_pattern(search)] * len(PLAN_ACTION_SEARCH_COLUMN_NAMES))
     return " WHERE " + " AND ".join(clauses), params
 
 

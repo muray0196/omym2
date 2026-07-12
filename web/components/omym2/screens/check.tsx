@@ -17,7 +17,8 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useId, useMemo, useState } from "react"
 import { getCheckFacets, getCheckGroups, getCheckPage } from "../api-client"
-import { BrowseFilters, countedFacetOptions } from "../browse-filters"
+import { BrowseFilters, countedFacetOptions, SEARCH_DEBOUNCE_MS } from "../browse-filters"
+import { useDebouncedValue } from "../use-debounced-value"
 import { cn, severityForIssue, truncateMiddle } from "../lib"
 import type {
   CheckGroupBy,
@@ -714,6 +715,7 @@ export function CheckScreen() {
   const [groupBy, setGroupBy] = useState<CheckGroupBy>("path_root")
   const [typeFilter, setTypeFilter] = useState<CheckIssueType | "all">("all")
   const [query, setQuery] = useState("")
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
   const [issueTypeCounts, setIssueTypeCounts] = useState<Partial<Record<CheckIssueType, number>>>(
     {},
   )
@@ -723,7 +725,7 @@ export function CheckScreen() {
 
   useEffect(() => {
     let cancelled = false
-    getCheckFacets({ query: query.trim() || undefined })
+    getCheckFacets({ query: debouncedQuery.trim() || undefined })
       .then((response) => {
         if (cancelled) return
         setIssueTypeCounts(issueFacetCounts(response.facets))
@@ -740,7 +742,7 @@ export function CheckScreen() {
     return () => {
       cancelled = true
     }
-  }, [query])
+  }, [debouncedQuery])
 
   const counts = useMemo(() => {
     return {
@@ -858,7 +860,7 @@ export function CheckScreen() {
         {viewMode === "table" ? (
           <CheckIssueTable
             issueType={typeFilter}
-            query={query}
+            query={debouncedQuery}
             checkedAt={checkedAt}
             onCheckedAt={setCheckedAt}
           />
@@ -867,7 +869,7 @@ export function CheckScreen() {
             key={`${viewMode}-${activeGroupBy}`}
             groupBy={activeGroupBy}
             checkedAt={checkedAt}
-            query={query}
+            query={debouncedQuery}
             issueType={typeFilter}
           />
         )}

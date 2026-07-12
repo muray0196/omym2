@@ -25,6 +25,7 @@ from omym2.shared.pagination import (
     Page,
     paginate_group_counts,
 )
+from omym2.shared.text import ascii_lower
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
@@ -213,7 +214,7 @@ def _top_check_issue_path_root(root_counts: dict[str, int]) -> str | None:
 
 def _check_issue_matches_search(issue: CheckIssue, search: str) -> bool:
     """Mirror the persisted CheckIssue substring-search fields."""
-    needle = search.casefold()
+    needle = ascii_lower(search)
     values = (
         str(issue.library_id),
         issue.path,
@@ -221,7 +222,7 @@ def _check_issue_matches_search(issue: CheckIssue, search: str) -> bool:
         None if issue.plan_id is None else str(issue.plan_id),
         issue.detail,
     )
-    return any(value is not None and needle in value.casefold() for value in values)
+    return any(value is not None and needle in ascii_lower(value) for value in values)
 
 
 @dataclass(slots=True)
@@ -346,7 +347,7 @@ class InMemoryTrackRepository:
 
 
 def _track_matches_search(track: Track, search: str) -> bool:
-    needle = search.lower()
+    needle = ascii_lower(search)
     haystacks = (
         track.metadata.title,
         track.metadata.artist,
@@ -354,7 +355,7 @@ def _track_matches_search(track: Track, search: str) -> bool:
         track.current_path,
         str(track.track_id),
     )
-    return any(haystack is not None and needle in haystack.lower() for haystack in haystacks)
+    return any(haystack is not None and needle in ascii_lower(haystack) for haystack in haystacks)
 
 
 def _track_group_member_cursor_from_key(cursor_key: tuple[str, ...]) -> tuple[int, int, str, str]:
@@ -615,7 +616,7 @@ class InMemoryPlanActionRepository:
 
 def _plan_action_matches_search(action: PlanAction, search: str) -> bool:
     """Mirror the persisted PlanAction substring-search fields."""
-    needle = search.casefold()
+    needle = ascii_lower(search)
     values = (
         str(action.action_id),
         None if action.track_id is None else str(action.track_id),
@@ -624,7 +625,7 @@ def _plan_action_matches_search(action: PlanAction, search: str) -> bool:
         action.content_hash_at_plan,
         action.metadata_hash_at_plan,
     )
-    return any(value is not None and needle in value.casefold() for value in values)
+    return any(value is not None and needle in ascii_lower(value) for value in values)
 
 
 @dataclass(slots=True)

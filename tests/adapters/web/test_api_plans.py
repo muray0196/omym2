@@ -328,6 +328,29 @@ def test_plan_actions_api_drills_into_group_and_rejects_unpaired_group_filters(t
     assert group_key_only.json() == {"items": [], "page": None, "errors": expected_error}
 
 
+def test_plan_actions_api_group_drill_down_applies_query_with_ascii_case_folding(tmp_path: Path) -> None:
+    """The in-process drill-down search matches ASCII case-insensitively, like the SQL list search."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_groups(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/actions",
+        params={
+            "group_by": "artist_album",
+            "group_key": "Artist/2026_Album",
+            "query": "1-03_TITLE",
+        },
+    )
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    assert [item["action_id"] for item in _object_list_payload(payload, "items")] == [str(BLOCKED_ACTION_ID)]
+    assert _object_payload(payload, "page")["total"] == 1
+
+
 def test_plan_actions_api_rejects_invalid_status_and_cursor(tmp_path: Path) -> None:
     """Unknown status filters and malformed cursors return the documented 400 envelope."""
     app_paths = default_application_paths(tmp_path)
