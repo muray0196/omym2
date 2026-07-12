@@ -316,7 +316,7 @@ export function CommandPalette() {
       action: () => navigate({ name: "run-detail", runId: run.run_id }),
     }))
     const checkItems: PaletteItem[] = searchResults.checkIssues.map((issue, index) => {
-      const issueSearch = issue.track_id ?? issue.path ?? issue.plan_id ?? issue.issue_type
+      const issueSearch = issue.track_id || issue.path || issue.plan_id
       return {
         id: `check-${issue.issue_id ?? `${issue.issue_type}-${index}-${issueSearch}`}`,
         group: "Check issues",
@@ -326,7 +326,12 @@ export function CommandPalette() {
         hint: issue.issue_type.replace(/_/g, " "),
         tone:
           issue.severity === "error" ? "danger" : issue.severity === "info" ? "info" : "warning",
-        action: () => navigate({ name: "check", query: issueSearch }),
+        action: () =>
+          navigate(
+            issueSearch
+              ? { name: "check", query: issueSearch }
+              : { name: "check", issueType: issue.issue_type },
+          ),
       }
     })
 
