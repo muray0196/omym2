@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 SOURCE_SYMLINK_MESSAGE = "Source path must not be a symbolic link."
 SOURCE_REPLACED_MESSAGE = "Source path changed during the move."
 TARGET_BELOW_ROOT_MESSAGE = "Target path must name a file below its root."
+PROC_SELF_FD_ROOT = Path("/proc/self/fd")
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +140,12 @@ def _move_inside_root(
         target_name = target_parts[-1]
         _claim_target_at(source_path, source_fd, source_stat, target_name, directory_fd)
         try:
+            _verify_claimed_target_below_root(target_name, directory_fd, target_root)
+        except BaseException:
+            with suppress(FileNotFoundError):
+                os.unlink(target_name, dir_fd=directory_fd)
+            raise
+        try:
             _unlink_verified_source(source_path, source_stat)
         except BaseException:
             with suppress(FileNotFoundError):
@@ -146,6 +153,15 @@ def _move_inside_root(
             raise
     finally:
         os.close(directory_fd)
+
+
+def _verify_claimed_target_below_root(target_name: str, target_directory_fd: int, target_root: Path) -> None:
+    directory_path = (PROC_SELF_FD_ROOT / str(target_directory_fd)).readlink()
+    claimed_target_path = directory_path / target_name
+    try:
+        _ = claimed_target_path.resolve(strict=False).relative_to(target_root.resolve(strict=True))
+    except ValueError as exc:
+        raise ValueError(TARGET_BELOW_ROOT_MESSAGE) from exc
 
 
 def _claim_target_at(
