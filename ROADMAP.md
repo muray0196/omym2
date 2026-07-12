@@ -2,8 +2,8 @@
 
 ## Current State
 
-The large-data browsing foundation, grouped Plan review, and grouped Check
-triage are complete.
+The large-data browsing foundation, grouped Plan review, grouped Check triage,
+and Tracks library browser are complete.
 
 ## Outcome and Boundary
 
@@ -14,9 +14,6 @@ player.
 
 ## Remaining Ordered Work
 
-4. **Tracks library browser** — Support artist → album → disc → track
-   exploration alongside table and issue views; use it to diagnose managed
-   records, metadata, and path-policy effects.
 5. **Faceted browsing** — Expose consistent search and facets for Tracks, Plan
    actions, and Check issues.
 6. **Cross-links** — Navigate directly between related Tracks, Plan actions,

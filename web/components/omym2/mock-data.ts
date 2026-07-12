@@ -38,11 +38,18 @@ import type {
   SettingsSaveResult,
   SettingsState,
   SettingsValidateResult,
+  TrackGroupBy,
   TrackStatus,
   TrackSummary,
   ArtistIdGenerationResult,
 } from "./types"
 import { severityForIssue } from "./lib"
+import {
+  assertTrackGroupFilter,
+  assertTrackGroupParentKey,
+  compareSqliteBinaryText,
+  hasTrackGroupMetadataText,
+} from "./track-browsing"
 
 export const LIBRARY_ID = "lib_9f3c1a7b-4e21-4d8a-9c10-2f6b0a5e7d44"
 
@@ -1054,6 +1061,30 @@ export const mockTracks: TrackSummary[] = [
     last_seen_at: "2026-06-29T08:00:00Z",
     updated_at: "2026-06-10T15:31:00Z",
   },
+  {
+    track_id: "trk_4a1b2c3d-0012",
+    library_id: LIBRARY_ID,
+    current_path: "Various Artists/2013_Deemo/1-01_Dream.mp3",
+    canonical_path: "Various Artists/2013_Deemo/1-01_Dream.mp3",
+    content_hash: "blake3:1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+    metadata_hash: "blake3:4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c",
+    metadata: {
+      title: "Dream",
+      artist: "M2U",
+      album: "Deemo",
+      album_artist: "Various Artists",
+      genre: "Game",
+      year: 2013,
+      track_number: 1,
+      track_total: 20,
+      disc_number: 1,
+      disc_total: 2,
+    },
+    status: "active",
+    first_seen_at: "2026-06-10T15:28:00Z",
+    last_seen_at: "2026-06-29T08:00:00Z",
+    updated_at: "2026-06-10T15:29:00Z",
+  },
 ]
 
 // --- Paginated Web API mocks (D6) -------------------------------------------
@@ -1153,7 +1184,7 @@ export function facetsMock<T>(
     }
     facets[field] = Array.from(counts.entries())
       .map(([value, count]): FacetValue => ({ value, count }))
-      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+      .sort((a, b) => b.count - a.count || compareSqliteBinaryText(a.value, b.value))
   }
   return { facets, total: rows.length, errors: [] }
 }
@@ -1182,7 +1213,7 @@ export function groupsMock<T>(
   }
   const allItems: GroupCount[] = Array.from(counts.entries())
     .map(([key, { label, count }]): GroupCount => ({ key, label, count }))
-    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+    .sort((a, b) => b.count - a.count || compareSqliteBinaryText(a.key, b.key))
   const paged = pageMock(allItems, { limit: options.limit, cursor: options.cursor })
   return { group_by: groupBy, items: paged.items, page: paged.page, errors: [] }
 }
@@ -1194,6 +1225,8 @@ function buildTrackPredicate(options: {
   status?: TrackStatus | "all"
   libraryId?: string
   trackId?: string
+  groupBy?: TrackGroupBy
+  groupKey?: string
 }): (row: TrackSummary) => boolean {
   const query = options.query?.trim().toLowerCase()
   return (row) => {
@@ -1204,6 +1237,13 @@ function buildTrackPredicate(options: {
       return false
     }
     if (options.status && options.status !== "all" && row.status !== options.status) {
+      return false
+    }
+    if (
+      options.groupBy &&
+      options.groupKey !== undefined &&
+      trackGroupEntry(row, options.groupBy).key !== options.groupKey
+    ) {
       return false
     }
     if (query) {
@@ -1223,6 +1263,94 @@ function buildTrackPredicate(options: {
     }
     return true
   }
+}
+
+const UNKNOWN_TRACK_GROUP_VALUE = "(unknown)"
+const TRACK_GROUP_LEGACY_SEPARATOR = "\u001f"
+
+interface TrackGroupParts {
+  artist: string
+  album: string
+  year: number | null
+  discKey: number | string
+}
+
+interface TrackGroupEntry {
+  key: string
+  label: string
+}
+
+function nonBlankTrackValue(value: string | null): string | null {
+  return hasTrackGroupMetadataText(value) ? value : null
+}
+
+function trackGroupParts(track: TrackSummary): TrackGroupParts {
+  const artist =
+    nonBlankTrackValue(track.metadata.album_artist) ??
+    nonBlankTrackValue(track.metadata.artist) ??
+    UNKNOWN_TRACK_GROUP_VALUE
+  const album = nonBlankTrackValue(track.metadata.album) ?? UNKNOWN_TRACK_GROUP_VALUE
+  const discNumber = track.metadata.disc_number
+  const discKey = discNumber !== null && discNumber > 0 ? discNumber : UNKNOWN_TRACK_GROUP_VALUE
+  return { artist, album, year: track.metadata.year, discKey }
+}
+
+function trackArtistGroup(track: TrackSummary): TrackGroupEntry {
+  const { artist } = trackGroupParts(track)
+  return { key: JSON.stringify([artist]), label: artist }
+}
+
+function trackAlbumGroup(track: TrackSummary): TrackGroupEntry {
+  const { artist, album, year } = trackGroupParts(track)
+  return {
+    key: JSON.stringify([artist, album, year]),
+    label: year === null ? album : `${album} — ${year}`,
+  }
+}
+
+function trackDiscGroup(track: TrackSummary): TrackGroupEntry {
+  const { artist, album, year, discKey } = trackGroupParts(track)
+  return {
+    key: JSON.stringify([artist, album, year, discKey]),
+    label: typeof discKey === "number" ? `Disc ${discKey}` : "Unnumbered disc",
+  }
+}
+
+function trackArtistAlbumGroup(track: TrackSummary): TrackGroupEntry {
+  const artist = track.metadata.album_artist ?? track.metadata.artist ?? UNKNOWN_TRACK_GROUP_VALUE
+  const album = track.metadata.album ?? UNKNOWN_TRACK_GROUP_VALUE
+  return {
+    key: `${artist}${TRACK_GROUP_LEGACY_SEPARATOR}${album}`,
+    label: `${artist} — ${album}`,
+  }
+}
+
+function trackGroupEntry(track: TrackSummary, groupBy: TrackGroupBy): TrackGroupEntry {
+  switch (groupBy) {
+    case "artist":
+      return trackArtistGroup(track)
+    case "album":
+      return trackAlbumGroup(track)
+    case "disc":
+      return trackDiscGroup(track)
+    case "artist_album":
+      return trackArtistAlbumGroup(track)
+  }
+}
+
+function trackBrowserLeafOrder(left: TrackSummary, right: TrackSummary): number {
+  const leftTrackNumber = left.metadata.track_number
+  const rightTrackNumber = right.metadata.track_number
+  const leftIsNumbered = leftTrackNumber !== null && leftTrackNumber > 0
+  const rightIsNumbered = rightTrackNumber !== null && rightTrackNumber > 0
+  if (leftIsNumbered !== rightIsNumbered) {
+    return leftIsNumbered ? -1 : 1
+  }
+  if (leftIsNumbered && rightIsNumbered && leftTrackNumber !== rightTrackNumber) {
+    return leftTrackNumber - rightTrackNumber
+  }
+  const titleOrder = compareSqliteBinaryText(left.metadata.title ?? "", right.metadata.title ?? "")
+  return titleOrder || compareSqliteBinaryText(left.track_id, right.track_id)
 }
 
 function buildPlanPredicate(options: {
@@ -1537,11 +1665,18 @@ export function mockGetTracksPage(
     status?: TrackStatus | "all"
     libraryId?: string
     trackId?: string
+    groupBy?: TrackGroupBy
+    groupKey?: string
     limit?: number
     cursor?: string
   } = {},
 ): PagedResponse<TrackSummary> {
-  return pageMock(mockTracks, {
+  assertTrackGroupFilter(options)
+  const rows =
+    options.groupBy && options.groupKey !== undefined
+      ? mockTracks.slice().sort(trackBrowserLeafOrder)
+      : mockTracks
+  return pageMock(rows, {
     limit: options.limit,
     cursor: options.cursor,
     predicate: buildTrackPredicate(options),
@@ -1555,28 +1690,31 @@ export function mockGetTrackFacets(options: { libraryId?: string } = {}): Facets
   return facetsMock(rows, { status: (track) => track.status })
 }
 
-export function mockGetTrackGroups(
-  options: { libraryId?: string; limit?: number; cursor?: string } = {},
-): GroupsResponse {
-  const rows = options.libraryId
+export function mockGetTrackGroups(options: {
+  groupBy: TrackGroupBy
+  parentKey?: string
+  libraryId?: string
+  limit?: number
+  cursor?: string
+}): GroupsResponse {
+  assertTrackGroupParentKey(options)
+  const libraryRows = options.libraryId
     ? mockTracks.filter((track) => track.library_id === options.libraryId)
     : mockTracks
-  return groupsMock(
-    "artist_album",
-    rows,
-    (track) =>
-      `${track.metadata.artist ?? defaultConfig.path_policy.unknown_artist}::${
-        track.metadata.album ?? defaultConfig.path_policy.unknown_album
-      }`,
-    {
-      labelFn: (track) =>
-        `${track.metadata.artist ?? defaultConfig.path_policy.unknown_artist} – ${
-          track.metadata.album ?? defaultConfig.path_policy.unknown_album
-        }`,
-      limit: options.limit,
-      cursor: options.cursor,
-    },
-  )
+  const rows = libraryRows.filter((track) => {
+    if (options.groupBy === "album" && options.parentKey !== undefined) {
+      return trackArtistGroup(track).key === options.parentKey
+    }
+    if (options.groupBy === "disc" && options.parentKey !== undefined) {
+      return trackAlbumGroup(track).key === options.parentKey
+    }
+    return true
+  })
+  return groupsMock(options.groupBy, rows, (track) => trackGroupEntry(track, options.groupBy).key, {
+    labelFn: (track) => trackGroupEntry(track, options.groupBy).label,
+    limit: options.limit,
+    cursor: options.cursor,
+  })
 }
 
 // --- Plans / plan actions -----------------------------------------------------
@@ -1659,7 +1797,7 @@ export function mockGetPlanGroups(
       blocked_count: group.blockedCount,
       top_reason: topReasonOf(group.reasons),
     }))
-    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+    .sort((a, b) => b.count - a.count || compareSqliteBinaryText(a.key, b.key))
   const paged = pageMock(allItems, { limit: options.limit, cursor: options.cursor })
   return { group_by: options.groupBy, items: paged.items, page: paged.page, errors: [] }
 }
@@ -1730,7 +1868,7 @@ export function mockGetCheckGroups(options: {
       count: group.count,
       common_path_root: commonCheckPathRoot(group.rootCounts),
     }))
-    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+    .sort((a, b) => b.count - a.count || compareSqliteBinaryText(a.key, b.key))
   const paged = pageMock(allItems, { limit: options.limit, cursor: options.cursor })
   return { group_by: options.groupBy, items: paged.items, page: paged.page, errors: [] }
 }

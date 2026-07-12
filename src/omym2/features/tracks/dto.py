@@ -18,12 +18,14 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class ListTracksRequest:
-    """Request one keyset page of Tracks for a Library or every known Library."""
+    """Request one keyset page of Tracks, optionally narrowed to one exact group."""
 
     library_id: LibraryId | None = None
     track_id: TrackId | None = None
     search: str | None = None
     status: TrackStatus | None = None
+    grouping: TrackGrouping | None = None
+    group_key: str | None = None
     page: PageRequest = field(default_factory=PageRequest)
 
 
@@ -44,8 +46,9 @@ class TrackStatusFacetsResult:
 
 @dataclass(frozen=True, slots=True)
 class GroupTracksRequest:
-    """Request one keyset page of Track groups for a Library or every known Library."""
+    """Request one keyset page of Track hierarchy groups for a Library or every known Library."""
 
     grouping: TrackGrouping
     library_id: LibraryId | None = None
+    parent_key: str | None = None
     page: PageRequest = field(default_factory=PageRequest)

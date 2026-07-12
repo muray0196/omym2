@@ -1,6 +1,6 @@
 """
 Summary: Tests Web Track browsing JSON API routes.
-Why: Verifies keyset pagination, search, status filter, facets, and group-by envelopes.
+Why: Verifies paged tables and metadata-driven hierarchy drill-down envelopes.
 """
 
 from __future__ import annotations
@@ -43,6 +43,18 @@ THREE_TRACK_STATUS_TOTAL = 3
 TWO_TRACK_GROUP_TOTAL = 2
 TWO_ITEM_LIMIT = 2
 CLAMPED_LIMIT_REQUEST = 1000
+HIERARCHY_ALBUM = "Archive"
+HIERARCHY_ARTIST = "Various Artists"
+HIERARCHY_FIRST_DISC = 1
+HIERARCHY_SECOND_DISC = 2
+HIERARCHY_FIRST_TRACK = 1
+HIERARCHY_SECOND_TRACK = 2
+HIERARCHY_UNKNOWN_DISC = 0
+HIERARCHY_YEAR = 2024
+HIERARCHY_SECOND_YEAR = 2025
+HIERARCHY_ARTIST_TRACK_TOTAL = 5
+HIERARCHY_FIRST_ALBUM_TRACK_TOTAL = 4
+HIERARCHY_FIRST_DISC_TRACK_TOTAL = 2
 
 
 class _JsonResponse(Protocol):
@@ -285,6 +297,161 @@ def test_track_groups_api_returns_ordered_groups_with_keyset(tmp_path: Path) -> 
     assert second_items == [{"key": "Echo Collective\x1fDusk", "label": "Echo Collective — Dusk", "count": 1}]
     second_page = _object_payload(second_payload, "page")
     assert second_page["next_cursor"] is None
+
+
+def test_tracks_api_drills_from_artist_to_album_to_disc_to_tracks(tmp_path: Path) -> None:
+    """Hierarchy keys returned by each metadata group scope the next level and music-ordered leaf page."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    with SQLiteUnitOfWork(app_paths.database_file) as uow:
+        uow.libraries.save(_library(str(library_root)))
+        uow.tracks.save(
+            _track(
+                TRACK_ID,
+                current_path="z/second.flac",
+                metadata=TrackMetadata(
+                    title="Second",
+                    artist="Performer",
+                    album=HIERARCHY_ALBUM,
+                    album_artist=HIERARCHY_ARTIST,
+                    year=HIERARCHY_YEAR,
+                    disc_number=HIERARCHY_FIRST_DISC,
+                    track_number=HIERARCHY_SECOND_TRACK,
+                ),
+            )
+        )
+        uow.tracks.save(
+            _track(
+                SECOND_TRACK_ID,
+                current_path="a/first.flac",
+                metadata=TrackMetadata(
+                    title="First",
+                    artist="Performer",
+                    album=HIERARCHY_ALBUM,
+                    album_artist=HIERARCHY_ARTIST,
+                    year=HIERARCHY_YEAR,
+                    disc_number=HIERARCHY_FIRST_DISC,
+                    track_number=HIERARCHY_FIRST_TRACK,
+                ),
+            )
+        )
+        uow.tracks.save(
+            _track(
+                THIRD_TRACK_ID,
+                current_path="b/second-disc.flac",
+                metadata=TrackMetadata(
+                    title="Disc two",
+                    artist="Performer",
+                    album=HIERARCHY_ALBUM,
+                    album_artist=HIERARCHY_ARTIST,
+                    year=HIERARCHY_YEAR,
+                    disc_number=HIERARCHY_SECOND_DISC,
+                    track_number=HIERARCHY_FIRST_TRACK,
+                ),
+            )
+        )
+        uow.tracks.save(
+            _track(
+                FOURTH_TRACK_ID,
+                current_path="c/unnumbered-disc.flac",
+                metadata=TrackMetadata(
+                    title="Unnumbered",
+                    artist="Performer",
+                    album=HIERARCHY_ALBUM,
+                    album_artist=HIERARCHY_ARTIST,
+                    year=HIERARCHY_YEAR,
+                    disc_number=HIERARCHY_UNKNOWN_DISC,
+                    track_number=HIERARCHY_FIRST_TRACK,
+                ),
+            )
+        )
+        uow.tracks.save(
+            _track(
+                FIFTH_TRACK_ID,
+                current_path="d/new-edition.flac",
+                metadata=TrackMetadata(
+                    title="New edition",
+                    artist="Performer",
+                    album=HIERARCHY_ALBUM,
+                    album_artist=HIERARCHY_ARTIST,
+                    year=HIERARCHY_SECOND_YEAR,
+                    disc_number=HIERARCHY_FIRST_DISC,
+                    track_number=HIERARCHY_FIRST_TRACK,
+                ),
+            )
+        )
+        uow.commit()
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    artist_response = client.get(WEB_API_TRACKS_GROUPS_ROUTE, params={"group_by": "artist"})
+
+    assert artist_response.status_code == SUCCESS_STATUS_CODE
+    artist_groups = _object_list_payload(_json_payload(artist_response), "items")
+    artist_group = next(group for group in artist_groups if group["label"] == HIERARCHY_ARTIST)
+    assert artist_group["count"] == HIERARCHY_ARTIST_TRACK_TOTAL
+    artist_key = cast("str", artist_group["key"])
+
+    album_response = client.get(
+        WEB_API_TRACKS_GROUPS_ROUTE,
+        params={"group_by": "album", "parent_key": artist_key},
+    )
+
+    assert album_response.status_code == SUCCESS_STATUS_CODE
+    album_groups = _object_list_payload(_json_payload(album_response), "items")
+    first_album = next(group for group in album_groups if group["label"] == f"{HIERARCHY_ALBUM} — {HIERARCHY_YEAR}")
+    assert first_album["count"] == HIERARCHY_FIRST_ALBUM_TRACK_TOTAL
+    album_key = cast("str", first_album["key"])
+
+    disc_response = client.get(
+        WEB_API_TRACKS_GROUPS_ROUTE,
+        params={"group_by": "disc", "parent_key": album_key},
+    )
+
+    assert disc_response.status_code == SUCCESS_STATUS_CODE
+    disc_groups = _object_list_payload(_json_payload(disc_response), "items")
+    first_disc = next(group for group in disc_groups if group["label"] == f"Disc {HIERARCHY_FIRST_DISC}")
+    assert first_disc["count"] == HIERARCHY_FIRST_DISC_TRACK_TOTAL
+    assert any(group["label"] == "Unnumbered disc" for group in disc_groups)
+
+    tracks_response = client.get(
+        WEB_API_TRACKS_ROUTE,
+        params={"group_by": "disc", "group_key": cast("str", first_disc["key"])},
+    )
+
+    assert tracks_response.status_code == SUCCESS_STATUS_CODE
+    tracks_payload = _json_payload(tracks_response)
+    tracks = _object_list_payload(tracks_payload, "items")
+    assert [track["track_id"] for track in tracks] == [str(SECOND_TRACK_ID), str(TRACK_ID)]
+    assert _object_payload(tracks_payload, "page")["total"] == HIERARCHY_FIRST_DISC_TRACK_TOTAL
+
+
+def test_tracks_api_requires_valid_hierarchy_scope_pairs(tmp_path: Path) -> None:
+    """Track drill-down pairing and hierarchy-parent requirements fail before any persistence query."""
+    app_paths = default_application_paths(tmp_path)
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    group_by_only = client.get(WEB_API_TRACKS_ROUTE, params={"group_by": "disc"})
+    group_key_only = client.get(WEB_API_TRACKS_ROUTE, params={"group_key": "opaque"})
+    missing_album_parent = client.get(WEB_API_TRACKS_GROUPS_ROUTE, params={"group_by": "album"})
+    unsupported_artist_parent = client.get(
+        WEB_API_TRACKS_GROUPS_ROUTE,
+        params={"group_by": "artist", "parent_key": "opaque"},
+    )
+
+    for response in (group_by_only, group_key_only):
+        assert response.status_code == ERROR_STATUS_CODE
+        assert response.json() == {
+            "items": [],
+            "page": None,
+            "errors": ["Query parameters group_by and group_key must be provided together."],
+        }
+    assert missing_album_parent.status_code == ERROR_STATUS_CODE
+    assert missing_album_parent.json()["errors"] == ["Query parameter parent_key is required for this group_by."]
+    assert unsupported_artist_parent.status_code == ERROR_STATUS_CODE
+    assert unsupported_artist_parent.json()["errors"] == [
+        "Query parameter parent_key is not supported for this group_by."
+    ]
 
 
 def test_track_groups_api_rejects_invalid_group_by(tmp_path: Path) -> None:

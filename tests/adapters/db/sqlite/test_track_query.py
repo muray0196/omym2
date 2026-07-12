@@ -33,6 +33,19 @@ FIFTH_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345684"))
 TWO_ITEM_LIMIT = 2
 FIVE_TRACK_TOTAL = 5
 TWO_GROUP_TOTAL = 2
+HIERARCHY_ARTIST = "Library Artist"
+HIERARCHY_ALBUM = "Library Album"
+HIERARCHY_YEAR = 2026
+HIERARCHY_DISC_NUMBER = 1
+HIERARCHY_ARTIST_KEY = '["Library Artist"]'
+HIERARCHY_ALBUM_KEY = '["Library Artist","Library Album",2026]'
+HIERARCHY_DISC_KEY = '["Library Artist","Library Album",2026,1]'
+HIERARCHY_UNNUMBERED_DISC_KEY = '["Library Artist","Library Album",2026,"(unknown)"]'
+HIERARCHY_TRACK_COUNT = 2
+FOUR_TRACK_GROUP_TOTAL = 4
+ASCII_WHITESPACE_FALLBACK_ARTIST = "Whitespace Fallback"
+ASCII_WHITESPACE_ARTIST_KEY = '["Whitespace Fallback"]'
+ASCII_WHITESPACE_UNKNOWN_ALBUM_KEY = '["Whitespace Fallback","(unknown)",null]'
 
 
 def test_query_page_walks_every_track_exactly_once_with_keyset_cursor(tmp_path: Path) -> None:
@@ -54,6 +67,8 @@ def test_query_page_walks_every_track_exactly_once_with_keyset_cursor(tmp_path: 
                 track_id=None,
                 search=None,
                 status=None,
+                grouping=None,
+                group_key=None,
                 page=PageRequest(limit=TWO_ITEM_LIMIT, cursor_key=cursor),
             )
             visited.extend(track.track_id for track in page.items)
@@ -82,6 +97,8 @@ def test_query_page_scopes_by_library(tmp_path: Path) -> None:
             track_id=None,
             search=None,
             status=None,
+            grouping=None,
+            group_key=None,
             page=PageRequest(),
         )
 
@@ -104,6 +121,8 @@ def test_query_page_filters_by_status(tmp_path: Path) -> None:
             track_id=None,
             search=None,
             status=TrackStatus.REMOVED,
+            grouping=None,
+            group_key=None,
             page=PageRequest(),
         )
 
@@ -125,6 +144,8 @@ def test_query_page_filters_by_track_id(tmp_path: Path) -> None:
             track_id=SECOND_TRACK_ID,
             search=None,
             status=None,
+            grouping=None,
+            group_key=None,
             page=PageRequest(),
         )
 
@@ -161,6 +182,8 @@ def test_query_page_search_treats_like_wildcards_as_literal(tmp_path: Path) -> N
             track_id=None,
             search="50% Off_Deal",
             status=None,
+            grouping=None,
+            group_key=None,
             page=PageRequest(),
         )
         wildcard_page = uow.tracks.query_page(
@@ -168,6 +191,8 @@ def test_query_page_search_treats_like_wildcards_as_literal(tmp_path: Path) -> N
             track_id=None,
             search="50X OffXDeal",
             status=None,
+            grouping=None,
+            group_key=None,
             page=PageRequest(),
         )
 
@@ -228,6 +253,7 @@ def test_group_page_orders_and_paginates_with_count_then_key_keyset(tmp_path: Pa
             page = uow.tracks.group_page(
                 None,
                 TrackGrouping.ARTIST_ALBUM,
+                None,
                 PageRequest(limit=1, cursor_key=cursor),
             )
             visited_keys.extend(group.key for group in page.items)
@@ -239,6 +265,180 @@ def test_group_page_orders_and_paginates_with_count_then_key_keyset(tmp_path: Pa
 
     assert visited_keys == ["Nova\x1fDawn", "Echo Collective\x1fDusk"]
     assert visited_labels == ["Nova — Dawn", "Echo Collective — Dusk"]
+
+
+def test_hierarchy_group_page_uses_json_keys_metadata_fallbacks_and_parent_scope(tmp_path: Path) -> None:
+    """Artist, album, and disc groups use stored metadata with opaque JSON parent keys."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(LIBRARY_ID))
+        uow.tracks.save(
+            _track(
+                TRACK_ID,
+                LIBRARY_ID,
+                current_path="A/1.flac",
+                metadata=TrackMetadata(
+                    album_artist="   ",
+                    artist=HIERARCHY_ARTIST,
+                    album=HIERARCHY_ALBUM,
+                    year=HIERARCHY_YEAR,
+                    disc_number=HIERARCHY_DISC_NUMBER,
+                ),
+            )
+        )
+        uow.tracks.save(
+            _track(
+                SECOND_TRACK_ID,
+                LIBRARY_ID,
+                current_path="A/2.flac",
+                metadata=TrackMetadata(
+                    artist=HIERARCHY_ARTIST,
+                    album=HIERARCHY_ALBUM,
+                    year=HIERARCHY_YEAR,
+                    disc_number=0,
+                ),
+            )
+        )
+        uow.tracks.save(
+            _track(
+                THIRD_TRACK_ID,
+                LIBRARY_ID,
+                current_path="B/1.flac",
+                metadata=TrackMetadata(artist="Other Artist", album="Other Album", disc_number=1),
+            )
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        artist_page = uow.tracks.group_page(None, TrackGrouping.ARTIST, None, PageRequest())
+        album_page = uow.tracks.group_page(
+            None,
+            TrackGrouping.ALBUM,
+            HIERARCHY_ARTIST_KEY,
+            PageRequest(),
+        )
+        disc_page = uow.tracks.group_page(
+            None,
+            TrackGrouping.DISC,
+            HIERARCHY_ALBUM_KEY,
+            PageRequest(),
+        )
+
+    artist_groups = {group.key: group for group in artist_page.items}
+    album_groups = {group.key: group for group in album_page.items}
+    disc_groups = {group.key: group for group in disc_page.items}
+    assert artist_groups[HIERARCHY_ARTIST_KEY].label == HIERARCHY_ARTIST
+    assert artist_groups[HIERARCHY_ARTIST_KEY].count == HIERARCHY_TRACK_COUNT
+    assert album_groups[HIERARCHY_ALBUM_KEY].label == f"{HIERARCHY_ALBUM} — {HIERARCHY_YEAR}"
+    assert album_groups[HIERARCHY_ALBUM_KEY].count == HIERARCHY_TRACK_COUNT
+    assert disc_groups[HIERARCHY_DISC_KEY].label == f"Disc {HIERARCHY_DISC_NUMBER}"
+    assert disc_groups[HIERARCHY_UNNUMBERED_DISC_KEY].label == "Unnumbered disc"
+
+
+def test_group_member_query_uses_exact_json_key_and_music_order_keyset(tmp_path: Path) -> None:
+    """A disc member query uses exact metadata membership and paginates in track-number order."""
+    database_file = default_application_paths(tmp_path).database_file
+    metadata_values = (
+        (TRACK_ID, "A/2.flac", "Zulu", 2),
+        (SECOND_TRACK_ID, "A/1.flac", "Beta", 1),
+        (THIRD_TRACK_ID, "A/0.flac", "Alpha", 0),
+        (FOURTH_TRACK_ID, "A/missing.flac", "Aardvark", None),
+    )
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(LIBRARY_ID))
+        for track_id, path, title, track_number in metadata_values:
+            uow.tracks.save(
+                _track(
+                    track_id,
+                    LIBRARY_ID,
+                    current_path=path,
+                    metadata=TrackMetadata(
+                        title=title,
+                        artist=HIERARCHY_ARTIST,
+                        album=HIERARCHY_ALBUM,
+                        year=HIERARCHY_YEAR,
+                        disc_number=HIERARCHY_DISC_NUMBER,
+                        track_number=track_number,
+                    ),
+                )
+            )
+        uow.tracks.save(
+            _track(
+                FIFTH_TRACK_ID,
+                LIBRARY_ID,
+                current_path="Other/1.flac",
+                metadata=TrackMetadata(
+                    title="Excluded",
+                    artist=HIERARCHY_ARTIST,
+                    album=HIERARCHY_ALBUM,
+                    year=HIERARCHY_YEAR,
+                    disc_number=2,
+                    track_number=1,
+                ),
+            )
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        first_page = uow.tracks.query_page(
+            None,
+            track_id=None,
+            search=None,
+            status=None,
+            grouping=TrackGrouping.DISC,
+            group_key=HIERARCHY_DISC_KEY,
+            page=PageRequest(limit=TWO_ITEM_LIMIT),
+        )
+        second_page = uow.tracks.query_page(
+            None,
+            track_id=None,
+            search=None,
+            status=None,
+            grouping=TrackGrouping.DISC,
+            group_key=HIERARCHY_DISC_KEY,
+            page=PageRequest(limit=TWO_ITEM_LIMIT, cursor_key=first_page.next_cursor_key),
+        )
+
+    assert tuple(track.track_id for track in first_page.items) == (SECOND_TRACK_ID, TRACK_ID)
+    assert tuple(track.track_id for track in second_page.items) == (FOURTH_TRACK_ID, THIRD_TRACK_ID)
+    assert first_page.total == FOUR_TRACK_GROUP_TOTAL
+    assert second_page.next_cursor_key is None
+
+
+def test_hierarchy_group_page_treats_ascii_tabs_and_newlines_as_blank_metadata(tmp_path: Path) -> None:
+    """SQLite hierarchy grouping matches the shared ASCII whitespace blank-value contract."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(LIBRARY_ID))
+        uow.tracks.save(
+            _track(
+                TRACK_ID,
+                LIBRARY_ID,
+                current_path="Whitespace/1.flac",
+                metadata=TrackMetadata(
+                    album_artist="\t",
+                    artist=ASCII_WHITESPACE_FALLBACK_ARTIST,
+                    album="\n",
+                ),
+            )
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        artist_page = uow.tracks.group_page(None, TrackGrouping.ARTIST, None, PageRequest())
+        album_page = uow.tracks.group_page(
+            None,
+            TrackGrouping.ALBUM,
+            ASCII_WHITESPACE_ARTIST_KEY,
+            PageRequest(),
+        )
+
+    assert [(group.key, group.label) for group in artist_page.items] == [
+        (ASCII_WHITESPACE_ARTIST_KEY, ASCII_WHITESPACE_FALLBACK_ARTIST)
+    ]
+    assert [(group.key, group.label) for group in album_page.items] == [
+        (ASCII_WHITESPACE_UNKNOWN_ALBUM_KEY, "(unknown)")
+    ]
 
 
 def _library(library_id: LibraryId) -> Library:

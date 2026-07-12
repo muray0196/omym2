@@ -29,6 +29,7 @@ import {
   mockValidateSettings,
   mockPreviewSettings,
 } from "./mock-data"
+import { assertTrackGroupFilter, assertTrackGroupParentKey } from "./track-browsing"
 import type {
   AppConfig,
   ArtistIdGenerationResult,
@@ -61,6 +62,7 @@ import type {
   SettingsSaveResult,
   SettingsState,
   SettingsValidateResult,
+  TrackGroupBy,
   TrackStatus,
   TrackSummary,
 } from "./types"
@@ -195,10 +197,14 @@ export async function getTracksPage(
     status?: TrackStatus | "all"
     libraryId?: string
     trackId?: string
+    /** Drill-down pair: pass `groupBy` and `groupKey` together or not at all. */
+    groupBy?: TrackGroupBy
+    groupKey?: string
     limit?: number
     cursor?: string
   } = {},
 ): Promise<PagedResponse<TrackSummary>> {
+  assertTrackGroupFilter(options)
   if (isMockApiMode()) {
     return clonePayload(mockGetTracksPage(options))
   }
@@ -214,6 +220,10 @@ export async function getTracksPage(
   }
   if (options.trackId) {
     params.set("track_id", options.trackId)
+  }
+  if (options.groupBy !== undefined && options.groupKey !== undefined) {
+    params.set("group_by", options.groupBy)
+    params.set("group_key", options.groupKey)
   }
   if (options.limit) {
     params.set("limit", String(options.limit))
@@ -239,13 +249,21 @@ export async function getTrackFacets(
   return requestJson<FacetsResponse>(query ? `/api/tracks/facets?${query}` : "/api/tracks/facets")
 }
 
-export async function getTrackGroups(
-  options: { libraryId?: string; limit?: number; cursor?: string } = {},
-): Promise<GroupsResponse> {
+export async function getTrackGroups(options: {
+  groupBy: TrackGroupBy
+  parentKey?: string
+  libraryId?: string
+  limit?: number
+  cursor?: string
+}): Promise<GroupsResponse> {
+  assertTrackGroupParentKey(options)
   if (isMockApiMode()) {
     return clonePayload(mockGetTrackGroups(options))
   }
-  const params = new URLSearchParams({ group_by: "artist_album" })
+  const params = new URLSearchParams({ group_by: options.groupBy })
+  if (options.parentKey !== undefined) {
+    params.set("parent_key", options.parentKey)
+  }
   if (options.libraryId) {
     params.set("library_id", options.libraryId)
   }

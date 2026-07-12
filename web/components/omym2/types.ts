@@ -5,6 +5,7 @@ Why: Keeps frontend state aligned with the packaged local JSON API.
 
 export type LibraryStatus = "registered" | "unregistered" | "stale" | "blocked"
 export type TrackStatus = "active" | "removed"
+export type TrackGroupBy = "artist" | "album" | "disc" | "artist_album"
 export type PlanType = "add" | "organize" | "refresh" | "undo"
 export type PlanStatus =
   "ready" | "applying" | "applied" | "partial_failed" | "failed" | "cancelled" | "expired"

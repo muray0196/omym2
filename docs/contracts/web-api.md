@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines OMYM2's local Web API envelopes, browsing and Plan-creation requests, pagination/facets/groups, and exclusion of CLI-only trust-stat flags.
 tags: [web-api, pagination, json, contract]
-timestamp: 2026-07-11T22:23:30+09:00
+timestamp: 2026-07-12T15:18:04+09:00
 ---
 
 # Web API Contract
@@ -114,11 +114,43 @@ smaller root key. It is `null` when every member is pathless.
 
 ### Tracks
 
-Ordering: `current_path ASC, track_id ASC`.
+Ordering is `current_path ASC, track_id ASC` for the ordinary table list. A
+group drill-down orders the selected Tracks by positive `track_number` first,
+then title and `track_id`; tracks with a missing or non-positive number follow
+the numbered tracks. This makes a disc readable as a release while keeping the
+ordinary table focused on stored path inspection.
 
-* `GET /api/tracks?query=&status=&track_id=&library_id=&limit=&cursor=` — list envelope of `TrackSummary` items. `track_id` is an exact identity filter. `query` matches `title`, `artist`, `album`, `current_path`, or `track_id`, case-insensitive substring.
+* `GET /api/tracks?query=&status=&track_id=&library_id=&group_by=&group_key=&limit=&cursor=` — list envelope of `TrackSummary` items. `track_id` is an exact identity filter. `query` matches `title`, `artist`, `album`, `current_path`, or `track_id`, case-insensitive substring. `group_by` and `group_key` are an optional drill-down pair: clients must provide both or neither, echoing a key obtained from the groups endpoint unchanged. The group filter combines with the other filters as AND.
 * `GET /api/tracks/facets?library_id=` — facet envelope; facet field: `status`.
-* `GET /api/tracks/groups?group_by=artist_album&library_id=&limit=&cursor=` — group envelope.
+* `GET /api/tracks/groups?group_by=&parent_key=&library_id=&limit=&cursor=` — group envelope. Supported `group_by` values are `artist`, `album`, `disc`, and the retained aggregate `artist_album`.
+
+Track hierarchy groups are derived only from persisted Track metadata; they do
+not read the filesystem, parse a stored path, load the current PathPolicy, or
+recalculate a canonical path. This is intentional: the browser must expose
+path-policy effects and mismatches instead of treating a current path as
+metadata.
+
+* `artist` uses `album_artist`, then `artist`, when either remains non-blank
+  after trimming ASCII space, tab, carriage return, line feed, vertical tab,
+  and form feed; it otherwise uses `(unknown)`. It has no `parent_key`.
+* `album` is identified by that artist value, `album` after the same
+  ASCII-whitespace check (or `(unknown)`), and its recorded `year`; its label
+  appends the year when known. It requires the opaque artist `parent_key`
+  returned by the `artist` groups response.
+* `disc` is identified by its parent album identity and its positive recorded
+  `disc_number`. A missing, zero, or negative number is an `Unnumbered disc`
+  group so malformed metadata remains visible. It requires the opaque album
+  `parent_key` returned by the `album` groups response.
+* `artist_album` retains the pre-hierarchy aggregate behavior: artist and
+  album only, with no `parent_key`.
+
+All Track group keys are opaque. Clients must never construct, parse, or infer
+membership from a label; they pass keys returned by the server to the next
+hierarchy request or the list drill-down. Group rows remain ordered `count DESC,
+key ASC`, and their count covers every Track in scope, including removed
+records. Hierarchy grouping never derives artist, album, or disc from path
+segments because path templates are configurable and stored current paths may
+differ from canonical paths.
 
 ### Plans
 
