@@ -63,7 +63,7 @@ export type Route =
       view?: CheckViewMode
       groupBy?: CheckGroupBy
     }
-  | { name: "tracks"; trackId?: string }
+  | { name: "tracks"; query?: string; trackId?: string }
 
 export type NavKey =
   "dashboard" | "settings" | "path-policy" | "plans" | "runs" | "check" | "tracks"
@@ -526,8 +526,12 @@ function routeFromPath(pathname: string, search = ""): Route {
     }
   }
   if (pathname === "/tracks") {
-    const trackId = new URLSearchParams(search).get("track")
-    return { name: "tracks", trackId: trackId ?? undefined }
+    const params = new URLSearchParams(search)
+    return {
+      name: "tracks",
+      query: params.get("query") ?? undefined,
+      trackId: params.get("track") ?? undefined,
+    }
   }
   return { name: "dashboard" }
 }
@@ -562,8 +566,13 @@ function routeToPath(route: Route): string {
       const query = params.toString()
       return `/check${query ? `?${query}` : ""}`
     }
-    case "tracks":
-      return route.trackId ? `/tracks?track=${encodeURIComponent(route.trackId)}` : "/tracks"
+    case "tracks": {
+      const params = new URLSearchParams()
+      if (route.query) params.set("query", route.query)
+      if (route.trackId) params.set("track", route.trackId)
+      const query = params.toString()
+      return `/tracks${query ? `?${query}` : ""}`
+    }
     case "dashboard":
     default:
       return "/"

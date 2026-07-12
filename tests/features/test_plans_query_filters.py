@@ -96,6 +96,18 @@ def test_list_plans_filters_by_type() -> None:
     assert tuple(plan.plan_id for plan in page.items) == (PLAN_ID_3, PLAN_ID_1)
 
 
+def test_list_plans_searches_header_fields_case_insensitively() -> None:
+    """Global Plan search matches identity/header values before paging."""
+    uow = InMemoryUnitOfWork()
+    uow.plans.save(_plan(PLAN_ID_1, status=PlanStatus.READY, created_at=BASE_TIME))
+    uow.plans.save(_plan(PLAN_ID_2, status=PlanStatus.FAILED, created_at=BASE_TIME + timedelta(days=1)))
+
+    page = ListPlansUseCase(PlanQueryPorts(uow)).execute(ListPlansRequest(search="FAILED"))
+
+    assert tuple(plan.plan_id for plan in page.items) == (PLAN_ID_2,)
+    assert page.total == 1
+
+
 def test_list_plans_filters_to_ready_plans_with_blocked_actions() -> None:
     """Blocked-only combines with status before paging so terminal and clean Plans are excluded."""
     uow = InMemoryUnitOfWork()

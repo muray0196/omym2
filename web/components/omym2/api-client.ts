@@ -309,6 +309,7 @@ export async function getTrackGroups(options: {
 
 export async function getPlansPage(
   options: {
+    query?: string
     status?: PlanStatus | "all"
     type?: PlanType | "all"
     blockedOnly?: boolean
@@ -320,6 +321,9 @@ export async function getPlansPage(
     return clonePayload(mockGetPlansPage(options))
   }
   const params = new URLSearchParams()
+  if (options.query) {
+    params.set("query", options.query)
+  }
   if (options.status && options.status !== "all") {
     params.set("status", options.status)
   }
@@ -535,6 +539,7 @@ export async function runCheck(csrfToken: string, libraryId?: string): Promise<C
 
 export async function getHistoryPage(
   options: {
+    query?: string
     status?: RunStatus | "all"
     libraryId?: string
     planId?: string
@@ -546,6 +551,9 @@ export async function getHistoryPage(
     return clonePayload(mockGetHistoryPage(options))
   }
   const params = new URLSearchParams()
+  if (options.query) {
+    params.set("query", options.query)
+  }
   if (options.status && options.status !== "all") {
     params.set("status", options.status)
   }

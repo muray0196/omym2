@@ -394,10 +394,11 @@ class InMemoryPlanRepository:
         """Store or replace one Plan."""
         self.records[plan.plan_id] = plan
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # Mirrors the stable PlanRepository browse contract.
         self,
         library_id: LibraryId | None,
         *,
+        search: str | None = None,
         status: PlanStatus | None,
         plan_type: PlanType | None,
         blocked_only: bool = False,
@@ -408,6 +409,7 @@ class InMemoryPlanRepository:
             plan
             for plan in self.records.values()
             if (library_id is None or plan.library_id == library_id)
+            and (search is None or _plan_matches_search(plan, search))
             and (status is None or plan.status == status)
             and (plan_type is None or plan.plan_type == plan_type)
             and (not blocked_only or _summary_count(plan.summary, "blocked_actions") > 0)
@@ -429,6 +431,18 @@ class InMemoryPlanRepository:
         has_more = len(plans) > page.limit
         next_cursor_key = (page_items[-1].created_at.isoformat(), str(page_items[-1].plan_id)) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+
+def _plan_matches_search(plan: Plan, search: str) -> bool:
+    """Mirror the persisted Plan header substring-search fields."""
+    needle = ascii_lower(search)
+    values = (
+        str(plan.plan_id),
+        str(plan.library_id),
+        plan.plan_type.value,
+        plan.status.value,
+    )
+    return any(needle in ascii_lower(value) for value in values)
 
 
 @dataclass(slots=True)
@@ -663,6 +677,7 @@ class InMemoryRunRepository:
         self,
         library_id: LibraryId | None,
         *,
+        search: str | None = None,
         plan_id: PlanId | None,
         status: RunStatus | None,
         page: PageRequest,
@@ -672,6 +687,7 @@ class InMemoryRunRepository:
             run
             for run in self.records.values()
             if (library_id is None or run.library_id == library_id)
+            and (search is None or _run_matches_search(run, search))
             and (plan_id is None or run.plan_id == plan_id)
             and (status is None or run.status == status)
         ]
@@ -702,6 +718,19 @@ class InMemoryRunRepository:
             counts[run.status.value] = counts.get(run.status.value, 0) + 1
         ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         return tuple(FacetValue(value=value, count=count) for value, count in ordered)
+
+
+def _run_matches_search(run: Run, search: str) -> bool:
+    """Mirror the persisted Run substring-search fields."""
+    needle = ascii_lower(search)
+    values = (
+        str(run.run_id),
+        str(run.plan_id),
+        str(run.library_id),
+        run.status.value,
+        run.error_summary,
+    )
+    return any(value is not None and needle in ascii_lower(value) for value in values)
 
 
 @dataclass(slots=True)

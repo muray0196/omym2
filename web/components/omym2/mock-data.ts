@@ -1574,10 +1574,12 @@ function trackBrowserLeafOrder(left: TrackSummary, right: TrackSummary): number 
 }
 
 function buildPlanPredicate(options: {
+  query?: string
   status?: PlanStatus | "all"
   type?: PlanType | "all"
   blockedOnly?: boolean
 }): (row: PlanSummary) => boolean {
+  const query = searchNeedle(options.query)
   return (row) => {
     if (options.status && options.status !== "all" && row.status !== options.status) {
       return false
@@ -1586,6 +1588,9 @@ function buildPlanPredicate(options: {
       return false
     }
     if (options.blockedOnly && !(Number.parseInt(row.summary.blocked_actions ?? "0", 10) > 0)) {
+      return false
+    }
+    if (query && !matchesSearch([row.plan_id, row.library_id, row.plan_type, row.status], query)) {
       return false
     }
     return true
@@ -1881,10 +1886,12 @@ function commonCheckPathRoot(rootCounts: Map<string, number>): string | null {
 }
 
 function buildRunPredicate(options: {
+  query?: string
   status?: RunStatus | "all"
   libraryId?: string
   planId?: string
 }): (row: RunSummary) => boolean {
+  const query = searchNeedle(options.query)
   return (row) => {
     if (options.libraryId && row.library_id !== options.libraryId) {
       return false
@@ -1893,6 +1900,15 @@ function buildRunPredicate(options: {
       return false
     }
     if (options.status && options.status !== "all" && row.status !== options.status) {
+      return false
+    }
+    if (
+      query &&
+      !matchesSearch(
+        [row.run_id, row.plan_id, row.library_id, row.status, row.error_summary],
+        query,
+      )
+    ) {
       return false
     }
     return true
@@ -1983,6 +1999,7 @@ export function mockGetTrackGroups(options: {
 
 export function mockGetPlansPage(
   options: {
+    query?: string
     status?: PlanStatus | "all"
     type?: PlanType | "all"
     blockedOnly?: boolean
@@ -2174,6 +2191,7 @@ export function mockRunCheck(libraryId?: string): CheckRunResponse {
 
 export function mockGetHistoryPage(
   options: {
+    query?: string
     status?: RunStatus | "all"
     libraryId?: string
     planId?: string

@@ -178,6 +178,27 @@ def test_plans_api_filters_by_status_and_type(tmp_path: Path) -> None:
     assert page["total"] == 1
 
 
+def test_plans_api_searches_headers_and_escapes_like_wildcards(tmp_path: Path) -> None:
+    """Plan search is case-insensitive and treats SQL LIKE wildcard input literally."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_pages(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    matched = client.get(WEB_API_PLANS_ROUTE, params={"query": "ORGANIZE"})
+    wildcard = client.get(WEB_API_PLANS_ROUTE, params={"query": "%"})
+
+    assert matched.status_code == SUCCESS_STATUS_CODE
+    matched_payload = _json_payload(matched)
+    assert [item["plan_id"] for item in _object_list_payload(matched_payload, "items")] == [str(THIRD_PLAN_ID)]
+    assert _object_payload(matched_payload, "page")["total"] == 1
+    assert wildcard.status_code == SUCCESS_STATUS_CODE
+    wildcard_payload = _json_payload(wildcard)
+    assert _object_list_payload(wildcard_payload, "items") == []
+    assert _object_payload(wildcard_payload, "page")["total"] == 0
+
+
 def test_plans_api_filters_to_ready_plans_with_blocked_actions(tmp_path: Path) -> None:
     """The blocked filter is global and composes with ready status before the limit."""
     app_paths = default_application_paths(tmp_path)

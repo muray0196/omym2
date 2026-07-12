@@ -31,6 +31,7 @@ class ListPlansUseCase:
         with self.ports.uow as uow:
             return uow.plans.query_page(
                 request.library_id,
+                search=request.search,
                 status=request.status,
                 plan_type=request.plan_type,
                 blocked_only=request.blocked_only,

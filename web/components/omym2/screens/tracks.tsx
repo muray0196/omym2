@@ -176,8 +176,15 @@ function TrackDetail({
 export function TracksScreen() {
   const { navigate, route } = useApp()
   const [viewMode, setViewMode] = useState<TracksViewMode>("browser")
-  const [query, setQuery] = useState("")
+  const [query, setQuery] = useState(route.name === "tracks" ? (route.query ?? "") : "")
   const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
+
+  const routeQuery = route.name === "tracks" ? route.query : undefined
+  useEffect(() => {
+    if (route.name === "tracks") {
+      setQuery(routeQuery ?? "")
+    }
+  }, [route.name, routeQuery])
   const [status, setStatus] = useState<TrackStatus | "all">("all")
   const [statusFacets, setStatusFacets] = useState<FacetValue[]>([])
   const [facetTotal, setFacetTotal] = useState<number | null>(null)
@@ -191,7 +198,8 @@ export function TracksScreen() {
   // the history entry so back leaves the screen in one press no matter how
   // many rows were inspected.
   const selectedId = route.name === "tracks" ? (route.trackId ?? null) : null
-  const selectTrack = (trackId: string) => navigate({ name: "tracks", trackId }, { replace: true })
+  const selectTrack = (trackId: string) =>
+    navigate({ name: "tracks", query: query || undefined, trackId }, { replace: true })
 
   const loadTracksPage = useCallback(
     (cursor?: string) => {

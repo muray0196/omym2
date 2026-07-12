@@ -52,6 +52,7 @@ class ListPlansRequest:
     """Request one keyset page of Plans for a Library or every known Library."""
 
     library_id: LibraryId | None = None
+    search: str | None = None
     status: PlanStatus | None = None
     plan_type: PlanType | None = None
     blocked_only: bool = False
