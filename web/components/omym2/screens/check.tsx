@@ -10,13 +10,17 @@ import {
   ChevronRight,
   CircleAlert,
   CircleX,
+  FileDiff,
   Info,
   ListTree,
+  Music,
+  Route as RouteIcon,
   ShieldCheck,
   Table2,
 } from "lucide-react"
 import { useCallback, useEffect, useId, useMemo, useState } from "react"
 import { getCheckFacets, getCheckGroups, getCheckPage } from "../api-client"
+import { useApp } from "../app-context"
 import { BrowseFilters, countedFacetOptions, SEARCH_DEBOUNCE_MS } from "../browse-filters"
 import { useDebouncedValue } from "../use-debounced-value"
 import { cn, severityForIssue, truncateMiddle } from "../lib"
@@ -195,6 +199,49 @@ function issueKey(issue: CheckIssue, index: number): string {
   )
 }
 
+function IssueRelatedActions({ issue, className }: { issue: CheckIssue; className?: string }) {
+  const { navigate } = useApp()
+  const trackId = issue.track_id
+  const planId = issue.plan_id
+
+  if (trackId === null && planId === null) return null
+
+  return (
+    <div className={cn("flex flex-wrap gap-1.5", className)}>
+      {trackId !== null ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => navigate({ name: "tracks", trackId })}
+        >
+          <Music className="size-3.5" aria-hidden="true" /> Track
+        </Button>
+      ) : null}
+      {planId !== null ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => navigate({ name: "plan-detail", planId })}
+        >
+          <FileDiff className="size-3.5" aria-hidden="true" /> Plan actions
+        </Button>
+      ) : null}
+      {trackId !== null ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => navigate({ name: "path-policy", trackId })}
+        >
+          <RouteIcon className="size-3.5" aria-hidden="true" /> Path Preview
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 function IssueCard({ issue }: { issue: CheckIssue }) {
   const severity = issueSeverity(issue)
   const command = remediationFor(issue)
@@ -223,6 +270,7 @@ function IssueCard({ issue }: { issue: CheckIssue }) {
       {issue.detail ? (
         <p className="mt-1 text-xs leading-relaxed text-mute">{issue.detail}</p>
       ) : null}
+      <IssueRelatedActions issue={issue} className="mt-2" />
       <CliCommand command={command} className="mt-2" />
       {issue.track_id || issue.plan_id ? (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -655,6 +703,17 @@ function CheckIssueTable({
       className: "min-w-[10rem]",
     },
     {
+      key: "related",
+      header: "Related",
+      cell: (issue) =>
+        issue.track_id !== null || issue.plan_id !== null ? (
+          <IssueRelatedActions issue={issue} />
+        ) : (
+          <span className="text-mute">—</span>
+        ),
+      className: "min-w-[23rem]",
+    },
+    {
       key: "detail",
       header: "Detail",
       cell: (issue) => issue.detail ?? <span className="text-mute">—</span>,
@@ -710,11 +769,11 @@ function CheckIssueTable({
   )
 }
 
-export function CheckScreen() {
+export function CheckScreen({ query: routeQuery }: { query?: string }) {
   const [viewMode, setViewMode] = useState<CheckViewMode>("triage")
   const [groupBy, setGroupBy] = useState<CheckGroupBy>("path_root")
   const [typeFilter, setTypeFilter] = useState<CheckIssueType | "all">("all")
-  const [query, setQuery] = useState("")
+  const [query, setQuery] = useState(routeQuery ?? "")
   const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
   const [issueTypeCounts, setIssueTypeCounts] = useState<Partial<Record<CheckIssueType, number>>>(
     {},
@@ -722,6 +781,10 @@ export function CheckScreen() {
   const [checkedAt, setCheckedAt] = useState<string | null | undefined>(undefined)
   const [facetTotal, setFacetTotal] = useState<number | null>(null)
   const [facetErrors, setFacetErrors] = useState<string[]>([])
+
+  useEffect(() => {
+    setQuery(routeQuery ?? "")
+  }, [routeQuery])
 
   useEffect(() => {
     let cancelled = false

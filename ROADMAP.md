@@ -3,7 +3,7 @@
 ## Current State
 
 The large-data browsing foundation, grouped Plan review, grouped Check triage,
-Tracks library browser, and consistent faceted search are complete.
+Tracks library browser, consistent faceted search, and cross-links are complete.
 
 ## Outcome and Boundary
 
@@ -14,8 +14,6 @@ player.
 
 ## Remaining Ordered Work
 
-6. **Cross-links** — Navigate directly between related Tracks, Plan actions,
-   Check issues, Runs, and Path Preview without copying identifiers.
 7. **Dashboard next actions** — Route users from material risks and blocked work
    into the relevant grouped or filtered view.
 8. **Command Palette** — Add global navigation and search after the underlying

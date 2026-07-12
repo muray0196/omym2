@@ -5,7 +5,7 @@ Why: Lets users diagnose apply runs without loading every event upfront.
 
 "use client"
 
-import { ArrowLeft, FileWarning, TriangleAlert } from "lucide-react"
+import { ArrowLeft, ClipboardList, FileDiff, FileWarning, TriangleAlert } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { getRunEventFacets, getRunEventGroups, getRunEventsPage } from "../api-client"
 import { useApp } from "../app-context"
@@ -225,6 +225,23 @@ export function RunDetailScreen({ runId }: { runId: string }) {
       className: "min-w-[20rem]",
     },
     {
+      key: "plan_action",
+      header: "Plan action",
+      cell: (e) => (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            navigate({ name: "plan-detail", planId: run.plan_id, actionId: e.plan_action_id })
+          }
+        >
+          <FileDiff className="size-3.5" aria-hidden="true" /> View action
+        </Button>
+      ),
+      className: "min-w-[10rem]",
+    },
+    {
       key: "started",
       header: "Started",
       cell: (e) => (
@@ -252,9 +269,17 @@ export function RunDetailScreen({ runId }: { runId: string }) {
         title="Run detail"
         description="Inspect a single apply attempt and identify which file failed and why."
         actions={
-          <Button variant="outline" onClick={() => navigate({ name: "runs" })}>
-            <ArrowLeft className="size-4" aria-hidden="true" /> Back
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              onClick={() => navigate({ name: "plan-detail", planId: run.plan_id })}
+            >
+              <ClipboardList className="size-4" aria-hidden="true" /> View Plan
+            </Button>
+            <Button variant="outline" onClick={() => navigate({ name: "runs" })}>
+              <ArrowLeft className="size-4" aria-hidden="true" /> Back
+            </Button>
+          </>
         }
       />
 

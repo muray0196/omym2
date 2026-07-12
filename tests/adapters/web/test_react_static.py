@@ -19,6 +19,7 @@ from omym2.config import (
     WEB_HISTORY_ROUTE,
     WEB_NEXT_STATIC_ROUTE,
     WEB_PATH_POLICY_ROUTE,
+    WEB_PLAN_DETAIL_ROUTE,
     WEB_ROOT_ROUTE,
     WEB_SETTINGS_ROUTE,
     WEB_STATIC_ASSET_NOT_FOUND_MESSAGE,
@@ -52,10 +53,14 @@ def test_spa_routes_return_react_index(tmp_path: Path) -> None:
         WEB_ROOT_ROUTE,
         WEB_SETTINGS_ROUTE,
         WEB_PATH_POLICY_ROUTE,
+        f"{WEB_PATH_POLICY_ROUTE}?track=018f6a4f-3c2d-7b8a-9abc-def01234567d",
         WEB_HISTORY_ROUTE,
         f"{WEB_HISTORY_ROUTE}/018f6a4f-3c2d-7b8a-9abc-def01234567d",
         WEB_CHECK_ROUTE,
+        f"{WEB_CHECK_ROUTE}?query=018f6a4f-3c2d-7b8a-9abc-def01234567d",
         WEB_TRACKS_ROUTE,
+        f"{WEB_TRACKS_ROUTE}?track=018f6a4f-3c2d-7b8a-9abc-def01234567d",
+        f"{WEB_PLAN_DETAIL_ROUTE.format(plan_id='018f6a4f-3c2d-7b8a-9abc-def01234567d')}?action=018f6a4f-3c2d-7b8a-9abc-def01234567e",
     ):
         response = client.get(route)
 

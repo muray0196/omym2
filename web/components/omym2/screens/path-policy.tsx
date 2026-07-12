@@ -1,12 +1,12 @@
 "use client"
 
-import { Braces, Music, RotateCcw } from "lucide-react"
+import { ArrowLeft, Braces, Music, RotateCcw } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useApp } from "../app-context"
-import { previewSettings } from "../api-client"
+import { getTracksPage, previewSettings } from "../api-client"
 import { TEMPLATE_TOKENS } from "../lib"
-import type { PathPreview as PathPreviewResult, SampleMetadata } from "../types"
-import { Button, Mono, Panel } from "../primitives"
+import type { PathPreview as PathPreviewResult, SampleMetadata, TrackSummary } from "../types"
+import { Button, Mono, Notice, Panel } from "../primitives"
 import { PillTab } from "../command-kit"
 import { Field, TextArea, TextInput } from "../forms"
 import { PathPreview } from "../widgets"
@@ -93,14 +93,40 @@ const FIELD_LABELS: { key: keyof SampleMetadata; label: string }[] = [
   { key: "extension", label: "Extension" },
 ]
 
+function extensionFromCurrentPath(path: string): string {
+  const filename = path.split("/").pop() ?? ""
+  const separatorIndex = filename.lastIndexOf(".")
+  if (separatorIndex <= 0 || separatorIndex === filename.length - 1) return ""
+  return filename.slice(separatorIndex + 1)
+}
+
+function sampleMetadataFromTrack(track: TrackSummary): SampleMetadata {
+  const metadata = track.metadata
+  return {
+    title: metadata.title ?? "",
+    artist: metadata.artist ?? "",
+    album: metadata.album ?? "",
+    album_artist: metadata.album_artist ?? "",
+    year: metadata.year === null ? "" : String(metadata.year),
+    disc_number: metadata.disc_number === null ? "" : String(metadata.disc_number),
+    disc_total: metadata.disc_total === null ? "" : String(metadata.disc_total),
+    track_number: metadata.track_number === null ? "" : String(metadata.track_number),
+    extension: extensionFromCurrentPath(track.current_path),
+  }
+}
+
 export function PathPolicyScreen() {
-  const { savedConfig } = useApp()
+  const { navigate, route, savedConfig } = useApp()
   const policy = savedConfig.path_policy
+  const selectedTrackId = route.name === "path-policy" ? (route.trackId ?? null) : null
 
   const [presetId, setPresetId] = useState(SAMPLE_PRESETS[0].id)
   const [meta, setMeta] = useState<SampleMetadata>(SAMPLE_PRESETS[0].meta)
   const [preview, setPreview] = useState<PathPreviewResult>({ path: null, errors: [] })
   const [workingTemplate, setWorkingTemplate] = useState(policy.template)
+  const [selectedTrack, setSelectedTrack] = useState<TrackSummary | null>(null)
+  const [selectedTrackErrors, setSelectedTrackErrors] = useState<string[]>([])
+  const [selectedTrackLoading, setSelectedTrackLoading] = useState(false)
   const templateModified = workingTemplate !== policy.template
 
   // Follow the saved template when it changes and no local edit is active.
@@ -108,13 +134,63 @@ export function PathPolicyScreen() {
     setWorkingTemplate(policy.template)
   }, [policy.template])
 
+  useEffect(() => {
+    if (selectedTrackId === null) {
+      setSelectedTrack(null)
+      setSelectedTrackErrors([])
+      setSelectedTrackLoading(false)
+      setPresetId((current) => (current === "track" ? "custom" : current))
+      return
+    }
+
+    let cancelled = false
+    setSelectedTrack(null)
+    setSelectedTrackErrors([])
+    setSelectedTrackLoading(true)
+    getTracksPage({ trackId: selectedTrackId, limit: 1 })
+      .then((response) => {
+        if (cancelled) return
+        const track = response.items[0] ?? null
+        setSelectedTrack(track)
+        setSelectedTrackErrors(
+          track ? response.errors : ["Selected Track was not found.", ...response.errors],
+        )
+        if (track) {
+          setMeta(sampleMetadataFromTrack(track))
+          setPresetId("track")
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setSelectedTrack(null)
+        setSelectedTrackErrors([
+          error instanceof Error ? error.message : "Selected Track failed to load.",
+        ])
+      })
+      .finally(() => {
+        if (!cancelled) setSelectedTrackLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTrackId])
+
+  function clearSelectedTrackContext() {
+    if (selectedTrackId !== null) {
+      navigate({ name: "path-policy" }, { replace: true })
+    }
+  }
+
   function selectPreset(id: string) {
+    clearSelectedTrackContext()
     setPresetId(id)
     const preset = SAMPLE_PRESETS.find((p) => p.id === id)
     if (preset) setMeta(preset.meta)
   }
 
   function updateMeta(key: keyof SampleMetadata, value: string) {
+    clearSelectedTrackContext()
     setMeta((prev) => ({ ...prev, [key]: value }))
     setPresetId("custom")
   }
@@ -155,7 +231,44 @@ export function PathPolicyScreen() {
       <PageHeading
         title="Path policy preview"
         description="See how the saved path policy turns track metadata into a canonical relative path. The template and fallbacks are configured in Settings; this screen previews them against sample metadata."
+        actions={
+          selectedTrackId !== null ? (
+            <Button
+              variant="outline"
+              onClick={() => navigate({ name: "tracks", trackId: selectedTrackId })}
+            >
+              <ArrowLeft className="size-4" aria-hidden="true" /> Return to Track
+            </Button>
+          ) : undefined
+        }
       />
+
+      {selectedTrackId !== null ? (
+        <div className="mb-6 flex flex-col gap-3">
+          {selectedTrackLoading ? (
+            <Notice tone="info" title="Loading selected Track">
+              Loading metadata for the current-policy diagnostic.
+            </Notice>
+          ) : null}
+          {selectedTrack ? (
+            <Notice tone="info" title="Current-policy diagnostic">
+              <p>
+                This preview uses the selected Track&apos;s persisted metadata and current path
+                extension with the current working policy. It does not use, alter, or replace a
+                recorded Plan target.
+              </p>
+              <Mono className="mt-1 block break-all text-ink" title={selectedTrack.current_path}>
+                {selectedTrack.current_path}
+              </Mono>
+            </Notice>
+          ) : null}
+          {selectedTrackErrors.length > 0 ? (
+            <Notice tone="warning" title="Track diagnostic is incomplete">
+              {selectedTrackErrors.join(" ")}
+            </Notice>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="flex flex-col gap-6">
@@ -234,6 +347,7 @@ export function PathPolicyScreen() {
                       {preset.label}
                     </PillTab>
                   ))}
+                  {presetId === "track" ? <PillTab active>Selected Track</PillTab> : null}
                   {presetId === "custom" ? <PillTab active>Custom (edited)</PillTab> : null}
                 </div>
               </div>
