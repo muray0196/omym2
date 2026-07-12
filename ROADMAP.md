@@ -3,7 +3,8 @@
 ## Current State
 
 The large-data browsing foundation, grouped Plan review, grouped Check triage,
-Tracks library browser, consistent faceted search, and cross-links are complete.
+Tracks library browser, consistent faceted search, cross-links, and dashboard
+next actions are complete.
 
 ## Outcome and Boundary
 
@@ -14,14 +15,12 @@ player.
 
 ## Remaining Ordered Work
 
-7. **Dashboard next actions** — Route users from material risks and blocked work
-   into the relevant grouped or filtered view.
-8. **Command Palette** — Add global navigation and search after the underlying
+7. **Command Palette** — Add global navigation and search after the underlying
    browse APIs can support it.
-9. **Settings split** — Separate ordinary settings from safety-sensitive or
+8. **Settings split** — Separate ordinary settings from safety-sensitive or
    advanced controls.
-10. **GUI apply decision** — Consider only after the preceding review and
-    diagnosis workflows are mature; retain the reviewed-Plan safety model.
+9. **GUI apply decision** — Consider only after the preceding review and
+   diagnosis workflows are mature; retain the reviewed-Plan safety model.
 
 ## Validation
 

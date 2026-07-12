@@ -125,7 +125,15 @@ function PlanStatusPanel({
   )
 }
 
-export function PlanDetailScreen({ planId, actionId }: { planId: string; actionId?: string }) {
+export function PlanDetailScreen({
+  planId,
+  actionId,
+  actionStatus: initialActionStatus,
+}: {
+  planId: string
+  actionId?: string
+  actionStatus?: PlanActionStatus
+}) {
   const {
     loadPlanDetail,
     navigate,
@@ -135,8 +143,10 @@ export function PlanDetailScreen({ planId, actionId }: { planId: string; actionI
     plans,
     runs,
   } = useApp()
-  const [viewMode, setViewMode] = useState<PlanViewMode>("grouped")
-  const [actionStatus, setActionStatus] = useState<PlanActionStatus | "all">("all")
+  const [viewMode, setViewMode] = useState<PlanViewMode>(initialActionStatus ? "table" : "grouped")
+  const [actionStatus, setActionStatus] = useState<PlanActionStatus | "all">(
+    initialActionStatus ?? "all",
+  )
   const [actionStatusCounts, setActionStatusCounts] = useState<
     Partial<Record<PlanActionStatus, number>>
   >({})
@@ -150,6 +160,11 @@ export function PlanDetailScreen({ planId, actionId }: { planId: string; actionI
   useEffect(() => {
     void loadPlanDetail(planId)
   }, [loadPlanDetail, planId])
+
+  useEffect(() => {
+    setActionStatus(initialActionStatus ?? "all")
+    setViewMode(initialActionStatus ? "table" : "grouped")
+  }, [initialActionStatus])
 
   useEffect(() => {
     let cancelled = false

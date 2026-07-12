@@ -1576,12 +1576,16 @@ function trackBrowserLeafOrder(left: TrackSummary, right: TrackSummary): number 
 function buildPlanPredicate(options: {
   status?: PlanStatus | "all"
   type?: PlanType | "all"
+  blockedOnly?: boolean
 }): (row: PlanSummary) => boolean {
   return (row) => {
     if (options.status && options.status !== "all" && row.status !== options.status) {
       return false
     }
     if (options.type && options.type !== "all" && row.plan_type !== options.type) {
+      return false
+    }
+    if (options.blockedOnly && !(Number.parseInt(row.summary.blocked_actions ?? "0", 10) > 0)) {
       return false
     }
     return true
@@ -1981,6 +1985,7 @@ export function mockGetPlansPage(
   options: {
     status?: PlanStatus | "all"
     type?: PlanType | "all"
+    blockedOnly?: boolean
     limit?: number
     cursor?: string
   } = {},

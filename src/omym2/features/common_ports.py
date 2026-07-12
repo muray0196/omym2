@@ -219,12 +219,14 @@ class PlanRepository(Protocol):
         *,
         status: PlanStatus | None,
         plan_type: PlanType | None,
+        blocked_only: bool = False,
         page: PageRequest,
     ) -> Page[Plan]:
         """Return one keyset page of Plans, ordered (created_at DESC, plan_id DESC).
 
         `library_id=None` scopes across every known Library. `page.total`
-        counts rows matching the filters, ignoring the cursor.
+        counts rows matching the filters, ignoring the cursor. `blocked_only`
+        selects Plans whose persisted summary records blocked actions.
         """
         ...
 

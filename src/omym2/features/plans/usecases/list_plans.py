@@ -33,5 +33,6 @@ class ListPlansUseCase:
                 request.library_id,
                 status=request.status,
                 plan_type=request.plan_type,
+                blocked_only=request.blocked_only,
                 page=request.page,
             )

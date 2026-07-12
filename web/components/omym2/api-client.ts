@@ -311,6 +311,7 @@ export async function getPlansPage(
   options: {
     status?: PlanStatus | "all"
     type?: PlanType | "all"
+    blockedOnly?: boolean
     limit?: number
     cursor?: string
   } = {},
@@ -324,6 +325,9 @@ export async function getPlansPage(
   }
   if (options.type && options.type !== "all") {
     params.set("type", options.type)
+  }
+  if (options.blockedOnly) {
+    params.set("blocked", "true")
   }
   if (options.limit) {
     params.set("limit", String(options.limit))

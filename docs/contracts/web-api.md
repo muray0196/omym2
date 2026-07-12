@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines OMYM2's local Web API envelopes, browsing and Plan-creation requests, pagination/facets/groups, and exclusion of CLI-only trust-stat flags.
 tags: [web-api, pagination, json, contract]
-timestamp: 2026-07-12T18:25:09+09:00
+timestamp: 2026-07-12T21:09:12+09:00
 ---
 
 # Web API Contract
@@ -156,7 +156,7 @@ differ from canonical paths.
 
 Plan ordering: `created_at DESC, plan_id DESC`. Action ordering: `sort_order ASC, action_id ASC`.
 
-* `GET /api/plans?status=&type=&limit=&cursor=` — list envelope of `PlanSummary` items.
+* `GET /api/plans?status=&type=&blocked=&limit=&cursor=` — list envelope of `PlanSummary` items. `blocked=true` selects Plans whose persisted summary records at least one blocked action; omitted or `false` leaves blocked count unfiltered. It combines with status and type before pagination.
 * `GET /api/plans/{plan_id}` → `{ "detail": { "plan": {...} }, "errors": [] }`. Header only: the previous embedded `actions` array and `total_action_count` field are REMOVED. Actions are fetched separately (below).
 * `GET /api/plans/{plan_id}/actions?query=&status=&action_type=&reason=&group_by=&group_key=&limit=&cursor=` — list envelope of `PlanAction` items. `query` matches `action_id`, `track_id`, `source_path`, `target_path`, `content_hash_at_plan`, or `metadata_hash_at_plan`, case-insensitive substring. `group_by` and `group_key` are an optional drill-down pair: clients must provide both or neither. Search, catalog facets, and the group filter combine as AND and use the same membership rules as the groups endpoint.
 * `GET /api/plans/{plan_id}/facets?query=&status=&action_type=&reason=` — facet envelope; facet fields: `status`, `action_type`, and non-null `reason`. Each facet applies the query and the other two facet filters while omitting its own filter, so alternate values remain visible. `total` counts actions matching every supplied filter. The response additionally carries Plan-wide top-level `target_collisions`, counting distinct non-null target paths recorded by two or more actions; browsing filters do not change that reviewed-risk scalar.
