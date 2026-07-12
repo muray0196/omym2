@@ -213,10 +213,11 @@ class PlanRepository(Protocol):
         """Persist a Plan header and summary."""
         ...
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # Plan browsing combines search and catalog filters in one stable port.
         self,
         library_id: LibraryId | None,
         *,
+        search: str | None = None,
         status: PlanStatus | None,
         plan_type: PlanType | None,
         blocked_only: bool = False,
@@ -224,9 +225,10 @@ class PlanRepository(Protocol):
     ) -> Page[Plan]:
         """Return one keyset page of Plans, ordered (created_at DESC, plan_id DESC).
 
-        `library_id=None` scopes across every known Library. `page.total`
-        counts rows matching the filters, ignoring the cursor. `blocked_only`
-        selects Plans whose persisted summary records blocked actions.
+        `library_id=None` scopes across every known Library. `search` matches
+        Plan identity and header fields. `page.total` counts rows matching the
+        filters, ignoring the cursor. `blocked_only` selects Plans whose
+        persisted summary records blocked actions.
         """
         ...
 
@@ -363,14 +365,16 @@ class RunRepository(Protocol):
         self,
         library_id: LibraryId | None,
         *,
+        search: str | None = None,
         plan_id: PlanId | None,
         status: RunStatus | None,
         page: PageRequest,
     ) -> Page[Run]:
         """Return one keyset page of Runs, ordered (started_at DESC, run_id DESC).
 
-        `library_id=None` scopes across every known Library. `page.total`
-        counts rows matching the filters, ignoring the cursor.
+        `library_id=None` scopes across every known Library. `search` matches
+        Run identity and diagnostic fields. `page.total` counts rows matching
+        the filters, ignoring the cursor.
         """
         ...
 

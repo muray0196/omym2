@@ -159,6 +159,38 @@ def test_history_api_filters_by_status_and_library(tmp_path: Path) -> None:
     assert page["total"] == 1
 
 
+def test_history_api_searches_runs_and_escapes_like_wildcards(tmp_path: Path) -> None:
+    """Run search is case-insensitive and treats SQL LIKE wildcard input literally."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    with SQLiteUnitOfWork(app_paths.database_file) as uow:
+        uow.libraries.save(_library(str(library_root)))
+        uow.plans.save(_plan(str(library_root)))
+        uow.runs.save(_run(run_id=RUN_ID, started_at=BASE_TIME, status=RunStatus.SUCCEEDED))
+        uow.runs.save(
+            _run(
+                run_id=SECOND_RUN_ID,
+                started_at=BASE_TIME + timedelta(minutes=1),
+                status=RunStatus.FAILED,
+            )
+        )
+        uow.commit()
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    matched = client.get(WEB_API_HISTORY_ROUTE, params={"query": "FAILED"})
+    wildcard = client.get(WEB_API_HISTORY_ROUTE, params={"query": "_"})
+
+    assert matched.status_code == SUCCESS_STATUS_CODE
+    matched_payload = _json_payload(matched)
+    assert [item["run_id"] for item in _object_list_payload(matched_payload, "items")] == [str(SECOND_RUN_ID)]
+    assert _object_payload(matched_payload, "page")["total"] == 1
+    assert wildcard.status_code == SUCCESS_STATUS_CODE
+    wildcard_payload = _json_payload(wildcard)
+    assert _object_list_payload(wildcard_payload, "items") == []
+    assert _object_payload(wildcard_payload, "page")["total"] == 0
+
+
 def test_history_api_filters_by_plan_id(tmp_path: Path) -> None:
     """plan_id lets Plan detail find its Run without walking the full history."""
     app_paths = default_application_paths(tmp_path)

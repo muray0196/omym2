@@ -3,8 +3,8 @@
 ## Current State
 
 The large-data browsing foundation, grouped Plan review, grouped Check triage,
-Tracks library browser, consistent faceted search, cross-links, and dashboard
-next actions are complete.
+Tracks library browser, consistent faceted search, cross-links, dashboard next
+actions, and global command-palette navigation and search are complete.
 
 ## Outcome and Boundary
 
@@ -15,8 +15,6 @@ player.
 
 ## Remaining Ordered Work
 
-7. **Command Palette** — Add global navigation and search after the underlying
-   browse APIs can support it.
 8. **Settings split** — Separate ordinary settings from safety-sensitive or
    advanced controls.
 9. **GUI apply decision** — Consider only after the preceding review and

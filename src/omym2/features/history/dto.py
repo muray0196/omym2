@@ -22,6 +22,7 @@ class ListRunsRequest:
     """Request one keyset page of Runs for a Library or every known Library."""
 
     library_id: LibraryId | None = None
+    search: str | None = None
     plan_id: PlanId | None = None
     status: RunStatus | None = None
     page: PageRequest = field(default_factory=PageRequest)

@@ -3,7 +3,7 @@ type: Product Overview
 title: Product
 description: Describes OMYM2's product shape as a headless domain core with a CLI runner and a local Web UI for settings, Plan creation and review, and status; defines its primary safe-import use case and technology stack.
 tags: [product, overview, cli, web-ui]
-timestamp: 2026-07-12T02:41:12+09:00
+timestamp: 2026-07-12T21:25:28+09:00
 ---
 
 # Product
@@ -89,6 +89,7 @@ The roles of the Web UI are:
 * Browsing and reviewing Plans and their PlanActions
 * Reviewing execution history
 * Checking the state of the DB and filesystem
+* Searching Tracks, Plans, Runs, and persisted Check issues from a global command palette
 
 The Web UI supports settings, Plan creation and review, and read-only Track,
 history, and check browsing. Applying Plans and all direct file movement remain

@@ -176,8 +176,14 @@ function TrackDetail({
 export function TracksScreen() {
   const { navigate, route } = useApp()
   const [viewMode, setViewMode] = useState<TracksViewMode>("browser")
-  const [query, setQuery] = useState("")
+  const [query, setQuery] = useState(route.name === "tracks" ? (route.query ?? "") : "")
   const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
+
+  useEffect(() => {
+    if (route.name === "tracks" && route.query !== undefined) {
+      setQuery(route.query)
+    }
+  }, [route])
   const [status, setStatus] = useState<TrackStatus | "all">("all")
   const [statusFacets, setStatusFacets] = useState<FacetValue[]>([])
   const [facetTotal, setFacetTotal] = useState<number | null>(null)

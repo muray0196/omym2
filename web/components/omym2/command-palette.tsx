@@ -1,3 +1,8 @@
+/*
+Summary: Provides global command and entity search for the OMYM2 console.
+Why: Makes navigation and large-data audit records reachable from one keyboard-first surface.
+*/
+
 "use client"
 
 import {
@@ -14,20 +19,51 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { getCheckPage, getHistoryPage, getPlansPage, getTracksPage } from "./api-client"
 import { useApp, type Route } from "./app-context"
+import { SEARCH_DEBOUNCE_MS } from "./browse-filters"
 import { CommandRow, Keycap } from "./command-kit"
 import { cn, formatTimestamp, truncateMiddle } from "./lib"
 import { toneForStatus, type Tone } from "./primitives"
+import type { CheckIssue, PlanSummary, RunSummary, TrackSummary } from "./types"
+import { useDebouncedValue } from "./use-debounced-value"
+
+type PaletteGroup =
+  "Navigate" | "Search" | "Tracks" | "Plans" | "Runs" | "Check issues" | "CLI commands"
 
 interface PaletteItem {
   id: string
-  group: "Navigate" | "Runs" | "CLI commands"
+  group: PaletteGroup
   label: string
   keywords: string
   icon: LucideIcon
   hint?: string
   tone?: Tone
   action: () => void | "copied"
+}
+
+interface PaletteSearchResults {
+  tracks: TrackSummary[]
+  plans: PlanSummary[]
+  runs: RunSummary[]
+  checkIssues: CheckIssue[]
+}
+
+const COMMAND_PALETTE_RESULT_LIMIT = 5
+const EMPTY_SEARCH_RESULTS: PaletteSearchResults = {
+  tracks: [],
+  plans: [],
+  runs: [],
+  checkIssues: [],
+}
+const GROUP_ORDER: Record<PaletteGroup, number> = {
+  Navigate: 0,
+  Search: 1,
+  Tracks: 2,
+  Plans: 3,
+  Runs: 4,
+  "Check issues": 5,
+  "CLI commands": 6,
 }
 
 const NAV_ENTRIES: { label: string; icon: LucideIcon; route: Route; keywords: string }[] = [
@@ -83,16 +119,23 @@ export function CommandPalette() {
   const [query, setQuery] = useState("")
   const [activeIndex, setActiveIndex] = useState(0)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [searchResults, setSearchResults] = useState<PaletteSearchResults>(EMPTY_SEARCH_RESULTS)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [unavailableSourceCount, setUnavailableSourceCount] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
 
   const close = useCallback(() => {
     setOpen(false)
     setQuery("")
     setActiveIndex(0)
     setCopiedId(null)
+    setSearchResults(EMPTY_SEARCH_RESULTS)
+    setSearchLoading(false)
+    setUnavailableSourceCount(0)
   }, [])
 
   // Global shortcut, close-on-escape, and a focus trap while the dialog is open:
@@ -133,6 +176,47 @@ export function CommandPalette() {
       previousFocusRef.current?.focus()
     }
   }, [open])
+
+  useEffect(() => {
+    const search = debouncedQuery.trim()
+    if (!open || !search) {
+      setSearchResults(EMPTY_SEARCH_RESULTS)
+      setSearchLoading(false)
+      setUnavailableSourceCount(0)
+      return
+    }
+
+    let cancelled = false
+    setSearchLoading(true)
+
+    async function loadSearchResults() {
+      const [tracks, plans, runs, checkIssues] = await Promise.all([
+        getTracksPage({ query: search, limit: COMMAND_PALETTE_RESULT_LIMIT }).catch(() => null),
+        getPlansPage({ query: search, limit: COMMAND_PALETTE_RESULT_LIMIT }).catch(() => null),
+        getHistoryPage({ query: search, limit: COMMAND_PALETTE_RESULT_LIMIT }).catch(() => null),
+        getCheckPage({ query: search, limit: COMMAND_PALETTE_RESULT_LIMIT }).catch(() => null),
+      ])
+      if (cancelled) return
+
+      const responses = [tracks, plans, runs, checkIssues]
+      setUnavailableSourceCount(
+        responses.filter((response) => response === null || response.errors.length > 0).length,
+      )
+      setSearchResults({
+        tracks: tracks?.items ?? [],
+        plans: plans?.items ?? [],
+        runs: runs?.items ?? [],
+        checkIssues: checkIssues?.items ?? [],
+      })
+      setSearchLoading(false)
+      setActiveIndex(0)
+    }
+
+    void loadSearchResults()
+    return () => {
+      cancelled = true
+    }
+  }, [debouncedQuery, open])
 
   const items = useMemo<PaletteItem[]>(() => {
     const navItems: PaletteItem[] = NAV_ENTRIES.map((entry) => ({
@@ -179,6 +263,76 @@ export function CommandPalette() {
     return [...navItems, ...runItems, ...cliItems]
   }, [navigate, runs])
 
+  const searchItems = useMemo<PaletteItem[]>(() => {
+    const search = debouncedQuery.trim()
+    if (!search) return []
+
+    const browseItems: PaletteItem[] = [
+      {
+        id: `search-tracks-${search}`,
+        group: "Search",
+        label: `Search Tracks for “${search}”`,
+        keywords: search,
+        icon: Search,
+        action: () => navigate({ name: "tracks", query: search }),
+      },
+      {
+        id: `search-check-${search}`,
+        group: "Search",
+        label: `Search Check issues for “${search}”`,
+        keywords: search,
+        icon: Search,
+        action: () => navigate({ name: "check", query: search }),
+      },
+    ]
+    const trackItems: PaletteItem[] = searchResults.tracks.map((track) => ({
+      id: `track-${track.track_id}`,
+      group: "Tracks",
+      label: track.metadata.title ?? track.current_path,
+      keywords: `${track.track_id} ${track.library_id} ${track.current_path} ${track.metadata.artist ?? ""} ${track.metadata.album ?? ""}`,
+      icon: Music,
+      hint: track.metadata.artist ?? track.current_path,
+      tone: toneForStatus(track.status),
+      action: () => navigate({ name: "tracks", query: search, trackId: track.track_id }),
+    }))
+    const planItems: PaletteItem[] = searchResults.plans.map((plan) => ({
+      id: `plan-${plan.plan_id}`,
+      group: "Plans",
+      label: truncateMiddle(plan.plan_id, 36),
+      keywords: `${plan.plan_id} ${plan.library_id} ${plan.plan_type} ${plan.status}`,
+      icon: ClipboardList,
+      hint: `${plan.plan_type.replace(/_/g, " ")} · ${plan.status.replace(/_/g, " ")}`,
+      tone: toneForStatus(plan.status),
+      action: () => navigate({ name: "plan-detail", planId: plan.plan_id }),
+    }))
+    const runItems: PaletteItem[] = searchResults.runs.map((run) => ({
+      id: `run-${run.run_id}`,
+      group: "Runs",
+      label: truncateMiddle(run.run_id, 36),
+      keywords: `${run.run_id} ${run.plan_id} ${run.library_id} ${run.status} ${run.error_summary ?? ""}`,
+      icon: ListChecks,
+      hint: `${run.status.replace(/_/g, " ")} · ${formatTimestamp(run.started_at)}`,
+      tone: toneForStatus(run.status),
+      action: () => navigate({ name: "run-detail", runId: run.run_id }),
+    }))
+    const checkItems: PaletteItem[] = searchResults.checkIssues.map((issue, index) => {
+      const issueSearch = issue.track_id ?? issue.path ?? issue.plan_id ?? issue.issue_type
+      return {
+        id: `check-${issue.issue_id ?? `${issue.issue_type}-${index}-${issueSearch}`}`,
+        group: "Check issues",
+        label: issue.path ?? issue.track_id ?? issue.plan_id ?? issue.issue_type,
+        keywords: `${issue.issue_type} ${issue.library_id} ${issue.path ?? ""} ${issue.track_id ?? ""} ${issue.plan_id ?? ""} ${issue.detail ?? ""}`,
+        icon: ShieldCheck,
+        hint: issue.issue_type.replace(/_/g, " "),
+        tone:
+          issue.severity === "error" ? "danger" : issue.severity === "info" ? "info" : "warning",
+        action: () => navigate({ name: "check", query: issueSearch }),
+      }
+    })
+
+    return [...browseItems, ...trackItems, ...planItems, ...runItems, ...checkItems]
+  }, [debouncedQuery, navigate, searchResults])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) {
@@ -188,10 +342,16 @@ export function CommandPalette() {
       const clis = items.filter((i) => i.group === "CLI commands")
       return [...navs, ...runsShort, ...clis]
     }
-    return items.filter(
-      (i) => i.label.toLowerCase().includes(q) || i.keywords.toLowerCase().includes(q),
+    const deduplicated = new Map<string, PaletteItem>()
+    for (const item of [...items, ...searchItems]) {
+      if (item.label.toLowerCase().includes(q) || item.keywords.toLowerCase().includes(q)) {
+        deduplicated.set(item.id, item)
+      }
+    }
+    return Array.from(deduplicated.values()).sort(
+      (left, right) => GROUP_ORDER[left.group] - GROUP_ORDER[right.group],
     )
-  }, [items, query])
+  }, [items, query, searchItems])
 
   useEffect(() => {
     setActiveIndex(0)
@@ -213,6 +373,7 @@ export function CommandPalette() {
   function onInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "ArrowDown") {
       e.preventDefault()
+      if (filtered.length === 0) return
       setActiveIndex((i) => Math.min(i + 1, filtered.length - 1))
     } else if (e.key === "ArrowUp") {
       e.preventDefault()
@@ -265,7 +426,7 @@ export function CommandPalette() {
               filtered[activeIndex] ? `palette-item-${filtered[activeIndex].id}` : undefined
             }
             className="h-12 w-full bg-transparent text-sm text-on-dark outline-none placeholder:text-mute"
-            placeholder="Search screens, runs, CLI commands…"
+            placeholder="Search screens, records, CLI commands…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onInputKeyDown}
@@ -280,7 +441,9 @@ export function CommandPalette() {
           className="max-h-[50vh] overflow-y-auto p-1.5"
         >
           {filtered.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm text-mute">No results.</p>
+            <p className="px-3 py-8 text-center text-sm text-mute">
+              {searchLoading ? "Searching library…" : "No results."}
+            </p>
           ) : (
             filtered.map((item, index) => {
               const showHeader = item.group !== lastGroup
@@ -327,6 +490,17 @@ export function CommandPalette() {
               )
             })
           )}
+          {filtered.length > 0 && searchLoading ? (
+            <p role="status" className="px-3 py-2 text-xs text-mute">
+              Searching library…
+            </p>
+          ) : null}
+          {unavailableSourceCount > 0 && !searchLoading ? (
+            <p role="status" className="px-3 py-2 text-xs text-warning">
+              {unavailableSourceCount} search source{unavailableSourceCount === 1 ? " is" : "s are"}{" "}
+              unavailable.
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-4 border-t border-hairline px-3.5 py-2.5 text-xs text-mute">
           <span className="flex items-center gap-1.5">

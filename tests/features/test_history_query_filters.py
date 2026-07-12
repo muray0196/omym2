@@ -94,6 +94,19 @@ def test_list_runs_filters_by_plan_id() -> None:
     assert page.total == 1
 
 
+def test_list_runs_searches_identity_and_status_fields_case_insensitively() -> None:
+    """Global Run search matches summary values before paging."""
+    uow = InMemoryUnitOfWork()
+    uow.plans.save(_plan())
+    uow.runs.save(_run(RUN_ID_1, status=RunStatus.SUCCEEDED, started_at=BASE_TIME))
+    uow.runs.save(_run(RUN_ID_2, status=RunStatus.FAILED, started_at=BASE_TIME + timedelta(minutes=1)))
+
+    page = ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest(search="FAILED"))
+
+    assert tuple(run.run_id for run in page.items) == (RUN_ID_2,)
+    assert page.total == 1
+
+
 def test_list_runs_orders_newest_first_by_default() -> None:
     """Unfiltered listing sorts by (started_at, run_id) descending in both scopes."""
     uow = InMemoryUnitOfWork()

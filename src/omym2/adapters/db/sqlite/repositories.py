@@ -79,6 +79,13 @@ PLAN_ACTION_SEARCH_COLUMN_NAMES = (
     "content_hash_at_plan",
     "metadata_hash_at_plan",
 )
+PLAN_SEARCH_COLUMN_NAMES = (
+    "plan_id",
+    "library_id",
+    "plan_type",
+    "status",
+)
+RUN_SEARCH_COLUMN_NAMES = ("run_id", "plan_id", "library_id", "status", "error_summary")
 CHECK_ISSUE_SEARCH_COLUMN_NAMES = ("library_id", "path", "track_id", "plan_id", "detail")
 TRACK_GROUP_SOURCE_SELECT = """
             SELECT
@@ -931,10 +938,11 @@ class SQLitePlanRepository(_SQLiteRepository):
         )
         return tuple(_plan_from_row(row) for row in rows)
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # Mirrors the stable PlanRepository browse contract.
         self,
         library_id: LibraryId | None,
         *,
+        search: str | None = None,
         status: PlanStatus | None,
         plan_type: PlanType | None,
         blocked_only: bool = False,
@@ -943,6 +951,7 @@ class SQLitePlanRepository(_SQLiteRepository):
         """Return one keyset page of Plans ordered (created_at DESC, plan_id DESC)."""
         where_sql, where_params = _plan_filter_where(
             library_id,
+            search,
             status,
             plan_type,
             blocked_only=blocked_only,
@@ -1333,12 +1342,13 @@ class SQLiteRunRepository(_SQLiteRepository):
         self,
         library_id: LibraryId | None,
         *,
+        search: str | None = None,
         plan_id: PlanId | None,
         status: RunStatus | None,
         page: PageRequest,
     ) -> Page[Run]:
         """Return one keyset page of Runs ordered (started_at DESC, run_id DESC)."""
-        where_sql, where_params = _run_filter_where(library_id, plan_id, status)
+        where_sql, where_params = _run_filter_where(library_id, search, plan_id, status)
         # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
         count_sql = f"SELECT COUNT(*) FROM runs{where_sql}"  # noqa: S608
         total = _scalar_int(self._connection, count_sql, tuple(where_params))
@@ -2113,6 +2123,7 @@ def _check_issue_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | Non
 
 def _plan_filter_where(
     library_id: LibraryId | None,
+    search: str | None,
     status: PlanStatus | None,
     plan_type: PlanType | None,
     *,
@@ -2123,6 +2134,9 @@ def _plan_filter_where(
     if library_id is not None:
         clauses.append("library_id = ?")
         params.append(str(library_id))
+    if search:
+        clauses.append(_like_search_clause(PLAN_SEARCH_COLUMN_NAMES))
+        params.extend([_like_pattern(search)] * len(PLAN_SEARCH_COLUMN_NAMES))
     if status is not None:
         clauses.append("status = ?")
         params.append(status.value)
@@ -2186,6 +2200,7 @@ def _plan_action_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | Non
 
 def _run_filter_where(
     library_id: LibraryId | None,
+    search: str | None,
     plan_id: PlanId | None,
     status: RunStatus | None,
 ) -> tuple[str, list[object]]:
@@ -2194,6 +2209,9 @@ def _run_filter_where(
     if library_id is not None:
         clauses.append("library_id = ?")
         params.append(str(library_id))
+    if search:
+        clauses.append(_like_search_clause(RUN_SEARCH_COLUMN_NAMES))
+        params.extend([_like_pattern(search)] * len(RUN_SEARCH_COLUMN_NAMES))
     if plan_id is not None:
         clauses.append("plan_id = ?")
         params.append(str(plan_id))

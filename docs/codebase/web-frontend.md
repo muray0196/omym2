@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Authoritative reference for the Next.js web/ frontend layout, its audited static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
 tags: [web-frontend, nextjs, static-export, api-boundary]
-timestamp: 2026-07-10T21:04:26+09:00
+timestamp: 2026-07-12T21:25:28+09:00
 ---
 
 # Web Frontend
@@ -17,6 +17,13 @@ Backend adapter rules are in [dependency-boundaries.md](dependency-boundaries.md
 The Web UI is a Next.js App Router project (`web/`) using React, TypeScript, and Tailwind CSS. It is built as a static export (`output: "export"` in `web/next.config.mjs`); no Node server runs in production.
 
 The app is a single-page console: `web/app/page.tsx` renders the `Console` component, and screen switching happens client-side inside `components/omym2/`.
+
+The persistent shell includes a global command palette opened through its
+header trigger or `Ctrl`/`Cmd`+`K`. Static commands cover screen navigation and
+copyable CLI operations. Non-blank input is debounced and searches the paged
+Track, Plan, Run, and persisted Check issue APIs in parallel; result rows link
+to the corresponding detail or filtered browse screen. A failed source does
+not discard successful results from the other sources.
 
 ## Layout
 
@@ -62,7 +69,7 @@ The JSON envelope, pagination/cursor, facet, and group-by contract for the brows
 
 The frontend talks to the backend only through the JSON API:
 
-* `web/components/omym2/api-client.ts` calls the Settings endpoints (`/api/settings`, `/api/settings/validate`, `/api/settings/preview`, `/api/settings/save`, `/api/settings/artist-ids/generate`) and the browsing endpoints documented in [../contracts/web-api.md](../contracts/web-api.md), including paged list, facet, group, and detail routes under `/api/tracks`, `/api/plans`, `/api/check`, and `/api/history`. Settings saves, artist ID generation, Plan creation POSTs, and Check recomputation (`POST /api/check/run`) send the CSRF token in the `X-OMYM2-CSRF-Token` header.
+* `web/components/omym2/api-client.ts` calls the Settings endpoints (`/api/settings`, `/api/settings/validate`, `/api/settings/preview`, `/api/settings/save`, `/api/settings/artist-ids/generate`) and the browsing endpoints documented in [../contracts/web-api.md](../contracts/web-api.md), including paged list, search, facet, group, and detail routes under `/api/tracks`, `/api/plans`, `/api/check`, and `/api/history`. Settings saves, artist ID generation, Plan creation POSTs, and Check recomputation (`POST /api/check/run`) send the CSRF token in the `X-OMYM2-CSRF-Token` header.
 * `src/omym2/adapters/web/routes/api.py` translates JSON payloads into feature usecases (settings load / validate / preview / save, Plan list / detail / creation, history, check, tracks). Routes never read TOML or the filesystem directly; config access goes through `SettingsPorts` and the `ConfigStore` port, and Plan creation stays review-only without wiring apply or file moving.
 
 When the page is not served from localhost (or `NEXT_PUBLIC_OMYM2_API_MODE=mock` is set), `api-client.ts` returns mock data from `components/omym2/mock-data.ts` instead of calling the API, which keeps static previews working without a backend.

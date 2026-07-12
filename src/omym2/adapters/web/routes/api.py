@@ -493,6 +493,7 @@ def _get_history(context: ApiRouteContext, request: Request) -> JSONResponse:
         return _list_error_response(cursor_errors)
 
     library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    search = request.query_params.get("query")
     plan_id, plan_errors = _plan_id_from_query(request.query_params.get("plan_id"))
     status, status_errors = _run_status_from_query(request.query_params.get("status"))
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
@@ -506,6 +507,7 @@ def _get_history(context: ApiRouteContext, request: Request) -> JSONResponse:
         page = ListRunsUseCase(context.history_ports_factory()).execute(
             ListRunsRequest(
                 library_id=library_id,
+                search=search,
                 plan_id=plan_id,
                 status=status,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
@@ -694,6 +696,7 @@ def _get_plans(context: ApiRouteContext, request: Request) -> JSONResponse:
         return _list_error_response(cursor_errors)
 
     status, status_errors = _plan_status_from_query(request.query_params.get("status"))
+    search = request.query_params.get("query")
     plan_type, type_errors = _plan_type_from_query(request.query_params.get("type"))
     blocked_only, blocked_errors = _optional_boolean_query_filter(
         request.query_params.get("blocked"),
@@ -709,6 +712,7 @@ def _get_plans(context: ApiRouteContext, request: Request) -> JSONResponse:
     try:
         page = ListPlansUseCase(context.plan_query_ports_factory()).execute(
             ListPlansRequest(
+                search=search,
                 status=status,
                 plan_type=plan_type,
                 blocked_only=blocked_only,
