@@ -6,6 +6,7 @@ Why: Lets usecases depend on contracts instead of concrete adapters.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from os import PathLike
 from typing import TYPE_CHECKING, Protocol, Self
 
@@ -34,6 +35,24 @@ if TYPE_CHECKING:
     from omym2.shared.pagination import FacetValue, GroupCount, Page, PageRequest
 
 type FileSystemPath = str | PathLike[str]
+
+
+class ConfigSnapshotState(StrEnum):
+    """Raw Config storage states that participate in revision identity."""
+
+    MISSING = "missing"
+    INVALID = "invalid"
+    VALID = "valid"
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigSnapshot:
+    """One parsed Config value coupled to its opaque raw-storage revision."""
+
+    state: ConfigSnapshotState
+    config: AppConfig
+    config_revision: str
+    errors: tuple[str, ...] = ()
 
 
 class ConfigStoreValidationError(ValueError):
@@ -587,6 +606,14 @@ class ConfigStore(Protocol):
 
     def save(self, config: AppConfig) -> None:
         """Save application settings."""
+        ...
+
+
+class ConfigSnapshotReader(Protocol):
+    """Read-only raw Config snapshot contract used by Bootstrap and Settings."""
+
+    def read_snapshot(self) -> ConfigSnapshot:
+        """Return parsed recovery data and an opaque revision from one raw read."""
         ...
 
 

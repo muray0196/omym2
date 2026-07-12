@@ -35,7 +35,6 @@ INBOUND_ADAPTER_FORBIDDEN_OUTBOUND_PREFIXES = (
 # representation only.
 INBOUND_ADAPTER_ALLOWED_OUTBOUND_IMPORTS = (
     ("adapters/cli/commands/config.py", "omym2.adapters.config.toml_config_store"),
-    ("adapters/web/schemas/settings_json.py", "omym2.adapters.config.config_validator"),
 )
 FORBIDDEN_FILESYSTEM_METHODS = ("expanduser", "resolve")
 

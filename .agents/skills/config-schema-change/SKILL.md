@@ -40,7 +40,7 @@ Contract Change Test Requirements table, "Config contract" row.
 | Section dataclass, defaults, `__post_init__` validation | `src/omym2/domain/models/app_config.py` |
 | TOML key allow-list, type/choice rule | `src/omym2/adapters/config/config_validator.py` |
 | TOML writer | `src/omym2/adapters/config/toml_config_store.py` |
-| Web settings JSON payload and choices list | `src/omym2/adapters/web/routes/api_serializers.py` |
+| Future typed Web settings boundary | Pydantic schemas under `src/omym2/adapters/web/schemas/` and routes under `src/omym2/adapters/web/routes/`; routes call Settings usecases and never import TOML validators or serializers |
 | Raw revision read/CAS DTO and ConfigStore port | `src/omym2/features/common_ports.py`, `src/omym2/features/settings/` |
 | Contract doc | `docs/contracts/config.md` (open `update-docs`) |
 | Plan/Library staleness fingerprint, only if the field can change generated paths | `src/omym2/domain/services/config_fingerprint.py` |
@@ -79,8 +79,9 @@ Libraries would not detect the settings change as stale.
 
 - Tests cover load, save, validation, defaults, and migration/
   backward-compatibility behavior per `docs/TESTING.md`'s Contract Change Test
-  Requirements table. Anchors: `tests/adapters/config/test_toml_config_store.py`,
-  `tests/domain/test_app_config.py`, `tests/adapters/web/test_api_settings.py`.
+  Requirements table. Anchors: `tests/adapters/config/test_toml_config_store.py`
+  and `tests/domain/test_app_config.py`; when the typed Web Settings slice
+  exists, its route-level Pydantic contract tests are required too.
 - `docs/contracts/config.md` reflects the new shape in the same change.
 
 ## Stop and report when

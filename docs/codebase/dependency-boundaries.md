@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Dependency Boundaries
 description: Defines OMYM2's dependency direction between adapters, features, domain, and shared layers, the forbidden dependencies, and where business rules must live.
 tags: [architecture, dependency-boundaries, hexagonal-architecture, business-rules]
-timestamp: 2026-07-12T02:41:12+09:00
+timestamp: 2026-07-13T01:34:09+09:00
 ---
 
 # Dependency Boundaries
@@ -62,7 +62,16 @@ adapters/web/routes -> direct filesystem operations
 adapters/cli/commands -> direct filesystem operations
 ```
 
-Inbound adapters must not import concrete outbound adapter subpackages (`adapters.db`, `adapters.fs`, `adapters.metadata`, `adapters.config`, or `adapters.artist_ids`). The exact-pair allowlist permits only two pure, I/O-free TOML-representation helpers: `adapters/cli/commands/config.py` may import `omym2.adapters.config.toml_config_store`, and `adapters/web/schemas/settings_json.py` may import `omym2.adapters.config.config_validator`. Those exceptions do not permit adapter construction or I/O from inbound adapters. No other file under `adapters/cli/` or `adapters/web/` may import a concrete outbound adapter subpackage.
+Inbound adapters must not import concrete outbound adapter subpackages
+(`adapters.db`, `adapters.fs`, `adapters.metadata`, `adapters.config`, or
+`adapters.artist_ids`). The exact-pair allowlist permits only the pure,
+I/O-free TOML-representation helper import from
+`adapters/cli/commands/config.py` to
+`omym2.adapters.config.toml_config_store`. That exception does not permit
+adapter construction or I/O from the CLI. No file under `adapters/web/` and no
+other file under `adapters/cli/` may import a concrete outbound adapter
+subpackage; typed Web schemas translate feature DTOs without importing TOML
+validators or serializers.
 
 Direct imports between features are prohibited in principle. When multiple usecases are chained, orchestration is done in CLI, Web, or platform.
 
@@ -120,4 +129,5 @@ Architecture tests enforce the highest-risk dependency rules:
 * domain does not import adapters or platform
 * shared stays below upper layers
 * adapters do not import platform
-* CLI and Web adapters do not import concrete outbound adapters (`db`, `fs`, `metadata`, `config`, `artist_ids`), except the two-pair allowlist above
+* CLI and Web adapters do not import concrete outbound adapters (`db`, `fs`,
+  `metadata`, `config`, `artist_ids`), except the one CLI-only pair above

@@ -3,7 +3,7 @@ type: Testing Guide
 title: Testing
 description: Defines OMYM2's Python, frontend, browser, architecture, integration, contract, fixture, and clean-room test policy.
 tags: [testing, pytest, vitest, playwright, architecture-tests, fixtures]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-13T01:34:09+09:00
 ---
 
 # Testing
@@ -37,7 +37,8 @@ Required architecture test coverage:
 * shared does not import upper layers
 * forbidden dependencies remain forbidden
 * adapters do not import platform
-* CLI and Web adapters do not import concrete outbound adapters (`db`, `fs`, `metadata`, `config`, `artist_ids`), except the documented two-pair allowlist
+* CLI and Web adapters do not import concrete outbound adapters (`db`, `fs`,
+  `metadata`, `config`, `artist_ids`), except the documented CLI-only pair
 
 ## Unit Tests
 

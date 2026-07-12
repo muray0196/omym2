@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Source Layout
-description: Defines OMYM2's feature-oriented source layout, including durable Operation placement, dependency layers, composition, and directory rules.
+description: Defines OMYM2's feature-oriented source layout, including Bootstrap and durable Operation placement, dependency layers, composition, and directory rules.
 tags: [source-layout, architecture, operations, hexagonal-architecture, python]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-13T01:34:09+09:00
 ---
 
 # Source Layout
@@ -32,9 +32,9 @@ Core concepts such as Library, Track, Plan, Run, FileEvent, Operation, and
 PathPolicy are not split by feature. They are placed in `domain/` as the shared
 domain kernel for all of OMYM2.
 
-Features are divided by user goal, such as `settings`, `artist_ids`, `organize`,
-`add`, `refresh`, `apply`, `undo`, `check`, `operations`, `plans`, `history`,
-`tracks`, and `inspect`.
+Features are divided by user goal, such as `bootstrap`, `settings`,
+`artist_ids`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`,
+`operations`, `plans`, `history`, `tracks`, and `inspect`.
 
 CLI and Web call feature usecases as inbound adapters. DB, filesystem, metadata
 reader, config loader, and artist-ID integrations implement ports as outbound
@@ -53,6 +53,7 @@ src/
 
     features/
       common_ports.py
+      bootstrap/
       add/
       artist_ids/
       organize/
@@ -112,6 +113,9 @@ PathPolicy is a pure domain service.
 `features/` contains usecases divided by user goal.
 
 * `settings`: read and write config, validate it, and preview path policy
+* `bootstrap`: project Config validity, unambiguous Library readiness, runtime
+  capabilities, and polling policy without making the Web route read storage
+  directly
 * `artist_ids`: generate and save artist ID path values in config, preserving existing entries unless overwrite is requested
 * `organize`: scan the selected Library, create a relocation plan when needed, and register the Library when clean
 * `add`: create an add plan from Incoming / specified source
@@ -141,7 +145,10 @@ When a usecase needs files from a directory, it uses FileScanner only to discove
 * `adapters/artist_ids`: fastText Japanese-name detection and MusicBrainz artist name lookup
 * `adapters/config`: TOML config store / validator / defaults
 * `adapters/cli`: CLI commands
-* `adapters/web`: local Web UI
+* `adapters/web`: typed local JSON routes, the schema-only FastAPI factory, and
+  packaged SPA serving. `schema_app.py` registers the production route/model
+  set without constructing Config, SQLite, filesystem, metadata, network, or
+  static-build collaborators.
 
 Adapters may create and restore domain models. They must not contain business rules.
 
@@ -155,7 +162,10 @@ Adapters may create and restore domain models. They must not contain business ru
 * `cli_composition.py`: `build_command_dependencies(...)`, which builds the full `CommandDependencies` bundle for one CLI invocation.
 * `cli_path_normalization.py`: `normalize_cli_path(...)`, injected into add, organize, and refresh command dependencies so their handlers do not resolve filesystem paths directly.
 * `cli_entry_point.py`: `main()` / `run_cli(...)`, the process entry point that both the `omym2` console script and `python -m omym2` route through.
-* `web_composition.py`: `build_api_route_context(...)` and `build_web_app(...)`, which build the Web UI's `ApiRouteContext` and FastAPI app.
+* `web_composition.py`: `build_api_route_context(...)` composes the Bootstrap
+  usecase from Config and Library snapshot ports, and `build_web_app(...)`
+  supplies that typed context to the FastAPI app. Schema generation instead
+  uses the adapter's no-I/O `create_api_schema_app()` factory.
 * `operation_composition.py`: wires durable Operation persistence, the
   application-root lock, progress reporting, reconciliation, and the one-slot
   worker that invokes already-wired feature usecases without making features

@@ -1,0 +1,90 @@
+/**
+ * Summary: Styles route headings, foundation cards, and milestone placeholders.
+ * Why: Gives every lazy route a coherent accessible layout before feature integration.
+ */
+.page {
+  display: grid;
+  gap: var(--space-24);
+}
+
+.header {
+  max-width: 760px;
+}
+
+.eyebrow {
+  color: var(--color-blue);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  margin: 0 0 var(--space-8);
+  text-transform: uppercase;
+}
+
+.header h1 {
+  color: var(--color-ink);
+  font-size: clamp(20px, 3vw, 24px);
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.description {
+  color: var(--color-body);
+  font-size: 17px;
+  margin: var(--space-12) 0 0;
+}
+
+.cards {
+  display: grid;
+  gap: var(--space-16);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+
+.card,
+.placeholder {
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-16);
+  padding: var(--space-24);
+}
+
+.card h2 {
+  color: var(--color-ink);
+  font-size: 18px;
+  margin: 0 0 var(--space-8);
+}
+
+.card p,
+.placeholder p {
+  color: var(--color-mute);
+  margin: 0;
+}
+
+.status {
+  align-items: center;
+  color: var(--color-blue);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: var(--space-8);
+  margin-bottom: var(--space-16);
+}
+
+.status svg {
+  height: 18px;
+  width: 18px;
+}
+
+.homeLink {
+  align-items: center;
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-8);
+  color: var(--color-canvas);
+  display: inline-flex;
+  font-weight: 700;
+  min-height: var(--target-default);
+  padding: var(--space-8) var(--space-16);
+  text-decoration: none;
+  width: fit-content;
+}

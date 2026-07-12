@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - stable
+      - feat/web-ui-renewal
 
 permissions:
   contents: read
@@ -14,10 +15,43 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHONUNBUFFERED: "1"
+
 jobs:
-  quality:
-    name: Quality Gates
-    runs-on: ubuntu-latest
+  python-quality:
+    name: Python Quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install Python dependencies
+        run: uv sync --locked --dev
+
+      - name: Run Python quality gates
+        run: scripts/checks.sh py
+
+      - name: Check for generated diffs
+        run: git diff --exit-code
+
+  api-client:
+    name: API Schema And Client Drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -33,7 +67,47 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install Python dependencies
+        run: uv sync --locked --dev
+
+      - name: Install frontend dependencies
+        working-directory: web-v2
+        run: npm ci
+
+      - name: Check generated API client
+        run: scripts/checks.sh api
+
+      - name: Check for generated diffs
+        run: git diff --exit-code
+
+  frontend-quality:
+    name: Frontend Quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
 
       - name: Set up uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -45,11 +119,191 @@ jobs:
         run: uv sync --locked --dev
 
       - name: Install frontend dependencies
-        working-directory: web
+        working-directory: web-v2
         run: npm ci
 
-      - name: Run quality gates
-        run: scripts/checks.sh all
+      - name: Run frontend quality gates
+        run: scripts/checks.sh web
 
       - name: Check for generated diffs
         run: git diff --exit-code
+
+  browser-e2e:
+    name: Chromium Keyboard And Axe E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Install frontend dependencies
+        working-directory: web-v2
+        run: npm ci
+
+      - name: Install pinned Chromium
+        working-directory: web-v2
+        run: npm exec -- playwright install --with-deps chromium
+
+      - name: Run browser E2E
+        run: scripts/checks.sh e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report-${{ github.sha }}
+          path: web-v2/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  package-evidence:
+    name: Linux Package Evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Install frontend dependencies
+        working-directory: web-v2
+        run: npm ci
+
+      - name: Build and audit renewal package evidence
+        run: scripts/checks.sh package
+
+      - name: Upload renewal evaluation evidence
+        uses: actions/upload-artifact@v5
+        with:
+          name: web-renewal-evidence-${{ github.sha }}
+          path: build/web-renewal-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-package-smoke:
+    name: Windows Package And Static Smoke
+    needs: package-evidence
+    runs-on: windows-2025
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Download audited renewal evidence
+        uses: actions/download-artifact@v5
+        with:
+          name: web-renewal-evidence-${{ github.sha }}
+          path: build/web-renewal-evidence
+
+      - name: Smoke installed wheel
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem build/web-renewal-evidence -Filter *.whl -File | Select-Object -First 1
+          if ($null -eq $wheel) { throw "Audited wheel was not downloaded." }
+          python scripts/smoke_web_wheel.py --wheel $wheel.FullName
+
+  performance-record:
+    name: Installed Package Performance Record
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      OMYM2_PERFORMANCE_OUTPUT: ../build/web-renewal-evidence/performance.json
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Install frontend dependencies
+        working-directory: web-v2
+        run: npm ci
+
+      - name: Install pinned Chromium
+        working-directory: web-v2
+        run: npm exec -- playwright install --with-deps chromium
+
+      - name: Record installed-package performance
+        run: scripts/checks.sh performance
+
+      - name: Upload performance record
+        uses: actions/upload-artifact@v5
+        with:
+          name: web-renewal-performance-${{ github.sha }}
+          path: build/web-renewal-evidence/performance.json
+          if-no-files-found: error
+          retention-days: 14

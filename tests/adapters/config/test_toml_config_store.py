@@ -25,7 +25,7 @@ from omym2.domain.models.app_config import (
     PathsConfig,
     UiConfig,
 )
-from omym2.features.common_ports import ConfigStoreValidationError
+from omym2.features.common_ports import ConfigSnapshotState, ConfigStoreValidationError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -301,3 +301,65 @@ def test_toml_config_text_loads_missing_artist_id_defaults() -> None:
     config = load_config_text("version = 1\n")
 
     assert config.artist_ids == ArtistIdConfig()
+
+
+def test_config_snapshot_gives_missing_storage_a_stable_revision_without_creating_file(tmp_path: Path) -> None:
+    """Missing Config is a valid default snapshot with real opaque identity."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+
+    first = store.read_snapshot()
+    second = store.read_snapshot()
+
+    assert first.state is ConfigSnapshotState.MISSING
+    assert first.config == AppConfig()
+    assert first.errors == ()
+    assert first.config_revision == second.config_revision
+    assert first.config_revision.startswith("v1:")
+    assert not config_path.exists()
+
+
+def test_config_snapshot_preserves_revision_and_recovery_defaults_for_invalid_toml(tmp_path: Path) -> None:
+    """Invalid raw Config remains identifiable without returning its source text."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text("version = ", encoding=CONFIG_FILE_ENCODING)
+
+    snapshot = TomlConfigStore(config_path).read_snapshot()
+
+    assert snapshot.state is ConfigSnapshotState.INVALID
+    assert snapshot.config == AppConfig()
+    assert snapshot.config_revision.startswith("v1:")
+    assert snapshot.errors
+    assert "Invalid TOML" in snapshot.errors[0]
+
+
+def test_config_snapshot_revision_changes_after_identical_file_replacement(tmp_path: Path) -> None:
+    """Replacing Config with identical bytes still changes raw storage identity."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    replacement_path = tmp_path / "replacement.toml"
+    config_text = dump_config_toml(AppConfig())
+    _ = config_path.write_text(config_text, encoding=CONFIG_FILE_ENCODING)
+    store = TomlConfigStore(config_path)
+    before = store.read_snapshot()
+
+    _ = replacement_path.write_text(config_text, encoding=CONFIG_FILE_ENCODING)
+    _ = replacement_path.replace(config_path)
+    after = store.read_snapshot()
+
+    assert before.state is ConfigSnapshotState.VALID
+    assert after.state is ConfigSnapshotState.VALID
+    assert after.config == before.config
+    assert after.config_revision != before.config_revision
+
+
+def test_config_snapshot_revision_changes_with_raw_content(tmp_path: Path) -> None:
+    """A raw Config edit produces a new opaque revision."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    store.save(AppConfig(paths=PathsConfig(library=FIRST_SAME_SIZE_LIBRARY_PATH)))
+    before = store.read_snapshot()
+
+    store.save(AppConfig(paths=PathsConfig(library=SECOND_SAME_SIZE_LIBRARY_PATH)))
+    after = store.read_snapshot()
+
+    assert after.config_revision != before.config_revision

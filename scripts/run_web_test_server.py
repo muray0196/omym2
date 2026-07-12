@@ -1,0 +1,273 @@
+"""
+Summary: Runs a command against an ephemeral loopback OMYM2 Web server.
+Why: Gives browser and package gates isolated application state and a real server.
+"""
+# ruff: noqa: INP001, T201 -- Standalone gate script reports concise CLI results.
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import os
+import re
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+from uuid import UUID
+
+import uvicorn
+
+from omym2.adapters.config.toml_config_store import TomlConfigStore
+from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
+from omym2.domain.models.app_config import AppConfig, PathsConfig
+from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
+from omym2.platform.web_composition import build_web_app
+from omym2.shared.ids import LibraryId
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate the project root."
+DEFAULT_BASE_URL_ENVIRONMENT_VARIABLE = "OMYM2_E2E_BASE_URL"
+APPLICATION_ROOT_ENVIRONMENT_VARIABLE = "OMYM2_E2E_APPLICATION_ROOT"
+CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE = "OMYM2_TEST_CHILD_PATH"
+LOOPBACK_HOST = "127.0.0.1"
+EPHEMERAL_PORT = 0
+SERVER_START_TIMEOUT_SECONDS = 20.0
+SERVER_STOP_TIMEOUT_SECONDS = 10.0
+ENVIRONMENT_VARIABLE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
+E2E_LIBRARY_DIRECTORY_NAME = "library"
+E2E_SENTINEL_FILE_NAME = "sentinel.flac"
+E2E_SENTINEL_CONTENT = b"OMYM2 M1 mutation sentinel\n"
+E2E_LIBRARY_ID = LibraryId(UUID("01912345-6789-7abc-8def-0123456789ab"))
+E2E_FIXED_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+class WebTestServerError(RuntimeError):
+    """Raised when an isolated Web test server cannot run safely."""
+
+
+class ParsedArgs(argparse.Namespace):
+    """Typed command-line arguments for the ephemeral server."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.environment_variable: str = DEFAULT_BASE_URL_ENVIRONMENT_VARIABLE
+        self.working_directory: Path = Path.cwd()
+        self.application_root: Path | None = None
+        self.require_installed: bool = False
+        self.command: list[str] = []
+
+
+def run_with_server(
+    command: Sequence[str],
+    *,
+    environment_variable: str,
+    working_directory: Path,
+    application_root: Path,
+    require_installed: bool,
+) -> int:
+    """Run command with an ephemeral Web server URL in its environment."""
+    if not command:
+        msg = "A command is required after --."
+        raise WebTestServerError(msg)
+    if not ENVIRONMENT_VARIABLE_PATTERN.fullmatch(environment_variable):
+        msg = f"Invalid environment-variable name: {environment_variable}"
+        raise WebTestServerError(msg)
+    if require_installed:
+        _require_installed_package()
+
+    _require_empty_application_root(application_root)
+    _ = application_root.mkdir(parents=True, exist_ok=True)
+    config_path = application_root / ".config" / "config.toml"
+    database_path = application_root / ".data" / "omym2.sqlite3"
+    _ = config_path.parent.mkdir(parents=True, exist_ok=True)
+    _ = database_path.parent.mkdir(parents=True, exist_ok=True)
+    library_root = _seed_e2e_state(config_path, database_path, application_root)
+    library_before = _snapshot_file_tree(library_root)
+    app = build_web_app(config_path=config_path, database_path=database_path)
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind((LOOPBACK_HOST, EPHEMERAL_PORT))
+    listener.listen()
+    _bound_host, port = cast("tuple[str, int]", listener.getsockname())
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host=LOOPBACK_HOST,
+            log_level="warning",
+            lifespan="on",
+        )
+    )
+    thread = threading.Thread(
+        target=server.run,
+        kwargs={"sockets": [listener]},
+        name="omym2-web-test-server",
+        daemon=True,
+    )
+    thread.start()
+    try:
+        _wait_until_started(server, thread)
+        environment = os.environ.copy()
+        environment[environment_variable] = f"http://{LOOPBACK_HOST}:{port}"
+        environment[APPLICATION_ROOT_ENVIRONMENT_VARIABLE] = str(application_root)
+        child_path = environment.pop(CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE, None)
+        if child_path is not None:
+            environment["PATH"] = child_path
+        if require_installed:
+            _ = environment.pop("PYTHONPATH", None)
+        result = subprocess.run(  # noqa: S603 -- the caller explicitly supplies the test command.
+            tuple(command),
+            cwd=working_directory,
+            env=environment,
+            check=False,
+        )
+        _require_unchanged_library(library_root, library_before)
+        return result.returncode
+    finally:
+        server.should_exit = True
+        thread.join(timeout=SERVER_STOP_TIMEOUT_SECONDS)
+        listener.close()
+        if thread.is_alive():
+            msg = "Ephemeral Web server did not stop within the timeout."
+            raise WebTestServerError(msg)
+
+
+def _require_empty_application_root(application_root: Path) -> None:
+    if application_root.exists() and any(application_root.iterdir()):
+        msg = f"Ephemeral application root must be empty: {application_root}"
+        raise WebTestServerError(msg)
+
+
+def _seed_e2e_state(config_path: Path, database_path: Path, application_root: Path) -> Path:
+    library_root = application_root / E2E_LIBRARY_DIRECTORY_NAME
+    _ = library_root.mkdir(parents=True)
+    _ = (library_root / E2E_SENTINEL_FILE_NAME).write_bytes(E2E_SENTINEL_CONTENT)
+    config = AppConfig(paths=PathsConfig(library=str(library_root)))
+    TomlConfigStore(config_path).save(config)
+    path_policy_hash = calculate_path_policy_fingerprint(
+        config.path_policy,
+        config.artist_ids,
+        config.metadata.album_year_resolution,
+    )
+    library = Library(
+        library_id=E2E_LIBRARY_ID,
+        root_path=str(library_root),
+        path_policy_hash=path_policy_hash,
+        registered_at=E2E_FIXED_TIME,
+        status=LibraryStatus.REGISTERED,
+        created_at=E2E_FIXED_TIME,
+        updated_at=E2E_FIXED_TIME,
+    )
+    with SQLiteUnitOfWork(database_path) as unit_of_work:
+        unit_of_work.libraries.save(library)
+        unit_of_work.commit()
+    return library_root
+
+
+def _snapshot_file_tree(root: Path) -> dict[str, tuple[str, bytes]]:
+    snapshot: dict[str, tuple[str, bytes]] = {}
+    for path in sorted(root.rglob("*")):
+        relative_path = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            snapshot[relative_path] = ("symlink", os.fsencode(path.readlink()))
+        elif path.is_dir():
+            snapshot[relative_path] = ("directory", b"")
+        elif path.is_file():
+            snapshot[relative_path] = ("file", path.read_bytes())
+    return snapshot
+
+
+def _require_unchanged_library(root: Path, before: dict[str, tuple[str, bytes]]) -> None:
+    after = _snapshot_file_tree(root)
+    if before == after:
+        return
+    before_paths = before.keys()
+    after_paths = after.keys()
+    added = sorted(after_paths - before_paths)
+    removed = sorted(before_paths - after_paths)
+    changed = sorted(path for path in before_paths & after_paths if before[path] != after[path])
+    msg = f"Pre-M4 Library mutation sentinel changed; added={added}, removed={removed}, changed={changed}"
+    raise WebTestServerError(msg)
+
+
+def _wait_until_started(server: uvicorn.Server, thread: threading.Thread) -> None:
+    deadline = time.monotonic() + SERVER_START_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if server.started:
+            return
+        if not thread.is_alive():
+            msg = "Ephemeral Web server exited before becoming ready."
+            raise WebTestServerError(msg)
+        time.sleep(0.01)
+    msg = "Ephemeral Web server did not become ready within the timeout."
+    raise WebTestServerError(msg)
+
+
+def _require_installed_package() -> None:
+    spec = importlib.util.find_spec("omym2")
+    if spec is None or spec.origin is None:
+        msg = "The installed omym2 package cannot be located."
+        raise WebTestServerError(msg)
+    origin = Path(spec.origin).resolve()
+    project_source = _project_root() / "src"
+    if origin.is_relative_to(project_source):
+        msg = f"Installed-package gate resolved the source checkout instead of site-packages: {origin}"
+        raise WebTestServerError(msg)
+
+
+def _project_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent
+    raise WebTestServerError(PROJECT_ROOT_NOT_FOUND_MESSAGE)
+
+
+def _parse_args(argv: Sequence[str] | None) -> ParsedArgs:
+    parser = argparse.ArgumentParser(description=__doc__)
+    _ = parser.add_argument("--environment-variable", default=DEFAULT_BASE_URL_ENVIRONMENT_VARIABLE)
+    _ = parser.add_argument("--working-directory", type=Path, default=Path.cwd())
+    _ = parser.add_argument("--application-root", type=Path)
+    _ = parser.add_argument("--require-installed", action="store_true")
+    _ = parser.add_argument("command", nargs=argparse.REMAINDER)
+    args = parser.parse_args(argv, namespace=ParsedArgs())
+    if args.command and args.command[0] == "--":
+        args.command = args.command[1:]
+    return args
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run a supplied gate command against an isolated server."""
+    args = _parse_args(argv)
+    try:
+        if args.application_root is not None:
+            return run_with_server(
+                args.command,
+                environment_variable=args.environment_variable,
+                working_directory=args.working_directory,
+                application_root=args.application_root,
+                require_installed=args.require_installed,
+            )
+        with tempfile.TemporaryDirectory(prefix="omym2-web-test-") as temporary_directory:
+            return run_with_server(
+                args.command,
+                environment_variable=args.environment_variable,
+                working_directory=args.working_directory,
+                application_root=Path(temporary_directory),
+                require_installed=args.require_installed,
+            )
+    except (OSError, WebTestServerError) as exc:
+        print(f"web test server failed: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

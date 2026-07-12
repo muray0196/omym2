@@ -1,0 +1,431 @@
+{
+  "components": {
+    "schemas": {
+      "ApiEnvelope_BootstrapData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BootstrapData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[BootstrapData]",
+        "type": "object"
+      },
+      "ApiError": {
+        "additionalProperties": false,
+        "description": "One stable Web API error or disabled reason.",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ApiErrorCode"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "remediation": {
+            "$ref": "#/components/schemas/ApiRemediation",
+            "title": "Remediation"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "title": "ApiError",
+        "type": "object"
+      },
+      "ApiErrorCode": {
+        "description": "Closed top-level Web API error catalog.",
+        "enum": [
+          "invalid_json",
+          "csrf_invalid",
+          "api_not_found",
+          "library_not_found",
+          "track_not_found",
+          "plan_not_found",
+          "run_not_found",
+          "operation_not_found",
+          "method_not_allowed",
+          "config_invalid",
+          "config_changed",
+          "operation_in_progress",
+          "idempotency_key_reused",
+          "library_selection_ambiguous",
+          "library_unregistered",
+          "library_stale",
+          "library_blocked",
+          "plan_not_ready",
+          "library_root_changed",
+          "run_not_terminal",
+          "nothing_to_undo",
+          "undo_refresh_metadata_unsupported",
+          "already_undone_or_in_progress",
+          "pending_file_event_requires_review",
+          "operation_expired",
+          "validation_failed",
+          "path_not_found",
+          "path_not_directory",
+          "path_outside_library",
+          "storage_unavailable",
+          "config_io_failed",
+          "internal_error",
+          "operation_interrupted",
+          "metadata_read_failed",
+          "operation_failed"
+        ],
+        "title": "ApiErrorCode",
+        "type": "string"
+      },
+      "ApiFailureEnvelope": {
+        "additionalProperties": false,
+        "description": "Failure-only envelope used for declared error responses.",
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "null"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "minItems": 1,
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiFailureEnvelope",
+        "type": "object"
+      },
+      "ApiRemediation": {
+        "additionalProperties": false,
+        "description": "Optional recovery action displayed but never executed automatically.",
+        "properties": {
+          "command": {
+            "title": "Command",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "ApiRemediation",
+        "type": "object"
+      },
+      "BootstrapData": {
+        "additionalProperties": false,
+        "description": "Initial application state returned even when recovery is required.",
+        "properties": {
+          "active_library": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryResource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active_operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Operation Id"
+          },
+          "app_version": {
+            "title": "App Version",
+            "type": "string"
+          },
+          "config_validation": {
+            "$ref": "#/components/schemas/ConfigValidationResource"
+          },
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          },
+          "library_diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Library Diagnostics",
+            "type": "array"
+          },
+          "operation_polling": {
+            "$ref": "#/components/schemas/OperationPollingPolicy"
+          },
+          "runtime_capabilities": {
+            "$ref": "#/components/schemas/RuntimeCapabilities"
+          },
+          "status_catalog_version": {
+            "title": "Status Catalog Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "app_version",
+          "csrf_token",
+          "status_catalog_version",
+          "active_library",
+          "library_diagnostics",
+          "config_validation",
+          "runtime_capabilities",
+          "operation_polling",
+          "active_operation_id"
+        ],
+        "title": "BootstrapData",
+        "type": "object"
+      },
+      "ConfigValidationResource": {
+        "additionalProperties": false,
+        "description": "Current Config validity and opaque raw-storage revision.",
+        "properties": {
+          "config_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Revision"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "config_revision",
+          "errors"
+        ],
+        "title": "ConfigValidationResource",
+        "type": "object"
+      },
+      "LibraryResource": {
+        "additionalProperties": false,
+        "description": "One effective Library readiness resource.",
+        "properties": {
+          "is_path_policy_current": {
+            "title": "Is Path Policy Current",
+            "type": "boolean"
+          },
+          "is_registered": {
+            "title": "Is Registered",
+            "type": "boolean"
+          },
+          "library_id": {
+            "format": "uuid",
+            "title": "Library Id",
+            "type": "string"
+          },
+          "path_policy_fingerprint": {
+            "title": "Path Policy Fingerprint",
+            "type": "string"
+          },
+          "registered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registered At"
+          },
+          "root_path": {
+            "title": "Root Path",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LibraryStatus"
+          }
+        },
+        "required": [
+          "library_id",
+          "root_path",
+          "status",
+          "is_registered",
+          "registered_at",
+          "path_policy_fingerprint",
+          "is_path_policy_current"
+        ],
+        "title": "LibraryResource",
+        "type": "object"
+      },
+      "LibraryStatus": {
+        "description": "Known Library registration states.",
+        "enum": [
+          "registered",
+          "unregistered",
+          "stale",
+          "blocked"
+        ],
+        "title": "LibraryStatus",
+        "type": "string"
+      },
+      "OperationPollingPolicy": {
+        "additionalProperties": false,
+        "description": "Polling policy serialized from backend-owned tunables.",
+        "properties": {
+          "backoff_factor": {
+            "title": "Backoff Factor",
+            "type": "number"
+          },
+          "initial_ms": {
+            "title": "Initial Ms",
+            "type": "integer"
+          },
+          "max_ms": {
+            "title": "Max Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "initial_ms",
+          "backoff_factor",
+          "max_ms"
+        ],
+        "title": "OperationPollingPolicy",
+        "type": "object"
+      },
+      "RuntimeCapabilities": {
+        "additionalProperties": false,
+        "description": "Backend-authoritative application runtime availability.",
+        "properties": {
+          "can_change_settings": {
+            "title": "Can Change Settings",
+            "type": "boolean"
+          },
+          "can_read_state": {
+            "title": "Can Read State",
+            "type": "boolean"
+          },
+          "can_start_operations": {
+            "title": "Can Start Operations",
+            "type": "boolean"
+          },
+          "disabled_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Disabled Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "can_read_state",
+          "can_change_settings",
+          "can_start_operations",
+          "disabled_reasons"
+        ],
+        "title": "RuntimeCapabilities",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "OMYM2",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/bootstrap": {
+      "get": {
+        "operationId": "getBootstrap",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_BootstrapData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Bootstrap"
+      }
+    }
+  }
+}

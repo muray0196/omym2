@@ -7,6 +7,9 @@ from __future__ import annotations
 
 from typing import Final
 
+CONFIG_REVISION_ALGORITHM: Final = "sha256"  # opaque raw Config revision digest algorithm
+CONFIG_REVISION_PREFIX: Final = "v1"  # opaque raw Config revision encoding version
+CONFIG_SNAPSHOT_READ_MAX_ATTEMPTS: Final = 3  # retries when Config changes during one snapshot read, attempts, >= 1
 CONFIG_DIRECTORY_NAME: Final = ".config"  # user config directory under the application root
 CONFIG_FILE_ENCODING: Final = "utf-8"  # TOML config file encoding
 CONFIG_FILE_NAME: Final = "config.toml"  # TOML settings file name
@@ -28,48 +31,49 @@ WEB_CSRF_TOKEN_BYTES: Final = 32  # random bytes used for local Web UI save-toke
 WEB_CSRF_HEADER_NAME: Final = "X-OMYM2-CSRF-Token"  # header required for state-changing Web API saves
 WEB_ROOT_ROUTE: Final = "/"  # local Web UI root path
 WEB_SETTINGS_ROUTE: Final = "/settings"  # local Web UI settings SPA path
-WEB_PATH_POLICY_ROUTE: Final = "/path-policy"  # local Web UI path-policy SPA path
-WEB_HISTORY_ROUTE: Final = "/history"  # local Web UI Run history SPA path
-WEB_RUN_DETAIL_ROUTE: Final = "/history/{run_id}"  # local Web UI Run detail SPA path
-WEB_CHECK_ROUTE: Final = "/check"  # local Web UI consistency check SPA path
-WEB_TRACKS_ROUTE: Final = "/tracks"  # local Web UI Track listing SPA path
-WEB_PLANS_ROUTE: Final = "/plans"  # local Web UI Plan listing SPA path
-WEB_PLAN_DETAIL_ROUTE: Final = "/plans/{plan_id}"  # local Web UI Plan detail SPA path
-WEB_NEXT_STATIC_ROUTE: Final = "/_next/static"  # Next static asset mount path
 WEB_API_PREFIX: Final = "/api"  # local Web UI JSON API path prefix
-WEB_API_SETTINGS_ROUTE: Final = "/api/settings"  # settings JSON API path
-WEB_API_ARTIST_IDS_GENERATE_ROUTE: Final = "/api/settings/artist-ids/generate"  # artist ID generation JSON API path
-WEB_API_SETTINGS_PREVIEW_ROUTE: Final = "/api/settings/preview"  # settings path preview JSON API path
-WEB_API_SETTINGS_VALIDATE_ROUTE: Final = "/api/settings/validate"  # settings validation JSON API path
-WEB_API_SETTINGS_SAVE_ROUTE: Final = "/api/settings/save"  # settings save JSON API path
-WEB_API_HISTORY_ROUTE: Final = "/api/history"  # Run history JSON API path
-WEB_API_HISTORY_FACETS_ROUTE: Final = "/api/history/facets"  # Run status facet JSON API path
-WEB_API_RUN_DETAIL_ROUTE: Final = "/api/history/{run_id}"  # Run detail JSON API path
-WEB_API_RUN_EVENTS_ROUTE: Final = "/api/history/{run_id}/events"  # Run FileEvent listing JSON API path
-WEB_API_RUN_EVENTS_FACETS_ROUTE: Final = "/api/history/{run_id}/events/facets"  # FileEvent status facet API path
-WEB_API_RUN_EVENTS_GROUPS_ROUTE: Final = "/api/history/{run_id}/events/groups"  # FileEvent group-by JSON API path
-WEB_API_CHECK_ROUTE: Final = "/api/check"  # consistency check JSON API path
-WEB_API_CHECK_FACETS_ROUTE: Final = "/api/check/facets"  # check issue_type facet JSON API path
-WEB_API_CHECK_GROUPS_ROUTE: Final = "/api/check/groups"  # check grouped-triage JSON API path
-WEB_API_CHECK_RUN_ROUTE: Final = "/api/check/run"  # check recompute-and-persist JSON API path
-WEB_API_TRACKS_ROUTE: Final = "/api/tracks"  # Track listing JSON API path
-WEB_API_TRACKS_FACETS_ROUTE: Final = "/api/tracks/facets"  # Track status facet JSON API path
-WEB_API_TRACKS_GROUPS_ROUTE: Final = "/api/tracks/groups"  # Track group-by JSON API path
-WEB_API_PLANS_ROUTE: Final = "/api/plans"  # Plan listing JSON API path
-WEB_API_PLAN_DETAIL_ROUTE: Final = "/api/plans/{plan_id}"  # Plan header detail JSON API path
-WEB_API_PLAN_ACTIONS_ROUTE: Final = "/api/plans/{plan_id}/actions"  # Plan action listing JSON API path
-WEB_API_PLAN_FACETS_ROUTE: Final = "/api/plans/{plan_id}/facets"  # Plan action facet JSON API path
-WEB_API_PLAN_GROUPS_ROUTE: Final = "/api/plans/{plan_id}/groups"  # Plan action group-by JSON API path
-WEB_API_PLAN_ADD_ROUTE: Final = "/api/plans/add"  # add Plan creation JSON API path
-WEB_API_PLAN_ORGANIZE_ROUTE: Final = "/api/plans/organize"  # organize Plan creation JSON API path
-WEB_API_PLAN_REFRESH_ROUTE: Final = "/api/plans/refresh"  # refresh Plan creation JSON API path
+WEB_API_BOOTSTRAP_ROUTE: Final = "/api/bootstrap"  # renewed Web UI Bootstrap JSON API path
 WEB_STATIC_EXPORT_DIRECTORY_NAME: Final = "static_dist"  # package directory for built Web UI assets
-WEB_NEXT_STATIC_DIRECTORY_NAME: Final = "_next/static"  # Next export static directory
+WEB_STATIC_ASSET_ROUTE: Final = "/assets"  # Vite content-hashed asset route prefix
 WEB_STATIC_EXPORT_INDEX_FILE_NAME: Final = "index.html"  # Web UI entry document
 WEB_STATIC_EXPORT_MISSING_MESSAGE: Final = "Web UI build is unavailable."  # missing Web UI build response text
 WEB_STATIC_ASSET_NOT_FOUND_MESSAGE: Final = "Web UI static asset was not found."  # missing static asset text
 WEB_API_NOT_FOUND_MESSAGE: Final = "Web API endpoint was not found."  # unknown API endpoint response text
+WEB_METHOD_NOT_ALLOWED_MESSAGE: Final = "Method is not allowed for this endpoint."  # unsupported HTTP method text
+WEB_UI_NOT_FOUND_MESSAGE: Final = "Web UI route was not found."  # rejected UI fallback response text
 WEB_URL_SCHEME: Final = "http"  # scheme used for the local Web UI browser URL
+WEB_STATUS_CATALOG_VERSION: Final = 1  # bundled Web status and reason catalog version
+MILLISECONDS_PER_SECOND: Final = 1000  # conversion factor from seconds to milliseconds
+WEB_PRODUCTION_ALLOWED_HOSTS: Final = ("127.0.0.1", "localhost")  # accepted production Host header values
+WEB_HTML_ACCEPT_MEDIA_TYPE: Final = "text/html"  # media type required for SPA fallback
+WEB_INDEX_CACHE_CONTROL: Final = "no-cache"  # cache policy for index and HTML fallback responses
+WEB_ASSET_CACHE_CONTROL: Final = "public, max-age=31536000, immutable"  # cache policy for hashed Vite assets
+WEB_CONTENT_SECURITY_POLICY: Final = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; "
+    "base-uri 'none'; frame-ancestors 'none'"
+)  # local-only Web content security policy
+WEB_REFERRER_POLICY: Final = "no-referrer"  # Web response referrer policy
+WEB_FRAME_OPTIONS: Final = "DENY"  # legacy framing prohibition response value
+WEB_ASSET_HASH_MIN_LENGTH: Final = 8  # minimum Vite content hash length in packaged asset names, characters
+HTTP_BAD_REQUEST_STATUS: Final = 400  # malformed HTTP request status code
+HTTP_OK_STATUS: Final = 200  # successful HTTP request status code
+HTTP_NOT_FOUND_STATUS: Final = 404  # missing HTTP resource status code
+HTTP_METHOD_NOT_ALLOWED_STATUS: Final = 405  # unsupported HTTP method status code
+HTTP_UNPROCESSABLE_CONTENT_STATUS: Final = 422  # structurally invalid request status code
+HTTP_INTERNAL_ERROR_STATUS: Final = 500  # unexpected server failure status code
+HTTP_SERVICE_UNAVAILABLE_STATUS: Final = 503  # missing packaged Web build status code
+WEB_CORRELATION_HEADER_NAME: Final = "X-OMYM2-Correlation-ID"  # request correlation response header
+WEB_CSP_HEADER_NAME: Final = "Content-Security-Policy"  # content security policy response header
+WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME: Final = "X-Content-Type-Options"  # MIME sniffing response header
+WEB_CONTENT_TYPE_OPTIONS_VALUE: Final = "nosniff"  # MIME sniffing prohibition response value
+WEB_REFERRER_POLICY_HEADER_NAME: Final = "Referrer-Policy"  # referrer policy response header
+WEB_FRAME_OPTIONS_HEADER_NAME: Final = "X-Frame-Options"  # legacy framing response header
+OPERATION_POLL_INITIAL_SECONDS: Final = 0.5  # initial Operation polling delay, seconds, > 0
+OPERATION_POLL_BACKOFF_FACTOR: Final = 2.0  # unchanged Operation polling multiplier, >= 1
+OPERATION_POLL_MAX_SECONDS: Final = 5.0  # maximum Operation polling delay, seconds, >= initial
+OPERATION_RECONCILE_INTERVAL_SECONDS: Final = 5.0  # Web reconciliation supervisor interval, seconds, > 0
+OPERATION_RESULT_RETENTION_HOURS: Final = 24  # full terminal Operation retention, hours, >= 1
+OPERATION_TOMBSTONE_RETENTION_DAYS: Final = 30  # Operation idempotency tombstone retention, days, >= 1
 LOGICAL_PATH_SEPARATOR: Final = "/"
 PARENT_DIRECTORY_REFERENCE: Final = ".."
 UUID_VERSION: Final = 7
