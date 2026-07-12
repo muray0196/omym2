@@ -9,6 +9,17 @@ Read `ARCHITECTURE.md` before any task that touches `src/`, `web/`, or
 `tests/`. Keep its non-negotiable rules active throughout the task. Docs-only,
 issue-only, or purely read-only tasks may skip it.
 
+## Large Initiative Plans
+
+Keep the root `PLAN.md` tracked. Populate it only for large, multi-session work
+with cross-cutting changes, material uncertainty, or ordered rollout/verification—not
+ordinary focused changes. If it contains a plan, read it before scoped work;
+keep it current and clear it when no longer needed rather than deleting it.
+Record only the outcome, material decisions or risks, ordering constraints, and
+validation or rollback requirements. Do not list routine steps, progress logs,
+or completed checklists, or duplicate authoritative docs; move durable
+conclusions to their authoritative docs.
+
 ## Read As Needed
 
 For an implementation task, start with
