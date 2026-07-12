@@ -1,3 +1,8 @@
+/*
+Summary: Renders ordinary and advanced OMYM2 settings with review-before-save controls.
+Why: Separates routine configuration from safety-sensitive automation and path behavior.
+*/
+
 "use client"
 
 import {
@@ -43,14 +48,26 @@ const DISC_CONDITION_LABELS: Record<string, string> = {
 
 type SaveState = "idle" | "saving" | "success" | "error"
 
-type SectionKey = "paths" | "behavior" | "path-policy" | "metadata" | "rules"
+type SettingsArea = "general" | "advanced"
+type GeneralSectionKey = "paths" | "metadata" | "appearance"
+type AdvancedSectionKey = "automation" | "path-policy" | "safety"
+type SectionKey = GeneralSectionKey | AdvancedSectionKey
 
-const SECTIONS: { value: SectionKey; label: string }[] = [
+const SETTINGS_AREAS: { value: SettingsArea; label: string }[] = [
+  { value: "general", label: "General settings" },
+  { value: "advanced", label: "Advanced controls" },
+]
+
+const GENERAL_SECTIONS: { value: GeneralSectionKey; label: string }[] = [
   { value: "paths", label: "Paths" },
-  { value: "behavior", label: "Behavior" },
-  { value: "path-policy", label: "Path policy" },
   { value: "metadata", label: "Metadata & IDs" },
-  { value: "rules", label: "Rules & UI" },
+  { value: "appearance", label: "Appearance" },
+]
+
+const ADVANCED_SECTIONS: { value: AdvancedSectionKey; label: string }[] = [
+  { value: "automation", label: "Automation" },
+  { value: "path-policy", label: "Path policy" },
+  { value: "safety", label: "Safety rules" },
 ]
 
 export function SettingsScreen() {
@@ -74,7 +91,9 @@ export function SettingsScreen() {
   const [artistGenerationState, setArtistGenerationState] = useState<SaveState>("idle")
   const [validated, setValidated] = useState(true)
   const [draftPreview, setDraftPreview] = useState(settingsPreview)
-  const [section, setSection] = useState<SectionKey>("paths")
+  const [selectedArea, setSelectedArea] = useState<SettingsArea>("general")
+  const [generalSection, setGeneralSection] = useState<GeneralSectionKey>("paths")
+  const [advancedSection, setAdvancedSection] = useState<AdvancedSectionKey>("automation")
 
   const localValidation = useMemo(() => validateConfig(draftConfig), [draftConfig])
   const validation = validated
@@ -93,6 +112,10 @@ export function SettingsScreen() {
   const hash = useMemo(() => configHash(draftConfig), [draftConfig])
   const preview = validated ? settingsPreview : draftPreview
   const validationErrors = uniqueMessages([...settingsErrors, ...validation.errors])
+  const showAdvancedSettings = draftConfig.ui.show_advanced_settings
+  const settingsArea = showAdvancedSettings ? selectedArea : "general"
+  const section: SectionKey = settingsArea === "general" ? generalSection : advancedSection
+  const visibleSettingsAreas = showAdvancedSettings ? SETTINGS_AREAS : SETTINGS_AREAS.slice(0, 1)
 
   useEffect(() => {
     setDraftPreview(settingsPreview)
@@ -147,6 +170,11 @@ export function SettingsScreen() {
         [sourceArtist]: artistId,
       },
     })
+  }
+
+  function updateAdvancedVisibility(showAdvanced: boolean) {
+    update("ui", { show_advanced_settings: showAdvanced })
+    if (!showAdvanced) setSelectedArea("general")
   }
 
   async function handleGenerateArtistIds() {
@@ -215,14 +243,56 @@ export function SettingsScreen() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         {/* Left: grouped editor with section tabs */}
         <div className="flex min-w-0 flex-col gap-6">
-          <SegmentedControl
-            ariaLabel="Settings sections"
-            variant="nav"
-            options={SECTIONS}
-            value={section}
-            onChange={setSection}
-            className="sticky top-0 z-10 -mx-1 overflow-x-auto bg-surface-canvas px-1 py-1.5"
-          />
+          <Panel
+            title="Settings visibility"
+            icon={SlidersHorizontal}
+            description="Routine settings stay separate from controls that can materially change planning or apply behavior."
+          >
+            <Toggle
+              checked={showAdvancedSettings}
+              onChange={updateAdvancedVisibility}
+              label="Show advanced controls"
+              help="Reveals automation, path construction, and safety policies. Hiding these controls does not reset their saved values."
+            />
+          </Panel>
+
+          <div className="sticky top-0 z-10 -mx-1 flex flex-col gap-1.5 overflow-x-auto bg-surface-canvas px-1 py-1.5">
+            <SegmentedControl
+              ariaLabel="Settings areas"
+              variant="nav"
+              options={visibleSettingsAreas}
+              value={settingsArea}
+              onChange={setSelectedArea}
+            />
+            {settingsArea === "general" ? (
+              <SegmentedControl
+                ariaLabel="General settings sections"
+                variant="nav"
+                size="sm"
+                options={GENERAL_SECTIONS}
+                value={generalSection}
+                onChange={setGeneralSection}
+                className="border-t border-hairline pt-1.5"
+              />
+            ) : (
+              <SegmentedControl
+                ariaLabel="Advanced settings sections"
+                variant="nav"
+                size="sm"
+                options={ADVANCED_SECTIONS}
+                value={advancedSection}
+                onChange={setAdvancedSection}
+                className="border-t border-hairline pt-1.5"
+              />
+            )}
+          </div>
+
+          {settingsArea === "advanced" ? (
+            <Notice tone="warning" title="Safety-sensitive controls">
+              These defaults can change which actions are planned or applied. Review validation and
+              the complete change diff before saving.
+            </Notice>
+          ) : null}
 
           {section === "paths" ? (
             <Panel
@@ -263,7 +333,7 @@ export function SettingsScreen() {
             </Panel>
           ) : null}
 
-          {section === "behavior" ? (
+          {section === "automation" ? (
             <>
               <Panel title="Add behavior" icon={Plus} description="Defaults for `omym2 add`.">
                 <div className="flex flex-col gap-4">
@@ -592,76 +662,73 @@ export function SettingsScreen() {
             </>
           ) : null}
 
-          {section === "rules" ? (
-            <>
-              <Panel
-                title="Collision rules"
-                icon={FileCheck2}
-                description="How conflicts are resolved during apply."
+          {section === "appearance" ? (
+            <Panel
+              title="Appearance"
+              icon={SlidersHorizontal}
+              description="Presentation preferences for this local console."
+            >
+              <Field
+                label="Theme"
+                help="This console is dark-only; light and system render as dark."
               >
-                <div className="flex flex-col gap-4">
-                  <Field label="On target exists">
-                    {(id) => (
-                      <Select
-                        id={id}
-                        options={targetExistsOptions}
-                        value={draftConfig.collision.on_target_exists}
-                        onChange={(e) =>
-                          update("collision", { on_target_exists: e.target.value as never })
-                        }
-                      />
-                    )}
-                  </Field>
-                  <Field label="On duplicate hash">
-                    {(id) => (
-                      <Select
-                        id={id}
-                        options={duplicateHashOptions}
-                        value={draftConfig.collision.on_duplicate_hash}
-                        onChange={(e) =>
-                          update("collision", { on_duplicate_hash: e.target.value as never })
-                        }
-                      />
-                    )}
-                  </Field>
-                  <Field label="On missing metadata">
-                    {(id) => (
-                      <Select
-                        id={id}
-                        options={missingMetadataOptions}
-                        value={draftConfig.collision.on_missing_metadata}
-                        onChange={(e) =>
-                          update("collision", { on_missing_metadata: e.target.value as never })
-                        }
-                      />
-                    )}
-                  </Field>
-                </div>
-              </Panel>
-
-              <Panel title="UI" icon={SlidersHorizontal}>
-                <div className="flex flex-col gap-4">
-                  <Field
-                    label="Theme"
-                    help="This console is dark-only; light and system render as dark."
-                  >
-                    {(id) => (
-                      <Select
-                        id={id}
-                        options={themeOptions}
-                        value={draftConfig.ui.theme}
-                        onChange={(e) => update("ui", { theme: e.target.value as never })}
-                      />
-                    )}
-                  </Field>
-                  <Toggle
-                    checked={draftConfig.ui.show_advanced_settings}
-                    onChange={(v) => update("ui", { show_advanced_settings: v })}
-                    label="Show advanced settings"
+                {(id) => (
+                  <Select
+                    id={id}
+                    options={themeOptions}
+                    value={draftConfig.ui.theme}
+                    onChange={(e) => update("ui", { theme: e.target.value as never })}
                   />
-                </div>
-              </Panel>
-            </>
+                )}
+              </Field>
+            </Panel>
+          ) : null}
+
+          {section === "safety" ? (
+            <Panel
+              title="Safety rules"
+              icon={FileCheck2}
+              description="How planning handles conflicts, duplicates, and missing metadata."
+            >
+              <div className="flex flex-col gap-4">
+                <Field label="On target exists">
+                  {(id) => (
+                    <Select
+                      id={id}
+                      options={targetExistsOptions}
+                      value={draftConfig.collision.on_target_exists}
+                      onChange={(e) =>
+                        update("collision", { on_target_exists: e.target.value as never })
+                      }
+                    />
+                  )}
+                </Field>
+                <Field label="On duplicate hash">
+                  {(id) => (
+                    <Select
+                      id={id}
+                      options={duplicateHashOptions}
+                      value={draftConfig.collision.on_duplicate_hash}
+                      onChange={(e) =>
+                        update("collision", { on_duplicate_hash: e.target.value as never })
+                      }
+                    />
+                  )}
+                </Field>
+                <Field label="On missing metadata">
+                  {(id) => (
+                    <Select
+                      id={id}
+                      options={missingMetadataOptions}
+                      value={draftConfig.collision.on_missing_metadata}
+                      onChange={(e) =>
+                        update("collision", { on_missing_metadata: e.target.value as never })
+                      }
+                    />
+                  )}
+                </Field>
+              </div>
+            </Panel>
           ) : null}
         </div>
 
