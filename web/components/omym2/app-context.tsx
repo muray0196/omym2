@@ -47,12 +47,12 @@ const RUN_POLL_INTERVAL_MS = 5000
 export type Route =
   | { name: "dashboard" }
   | { name: "settings" }
-  | { name: "path-policy" }
+  | { name: "path-policy"; trackId?: string }
   | { name: "plans" }
-  | { name: "plan-detail"; planId: string }
+  | { name: "plan-detail"; planId: string; actionId?: string }
   | { name: "runs" }
   | { name: "run-detail"; runId: string }
-  | { name: "check" }
+  | { name: "check"; query?: string }
   | { name: "tracks"; trackId?: string }
 
 export type NavKey =
@@ -485,16 +485,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
 function routeFromPath(pathname: string, search = ""): Route {
   if (pathname === "/settings") return { name: "settings" }
-  if (pathname === "/path-policy") return { name: "path-policy" }
+  if (pathname === "/path-policy") {
+    const trackId = new URLSearchParams(search).get("track")
+    return { name: "path-policy", trackId: trackId ?? undefined }
+  }
   if (pathname === "/plans") return { name: "plans" }
   if (pathname.startsWith("/plans/")) {
-    return { name: "plan-detail", planId: decodeURIComponent(pathname.replace("/plans/", "")) }
+    const actionId = new URLSearchParams(search).get("action")
+    return {
+      name: "plan-detail",
+      planId: decodeURIComponent(pathname.replace("/plans/", "")),
+      actionId: actionId ?? undefined,
+    }
   }
   if (pathname === "/history") return { name: "runs" }
   if (pathname.startsWith("/history/")) {
     return { name: "run-detail", runId: decodeURIComponent(pathname.replace("/history/", "")) }
   }
-  if (pathname === "/check") return { name: "check" }
+  if (pathname === "/check") {
+    const query = new URLSearchParams(search).get("query")
+    return { name: "check", query: query ?? undefined }
+  }
   if (pathname === "/tracks") {
     const trackId = new URLSearchParams(search).get("track")
     return { name: "tracks", trackId: trackId ?? undefined }
@@ -507,17 +518,21 @@ function routeToPath(route: Route): string {
     case "settings":
       return "/settings"
     case "path-policy":
-      return "/path-policy"
+      return route.trackId
+        ? `/path-policy?track=${encodeURIComponent(route.trackId)}`
+        : "/path-policy"
     case "plans":
       return "/plans"
     case "plan-detail":
-      return `/plans/${encodeURIComponent(route.planId)}`
+      return route.actionId
+        ? `/plans/${encodeURIComponent(route.planId)}?action=${encodeURIComponent(route.actionId)}`
+        : `/plans/${encodeURIComponent(route.planId)}`
     case "runs":
       return "/history"
     case "run-detail":
       return `/history/${encodeURIComponent(route.runId)}`
     case "check":
-      return "/check"
+      return route.query ? `/check?query=${encodeURIComponent(route.query)}` : "/check"
     case "tracks":
       return route.trackId ? `/tracks?track=${encodeURIComponent(route.trackId)}` : "/tracks"
     case "dashboard":

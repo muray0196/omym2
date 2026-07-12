@@ -125,7 +125,7 @@ function PlanStatusPanel({
   )
 }
 
-export function PlanDetailScreen({ planId }: { planId: string }) {
+export function PlanDetailScreen({ planId, actionId }: { planId: string; actionId?: string }) {
   const {
     loadPlanDetail,
     navigate,
@@ -251,6 +251,14 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
   const riskBlockedCount = actionStatusCounts.blocked ?? blockedCount
   const unknownMetadataCount = actionReasonCounts["missing_required_metadata"] ?? 0
   const collisionCount = targetCollisions ?? 0
+  const activeViewMode: PlanViewMode = actionId ? "table" : viewMode
+
+  function changeViewMode(nextViewMode: PlanViewMode) {
+    if (actionId) {
+      navigate({ name: "plan-detail", planId }, { replace: true })
+    }
+    setViewMode(nextViewMode)
+  }
 
   return (
     <>
@@ -289,7 +297,7 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
               size="sm"
               onClick={() => {
                 setActionStatus("blocked")
-                setViewMode("table")
+                changeViewMode("table")
               }}
             >
               View blocked actions
@@ -362,8 +370,9 @@ export function PlanDetailScreen({ planId }: { planId: string }) {
 
       <PlanActionsPanel
         planId={planId}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        focusedActionId={actionId}
+        viewMode={activeViewMode}
+        onViewModeChange={changeViewMode}
         actionStatus={actionStatus}
         onActionStatusChange={setActionStatus}
       />

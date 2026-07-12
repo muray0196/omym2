@@ -5,7 +5,14 @@ Why: Lets users explore library records without fetching every track.
 
 "use client"
 
-import { ListTree, Music, Table2, TriangleAlert } from "lucide-react"
+import {
+  ListTree,
+  Music,
+  Route as RouteIcon,
+  ShieldCheck,
+  Table2,
+  TriangleAlert,
+} from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { getTrackFacets, getTracksPage } from "../api-client"
 import { useApp } from "../app-context"
@@ -25,6 +32,7 @@ import {
   Panel,
   SegmentedControl,
   StatusBadge,
+  Button,
   type Column,
   type SegmentedOption,
 } from "../primitives"
@@ -54,7 +62,15 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
 }
 
-function TrackDetail({ track }: { track: TrackSummary }) {
+function TrackDetail({
+  track,
+  onViewCheckIssues,
+  onPreviewPath,
+}: {
+  track: TrackSummary
+  onViewCheckIssues: (trackId: string) => void
+  onPreviewPath: (trackId: string) => void
+}) {
   const mismatch = track.current_path !== track.canonical_path
   const m = track.metadata
   const title = metadataText(m.title)
@@ -82,6 +98,15 @@ function TrackDetail({ track }: { track: TrackSummary }) {
           </p>
         </div>
       ) : null}
+
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={() => onViewCheckIssues(track.track_id)}>
+          <ShieldCheck className="size-3.5" aria-hidden="true" /> Check issues
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => onPreviewPath(track.track_id)}>
+          <RouteIcon className="size-3.5" aria-hidden="true" /> Path Preview
+        </Button>
+      </div>
 
       <dl className="rounded-md border border-hairline px-3">
         <MetaRow label="Current path" responsive>
@@ -410,7 +435,11 @@ export function TracksScreen() {
                 {selectedTrackErrors.join(" ")}
               </Notice>
             ) : selectedTrack ? (
-              <TrackDetail track={selectedTrack} />
+              <TrackDetail
+                track={selectedTrack}
+                onViewCheckIssues={(trackId) => navigate({ name: "check", query: trackId })}
+                onPreviewPath={(trackId) => navigate({ name: "path-policy", trackId })}
+              />
             ) : selectedTrackLoading ? (
               <EmptyState icon={Music} title="Loading selected track..." />
             ) : (

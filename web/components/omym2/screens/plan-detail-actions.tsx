@@ -5,9 +5,20 @@ Why: Lets a Plan with thousands of actions read as meaningful library operations
 
 "use client"
 
-import { ChevronDown, ChevronRight, FileDiff, Hash, ListTree, Table2 } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronRight,
+  FileDiff,
+  Hash,
+  ListTree,
+  Music,
+  Route as RouteIcon,
+  ShieldCheck,
+  Table2,
+} from "lucide-react"
 import { useCallback, useEffect, useId, useState } from "react"
 import { getPlanActionsPage, getPlanFacets, getPlanGroups } from "../api-client"
+import { useApp } from "../app-context"
 import { BrowseFilters, countedFacetOptions, SEARCH_DEBOUNCE_MS } from "../browse-filters"
 import { useDebouncedValue } from "../use-debounced-value"
 import { cn, describeBlockReason, truncateMiddle } from "../lib"
@@ -113,6 +124,46 @@ function ReasonText({ reason, className }: { reason: string; className?: string 
   )
 }
 
+/** Read-only links from one recorded PlanAction to its related audit views. */
+function PlanActionLinks({ action }: { action: PlanAction }) {
+  const { navigate } = useApp()
+  const trackId = action.track_id
+  const checkQuery = trackId ?? action.plan_id
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {trackId ? (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate({ name: "tracks", trackId })}
+          >
+            <Music className="size-3.5" aria-hidden="true" /> View Track
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate({ name: "path-policy", trackId })}
+          >
+            <RouteIcon className="size-3.5" aria-hidden="true" /> Path Preview
+          </Button>
+        </>
+      ) : null}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => navigate({ name: "check", query: checkQuery })}
+      >
+        <ShieldCheck className="size-3.5" aria-hidden="true" /> Check results
+      </Button>
+    </div>
+  )
+}
+
 /** Shared "N of M loaded" footer for the non-table paged lists. */
 function LoadMoreFooter({
   shown,
@@ -166,19 +217,21 @@ function LoadMoreFooter({
  */
 export function PlanActionsPanel({
   planId,
+  focusedActionId,
   viewMode,
   onViewModeChange,
   actionStatus,
   onActionStatusChange,
 }: {
   planId: string
+  focusedActionId?: string
   viewMode: PlanViewMode
   onViewModeChange: (mode: PlanViewMode) => void
   actionStatus: PlanActionStatus | "all"
   onActionStatusChange: (status: PlanActionStatus | "all") => void
 }) {
   const [groupBy, setGroupBy] = useState<PlanGroupBy>("artist_album")
-  const [query, setQuery] = useState("")
+  const [query, setQuery] = useState(focusedActionId ?? "")
   const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
   const [actionType, setActionType] = useState<PlanActionType | "all">("all")
   const [reason, setReason] = useState<PlanActionReason | "all">("all")
@@ -191,6 +244,10 @@ export function PlanActionsPanel({
     actionType,
     reason,
   }
+
+  useEffect(() => {
+    setQuery(focusedActionId ?? "")
+  }, [focusedActionId])
 
   useEffect(() => {
     let cancelled = false
@@ -526,14 +583,15 @@ function PlanGroupActionList({
               className="flex items-start gap-2.5 border-b border-hairline-soft py-2 last:border-0"
             >
               <StatusBadge status={action.status} iconOnly className="mt-0.5" />
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <PathArrow
                   source={action.source_path ?? ""}
                   target={action.target_path ?? ""}
                   max={40}
                 />
                 {action.reason ? <ReasonText reason={action.reason} className="text-xs" /> : null}
-              </span>
+                <PlanActionLinks action={action} />
+              </div>
             </li>
           ))}
         </ul>
@@ -651,6 +709,12 @@ function PlanActionsFlat({
       cell: (action) => hashCell(action.content_hash_at_plan, action.metadata_hash_at_plan),
       className: "min-w-[12rem]",
     },
+    {
+      key: "related",
+      header: "Related",
+      cell: (action) => <PlanActionLinks action={action} />,
+      className: "min-w-[20rem]",
+    },
   ]
 
   return (
@@ -753,6 +817,7 @@ function PlanActionsDiff({ actionsPage }: { actionsPage: PagedListState<PlanActi
               {action.reason && action.target_path !== null ? (
                 <ReasonText reason={action.reason} className="px-2 text-xs" />
               ) : null}
+              <PlanActionLinks action={action} />
             </li>
           )
         })}
