@@ -28,5 +28,5 @@ class GetTrackStatusFacetsUseCase:
         status, so the facet breakdown always partitions the full scope.
         """
         with self.ports.uow as uow:
-            facets = uow.tracks.status_facets(request.library_id)
+            facets = uow.tracks.status_facets(request.library_id, search=request.search)
         return TrackStatusFacetsResult(facets=facets, total=sum(facet.count for facet in facets))

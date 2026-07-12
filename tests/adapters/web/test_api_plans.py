@@ -328,6 +328,29 @@ def test_plan_actions_api_drills_into_group_and_rejects_unpaired_group_filters(t
     assert group_key_only.json() == {"items": [], "page": None, "errors": expected_error}
 
 
+def test_plan_actions_api_group_drill_down_applies_query_with_ascii_case_folding(tmp_path: Path) -> None:
+    """The in-process drill-down search matches ASCII case-insensitively, like the SQL list search."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_groups(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/actions",
+        params={
+            "group_by": "artist_album",
+            "group_key": "Artist/2026_Album",
+            "query": "1-03_TITLE",
+        },
+    )
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    assert [item["action_id"] for item in _object_list_payload(payload, "items")] == [str(BLOCKED_ACTION_ID)]
+    assert _object_payload(payload, "page")["total"] == 1
+
+
 def test_plan_actions_api_rejects_invalid_status_and_cursor(tmp_path: Path) -> None:
     """Unknown status filters and malformed cursors return the documented 400 envelope."""
     app_paths = default_application_paths(tmp_path)
@@ -385,6 +408,65 @@ def test_plan_facets_api_returns_risk_summary_counts(tmp_path: Path) -> None:
     assert payload["total"] == SEEDED_ACTION_COUNT
     assert payload["target_collisions"] == 1
     assert payload["errors"] == []
+
+
+def test_plan_action_search_and_facets_combine_catalog_filters(tmp_path: Path) -> None:
+    """Action list/facet/group routes share query, status, type, and reason filtering."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    _seed_plan_detail(app_paths.database_file, str(library_root))
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+    params = {
+        "query": str(BLOCKED_ACTION_ID),
+        "status": ActionStatus.BLOCKED.value,
+        "action_type": ActionType.MOVE.value,
+        "reason": PlanActionReason.TARGET_EXISTS.value,
+    }
+
+    list_response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/actions", params=params)
+    facets_response = client.get(f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/facets", params=params)
+    groups_response = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/groups",
+        params={**params, "group_by": "status"},
+    )
+
+    assert list_response.status_code == SUCCESS_STATUS_CODE
+    assert [item["action_id"] for item in _object_list_payload(_json_payload(list_response), "items")] == [
+        str(BLOCKED_ACTION_ID)
+    ]
+    assert facets_response.status_code == SUCCESS_STATUS_CODE
+    facets_payload = _json_payload(facets_response)
+    assert facets_payload["total"] == 1
+    assert _object_payload(facets_payload, "facets")["status"] == [{"value": ActionStatus.BLOCKED.value, "count": 1}]
+    assert groups_response.status_code == SUCCESS_STATUS_CODE
+    assert _object_list_payload(_json_payload(groups_response), "items") == [
+        {
+            "key": ActionStatus.BLOCKED.value,
+            "label": ActionStatus.BLOCKED.value,
+            "count": 1,
+            "blocked_count": 1,
+            "top_reason": PlanActionReason.TARGET_EXISTS.value,
+        }
+    ]
+
+
+def test_plan_facets_api_rejects_invalid_action_type_and_reason(tmp_path: Path) -> None:
+    """Unknown catalog facet filters return the documented 400 facet envelope."""
+    app_paths = default_application_paths(tmp_path)
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(
+        f"{WEB_API_PLANS_ROUTE}/{PLAN_ID}/facets",
+        params={"action_type": "copy", "reason": "unknown"},
+    )
+
+    assert response.status_code == ERROR_STATUS_CODE
+    assert response.json() == {
+        "facets": {},
+        "total": None,
+        "errors": ["Invalid action type filter: copy", "Invalid action reason filter: unknown"],
+    }
 
 
 def test_plan_facets_api_returns_not_found_for_unknown_plan(tmp_path: Path) -> None:

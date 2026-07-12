@@ -21,7 +21,9 @@ import type {
   GroupsResponse,
   PagedResponse,
   PlanAction,
+  PlanActionReason,
   PlanActionStatus,
+  PlanActionType,
   PlanCreateResult,
   PlanDetailResponse,
   PlanFacetsResponse,
@@ -1220,6 +1222,21 @@ export function groupsMock<T>(
 
 // --- Filter predicates mirroring server semantics (see filterPlanRows above)
 
+// The live API folds case with SQLite's LOWER(), which is ASCII-only, and
+// matches each stored field independently — never across field boundaries.
+function asciiLowerCase(text: string): string {
+  return text.replace(/[A-Z]/g, (letter) => letter.toLowerCase())
+}
+
+function matchesSearch(values: (string | null | undefined)[], needle: string): boolean {
+  return values.some((value) => value != null && asciiLowerCase(value).includes(needle))
+}
+
+function searchNeedle(query: string | undefined): string | undefined {
+  const trimmed = query?.trim()
+  return trimmed ? asciiLowerCase(trimmed) : undefined
+}
+
 function buildTrackPredicate(options: {
   query?: string
   status?: TrackStatus | "all"
@@ -1228,7 +1245,7 @@ function buildTrackPredicate(options: {
   groupBy?: TrackGroupBy
   groupKey?: string
 }): (row: TrackSummary) => boolean {
-  const query = options.query?.trim().toLowerCase()
+  const query = searchNeedle(options.query)
   return (row) => {
     if (options.libraryId && row.library_id !== options.libraryId) {
       return false
@@ -1246,20 +1263,20 @@ function buildTrackPredicate(options: {
     ) {
       return false
     }
-    if (query) {
-      const haystack = [
-        row.metadata.title,
-        row.metadata.artist,
-        row.metadata.album,
-        row.current_path,
-        row.track_id,
-      ]
-        .filter((value): value is string => Boolean(value))
-        .join(" ")
-        .toLowerCase()
-      if (!haystack.includes(query)) {
-        return false
-      }
+    if (
+      query &&
+      !matchesSearch(
+        [
+          row.metadata.title,
+          row.metadata.artist,
+          row.metadata.album,
+          row.current_path,
+          row.track_id,
+        ],
+        query,
+      )
+    ) {
+      return false
     }
     return true
   }
@@ -1369,12 +1386,26 @@ function buildPlanPredicate(options: {
 }
 
 function buildPlanActionPredicate(options: {
+  query?: string
   status?: PlanActionStatus | "all"
+  actionType?: PlanActionType | "all"
+  reason?: PlanActionReason | "all"
   groupBy?: PlanGroupBy
   groupKey?: string
 }): (row: PlanAction) => boolean {
+  const query = searchNeedle(options.query)
   return (row) => {
     if (options.status && options.status !== "all" && row.status !== options.status) {
+      return false
+    }
+    if (
+      options.actionType &&
+      options.actionType !== "all" &&
+      row.action_type !== options.actionType
+    ) {
+      return false
+    }
+    if (options.reason && options.reason !== "all" && row.reason !== options.reason) {
       return false
     }
     if (options.groupBy && options.groupKey !== undefined) {
@@ -1382,6 +1413,22 @@ function buildPlanActionPredicate(options: {
       if (!entry || entry.key !== options.groupKey) {
         return false
       }
+    }
+    if (
+      query &&
+      !matchesSearch(
+        [
+          row.action_id,
+          row.track_id,
+          row.source_path,
+          row.target_path,
+          row.content_hash_at_plan,
+          row.metadata_hash_at_plan,
+        ],
+        query,
+      )
+    ) {
+      return false
     }
     return true
   }
@@ -1498,11 +1545,13 @@ function countTargetCollisions(rows: PlanAction[]): number {
 }
 
 function buildCheckPredicate(options: {
+  query?: string
   issueType?: CheckIssueType | "all"
   libraryId?: string
   groupBy?: CheckGroupBy
   groupKey?: string
 }): (row: CheckIssue) => boolean {
+  const query = searchNeedle(options.query)
   return (row) => {
     if (options.libraryId && row.library_id !== options.libraryId) {
       return false
@@ -1515,6 +1564,12 @@ function buildCheckPredicate(options: {
       if (entry.key !== options.groupKey) {
         return false
       }
+    }
+    if (
+      query &&
+      !matchesSearch([row.library_id, row.path, row.track_id, row.plan_id, row.detail], query)
+    ) {
+      return false
     }
     return true
   }
@@ -1683,24 +1738,24 @@ export function mockGetTracksPage(
   })
 }
 
-export function mockGetTrackFacets(options: { libraryId?: string } = {}): FacetsResponse {
-  const rows = options.libraryId
-    ? mockTracks.filter((track) => track.library_id === options.libraryId)
-    : mockTracks
+export function mockGetTrackFacets(
+  options: { query?: string; libraryId?: string } = {},
+): FacetsResponse {
+  const rows = mockTracks.filter(buildTrackPredicate(options))
   return facetsMock(rows, { status: (track) => track.status })
 }
 
 export function mockGetTrackGroups(options: {
   groupBy: TrackGroupBy
   parentKey?: string
+  query?: string
+  status?: TrackStatus | "all"
   libraryId?: string
   limit?: number
   cursor?: string
 }): GroupsResponse {
   assertTrackGroupParentKey(options)
-  const libraryRows = options.libraryId
-    ? mockTracks.filter((track) => track.library_id === options.libraryId)
-    : mockTracks
+  const libraryRows = mockTracks.filter(buildTrackPredicate(options))
   const rows = libraryRows.filter((track) => {
     if (options.groupBy === "album" && options.parentKey !== undefined) {
       return trackArtistGroup(track).key === options.parentKey
@@ -1737,7 +1792,10 @@ export function mockGetPlansPage(
 export function mockGetPlanActionsPage(
   planId: string,
   options: {
+    query?: string
     status?: PlanActionStatus | "all"
+    actionType?: PlanActionType | "all"
+    reason?: PlanActionReason | "all"
     groupBy?: PlanGroupBy
     groupKey?: string
     limit?: number
@@ -1752,21 +1810,46 @@ export function mockGetPlanActionsPage(
   })
 }
 
-export function mockGetPlanFacets(planId: string): PlanFacetsResponse {
+export function mockGetPlanFacets(
+  planId: string,
+  options: {
+    query?: string
+    status?: PlanActionStatus | "all"
+    actionType?: PlanActionType | "all"
+    reason?: PlanActionReason | "all"
+  } = {},
+): PlanFacetsResponse {
   const rows = mockPlanActions[planId] ?? []
-  const facets = facetsMock(rows, {
-    status: (action) => action.status,
-    action_type: (action) => action.action_type,
-    reason: (action) => action.reason,
-  })
-  return { ...facets, target_collisions: countTargetCollisions(rows) }
+  const statusRows = rows.filter(buildPlanActionPredicate({ ...options, status: "all" }))
+  const typeRows = rows.filter(buildPlanActionPredicate({ ...options, actionType: "all" }))
+  const reasonRows = rows.filter(buildPlanActionPredicate({ ...options, reason: "all" }))
+  const filteredRows = rows.filter(buildPlanActionPredicate(options))
+  return {
+    facets: {
+      status: facetsMock(statusRows, { status: (action) => action.status }).facets.status,
+      action_type: facetsMock(typeRows, { action_type: (action) => action.action_type }).facets
+        .action_type,
+      reason: facetsMock(reasonRows, { reason: (action) => action.reason }).facets.reason,
+    },
+    total: filteredRows.length,
+    errors: [],
+    target_collisions: countTargetCollisions(rows),
+  }
 }
 
 export function mockGetPlanGroups(
   planId: string,
-  options: { groupBy: PlanGroupBy; limit?: number; cursor?: string },
+  options: {
+    groupBy: PlanGroupBy
+    query?: string
+    status?: PlanActionStatus | "all"
+    actionType?: PlanActionType | "all"
+    reason?: PlanActionReason | "all"
+    limit?: number
+    cursor?: string
+  },
 ): PlanGroupsResponse {
-  const rows = mockPlanActions[planId] ?? []
+  const rows = (mockPlanActions[planId] ?? []).filter(buildPlanActionPredicate(options))
   const groups = new Map<
     string,
     { label: string; count: number; blockedCount: number; reasons: Map<string, number> }
@@ -1811,6 +1894,7 @@ export const MOCK_CHECKED_AT = "2026-06-29T10:05:00Z"
 
 export function mockGetCheckPage(
   options: {
+    query?: string
     issueType?: CheckIssueType | "all"
     libraryId?: string
     groupBy?: CheckGroupBy
@@ -1827,23 +1911,23 @@ export function mockGetCheckPage(
   return { ...paged, checked_at: MOCK_CHECKED_AT }
 }
 
-export function mockGetCheckFacets(options: { libraryId?: string } = {}): CheckFacetsResponse {
-  const rows = options.libraryId
-    ? mockIssues.filter((issue) => issue.library_id === options.libraryId)
-    : mockIssues
+export function mockGetCheckFacets(
+  options: { query?: string; libraryId?: string } = {},
+): CheckFacetsResponse {
+  const rows = mockIssues.filter(buildCheckPredicate(options))
   const facets = facetsMock(rows, { issue_type: (issue) => issue.issue_type })
   return { ...facets, checked_at: MOCK_CHECKED_AT }
 }
 
 export function mockGetCheckGroups(options: {
   groupBy: CheckGroupBy
+  query?: string
+  issueType?: CheckIssueType | "all"
   libraryId?: string
   limit?: number
   cursor?: string
 }): CheckGroupsResponse {
-  const rows = options.libraryId
-    ? mockIssues.filter((issue) => issue.library_id === options.libraryId)
-    : mockIssues
+  const rows = mockIssues.filter(buildCheckPredicate(options))
   const groups = new Map<
     string,
     { label: string; count: number; rootCounts: Map<string, number> }

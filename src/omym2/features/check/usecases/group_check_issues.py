@@ -132,4 +132,10 @@ class GroupCheckIssuesUseCase:
     def execute(self, request: GroupCheckIssuesRequest) -> Page[CheckIssueGroup]:
         """Return one page of CheckIssue groups for the requested scope."""
         with self.ports.uow as uow:
-            return uow.check_issues.group_page(request.library_id, request.grouping, request.page)
+            return uow.check_issues.group_page(
+                request.library_id,
+                request.grouping,
+                request.page,
+                search=request.search,
+                issue_type=request.issue_type,
+            )

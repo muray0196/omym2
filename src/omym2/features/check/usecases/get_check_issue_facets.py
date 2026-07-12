@@ -29,7 +29,7 @@ class GetCheckIssueFacetsUseCase:
         the facet breakdown always partitions the full scope.
         """
         with self.ports.uow as uow:
-            facets = uow.check_issues.issue_type_facets(request.library_id)
+            facets = uow.check_issues.issue_type_facets(request.library_id, search=request.search)
             checked_at = checked_at_for_scope(uow, request.library_id)
         return CheckIssueFacetsResult(
             facets=facets,

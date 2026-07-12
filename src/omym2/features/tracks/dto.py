@@ -31,9 +31,10 @@ class ListTracksRequest:
 
 @dataclass(frozen=True, slots=True)
 class TrackStatusFacetsRequest:
-    """Request Track status facet counts for a Library or every known Library."""
+    """Request Track status facet counts within a Library/search scope."""
 
     library_id: LibraryId | None = None
+    search: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,4 +52,6 @@ class GroupTracksRequest:
     grouping: TrackGrouping
     library_id: LibraryId | None = None
     parent_key: str | None = None
+    search: str | None = None
+    status: TrackStatus | None = None
     page: PageRequest = field(default_factory=PageRequest)

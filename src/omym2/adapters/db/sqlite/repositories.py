@@ -71,6 +71,15 @@ TRACK_SEARCH_WHERE_CLAUSE = f"""(
                 LOWER(current_path) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
                 LOWER(track_id) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}'
             )"""
+PLAN_ACTION_SEARCH_COLUMN_NAMES = (
+    "action_id",
+    "track_id",
+    "source_path",
+    "target_path",
+    "content_hash_at_plan",
+    "metadata_hash_at_plan",
+)
+CHECK_ISSUE_SEARCH_COLUMN_NAMES = ("library_id", "path", "track_id", "plan_id", "detail")
 TRACK_GROUP_SOURCE_SELECT = """
             SELECT
                 COALESCE(json_extract(metadata_json, '$.album_artist'), json_extract(metadata_json, '$.artist'), ?)
@@ -387,10 +396,11 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
             (str(library_id),),
         )
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # Check browse filters form the repository's stable read contract.
         self,
         library_id: LibraryId | None,
         *,
+        search: str | None = None,
         issue_type: CheckIssueType | None,
         grouping: CheckIssueGrouping | None = None,
         group_key: str | None = None,
@@ -398,9 +408,9 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
     ) -> Page[CheckIssue]:
         """Return one keyset page of CheckIssues ordered issue_seq ASC."""
         if grouping is not None and group_key is not None:
-            return self._group_member_page(library_id, issue_type, grouping, group_key, page)
+            return self._group_member_page(library_id, search, issue_type, grouping, group_key, page)
 
-        where_sql, where_params = _check_issue_filter_where(library_id, issue_type)
+        where_sql, where_params = _check_issue_filter_where(library_id, search, issue_type)
         # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
         count_sql = f"SELECT COUNT(*) FROM check_issues{where_sql}"  # noqa: S608
         total = _scalar_int(self._connection, count_sql, tuple(where_params))
@@ -423,16 +433,17 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
         next_cursor_key = (str(_row_int(rows[page.limit - 1], "issue_seq")),) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
-    def _group_member_page(
+    def _group_member_page(  # noqa: PLR0913  # Delegates each Check browse filter to one group query.
         self,
         library_id: LibraryId | None,
+        search: str | None,
         issue_type: CheckIssueType | None,
         grouping: CheckIssueGrouping,
         group_key: str,
         page: PageRequest,
     ) -> Page[CheckIssue]:
         """Return a keyset page of one server-derived CheckIssue group."""
-        where_sql, where_params = _check_issue_group_filter_where(library_id, issue_type)
+        where_sql, where_params = _check_issue_group_filter_where(library_id, search, issue_type)
         source_sql = _check_issue_group_source_sql(grouping, where_sql)
         total = _scalar_int(
             self._connection,
@@ -464,9 +475,9 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
         next_cursor_key = (str(_row_int(rows[page.limit - 1], "issue_seq")),) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
-    def issue_type_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+    def issue_type_facets(self, library_id: LibraryId | None, *, search: str | None = None) -> tuple[FacetValue, ...]:
         """Return CheckIssue issue_type facets, ordered count DESC then value ASC."""
-        where_sql, where_params = _optional_library_clause(library_id)
+        where_sql, where_params = _check_issue_filter_where(library_id, search, None)
         rows = _fetch_all(
             self._connection,
             # SQL-injection safety note: where_sql is a static clause template bound with `?`; never raw input.
@@ -486,9 +497,12 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
         library_id: LibraryId | None,
         grouping: CheckIssueGrouping,
         page: PageRequest,
+        *,
+        search: str | None = None,
+        issue_type: CheckIssueType | None = None,
     ) -> Page[CheckIssueGroup]:
         """Return one keyset page of CheckIssue groups with their common path roots."""
-        where_sql, where_params = _check_issue_group_filter_where(library_id, None)
+        where_sql, where_params = _check_issue_group_filter_where(library_id, search, issue_type)
         source_sql = _check_issue_group_source_sql(grouping, where_sql)
 
         # SQL-injection safety note: source_sql is assembled solely from static SQL templates and bound filters.
@@ -730,9 +744,9 @@ class SQLiteTrackRepository(_SQLiteRepository):
         next_cursor_key = _track_group_member_cursor_key(page_items[-1]) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
-    def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+    def status_facets(self, library_id: LibraryId | None, *, search: str | None = None) -> tuple[FacetValue, ...]:
         """Return Track status facet counts, ordered count DESC then value ASC."""
-        where_sql, where_params = _optional_library_clause(library_id)
+        where_sql, where_params = _track_filter_where(library_id, None, None, search)
         rows = _fetch_all(
             self._connection,
             # SQL-injection safety note: where_sql is a static clause template bound with `?`; never raw input.
@@ -747,28 +761,33 @@ class SQLiteTrackRepository(_SQLiteRepository):
         )
         return tuple(FacetValue(value=_row_text(row, "status"), count=_row_int(row, "count")) for row in rows)
 
-    def group_page(
+    def group_page(  # noqa: PLR0913  # Track groups share the list's search and facet scope.
         self,
         library_id: LibraryId | None,
         grouping: TrackGrouping,
         parent_key: str | None,
         page: PageRequest,
+        *,
+        search: str | None = None,
+        status: TrackStatus | None = None,
     ) -> Page[GroupCount]:
         """Return one keyset page of Track groups ordered count DESC then key ASC."""
         if grouping is TrackGrouping.ARTIST_ALBUM:
-            return self._legacy_artist_album_group_page(library_id, page)
-        return self._hierarchy_group_page(library_id, grouping, parent_key, page)
+            return self._legacy_artist_album_group_page(library_id, search, status, page)
+        return self._hierarchy_group_page(library_id, grouping, parent_key, search, status, page)
 
     def _legacy_artist_album_group_page(
         self,
         library_id: LibraryId | None,
+        search: str | None,
+        status: TrackStatus | None,
         page: PageRequest,
     ) -> Page[GroupCount]:
         """Return the existing artist/album grouping without changing its key contract."""
-        library_where, library_params = _optional_library_clause(library_id)
-        source_params = [TRACK_GROUP_UNKNOWN_KEY, TRACK_GROUP_UNKNOWN_KEY, *library_params]
+        where_sql, where_params = _track_filter_where(library_id, None, status, search)
+        source_params = [TRACK_GROUP_UNKNOWN_KEY, TRACK_GROUP_UNKNOWN_KEY, *where_params]
 
-        # SQL-injection safety note: TRACK_GROUP_SOURCE_SELECT and library_where are static templates bound with `?`.
+        # SQL-injection safety note: TRACK_GROUP_SOURCE_SELECT and where_sql are static templates bound with `?`.
         total = _scalar_int(
             self._connection,
             f"""
@@ -776,7 +795,7 @@ class SQLiteTrackRepository(_SQLiteRepository):
                 SELECT 1
                 FROM (
                     {TRACK_GROUP_SOURCE_SELECT}
-                    {library_where}
+                    {where_sql}
                 )
                 GROUP BY group_artist, group_album
             )
@@ -785,7 +804,7 @@ class SQLiteTrackRepository(_SQLiteRepository):
         )
 
         cursor_sql, cursor_params = _track_group_cursor_clause(page.cursor_key)
-        # SQL-injection safety note: TRACK_GROUP_SOURCE_SELECT, library_where, and cursor_sql are static templates
+        # SQL-injection safety note: TRACK_GROUP_SOURCE_SELECT, where_sql, and cursor_sql are static templates
         # bound with `?`; never raw input.
         rows = _fetch_all(
             self._connection,
@@ -798,7 +817,7 @@ class SQLiteTrackRepository(_SQLiteRepository):
                     COUNT(*) AS count
                 FROM (
                     {TRACK_GROUP_SOURCE_SELECT}
-                    {library_where}
+                    {where_sql}
                 )
                 GROUP BY group_artist, group_album
             )
@@ -810,7 +829,7 @@ class SQLiteTrackRepository(_SQLiteRepository):
                 TRACK_GROUP_LABEL_SEPARATOR,
                 TRACK_GROUP_UNKNOWN_KEY,
                 TRACK_GROUP_UNKNOWN_KEY,
-                *library_params,
+                *where_params,
                 *cursor_params,
                 page.limit + 1,
             ),
@@ -825,15 +844,17 @@ class SQLiteTrackRepository(_SQLiteRepository):
         next_cursor_key = (str(page_items[-1].count), page_items[-1].key) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
-    def _hierarchy_group_page(
+    def _hierarchy_group_page(  # noqa: PLR0913  # Keeps hierarchy filtering aligned with Track lists.
         self,
         library_id: LibraryId | None,
         grouping: TrackGrouping,
         parent_key: str | None,
+        search: str | None,
+        status: TrackStatus | None,
         page: PageRequest,
     ) -> Page[GroupCount]:
         """Return artist, album, or disc hierarchy groups from stored metadata."""
-        where_sql, where_params = _track_filter_where(library_id, None, None, None)
+        where_sql, where_params = _track_filter_where(library_id, None, status, search)
         source_sql, source_params = _track_hierarchy_source_sql(
             grouping,
             where_sql,
@@ -1009,15 +1030,18 @@ class SQLitePlanActionRepository(_SQLiteRepository):
         )
         return tuple(_plan_action_from_row(row) for row in rows)
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # PlanAction browse filters form one stable read contract.
         self,
         plan_id: PlanId,
         *,
+        search: str | None = None,
         status: ActionStatus | None,
+        action_type: ActionType | None = None,
+        reason: PlanActionReason | None = None,
         page: PageRequest,
     ) -> Page[PlanAction]:
         """Return one keyset page of a Plan's actions ordered (sort_order, action_id)."""
-        where_sql, where_params = _plan_action_filter_where(plan_id, status)
+        where_sql, where_params = _plan_action_filter_where(plan_id, search, status, action_type, reason)
         # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
         count_sql = f"SELECT COUNT(*) FROM plan_actions{where_sql}"  # noqa: S608
         total = _scalar_int(self._connection, count_sql, tuple(where_params))
@@ -1040,50 +1064,92 @@ class SQLitePlanActionRepository(_SQLiteRepository):
         next_cursor_key = (str(page_items[-1].sort_order), str(page_items[-1].action_id)) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
-    def status_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+    def status_facets(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None = None,
+        action_type: ActionType | None = None,
+        reason: PlanActionReason | None = None,
+    ) -> tuple[FacetValue, ...]:
         """Return PlanAction status facets for one Plan, ordered count DESC then value ASC."""
+        where_sql, where_params = _plan_action_filter_where(plan_id, search, None, action_type, reason)
         rows = _fetch_all(
             self._connection,
-            """
+            f"""
             SELECT status, COUNT(*) AS count
             FROM plan_actions
-            WHERE plan_id = ?
+            {where_sql}
             GROUP BY status
             ORDER BY count DESC, status ASC
-            """,
-            (str(plan_id),),
+            """,  # noqa: S608  # filter SQL uses static clauses and bound values
+            tuple(where_params),
         )
         return tuple(FacetValue(value=_row_text(row, "status"), count=_row_int(row, "count")) for row in rows)
 
-    def action_type_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+    def action_type_facets(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None = None,
+        status: ActionStatus | None = None,
+        reason: PlanActionReason | None = None,
+    ) -> tuple[FacetValue, ...]:
         """Return PlanAction type facets for one Plan, ordered count DESC then value ASC."""
+        where_sql, where_params = _plan_action_filter_where(plan_id, search, status, None, reason)
         rows = _fetch_all(
             self._connection,
-            """
+            f"""
             SELECT action_type, COUNT(*) AS count
             FROM plan_actions
-            WHERE plan_id = ?
+            {where_sql}
             GROUP BY action_type
             ORDER BY count DESC, action_type ASC
-            """,
-            (str(plan_id),),
+            """,  # noqa: S608  # filter SQL uses static clauses and bound values
+            tuple(where_params),
         )
         return tuple(FacetValue(value=_row_text(row, "action_type"), count=_row_int(row, "count")) for row in rows)
 
-    def reason_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+    def reason_facets(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None = None,
+        status: ActionStatus | None = None,
+        action_type: ActionType | None = None,
+    ) -> tuple[FacetValue, ...]:
         """Return non-null PlanAction reason facets for one Plan, ordered count DESC then value ASC."""
+        where_sql, where_params = _plan_action_filter_where(plan_id, search, status, action_type, None)
+        reason_sql = f"{where_sql} AND reason IS NOT NULL"
         rows = _fetch_all(
             self._connection,
-            """
+            f"""
             SELECT reason, COUNT(*) AS count
             FROM plan_actions
-            WHERE plan_id = ? AND reason IS NOT NULL
+            {reason_sql}
             GROUP BY reason
             ORDER BY count DESC, reason ASC
-            """,
-            (str(plan_id),),
+            """,  # noqa: S608  # filter SQL uses static clauses and bound values
+            tuple(where_params),
         )
         return tuple(FacetValue(value=_row_text(row, "reason"), count=_row_int(row, "count")) for row in rows)
+
+    def count_filtered(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None,
+        status: ActionStatus | None,
+        action_type: ActionType | None,
+        reason: PlanActionReason | None,
+    ) -> int:
+        """Return the number of PlanActions matching every browse filter."""
+        where_sql, where_params = _plan_action_filter_where(plan_id, search, status, action_type, reason)
+        return _scalar_int(
+            self._connection,
+            f"SELECT COUNT(*) FROM plan_actions{where_sql}",  # noqa: S608
+            tuple(where_params),
+        )
 
     def count_target_collisions(self, plan_id: PlanId) -> int:
         """Return how many distinct non-null target_path values are recorded by 2+ of the Plan's actions."""
@@ -1124,7 +1190,8 @@ class SQLitePlanActionRepository(_SQLiteRepository):
         rows = _fetch_all(
             self._connection,
             """
-            SELECT action_id, sort_order, status, reason, action_type, source_path, target_path
+            SELECT action_id, track_id, sort_order, status, reason, action_type, source_path, target_path,
+                   content_hash_at_plan, metadata_hash_at_plan
             FROM plan_actions
             WHERE plan_id = ?
             ORDER BY sort_order, action_id
@@ -1559,15 +1626,19 @@ def _plan_action_from_row(row: sqlite3.Row) -> PlanAction:
 
 
 def _plan_action_group_row_from_row(row: sqlite3.Row) -> PlanActionGroupRow:
+    track_id = _row_optional_text(row, "track_id")
     reason = _row_optional_text(row, "reason")
     return PlanActionGroupRow(
         action_id=ActionId(parse_uuid(_row_text(row, "action_id"))),
+        track_id=None if track_id is None else TrackId(parse_uuid(track_id)),
         sort_order=_row_int(row, "sort_order"),
         status=ActionStatus(_row_text(row, "status")),
         reason=None if reason is None else PlanActionReason(reason),
         action_type=ActionType(_row_text(row, "action_type")),
         source_path=_row_optional_text(row, "source_path"),
         target_path=_row_optional_text(row, "target_path"),
+        content_hash_at_plan=_row_optional_text(row, "content_hash_at_plan"),
+        metadata_hash_at_plan=_row_optional_text(row, "metadata_hash_at_plan"),
     )
 
 
@@ -1902,6 +1973,7 @@ def _track_group_member_cursor_key(track: Track) -> tuple[str, str, str, str]:
 
 def _check_issue_filter_where(
     library_id: LibraryId | None,
+    search: str | None,
     issue_type: CheckIssueType | None,
 ) -> tuple[str, list[object]]:
     clauses: list[str] = []
@@ -1912,6 +1984,9 @@ def _check_issue_filter_where(
     if issue_type is not None:
         clauses.append("issue_type = ?")
         params.append(issue_type.value)
+    if search:
+        clauses.append(_like_search_clause(CHECK_ISSUE_SEARCH_COLUMN_NAMES))
+        params.extend([_like_pattern(search)] * len(CHECK_ISSUE_SEARCH_COLUMN_NAMES))
     if not clauses:
         return "", params
     return " WHERE " + " AND ".join(clauses), params
@@ -1919,6 +1994,7 @@ def _check_issue_filter_where(
 
 def _check_issue_group_filter_where(
     library_id: LibraryId | None,
+    search: str | None,
     issue_type: CheckIssueType | None,
 ) -> tuple[str, list[object]]:
     """Build static, aliased SQL filters for a CheckIssue group source CTE."""
@@ -1930,9 +2006,18 @@ def _check_issue_group_filter_where(
     if issue_type is not None:
         clauses.append("ci.issue_type = ?")
         params.append(issue_type.value)
+    if search:
+        clauses.append(_like_search_clause(CHECK_ISSUE_SEARCH_COLUMN_NAMES, alias="ci."))
+        params.extend([_like_pattern(search)] * len(CHECK_ISSUE_SEARCH_COLUMN_NAMES))
     if not clauses:
         return "", params
     return " WHERE " + " AND ".join(clauses), params
+
+
+def _like_search_clause(column_names: tuple[str, ...], *, alias: str = "") -> str:
+    """Return a static substring-search clause over trusted column names and table alias."""
+    comparisons = [f"LOWER({alias}{column}) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}'" for column in column_names]
+    return "(" + " OR ".join(comparisons) + ")"
 
 
 def _check_issue_group_source_sql(grouping: CheckIssueGrouping, where_sql: str) -> str:
@@ -2051,12 +2136,27 @@ def _plan_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | None) -> t
     return f"{prefix}(created_at, plan_id) < (?, ?)", list(cursor_key)
 
 
-def _plan_action_filter_where(plan_id: PlanId, status: ActionStatus | None) -> tuple[str, list[object]]:
+def _plan_action_filter_where(
+    plan_id: PlanId,
+    search: str | None,
+    status: ActionStatus | None,
+    action_type: ActionType | None,
+    reason: PlanActionReason | None,
+) -> tuple[str, list[object]]:
     clauses: list[str] = ["plan_id = ?"]
     params: list[object] = [str(plan_id)]
     if status is not None:
         clauses.append("status = ?")
         params.append(status.value)
+    if action_type is not None:
+        clauses.append("action_type = ?")
+        params.append(action_type.value)
+    if reason is not None:
+        clauses.append("reason = ?")
+        params.append(reason.value)
+    if search:
+        clauses.append(_like_search_clause(PLAN_ACTION_SEARCH_COLUMN_NAMES))
+        params.extend([_like_pattern(search)] * len(PLAN_ACTION_SEARCH_COLUMN_NAMES))
     return " WHERE " + " AND ".join(clauses), params
 
 

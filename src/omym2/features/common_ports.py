@@ -90,10 +90,11 @@ class CheckIssueRepository(Protocol):
         """Delete every persisted CheckIssue for one Library."""
         ...
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # Check browse filters are one stable port contract.
         self,
         library_id: LibraryId | None,
         *,
+        search: str | None = None,
         issue_type: CheckIssueType | None,
         grouping: CheckIssueGrouping | None = None,
         group_key: str | None = None,
@@ -106,15 +107,18 @@ class CheckIssueRepository(Protocol):
         """
         ...
 
-    def issue_type_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+    def issue_type_facets(self, library_id: LibraryId | None, *, search: str | None = None) -> tuple[FacetValue, ...]:
         """Return CheckIssue issue_type facets, ordered count DESC then value ASC."""
         ...
 
-    def group_page(
+    def group_page(  # Track groups share the list's search and facet scope.
         self,
         library_id: LibraryId | None,
         grouping: CheckIssueGrouping,
         page: PageRequest,
+        *,
+        search: str | None = None,
+        issue_type: CheckIssueType | None = None,
     ) -> Page[CheckIssueGroup]:
         """Return one keyset page of CheckIssue groups, ordered count DESC then key ASC."""
         ...
@@ -176,16 +180,19 @@ class TrackRepository(Protocol):
         """
         ...
 
-    def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+    def status_facets(self, library_id: LibraryId | None, *, search: str | None = None) -> tuple[FacetValue, ...]:
         """Return Track status value/count facets, ordered count DESC then value ASC."""
         ...
 
-    def group_page(
+    def group_page(  # noqa: PLR0913  # Track groups share the list's search and facet scope.
         self,
         library_id: LibraryId | None,
         grouping: TrackGrouping,
         parent_key: str | None,
         page: PageRequest,
+        *,
+        search: str | None = None,
+        status: TrackStatus | None = None,
     ) -> Page[GroupCount]:
         """Return one keyset page of Track groups, ordered count DESC then key ASC."""
         ...
@@ -231,12 +238,15 @@ class PlanActionGroupRow:
     """
 
     action_id: ActionId
+    track_id: TrackId | None
     sort_order: int
     status: ActionStatus
     reason: PlanActionReason | None
     action_type: ActionType
     source_path: str | None
     target_path: str | None
+    content_hash_at_plan: str | None
+    metadata_hash_at_plan: str | None
 
 
 class PlanActionRepository(Protocol):
@@ -258,11 +268,14 @@ class PlanActionRepository(Protocol):
         """Persist a PlanAction without recalculating target paths."""
         ...
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # PlanAction browse filters are one stable port contract.
         self,
         plan_id: PlanId,
         *,
+        search: str | None = None,
         status: ActionStatus | None,
+        action_type: ActionType | None = None,
+        reason: PlanActionReason | None = None,
         page: PageRequest,
     ) -> Page[PlanAction]:
         """Return one keyset page of a Plan's actions, ordered (sort_order, action_id).
@@ -271,16 +284,49 @@ class PlanActionRepository(Protocol):
         """
         ...
 
-    def status_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+    def status_facets(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None = None,
+        action_type: ActionType | None = None,
+        reason: PlanActionReason | None = None,
+    ) -> tuple[FacetValue, ...]:
         """Return PlanAction status facets for one Plan, ordered count DESC then value ASC."""
         ...
 
-    def action_type_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+    def action_type_facets(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None = None,
+        status: ActionStatus | None = None,
+        reason: PlanActionReason | None = None,
+    ) -> tuple[FacetValue, ...]:
         """Return PlanAction type facets for one Plan, ordered count DESC then value ASC."""
         ...
 
-    def reason_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+    def reason_facets(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None = None,
+        status: ActionStatus | None = None,
+        action_type: ActionType | None = None,
+    ) -> tuple[FacetValue, ...]:
         """Return non-null PlanAction reason facets for one Plan, ordered count DESC then value ASC."""
+        ...
+
+    def count_filtered(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None,
+        status: ActionStatus | None,
+        action_type: ActionType | None,
+        reason: PlanActionReason | None,
+    ) -> int:
+        """Return the number of PlanActions matching every browse filter."""
         ...
 
     def count_target_collisions(self, plan_id: PlanId) -> int:

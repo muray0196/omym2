@@ -17,12 +17,15 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useId, useMemo, useState } from "react"
 import { getCheckFacets, getCheckGroups, getCheckPage } from "../api-client"
+import { BrowseFilters, countedFacetOptions, SEARCH_DEBOUNCE_MS } from "../browse-filters"
+import { useDebouncedValue } from "../use-debounced-value"
 import { cn, severityForIssue, truncateMiddle } from "../lib"
 import type {
   CheckGroupBy,
   CheckGroupCount,
   CheckIssue,
   CheckIssueType,
+  FacetValue,
   IssueSeverity,
 } from "../types"
 import { usePagedList } from "../use-paged-list"
@@ -42,7 +45,7 @@ import {
   type SegmentedOption,
 } from "../primitives"
 import { CliCommand } from "../widgets"
-import { Field, Select } from "../forms"
+import { Select } from "../forms"
 
 import { PageHeading } from "./page-heading"
 
@@ -330,10 +333,14 @@ function CheckGroupIssueList({
   groupBy,
   groupKey,
   total,
+  query,
+  issueType,
 }: {
   groupBy: CheckGroupBy
   groupKey: string
   total: number
+  query: string
+  issueType: CheckIssueType | "all"
 }) {
   const loadIssuesPage = useCallback(
     (cursor?: string) =>
@@ -341,9 +348,11 @@ function CheckGroupIssueList({
         cursor,
         groupBy,
         groupKey,
+        query: query.trim() || undefined,
+        issueType,
         limit: cursor ? CHECK_GROUP_ISSUE_PAGE_LIMIT : CHECK_EXAMPLE_PAGE_LIMIT,
       }),
-    [groupBy, groupKey],
+    [groupBy, groupKey, issueType, query],
   )
   const issuesPage = usePagedList<CheckIssue>({
     errorMessage: "Group issues failed to load.",
@@ -386,11 +395,15 @@ function CheckGroupIssueList({
 function CheckGroupRow({
   groupBy,
   group,
+  query,
+  issueType,
   expanded,
   onToggle,
 }: {
   groupBy: CheckGroupBy
   group: CheckGroupCount
+  query: string
+  issueType: CheckIssueType | "all"
   expanded: boolean
   onToggle: () => void
 }) {
@@ -438,7 +451,13 @@ function CheckGroupRow({
           id={contentId}
           className="border-t border-hairline bg-surface-canvas/60 py-1 pl-9 pr-3"
         >
-          <CheckGroupIssueList groupBy={groupBy} groupKey={group.key} total={group.count} />
+          <CheckGroupIssueList
+            groupBy={groupBy}
+            groupKey={group.key}
+            total={group.count}
+            query={query}
+            issueType={issueType}
+          />
         </div>
       ) : null}
     </li>
@@ -448,20 +467,32 @@ function CheckGroupRow({
 function CheckIssueGroups({
   groupBy,
   checkedAt,
+  query,
+  issueType,
 }: {
   groupBy: CheckGroupBy
   checkedAt: string | null | undefined
+  query: string
+  issueType: CheckIssueType | "all"
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const loadGroupsPage = useCallback(
-    (cursor?: string) => getCheckGroups({ groupBy, cursor, limit: CHECK_GROUP_PAGE_LIMIT }),
-    [groupBy],
+    (cursor?: string) =>
+      getCheckGroups({
+        groupBy,
+        cursor,
+        limit: CHECK_GROUP_PAGE_LIMIT,
+        query: query.trim() || undefined,
+        issueType,
+      }),
+    [groupBy, issueType, query],
   )
   const groupsPage = usePagedList<CheckGroupCount>({
     errorMessage: "Check issue groups failed to load.",
     loadPage: loadGroupsPage,
   })
   const groups = groupsPage.items
+  const hasFilters = query.trim() !== "" || issueType !== "all"
 
   return (
     <div className="flex flex-col gap-4">
@@ -480,14 +511,18 @@ function CheckIssueGroups({
                 ? "No check has run yet."
                 : checkedAt === undefined
                   ? "Check data unavailable."
-                  : "No issue groups to show."
+                  : hasFilters
+                    ? "No issue groups match your filters."
+                    : "No issue groups to show."
           }
           description={
             !groupsPage.loaded
               ? "Issue concentrations will appear here once they are loaded."
               : checkedAt === null
                 ? "Run omym2 check to persist DB and filesystem diagnostics."
-                : "DB and filesystem state appear consistent."
+                : hasFilters
+                  ? "Clear filters or adjust your search to see persisted diagnostics."
+                  : "DB and filesystem state appear consistent."
           }
         />
       ) : (
@@ -498,6 +533,8 @@ function CheckIssueGroups({
                 key={group.key}
                 groupBy={groupBy}
                 group={group}
+                query={query}
+                issueType={issueType}
                 expanded={expandedKey === group.key}
                 onToggle={() =>
                   setExpandedKey((current) => (current === group.key ? null : group.key))
@@ -522,10 +559,12 @@ function CheckIssueGroups({
 
 function CheckIssueTable({
   issueType,
+  query,
   checkedAt,
   onCheckedAt,
 }: {
   issueType: CheckIssueType | "all"
+  query: string
   checkedAt: string | null | undefined
   onCheckedAt: (checkedAt: string | null) => void
 }) {
@@ -533,18 +572,20 @@ function CheckIssueTable({
     async (cursor?: string) => {
       const response = await getCheckPage({
         cursor,
+        query: query.trim() || undefined,
         issueType,
         limit: CHECK_TABLE_PAGE_LIMIT,
       })
       onCheckedAt(response.checked_at)
       return response
     },
-    [issueType, onCheckedAt],
+    [issueType, onCheckedAt, query],
   )
   const issuesPage = usePagedList<CheckIssue>({
     errorMessage: "Check issues failed to load.",
     loadPage: loadIssuesPage,
   })
+  const hasFilters = query.trim() !== "" || issueType !== "all"
 
   const columns: Column<CheckIssue>[] = [
     {
@@ -643,18 +684,18 @@ function CheckIssueTable({
                   ? "No check has run yet."
                   : checkedAt === undefined
                     ? "Check data unavailable."
-                    : issueType === "all"
-                      ? "No issues found."
-                      : "No issues match this filter."
+                    : hasFilters
+                      ? "No issues match your filters."
+                      : "No issues found."
             }
             description={
               !issuesPage.loaded
                 ? "Current diagnostics will appear here once they are loaded."
                 : checkedAt === null
                   ? "Run omym2 check to persist DB and filesystem diagnostics."
-                  : issueType === "all"
-                    ? "DB and filesystem state appear consistent."
-                    : "Choose another issue type to see more diagnostics."
+                  : hasFilters
+                    ? "Clear filters or adjust your search to see persisted diagnostics."
+                    : "DB and filesystem state appear consistent."
             }
           />
         }
@@ -673,6 +714,8 @@ export function CheckScreen() {
   const [viewMode, setViewMode] = useState<CheckViewMode>("triage")
   const [groupBy, setGroupBy] = useState<CheckGroupBy>("path_root")
   const [typeFilter, setTypeFilter] = useState<CheckIssueType | "all">("all")
+  const [query, setQuery] = useState("")
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
   const [issueTypeCounts, setIssueTypeCounts] = useState<Partial<Record<CheckIssueType, number>>>(
     {},
   )
@@ -682,7 +725,7 @@ export function CheckScreen() {
 
   useEffect(() => {
     let cancelled = false
-    getCheckFacets()
+    getCheckFacets({ query: debouncedQuery.trim() || undefined })
       .then((response) => {
         if (cancelled) return
         setIssueTypeCounts(issueFacetCounts(response.facets))
@@ -699,7 +742,7 @@ export function CheckScreen() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [debouncedQuery])
 
   const counts = useMemo(() => {
     return {
@@ -714,6 +757,7 @@ export function CheckScreen() {
 
   const checkHasRun = checkedAt !== null && checkedAt !== undefined
   const activeGroupBy: CheckGroupBy = viewMode === "triage" ? "issue_type" : groupBy
+  const browseTotal = typeFilter === "all" ? facetTotal : (issueTypeCounts[typeFilter] ?? 0)
 
   return (
     <>
@@ -784,18 +828,28 @@ export function CheckScreen() {
           </div>
         }
       >
-        {viewMode === "table" ? (
-          <Field label="Issue type" className="sm:max-w-xs">
-            {(id) => (
-              <Select
-                id={id}
-                options={ISSUE_TYPE_OPTIONS}
-                value={typeFilter}
-                onChange={(event) => setTypeFilter(event.target.value as CheckIssueType | "all")}
-              />
-            )}
-          </Field>
-        ) : null}
+        <BrowseFilters
+          query={query}
+          onQueryChange={setQuery}
+          searchHelp="Match paths, details, or Library, Track, and Plan IDs."
+          searchPlaceholder="Search Check issues…"
+          total={browseTotal}
+          facets={[
+            {
+              key: "issue_type",
+              label: "Issue type",
+              value: typeFilter,
+              options: countedFacetOptions(
+                ISSUE_TYPE_OPTIONS,
+                Object.entries(issueTypeCounts).map(([value, count]): FacetValue => ({
+                  value,
+                  count: count ?? 0,
+                })),
+              ),
+              onChange: (value) => setTypeFilter(value as CheckIssueType | "all"),
+            },
+          ]}
+        />
 
         {facetErrors.length > 0 ? (
           <Notice tone="warning" title="Check summary is incomplete">
@@ -806,6 +860,7 @@ export function CheckScreen() {
         {viewMode === "table" ? (
           <CheckIssueTable
             issueType={typeFilter}
+            query={debouncedQuery}
             checkedAt={checkedAt}
             onCheckedAt={setCheckedAt}
           />
@@ -814,6 +869,8 @@ export function CheckScreen() {
             key={`${viewMode}-${activeGroupBy}`}
             groupBy={activeGroupBy}
             checkedAt={checkedAt}
+            query={debouncedQuery}
+            issueType={typeFilter}
           />
         )}
       </Panel>

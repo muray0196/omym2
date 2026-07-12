@@ -25,6 +25,7 @@ from omym2.shared.pagination import (
     Page,
     paginate_group_counts,
 )
+from omym2.shared.text import ascii_lower
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
@@ -36,7 +37,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.library import Library
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-    from omym2.domain.models.plan_action import ActionStatus, PlanAction
+    from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
     from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackStatus
     from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
@@ -117,10 +118,11 @@ class InMemoryCheckIssueRepository:
         for issue_seq in [seq for seq, issue in self.records.items() if issue.library_id == library_id]:
             del self.records[issue_seq]
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # Mirrors the stable CheckIssueRepository browse contract.
         self,
         library_id: LibraryId | None,
         *,
+        search: str | None = None,
         issue_type: CheckIssueType | None,
         grouping: CheckIssueGrouping | None = None,
         group_key: str | None = None,
@@ -131,6 +133,7 @@ class InMemoryCheckIssueRepository:
             (issue_seq, issue)
             for issue_seq, issue in sorted(self.records.items())
             if (library_id is None or issue.library_id == library_id)
+            and (not search or _check_issue_matches_search(issue, search))
             and (issue_type is None or issue.issue_type == issue_type)
             and (
                 grouping is None or group_key is None or derive_check_issue_group_key(issue, grouping).key == group_key
@@ -154,11 +157,13 @@ class InMemoryCheckIssueRepository:
         next_cursor_key = (str(page_entries[-1][0]),) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
-    def issue_type_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+    def issue_type_facets(self, library_id: LibraryId | None, *, search: str | None = None) -> tuple[FacetValue, ...]:
         """Return CheckIssue issue_type facets, ordered count DESC then value ASC."""
         counts: dict[str, int] = {}
         for issue in self.records.values():
             if library_id is not None and issue.library_id != library_id:
+                continue
+            if search and not _check_issue_matches_search(issue, search):
                 continue
             counts[issue.issue_type.value] = counts.get(issue.issue_type.value, 0) + 1
         ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
@@ -169,11 +174,18 @@ class InMemoryCheckIssueRepository:
         library_id: LibraryId | None,
         grouping: CheckIssueGrouping,
         page: PageRequest,
+        *,
+        search: str | None = None,
+        issue_type: CheckIssueType | None = None,
     ) -> Page[CheckIssueGroup]:
         """Return one keyset page of CheckIssue groups ordered count DESC then key ASC."""
         groups_by_key: dict[str, tuple[str, int, dict[str, int]]] = {}
         for issue in self.records.values():
             if library_id is not None and issue.library_id != library_id:
+                continue
+            if search and not _check_issue_matches_search(issue, search):
+                continue
+            if issue_type is not None and issue.issue_type is not issue_type:
                 continue
             derived = derive_check_issue_group_key(issue, grouping)
             label, count, root_counts = groups_by_key.get(derived.key, (derived.label, 0, {}))
@@ -198,6 +210,19 @@ def _top_check_issue_path_root(root_counts: dict[str, int]) -> str | None:
     if not root_counts:
         return None
     return min(root_counts.items(), key=lambda item: (-item[1], item[0]))[0]
+
+
+def _check_issue_matches_search(issue: CheckIssue, search: str) -> bool:
+    """Mirror the persisted CheckIssue substring-search fields."""
+    needle = ascii_lower(search)
+    values = (
+        str(issue.library_id),
+        issue.path,
+        None if issue.track_id is None else str(issue.track_id),
+        None if issue.plan_id is None else str(issue.plan_id),
+        issue.detail,
+    )
+    return any(value is not None and needle in ascii_lower(value) for value in values)
 
 
 @dataclass(slots=True)
@@ -273,27 +298,36 @@ class InMemoryTrackRepository:
             next_cursor_key = None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
-    def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
+    def status_facets(self, library_id: LibraryId | None, *, search: str | None = None) -> tuple[FacetValue, ...]:
         """Return Track status facet counts, ordered count DESC then value ASC."""
         counts: dict[str, int] = {}
         for track in self.records.values():
             if library_id is not None and track.library_id != library_id:
                 continue
+            if search and not _track_matches_search(track, search):
+                continue
             counts[track.status.value] = counts.get(track.status.value, 0) + 1
         ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         return tuple(FacetValue(value=value, count=count) for value, count in ordered)
 
-    def group_page(
+    def group_page(  # noqa: PLR0913  # Mirrors the stable TrackRepository group contract.
         self,
         library_id: LibraryId | None,
         grouping: TrackGrouping,
         parent_key: str | None,
         page: PageRequest,
+        *,
+        search: str | None = None,
+        status: TrackStatus | None = None,
     ) -> Page[GroupCount]:
         """Return one keyset page of Track groups ordered count DESC then key ASC."""
         groups: dict[str, tuple[str, int]] = {}
         for track in self.records.values():
             if library_id is not None and track.library_id != library_id:
+                continue
+            if search and not _track_matches_search(track, search):
+                continue
+            if status is not None and track.status is not status:
                 continue
             if (
                 grouping is TrackGrouping.ALBUM
@@ -313,7 +347,7 @@ class InMemoryTrackRepository:
 
 
 def _track_matches_search(track: Track, search: str) -> bool:
-    needle = search.lower()
+    needle = ascii_lower(search)
     haystacks = (
         track.metadata.title,
         track.metadata.artist,
@@ -321,7 +355,7 @@ def _track_matches_search(track: Track, search: str) -> bool:
         track.current_path,
         str(track.track_id),
     )
-    return any(haystack is not None and needle in haystack.lower() for haystack in haystacks)
+    return any(haystack is not None and needle in ascii_lower(haystack) for haystack in haystacks)
 
 
 def _track_group_member_cursor_from_key(cursor_key: tuple[str, ...]) -> tuple[int, int, str, str]:
@@ -411,18 +445,25 @@ class InMemoryPlanActionRepository:
         """Store or replace one PlanAction."""
         self.records[action.action_id] = action
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # Mirrors the stable PlanActionRepository browse contract.
         self,
         plan_id: PlanId,
         *,
+        search: str | None = None,
         status: ActionStatus | None,
+        action_type: ActionType | None = None,
+        reason: PlanActionReason | None = None,
         page: PageRequest,
     ) -> Page[PlanAction]:
         """Return one keyset page of a Plan's actions ordered (sort_order, action_id)."""
         actions = [
             action
             for action in self.records.values()
-            if action.plan_id == plan_id and (status is None or action.status == status)
+            if action.plan_id == plan_id
+            and (not search or _plan_action_matches_search(action, search))
+            and (status is None or action.status is status)
+            and (action_type is None or action.action_type is action_type)
+            and (reason is None or action.reason is reason)
         ]
         actions.sort(key=lambda action: (action.sort_order, str(action.action_id)))
         total = len(actions)
@@ -446,35 +487,90 @@ class InMemoryPlanActionRepository:
         next_cursor_key = (str(page_items[-1].sort_order), str(page_items[-1].action_id)) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
-    def status_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+    def status_facets(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None = None,
+        action_type: ActionType | None = None,
+        reason: PlanActionReason | None = None,
+    ) -> tuple[FacetValue, ...]:
         """Return PlanAction status facets for one Plan, ordered count DESC then value ASC."""
         counts: dict[str, int] = {}
         for action in self.records.values():
-            if action.plan_id != plan_id:
+            if action.plan_id != plan_id or (search and not _plan_action_matches_search(action, search)):
+                continue
+            if action_type is not None and action.action_type is not action_type:
+                continue
+            if reason is not None and action.reason is not reason:
                 continue
             counts[action.status.value] = counts.get(action.status.value, 0) + 1
         ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         return tuple(FacetValue(value=value, count=count) for value, count in ordered)
 
-    def action_type_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+    def action_type_facets(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None = None,
+        status: ActionStatus | None = None,
+        reason: PlanActionReason | None = None,
+    ) -> tuple[FacetValue, ...]:
         """Return PlanAction type facets for one Plan, ordered count DESC then value ASC."""
         counts: dict[str, int] = {}
         for action in self.records.values():
-            if action.plan_id != plan_id:
+            if action.plan_id != plan_id or (search and not _plan_action_matches_search(action, search)):
+                continue
+            if status is not None and action.status is not status:
+                continue
+            if reason is not None and action.reason is not reason:
                 continue
             counts[action.action_type.value] = counts.get(action.action_type.value, 0) + 1
         ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         return tuple(FacetValue(value=value, count=count) for value, count in ordered)
 
-    def reason_facets(self, plan_id: PlanId) -> tuple[FacetValue, ...]:
+    def reason_facets(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None = None,
+        status: ActionStatus | None = None,
+        action_type: ActionType | None = None,
+    ) -> tuple[FacetValue, ...]:
         """Return non-null PlanAction reason facets for one Plan, ordered count DESC then value ASC."""
         counts: dict[str, int] = {}
         for action in self.records.values():
             if action.plan_id != plan_id or action.reason is None:
                 continue
+            if search and not _plan_action_matches_search(action, search):
+                continue
+            if status is not None and action.status is not status:
+                continue
+            if action_type is not None and action.action_type is not action_type:
+                continue
             counts[action.reason.value] = counts.get(action.reason.value, 0) + 1
         ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         return tuple(FacetValue(value=value, count=count) for value, count in ordered)
+
+    def count_filtered(
+        self,
+        plan_id: PlanId,
+        *,
+        search: str | None,
+        status: ActionStatus | None,
+        action_type: ActionType | None,
+        reason: PlanActionReason | None,
+    ) -> int:
+        """Return the number of PlanActions matching every browse filter."""
+        return sum(
+            1
+            for action in self.records.values()
+            if action.plan_id == plan_id
+            and (not search or _plan_action_matches_search(action, search))
+            and (status is None or action.status is status)
+            and (action_type is None or action.action_type is action_type)
+            and (reason is None or action.reason is reason)
+        )
 
     def count_target_collisions(self, plan_id: PlanId) -> int:
         """Return how many distinct non-null target_path values are recorded by 2+ of the Plan's actions."""
@@ -504,15 +600,32 @@ class InMemoryPlanActionRepository:
         return tuple(
             PlanActionGroupRow(
                 action_id=action.action_id,
+                track_id=action.track_id,
                 sort_order=action.sort_order,
                 status=action.status,
                 reason=action.reason,
                 action_type=action.action_type,
                 source_path=action.source_path,
                 target_path=action.target_path,
+                content_hash_at_plan=action.content_hash_at_plan,
+                metadata_hash_at_plan=action.metadata_hash_at_plan,
             )
             for action in actions
         )
+
+
+def _plan_action_matches_search(action: PlanAction, search: str) -> bool:
+    """Mirror the persisted PlanAction substring-search fields."""
+    needle = ascii_lower(search)
+    values = (
+        str(action.action_id),
+        None if action.track_id is None else str(action.track_id),
+        action.source_path,
+        action.target_path,
+        action.content_hash_at_plan,
+        action.metadata_hash_at_plan,
+    )
+    return any(value is not None and needle in ascii_lower(value) for value in values)
 
 
 @dataclass(slots=True)

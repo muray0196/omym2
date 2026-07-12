@@ -6,10 +6,20 @@ Why: Lets a Plan with thousands of actions read as meaningful library operations
 "use client"
 
 import { ChevronDown, ChevronRight, FileDiff, Hash, ListTree, Table2 } from "lucide-react"
-import { useCallback, useId, useState } from "react"
-import { getPlanActionsPage, getPlanGroups } from "../api-client"
+import { useCallback, useEffect, useId, useState } from "react"
+import { getPlanActionsPage, getPlanFacets, getPlanGroups } from "../api-client"
+import { BrowseFilters, countedFacetOptions, SEARCH_DEBOUNCE_MS } from "../browse-filters"
+import { useDebouncedValue } from "../use-debounced-value"
 import { cn, describeBlockReason, truncateMiddle } from "../lib"
-import type { PlanAction, PlanActionStatus, PlanGroupBy, PlanGroupCount } from "../types"
+import type {
+  FacetValue,
+  PlanAction,
+  PlanActionReason,
+  PlanActionStatus,
+  PlanActionType,
+  PlanGroupBy,
+  PlanGroupCount,
+} from "../types"
 import { usePagedList, type PagedListState } from "../use-paged-list"
 import { Select } from "../forms"
 import {
@@ -56,6 +66,34 @@ const ACTION_FILTERS: { value: PlanActionStatus | "all"; label: string }[] = [
   { value: "applied", label: "Applied" },
   { value: "failed", label: "Failed" },
 ]
+
+const ACTION_TYPE_FILTERS: { value: PlanActionType | "all"; label: string }[] = [
+  { value: "all", label: "All action types" },
+  { value: "move", label: "Move" },
+  { value: "skip", label: "Skip" },
+  { value: "refresh_metadata", label: "Refresh metadata" },
+]
+
+const REASON_FILTERS: { value: PlanActionReason | "all"; label: string }[] = [
+  { value: "all", label: "All reasons" },
+  { value: "target_exists", label: "Target exists" },
+  { value: "missing_required_metadata", label: "Missing required metadata" },
+  { value: "invalid_path", label: "Invalid path" },
+  { value: "source_missing", label: "Source missing" },
+  { value: "source_changed", label: "Source changed" },
+  { value: "duplicate_hash", label: "Duplicate hash" },
+]
+
+interface PlanActionFilters {
+  query: string
+  status: PlanActionStatus | "all"
+  actionType: PlanActionType | "all"
+  reason: PlanActionReason | "all"
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
+}
 
 /**
  * Humanized block reason. Unknown reasons fall back to the raw snake_case
@@ -140,10 +178,50 @@ export function PlanActionsPanel({
   onActionStatusChange: (status: PlanActionStatus | "all") => void
 }) {
   const [groupBy, setGroupBy] = useState<PlanGroupBy>("artist_album")
+  const [query, setQuery] = useState("")
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS)
+  const [actionType, setActionType] = useState<PlanActionType | "all">("all")
+  const [reason, setReason] = useState<PlanActionReason | "all">("all")
+  const [facets, setFacets] = useState<Record<string, FacetValue[]>>({})
+  const [facetTotal, setFacetTotal] = useState<number | null>(null)
+  const [facetErrors, setFacetErrors] = useState<string[]>([])
+  const filters: PlanActionFilters = {
+    query: debouncedQuery,
+    status: actionStatus,
+    actionType,
+    reason,
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    getPlanFacets(planId, {
+      query: debouncedQuery.trim() || undefined,
+      status: actionStatus,
+      actionType,
+      reason,
+    })
+      .then((response) => {
+        if (cancelled) return
+        setFacets(response.facets)
+        setFacetTotal(response.total)
+        setFacetErrors(response.errors)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setFacets({})
+        setFacetTotal(null)
+        setFacetErrors([errorMessage(error, "Plan action facets failed to load.")])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [actionStatus, actionType, debouncedQuery, planId, reason])
+
   return (
     <Panel
       title="Actions"
       icon={FileDiff}
+      bodyClassName="flex flex-col gap-4"
       actions={
         <div className="flex flex-wrap items-center justify-end gap-2">
           <SegmentedControl
@@ -162,26 +240,50 @@ export function PlanActionsPanel({
                 onChange={(event) => setGroupBy(event.target.value as PlanGroupBy)}
               />
             </div>
-          ) : (
-            <div className="w-36">
-              <Select
-                aria-label="Action status"
-                options={ACTION_FILTERS}
-                value={actionStatus}
-                onChange={(event) =>
-                  onActionStatusChange(event.target.value as PlanActionStatus | "all")
-                }
-              />
-            </div>
-          )}
+          ) : null}
         </div>
       }
     >
+      <BrowseFilters
+        query={query}
+        onQueryChange={setQuery}
+        searchHelp="Match action or track IDs, recorded paths, or recorded hashes."
+        searchPlaceholder="Search Plan actions…"
+        total={facetTotal}
+        facets={[
+          {
+            key: "status",
+            label: "Status",
+            value: actionStatus,
+            options: countedFacetOptions(ACTION_FILTERS, facets.status),
+            onChange: (value) => onActionStatusChange(value as PlanActionStatus | "all"),
+          },
+          {
+            key: "action_type",
+            label: "Action type",
+            value: actionType,
+            options: countedFacetOptions(ACTION_TYPE_FILTERS, facets.action_type),
+            onChange: (value) => setActionType(value as PlanActionType | "all"),
+          },
+          {
+            key: "reason",
+            label: "Reason",
+            value: reason,
+            options: countedFacetOptions(REASON_FILTERS, facets.reason),
+            onChange: (value) => setReason(value as PlanActionReason | "all"),
+          },
+        ]}
+      />
+      {facetErrors.length > 0 ? (
+        <Notice tone="warning" title="Plan action facets are incomplete">
+          {facetErrors.join(" ")}
+        </Notice>
+      ) : null}
       {viewMode === "grouped" ? (
         // Keyed by groupBy so switching keys resets expansion and paging state.
-        <PlanActionGroups key={groupBy} planId={planId} groupBy={groupBy} />
+        <PlanActionGroups key={groupBy} planId={planId} groupBy={groupBy} filters={filters} />
       ) : (
-        <PlanActionsFlat planId={planId} mode={viewMode} status={actionStatus} />
+        <PlanActionsFlat planId={planId} mode={viewMode} filters={filters} />
       )}
     </Panel>
   )
@@ -222,11 +324,28 @@ function groupLabel(groupBy: PlanGroupBy, group: PlanGroupCount): React.ReactNod
   )
 }
 
-function PlanActionGroups({ planId, groupBy }: { planId: string; groupBy: PlanGroupBy }) {
+function PlanActionGroups({
+  planId,
+  groupBy,
+  filters,
+}: {
+  planId: string
+  groupBy: PlanGroupBy
+  filters: PlanActionFilters
+}) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const loadGroupsPage = useCallback(
-    (cursor?: string) => getPlanGroups(planId, { groupBy, cursor, limit: PLAN_GROUP_PAGE_LIMIT }),
-    [groupBy, planId],
+    (cursor?: string) =>
+      getPlanGroups(planId, {
+        groupBy,
+        cursor,
+        limit: PLAN_GROUP_PAGE_LIMIT,
+        query: filters.query.trim() || undefined,
+        status: filters.status,
+        actionType: filters.actionType,
+        reason: filters.reason,
+      }),
+    [filters.actionType, filters.query, filters.reason, filters.status, groupBy, planId],
   )
   const groupsPage = usePagedList<PlanGroupCount>({
     errorMessage: "Plan action groups failed to load.",
@@ -260,6 +379,7 @@ function PlanActionGroups({ planId, groupBy }: { planId: string; groupBy: PlanGr
                 planId={planId}
                 groupBy={groupBy}
                 group={group}
+                filters={filters}
                 expanded={expandedKey === group.key}
                 onToggle={() =>
                   setExpandedKey((current) => (current === group.key ? null : group.key))
@@ -286,12 +406,14 @@ function PlanGroupRow({
   planId,
   groupBy,
   group,
+  filters,
   expanded,
   onToggle,
 }: {
   planId: string
   groupBy: PlanGroupBy
   group: PlanGroupCount
+  filters: PlanActionFilters
   expanded: boolean
   onToggle: () => void
 }) {
@@ -344,7 +466,12 @@ function PlanGroupRow({
           id={contentId}
           className="border-t border-hairline bg-surface-canvas/60 py-1 pl-9 pr-3"
         >
-          <PlanGroupActionList planId={planId} groupBy={groupBy} groupKey={group.key} />
+          <PlanGroupActionList
+            planId={planId}
+            groupBy={groupBy}
+            groupKey={group.key}
+            filters={filters}
+          />
         </div>
       ) : null}
     </li>
@@ -355,15 +482,26 @@ function PlanGroupActionList({
   planId,
   groupBy,
   groupKey,
+  filters,
 }: {
   planId: string
   groupBy: PlanGroupBy
   groupKey: string
+  filters: PlanActionFilters
 }) {
   const loadPage = useCallback(
     (cursor?: string) =>
-      getPlanActionsPage(planId, { cursor, limit: GROUP_ACTION_PAGE_LIMIT, groupBy, groupKey }),
-    [groupBy, groupKey, planId],
+      getPlanActionsPage(planId, {
+        cursor,
+        limit: GROUP_ACTION_PAGE_LIMIT,
+        groupBy,
+        groupKey,
+        query: filters.query.trim() || undefined,
+        status: filters.status,
+        actionType: filters.actionType,
+        reason: filters.reason,
+      }),
+    [filters.actionType, filters.query, filters.reason, filters.status, groupBy, groupKey, planId],
   )
   const actionsPage = usePagedList<PlanAction>({
     errorMessage: "Group actions failed to load.",
@@ -446,16 +584,23 @@ function hashCell(contentHash: string | null, metadataHash: string | null) {
 function PlanActionsFlat({
   planId,
   mode,
-  status,
+  filters,
 }: {
   planId: string
   mode: "table" | "diff"
-  status: PlanActionStatus | "all"
+  filters: PlanActionFilters
 }) {
   const loadActionsPage = useCallback(
     (cursor?: string) =>
-      getPlanActionsPage(planId, { cursor, limit: PLAN_ACTION_PAGE_LIMIT, status }),
-    [planId, status],
+      getPlanActionsPage(planId, {
+        cursor,
+        limit: PLAN_ACTION_PAGE_LIMIT,
+        query: filters.query.trim() || undefined,
+        status: filters.status,
+        actionType: filters.actionType,
+        reason: filters.reason,
+      }),
+    [filters.actionType, filters.query, filters.reason, filters.status, planId],
   )
   const actionsPage = usePagedList<PlanAction>({
     errorMessage: "Plan actions failed to load.",
@@ -525,7 +670,7 @@ function PlanActionsFlat({
           empty={
             <EmptyState
               icon={FileDiff}
-              title={actionsPage.loaded ? "No actions match this filter." : "Loading actions..."}
+              title={actionsPage.loaded ? "No actions match your filters." : "Loading actions..."}
             />
           }
           loadMore={{

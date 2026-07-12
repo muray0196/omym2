@@ -81,7 +81,7 @@ from omym2.domain.models.app_config import AppConfig
 from omym2.domain.models.check_issue import CheckIssueGrouping, CheckIssueType
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus
+from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanActionReason
 from omym2.domain.models.run import RunStatus
 from omym2.domain.models.track import TrackGrouping, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
@@ -298,8 +298,8 @@ def _register_plan_routes(router: APIRouter, context: ApiRouteContext) -> None:
     def get_plan_actions(plan_id: str, request: Request) -> JSONResponse:
         return _get_plan_actions(context, plan_id, request)
 
-    def get_plan_facets(plan_id: str) -> JSONResponse:
-        return _get_plan_facets(context, plan_id)
+    def get_plan_facets(plan_id: str, request: Request) -> JSONResponse:
+        return _get_plan_facets(context, plan_id, request)
 
     def get_plan_groups(plan_id: str, request: Request) -> JSONResponse:
         return _get_plan_groups(context, plan_id, request)
@@ -756,12 +756,23 @@ def _get_plan_actions(context: ApiRouteContext, plan_id: str, request: Request) 
         return _list_error_response((PLAN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
 
     cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
+    search = _optional_query_text(request.query_params.get("query"))
     status, status_errors = _action_status_from_query(request.query_params.get("status"))
+    action_type, action_type_errors = _action_type_from_query(request.query_params.get("action_type"))
+    reason, reason_errors = _plan_action_reason_from_query(request.query_params.get("reason"))
     grouping, grouping_errors = _optional_plan_action_grouping_from_query(request.query_params.get("group_by"))
     group_key = _optional_query_text(request.query_params.get("group_key"))
     pairing_errors = _group_filter_pairing_errors(grouping, grouping_errors, group_key)
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    request_errors = cursor_errors + status_errors + grouping_errors + pairing_errors + limit_errors
+    request_errors = (
+        cursor_errors
+        + status_errors
+        + action_type_errors
+        + reason_errors
+        + grouping_errors
+        + pairing_errors
+        + limit_errors
+    )
     if request_errors:
         return _list_error_response(request_errors)
 
@@ -771,7 +782,10 @@ def _get_plan_actions(context: ApiRouteContext, plan_id: str, request: Request) 
         page = ListPlanActionsUseCase(context.plan_query_ports_factory()).execute(
             ListPlanActionsRequest(
                 plan_id=parsed_plan_id,
+                search=search,
                 status=status,
+                action_type=action_type,
+                reason=reason,
                 grouping=grouping,
                 group_key=group_key,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
@@ -798,14 +812,28 @@ def _get_plan_actions(context: ApiRouteContext, plan_id: str, request: Request) 
     )
 
 
-def _get_plan_facets(context: ApiRouteContext, plan_id: str) -> JSONResponse:
+def _get_plan_facets(context: ApiRouteContext, plan_id: str, request: Request) -> JSONResponse:
     parsed_plan_id = _plan_id_from_text(plan_id)
     if parsed_plan_id is None:
         return _facet_error_response((PLAN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
 
+    search = _optional_query_text(request.query_params.get("query"))
+    status, status_errors = _action_status_from_query(request.query_params.get("status"))
+    action_type, action_type_errors = _action_type_from_query(request.query_params.get("action_type"))
+    reason, reason_errors = _plan_action_reason_from_query(request.query_params.get("reason"))
+    filter_errors = status_errors + action_type_errors + reason_errors
+    if filter_errors:
+        return _facet_error_response(filter_errors)
+
     try:
         result = GetPlanActionFacetsUseCase(context.plan_query_ports_factory()).execute(
-            PlanActionFacetsRequest(parsed_plan_id)
+            PlanActionFacetsRequest(
+                parsed_plan_id,
+                search=search,
+                status=status,
+                action_type=action_type,
+                reason=reason,
+            )
         )
     except PlanNotFoundError:
         return _facet_error_response((PLAN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
@@ -837,9 +865,13 @@ def _get_plan_groups(context: ApiRouteContext, plan_id: str, request: Request) -
         return _group_error_response((PLAN_NOT_FOUND_MESSAGE,), status_code=NOT_FOUND_STATUS_CODE)
 
     cursor_key, cursor_errors = _cursor_key_from_query(request.query_params.get("cursor"))
+    search = _optional_query_text(request.query_params.get("query"))
+    status, status_errors = _action_status_from_query(request.query_params.get("status"))
+    action_type, action_type_errors = _action_type_from_query(request.query_params.get("action_type"))
+    reason, reason_errors = _plan_action_reason_from_query(request.query_params.get("reason"))
     grouping, grouping_errors = _plan_action_grouping_from_query(request.query_params.get("group_by"))
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    request_errors = cursor_errors + grouping_errors + limit_errors
+    request_errors = cursor_errors + status_errors + action_type_errors + reason_errors + grouping_errors + limit_errors
     if request_errors:
         return _group_error_response(request_errors)
 
@@ -850,6 +882,10 @@ def _get_plan_groups(context: ApiRouteContext, plan_id: str, request: Request) -
         page = GroupPlanActionsUseCase(context.plan_query_ports_factory()).execute(
             GroupPlanActionsRequest(
                 plan_id=parsed_plan_id,
+                search=search,
+                status=status,
+                action_type=action_type,
+                reason=reason,
                 grouping=effective_grouping,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
@@ -960,6 +996,7 @@ def _get_check(context: ApiRouteContext, request: Request) -> JSONResponse:
         return _list_error_response(cursor_errors)
 
     library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    search = _optional_query_text(request.query_params.get("query"))
     issue_type, issue_type_errors = _check_issue_type_from_query(request.query_params.get("issue_type"))
     grouping, grouping_errors = _optional_check_issue_grouping_from_query(request.query_params.get("group_by"))
     group_key = _optional_query_text(request.query_params.get("group_key"))
@@ -975,6 +1012,7 @@ def _get_check(context: ApiRouteContext, request: Request) -> JSONResponse:
         result = ListCheckIssuesUseCase(context.check_query_ports_factory()).execute(
             ListCheckIssuesRequest(
                 library_id=library_id,
+                search=search,
                 issue_type=issue_type,
                 grouping=grouping,
                 group_key=group_key,
@@ -1008,9 +1046,11 @@ def _get_check_facets(context: ApiRouteContext, request: Request) -> JSONRespons
     if library_errors:
         return _facet_error_response(library_errors)
 
+    search = _optional_query_text(request.query_params.get("query"))
+
     try:
         result = GetCheckIssueFacetsUseCase(context.check_query_ports_factory()).execute(
-            CheckIssueFacetsRequest(library_id=library_id)
+            CheckIssueFacetsRequest(library_id=library_id, search=search)
         )
     except sqlite3.DatabaseError as exc:
         return JSONResponse(
@@ -1037,8 +1077,10 @@ def _get_check_groups(context: ApiRouteContext, request: Request) -> JSONRespons
 
     grouping, grouping_errors = _check_issue_grouping_from_query(request.query_params.get("group_by"))
     library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    search = _optional_query_text(request.query_params.get("query"))
+    issue_type, issue_type_errors = _check_issue_type_from_query(request.query_params.get("issue_type"))
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    filter_errors = grouping_errors + library_errors + limit_errors
+    filter_errors = grouping_errors + library_errors + issue_type_errors + limit_errors
     if filter_errors:
         return _group_error_response(filter_errors)
 
@@ -1049,6 +1091,8 @@ def _get_check_groups(context: ApiRouteContext, request: Request) -> JSONRespons
         page = GroupCheckIssuesUseCase(context.check_query_ports_factory()).execute(
             GroupCheckIssuesRequest(
                 library_id=library_id,
+                search=search,
+                issue_type=issue_type,
                 grouping=effective_grouping,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
@@ -1155,9 +1199,11 @@ def _get_track_facets(context: ApiRouteContext, request: Request) -> JSONRespons
     if library_errors:
         return _facet_error_response(library_errors)
 
+    search = _optional_query_text(request.query_params.get("query"))
+
     try:
         result = GetTrackStatusFacetsUseCase(context.tracks_ports_factory()).execute(
-            TrackStatusFacetsRequest(library_id=library_id)
+            TrackStatusFacetsRequest(library_id=library_id, search=search)
         )
     except sqlite3.DatabaseError as exc:
         return JSONResponse(
@@ -1183,8 +1229,10 @@ def _get_track_groups(context: ApiRouteContext, request: Request) -> JSONRespons
     parent_key = _optional_query_text(request.query_params.get("parent_key"))
     parent_key_errors = _track_group_parent_key_errors(grouping, grouping_errors, parent_key)
     library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
+    search = _optional_query_text(request.query_params.get("query"))
+    status, status_errors = _track_status_from_query(request.query_params.get("status"))
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    filter_errors = grouping_errors + parent_key_errors + library_errors + limit_errors
+    filter_errors = grouping_errors + parent_key_errors + library_errors + status_errors + limit_errors
     if filter_errors:
         return _group_error_response(filter_errors)
 
@@ -1197,6 +1245,8 @@ def _get_track_groups(context: ApiRouteContext, request: Request) -> JSONRespons
                 grouping=effective_grouping,
                 library_id=library_id,
                 parent_key=parent_key,
+                search=search,
+                status=status,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
         )
@@ -1364,6 +1414,24 @@ def _action_status_from_query(raw_value: str | None) -> tuple[ActionStatus | Non
         return ActionStatus(raw_value), ()
     except ValueError:
         return None, (f"Invalid action status filter: {raw_value}",)
+
+
+def _action_type_from_query(raw_value: str | None) -> tuple[ActionType | None, tuple[str, ...]]:
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return ActionType(raw_value), ()
+    except ValueError:
+        return None, (f"Invalid action type filter: {raw_value}",)
+
+
+def _plan_action_reason_from_query(raw_value: str | None) -> tuple[PlanActionReason | None, tuple[str, ...]]:
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return PlanActionReason(raw_value), ()
+    except ValueError:
+        return None, (f"Invalid action reason filter: {raw_value}",)
 
 
 def _run_status_from_query(raw_value: str | None) -> tuple[RunStatus | None, tuple[str, ...]]:

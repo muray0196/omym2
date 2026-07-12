@@ -45,7 +45,9 @@ import type {
   GroupsResponse,
   PagedResponse,
   PlanAction,
+  PlanActionReason,
   PlanActionStatus,
+  PlanActionType,
   PlanCreateResult,
   PlanDetailResponse,
   PlanFacetsResponse,
@@ -191,6 +193,24 @@ export async function createRefreshPlan(
 // Screens use these cursor-paginated/faceted/grouped endpoints directly; the
 // previous top-level array responses were removed with the browsing contract.
 
+type PlanActionFilterOptions = {
+  query?: string
+  status?: PlanActionStatus | "all"
+  actionType?: PlanActionType | "all"
+  reason?: PlanActionReason | "all"
+}
+
+function planActionFilterParams(options: PlanActionFilterOptions): URLSearchParams {
+  const params = new URLSearchParams()
+  if (options.query) params.set("query", options.query)
+  if (options.status && options.status !== "all") params.set("status", options.status)
+  if (options.actionType && options.actionType !== "all") {
+    params.set("action_type", options.actionType)
+  }
+  if (options.reason && options.reason !== "all") params.set("reason", options.reason)
+  return params
+}
+
 export async function getTracksPage(
   options: {
     query?: string
@@ -236,12 +256,15 @@ export async function getTracksPage(
 }
 
 export async function getTrackFacets(
-  options: { libraryId?: string } = {},
+  options: { query?: string; libraryId?: string } = {},
 ): Promise<FacetsResponse> {
   if (isMockApiMode()) {
     return clonePayload(mockGetTrackFacets(options))
   }
   const params = new URLSearchParams()
+  if (options.query) {
+    params.set("query", options.query)
+  }
   if (options.libraryId) {
     params.set("library_id", options.libraryId)
   }
@@ -252,6 +275,8 @@ export async function getTrackFacets(
 export async function getTrackGroups(options: {
   groupBy: TrackGroupBy
   parentKey?: string
+  query?: string
+  status?: TrackStatus | "all"
   libraryId?: string
   limit?: number
   cursor?: string
@@ -261,6 +286,12 @@ export async function getTrackGroups(options: {
     return clonePayload(mockGetTrackGroups(options))
   }
   const params = new URLSearchParams({ group_by: options.groupBy })
+  if (options.query) {
+    params.set("query", options.query)
+  }
+  if (options.status && options.status !== "all") {
+    params.set("status", options.status)
+  }
   if (options.parentKey !== undefined) {
     params.set("parent_key", options.parentKey)
   }
@@ -307,7 +338,10 @@ export async function getPlansPage(
 export async function getPlanActionsPage(
   planId: string,
   options: {
+    query?: string
     status?: PlanActionStatus | "all"
+    actionType?: PlanActionType | "all"
+    reason?: PlanActionReason | "all"
     /** Drill-down pair: pass `groupBy` and `groupKey` together or not at all. */
     groupBy?: PlanGroupBy
     groupKey?: string
@@ -319,8 +353,17 @@ export async function getPlanActionsPage(
     return clonePayload(mockGetPlanActionsPage(planId, options))
   }
   const params = new URLSearchParams()
+  if (options.query) {
+    params.set("query", options.query)
+  }
   if (options.status && options.status !== "all") {
     params.set("status", options.status)
+  }
+  if (options.actionType && options.actionType !== "all") {
+    params.set("action_type", options.actionType)
+  }
+  if (options.reason && options.reason !== "all") {
+    params.set("reason", options.reason)
   }
   if (options.groupBy && options.groupKey !== undefined) {
     params.set("group_by", options.groupBy)
@@ -338,21 +381,42 @@ export async function getPlanActionsPage(
   )
 }
 
-export async function getPlanFacets(planId: string): Promise<PlanFacetsResponse> {
+export async function getPlanFacets(
+  planId: string,
+  options: {
+    query?: string
+    status?: PlanActionStatus | "all"
+    actionType?: PlanActionType | "all"
+    reason?: PlanActionReason | "all"
+  } = {},
+): Promise<PlanFacetsResponse> {
   if (isMockApiMode()) {
-    return clonePayload(mockGetPlanFacets(planId))
+    return clonePayload(mockGetPlanFacets(planId, options))
   }
-  return requestJson<PlanFacetsResponse>(`/api/plans/${encodeURIComponent(planId)}/facets`)
+  const params = planActionFilterParams(options)
+  const query = params.toString()
+  return requestJson<PlanFacetsResponse>(
+    `/api/plans/${encodeURIComponent(planId)}/facets${query ? `?${query}` : ""}`,
+  )
 }
 
 export async function getPlanGroups(
   planId: string,
-  options: { groupBy: PlanGroupBy; limit?: number; cursor?: string },
+  options: {
+    groupBy: PlanGroupBy
+    query?: string
+    status?: PlanActionStatus | "all"
+    actionType?: PlanActionType | "all"
+    reason?: PlanActionReason | "all"
+    limit?: number
+    cursor?: string
+  },
 ): Promise<PlanGroupsResponse> {
   if (isMockApiMode()) {
     return clonePayload(mockGetPlanGroups(planId, options))
   }
-  const params = new URLSearchParams({ group_by: options.groupBy })
+  const params = planActionFilterParams(options)
+  params.set("group_by", options.groupBy)
   if (options.limit) {
     params.set("limit", String(options.limit))
   }
@@ -366,6 +430,7 @@ export async function getPlanGroups(
 
 export async function getCheckPage(
   options: {
+    query?: string
     issueType?: CheckIssueType | "all"
     libraryId?: string
     /** Drill-down pair: pass groupBy and groupKey together or not at all. */
@@ -379,6 +444,9 @@ export async function getCheckPage(
     return clonePayload(mockGetCheckPage(options))
   }
   const params = new URLSearchParams()
+  if (options.query) {
+    params.set("query", options.query)
+  }
   if (options.issueType && options.issueType !== "all") {
     params.set("issue_type", options.issueType)
   }
@@ -402,12 +470,15 @@ export async function getCheckPage(
 }
 
 export async function getCheckFacets(
-  options: { libraryId?: string } = {},
+  options: { query?: string; libraryId?: string } = {},
 ): Promise<CheckFacetsResponse> {
   if (isMockApiMode()) {
     return clonePayload(mockGetCheckFacets(options))
   }
   const params = new URLSearchParams()
+  if (options.query) {
+    params.set("query", options.query)
+  }
   if (options.libraryId) {
     params.set("library_id", options.libraryId)
   }
@@ -419,6 +490,8 @@ export async function getCheckFacets(
 
 export async function getCheckGroups(options: {
   groupBy: CheckGroupBy
+  query?: string
+  issueType?: CheckIssueType | "all"
   libraryId?: string
   limit?: number
   cursor?: string
@@ -427,6 +500,12 @@ export async function getCheckGroups(options: {
     return clonePayload(mockGetCheckGroups(options))
   }
   const params = new URLSearchParams({ group_by: options.groupBy })
+  if (options.query) {
+    params.set("query", options.query)
+  }
+  if (options.issueType && options.issueType !== "all") {
+    params.set("issue_type", options.issueType)
+  }
   if (options.libraryId) {
     params.set("library_id", options.libraryId)
   }

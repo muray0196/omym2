@@ -9,7 +9,7 @@ import { ChevronDown, ChevronRight, ListTree, Music, TriangleAlert } from "lucid
 import { useCallback, useId, useState, type ReactNode } from "react"
 import { getTrackGroups, getTracksPage } from "./api-client"
 import { cn } from "./lib"
-import type { GroupCount, TrackGroupBy, TrackSummary } from "./types"
+import type { GroupCount, TrackGroupBy, TrackStatus, TrackSummary } from "./types"
 import { usePagedList } from "./use-paged-list"
 import { Button, EmptyState, Mono, Notice, StatusBadge } from "./primitives"
 
@@ -148,10 +148,14 @@ function TrackRow({
 
 function DiscTracks({
   groupKey,
+  query,
+  status,
   selectedTrackId,
   onSelectTrack,
 }: {
   groupKey: string
+  query?: string
+  status: TrackStatus | "all"
   selectedTrackId: string | null
   onSelectTrack: (trackId: string) => void
 }) {
@@ -161,9 +165,11 @@ function DiscTracks({
         cursor,
         groupBy: "disc",
         groupKey,
+        query,
+        status,
         limit: TRACK_BROWSER_TRACK_LIMIT,
       }),
-    [groupKey],
+    [groupKey, query, status],
   )
   const tracksPage = usePagedList<TrackSummary>({
     errorMessage: "Disc tracks failed to load.",
@@ -210,11 +216,15 @@ function DiscTracks({
 function BrowserGroups({
   groupBy,
   parentKey,
+  query,
+  status,
   selectedTrackId,
   onSelectTrack,
 }: {
   groupBy: BrowserGroupBy
   parentKey?: string
+  query?: string
+  status: TrackStatus | "all"
   selectedTrackId: string | null
   onSelectTrack: (trackId: string) => void
 }) {
@@ -226,8 +236,10 @@ function BrowserGroups({
         groupBy,
         limit: TRACK_BROWSER_GROUP_LIMIT,
         parentKey,
+        query,
+        status,
       }),
-    [groupBy, parentKey],
+    [groupBy, parentKey, query, status],
   )
   const groupsPage = usePagedList<GroupCount>({
     errorMessage: "Library groups failed to load.",
@@ -248,7 +260,9 @@ function BrowserGroups({
           title={groupsPage.loaded ? `No ${noun}s to show.` : `Loading ${noun}s...`}
           description={
             groupsPage.loaded && groupBy === "artist"
-              ? "Managed tracks will appear here once a library is registered."
+              ? query || status !== "all"
+                ? "Clear filters or adjust your search to see managed tracks."
+                : "Managed tracks will appear here once a library is registered."
               : undefined
           }
         />
@@ -268,6 +282,8 @@ function BrowserGroups({
                   <BrowserGroups
                     groupBy="album"
                     parentKey={group.key}
+                    query={query}
+                    status={status}
                     selectedTrackId={selectedTrackId}
                     onSelectTrack={onSelectTrack}
                   />
@@ -275,12 +291,16 @@ function BrowserGroups({
                   <BrowserGroups
                     groupBy="disc"
                     parentKey={group.key}
+                    query={query}
+                    status={status}
                     selectedTrackId={selectedTrackId}
                     onSelectTrack={onSelectTrack}
                   />
                 ) : (
                   <DiscTracks
                     groupKey={group.key}
+                    query={query}
+                    status={status}
                     selectedTrackId={selectedTrackId}
                     onSelectTrack={onSelectTrack}
                   />
@@ -303,15 +323,21 @@ function BrowserGroups({
 }
 
 export function TracksBrowser({
+  query,
+  status,
   selectedTrackId,
   onSelectTrack,
 }: {
+  query?: string
+  status: TrackStatus | "all"
   selectedTrackId: string | null
   onSelectTrack: (trackId: string) => void
 }) {
   return (
     <BrowserGroups
       groupBy="artist"
+      query={query}
+      status={status}
       selectedTrackId={selectedTrackId}
       onSelectTrack={onSelectTrack}
     />

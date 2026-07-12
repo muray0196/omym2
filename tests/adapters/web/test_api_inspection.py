@@ -241,6 +241,49 @@ def test_check_facets_api_returns_issue_type_counts_and_checked_at(tmp_path: Pat
     assert payload["errors"] == []
 
 
+def test_check_search_scopes_list_facets_and_groups(tmp_path: Path) -> None:
+    """Check query matching is applied consistently before pagination and aggregation."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    with SQLiteUnitOfWork(app_paths.database_file) as uow:
+        uow.libraries.save(_library(str(library_root)))
+        uow.check_runs.save(_check_run())
+        uow.check_issues.save_many(
+            CHECK_RUN_ID,
+            (
+                _issue(issue_type=CheckIssueType.DB_FILE_MISSING, path="Artist/50%_Deal.flac"),
+                _issue(issue_type=CheckIssueType.UNMANAGED_FILE_EXISTS, path="Artist/50XXDeal.flac"),
+            ),
+        )
+        uow.commit()
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+    query = "50%_Deal"
+
+    list_response = client.get(
+        WEB_API_CHECK_ROUTE,
+        params={"query": query, "issue_type": CheckIssueType.DB_FILE_MISSING.value},
+    )
+    facets_response = client.get(WEB_API_CHECK_FACETS_ROUTE, params={"query": query})
+    groups_response = client.get(
+        WEB_API_CHECK_GROUPS_ROUTE,
+        params={"query": query, "group_by": "issue_type"},
+    )
+
+    assert list_response.status_code == SUCCESS_STATUS_CODE
+    assert [item["path"] for item in _object_list_payload(_json_payload(list_response), "items")] == [
+        "Artist/50%_Deal.flac"
+    ]
+    assert facets_response.status_code == SUCCESS_STATUS_CODE
+    assert _object_payload(_json_payload(facets_response), "facets")["issue_type"] == [
+        {"value": CheckIssueType.DB_FILE_MISSING.value, "count": 1}
+    ]
+    assert groups_response.status_code == SUCCESS_STATUS_CODE
+    assert _object_list_payload(_json_payload(groups_response), "items")[0]["key"] == (
+        CheckIssueType.DB_FILE_MISSING.value
+    )
+
+
 def test_check_facets_api_returns_checked_at_null_on_fresh_db(tmp_path: Path) -> None:
     """Facets returns checked_at null when no check run has ever completed."""
     app_paths = default_application_paths(tmp_path)

@@ -236,6 +236,42 @@ def test_check_issue_query_page_filters_by_library_and_issue_type(tmp_path: Path
     assert page.total == 1
 
 
+def test_check_issue_search_scopes_lists_facets_and_groups_with_literal_wildcards(tmp_path: Path) -> None:
+    """Search is literal and applies before list, facet, and group aggregation."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.check_runs.save(_check_run())
+        uow.check_issues.save_many(
+            CHECK_RUN_ID,
+            (
+                _check_issue(issue_type=CheckIssueType.DB_FILE_MISSING, path="Artist/50%_Deal.flac"),
+                _check_issue(issue_type=CheckIssueType.UNMANAGED_FILE_EXISTS, path="Artist/50XXDeal.flac"),
+            ),
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        page = uow.check_issues.query_page(
+            LIBRARY_ID,
+            search="50%_Deal",
+            issue_type=CheckIssueType.DB_FILE_MISSING,
+            page=PageRequest(),
+        )
+        facets = uow.check_issues.issue_type_facets(LIBRARY_ID, search="50%_Deal")
+        groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.ISSUE_TYPE,
+            PageRequest(),
+            search="50%_Deal",
+            issue_type=None,
+        )
+
+    assert [issue.path for issue in page.items] == ["Artist/50%_Deal.flac"]
+    assert [(facet.value, facet.count) for facet in facets] == [(CheckIssueType.DB_FILE_MISSING.value, 1)]
+    assert [(group.key, group.count) for group in groups.items] == [(CheckIssueType.DB_FILE_MISSING.value, 1)]
+
+
 def test_check_issue_type_facets_order_count_desc_then_value_asc(tmp_path: Path) -> None:
     """issue_type_facets is ordered count DESC, then value ASC."""
     database_file = default_application_paths(tmp_path).database_file

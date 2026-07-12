@@ -156,4 +156,11 @@ class GroupTracksUseCase:
         """Return one page of Track groups for the requested grouping and scope."""
         validate_track_group_parent(request.grouping, request.parent_key)
         with self.ports.uow as uow:
-            return uow.tracks.group_page(request.library_id, request.grouping, request.parent_key, request.page)
+            return uow.tracks.group_page(
+                request.library_id,
+                request.grouping,
+                request.parent_key,
+                request.page,
+                search=request.search,
+                status=request.status,
+            )
