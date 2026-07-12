@@ -3,7 +3,7 @@ type: Development Guide
 title: Pipeline Performance Benchmark
 description: Defines the reproducible end-to-end pipeline benchmark, its dataset, measurement boundaries, and trust-stat comparison procedure for performance changes.
 tags: [development, performance, benchmark, pipeline]
-timestamp: 2026-07-11T21:38:58+09:00
+timestamp: 2026-07-12T02:41:12+09:00
 ---
 
 # Pipeline Performance Benchmark
@@ -39,12 +39,12 @@ FLAC and appends a one-byte payload sentinel so every filesystem reports a size
 mismatch from the persisted baseline. It then creates an unapplied
 `refresh --all` Plan containing one `refresh_metadata` action per Track. A
 second measured `check_ready_plan` stage exercises the overlap between
-managed-Track and READY-Plan source diagnostics. That diagnostic check
+managed-Track and `ready` Plan source diagnostics. That diagnostic check
 intentionally exits nonzero because every Track differs from persisted managed
 state; the harness requires one `content_hash_changed` and one
 `metadata_hash_changed` result per Track.
 
-Bootstrap, fixture generation, tag mutation, and READY-Plan creation are
+Bootstrap, fixture generation, tag mutation, and `ready` Plan creation are
 reported as `setup.*` timings. `stage.measured_total_seconds` retains the
 original clean-baseline total, while `stage.extended_measured_total_seconds`
 adds only the measured `check_ready_plan` stage; neither includes setup. The
@@ -70,5 +70,5 @@ The output header records `trust_stat=false` or `trust_stat=true`. Apply remains
 unchanged in both modes and always performs full source hashing. On the clean
 organize/check stages, a true run measures the stat-only path after apply has
 populated verified baselines. After tag mutation, the sentinel-forced size
-mismatch sends refresh and READY-Plan check back to full capture, which also
+mismatch sends refresh and `ready` Plan check back to full capture, which also
 verifies the fallback behavior independently of filesystem timestamp precision.

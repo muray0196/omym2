@@ -3,7 +3,7 @@ type: Execution Spec
 title: Failure Policy
 description: Catalogs cross-cutting execution failure cases, such as target conflicts, missing metadata, duplicate hashes, and stale Library roots, and the policy applied to each.
 tags: [failure-policy, blocked-vs-failed, conflicts, error-handling]
-timestamp: 2026-07-11T21:38:14+09:00
+timestamp: 2026-07-12T02:41:12+09:00
 ---
 
 # Failure Policy
@@ -16,12 +16,9 @@ Common execution rules are in [model.md](model.md). Apply-time state transitions
 
 The blocked-vs-failed distinction is defined in [model.md](model.md#blocked-vs-failed). Allowed action types, statuses, and reasons are defined in [../contracts/status-reason-catalog.md](../contracts/status-reason-catalog.md).
 
-After a Run has started, it is `partial_failed` when at least one eligible
-`move` or `refresh_metadata` action succeeds and at least one eligible action
-fails. It is `failed` when no eligible action succeeds and at least one fails.
-A successful `refresh_metadata` action counts despite creating no FileEvent and
-performing no Library music file mutation. Blocked and `skip` actions do not
-count. [apply.md](apply.md) is authoritative for the detailed transitions.
+After a Run starts, [Apply Execution](apply.md#run-status) defines its
+`partial_failed` and `failed` aggregation rules. Blocked and `skip` actions do
+not count toward either result.
 
 ## Failure Cases
 
@@ -40,6 +37,6 @@ count. [apply.md](apply.md) is authoritative for the detailed transitions.
 | tag mistake after apply | relocate with refresh |
 | undo destination is occupied during plan creation | block the undo PlanAction with `target_exists`; do not overwrite automatically |
 | DB and filesystem are out of sync | detect with check |
-| pending file_event exists | report through check and require manual review |
+| pending FileEvent exists | report through check and require manual review |
 | add requested when no sole registered Library can be selected | reject add plan creation; no Plan, Run, or FileEvent |
 | PathPolicy changed after a Library was registered | mark or report that Library as stale; require organize before add |

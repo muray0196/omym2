@@ -3,7 +3,7 @@ type: Contract
 title: DB Schema Contract
 description: Defines OMYM2's SQLite tables, nullable Track stat baselines, forward-only migrations, performance indexes, stored JSON boundaries, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-11T10:21:41+09:00
+timestamp: 2026-07-12T02:41:12+09:00
 ---
 
 # DB Schema Contract
@@ -113,7 +113,7 @@ Minimum representative fields:
 * `library_root_at_plan`
 * `summary_json`
 
-Storage must retain `config_hash` and `library_root_at_plan` so apply can enforce the execution contract.
+Storage must retain `config_hash` to preserve the reviewed configuration context and `library_root_at_plan` for the apply-time Library-root precondition.
 
 ### plan_actions
 

@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Layout
 description: Authoritative description of OMYM2's src/ layout and Feature-oriented Hexagonal Architecture, covering the domain, features, adapters, platform, and shared packages and rules for adding new directories.
 tags: [source-layout, architecture, hexagonal-architecture, python]
-timestamp: 2026-07-11T21:32:22+09:00
+timestamp: 2026-07-12T02:41:12+09:00
 ---
 
 # Source Layout
@@ -32,7 +32,9 @@ Core concepts such as Library, Track, Plan, Run, FileEvent, and PathPolicy are n
 
 Features are divided by user goal, such as `settings`, `artist_ids`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`, `plans`, `history`, `tracks`, and `inspect`.
 
-CLI and Web call feature usecases as inbound adapters. DB, filesystem, metadata reader, and config loader implement ports as outbound adapters.
+CLI and Web call feature usecases as inbound adapters. DB, filesystem, metadata
+reader, config loader, and artist-ID integrations implement ports as outbound
+adapters.
 
 ## Representative Package Structure
 
@@ -142,6 +144,7 @@ Adapters may create and restore domain models. They must not contain business ru
 * `feature_composition.py`: `build_*` functions that construct feature `*Ports` dataclasses from concrete adapters (add, apply, check, history, inspect, organize, plans, refresh, settings, tracks, undo), plus `build_uow`.
 * `artist_ids_composition.py`: language-detector and artist-name-resolver selection (`language_detector_for_model`, `default_artist_resolver`, `web_artist_language_detector`, `web_artist_name_resolver`), the artist-ids CLI command bundle, and the Web artist-ID collaborators.
 * `cli_composition.py`: `build_command_dependencies(...)`, which builds the full `CommandDependencies` bundle for one CLI invocation.
+* `cli_path_normalization.py`: `normalize_cli_path(...)`, injected into add, organize, and refresh command dependencies so their handlers do not resolve filesystem paths directly.
 * `cli_entry_point.py`: `main()` / `run_cli(...)`, the process entry point that both the `omym2` console script and `python -m omym2` route through.
 * `web_composition.py`: `build_api_route_context(...)` and `build_web_app(...)`, which build the Web UI's `ApiRouteContext` and FastAPI app.
 
@@ -152,9 +155,9 @@ Feature-to-feature chaining belongs in CLI, Web, or platform orchestration, not 
 `shared/` contains only pure auxiliary primitives.
 
 * ID value object helpers
+* Keyset pagination and cursor helpers
 * Pure functions for path string processing
 * Time type helpers
-* Typing helpers
 
 `shared/` does not depend on domain, features, adapters, or platform.
 
@@ -168,5 +171,3 @@ Do not add feature-local layer directories. This is the authoritative statement 
 features/{feature}/domain/
 features/{feature}/adapters/
 ```
-
-`empty_dir_cleaner.py` is deferred until delete-empty-directory behavior is explicitly designed.

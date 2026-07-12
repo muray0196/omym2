@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Dependency Boundaries
 description: Defines OMYM2's dependency direction between adapters, features, domain, and shared layers, the forbidden dependencies, and where business rules must live.
 tags: [architecture, dependency-boundaries, hexagonal-architecture, business-rules]
-timestamp: 2026-07-11T21:36:40+09:00
+timestamp: 2026-07-12T02:41:12+09:00
 ---
 
 # Dependency Boundaries
@@ -14,7 +14,7 @@ Source placement is in [source-layout.md](source-layout.md).
 
 ## Dependency Direction
 
-Inbound adapters call features, features use domain, and domain may use shared primitives.
+Inbound adapters call features, features use domain and may use shared primitives, and domain may use shared primitives.
 
 ```text
 adapters/cli, adapters/web
@@ -29,7 +29,7 @@ shared/
 Outbound adapters implement ports owned by features or common feature ports.
 
 ```text
-adapters/db, adapters/fs, adapters/metadata, adapters/config
+adapters/db, adapters/fs, adapters/metadata, adapters/config, adapters/artist_ids
   ↓
 features/*/ports.py or features/common_ports.py
   ↓
@@ -60,14 +60,13 @@ adapters/cli -> adapters/web
 
 adapters/web/routes -> direct filesystem operations
 adapters/cli/commands -> direct filesystem operations
-templates -> filesystem operations
 ```
 
 Inbound adapters must not import concrete outbound adapter subpackages (`adapters.db`, `adapters.fs`, `adapters.metadata`, `adapters.config`, or `adapters.artist_ids`). The exact-pair allowlist permits only two pure, I/O-free TOML-representation helpers: `adapters/cli/commands/config.py` may import `omym2.adapters.config.toml_config_store`, and `adapters/web/schemas/settings_json.py` may import `omym2.adapters.config.config_validator`. Those exceptions do not permit adapter construction or I/O from inbound adapters. No other file under `adapters/cli/` or `adapters/web/` may import a concrete outbound adapter subpackage.
 
 Direct imports between features are prohibited in principle. When multiple usecases are chained, orchestration is done in CLI, Web, or platform.
 
-For example, `omym2 add --apply` does not have `features/add` call `features/apply` directly. Instead, the CLI or platform calls `ApplyPlanUseCase` after executing `AddUseCase`.
+For example, `omym2 add --apply` does not have `features/add` call `features/apply` directly. Instead, the CLI or platform calls `ApplyPlanUseCase` after executing `CreateAddPlanUseCase`.
 
 ## Business Rule Placement
 

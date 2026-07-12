@@ -3,7 +3,7 @@ type: Execution Spec
 title: Execution Model
 description: Defines the common Plan-centered execution model shared by all commands, covering Plan/PlanAction/Run/FileEvent behavior, single-use Plan policy, the blocked-vs-failed distinction, and the durable operation log principle.
 tags: [execution-model, plan, run, file-event]
-timestamp: 2026-07-11T21:33:40+09:00
+timestamp: 2026-07-12T02:41:12+09:00
 ---
 
 # Execution Model
@@ -31,17 +31,17 @@ start run
   ↓
 for each plan action:
     verify preconditions
-    record file_event as pending
+    record FileEvent as pending
     execute Library music file mutation
-    update file_event
-    update track / plan_action
+    update FileEvent
+    update Track / PlanAction
   ↓
 finish run
 ```
 
-Plan actions that do not mutate Library music files, such as `skip` and `refresh_metadata` actions, follow the same Plan and Run flow but omit the file_event steps.
+Plan actions that do not mutate Library music files, such as `skip` and `refresh_metadata` actions, follow the same Plan and Run flow but omit the FileEvent steps.
 
-This allows the CLI, GUI, and tests to share the same processing model.
+This allows the CLI, Web UI, and tests to share the same processing model.
 
 User-facing commands should be purpose-based. Internal Plan concepts should not dominate primary command names.
 

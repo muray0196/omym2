@@ -3,14 +3,15 @@ type: Command Reference
 title: Commands
 description: Lists the OMYM2 CLI surface, including Plan workflows, diagnostics, settings, and the explicit organize/refresh/check trust-stat optimization flags.
 tags: [cli, commands, reference]
-timestamp: 2026-07-11T21:32:08+09:00
+timestamp: 2026-07-12T02:41:12+09:00
 ---
 
 # Commands
 
 This document is authoritative for the CLI command surface. Per-command descriptions are summaries only. Detailed Plan, Run, FileEvent, and failure semantics live in [execution/](execution/), and storage details live in [STORAGE.md](STORAGE.md).
 
-The CLI is the primary execution interface. Complex settings editing is left to the GUI.
+The CLI is the primary execution interface. Complex settings editing is handled
+in the local Web UI.
 
 ## Command List
 
@@ -91,7 +92,7 @@ omym2 plans <PLAN_ID> [--actions STATUS] [--blocked-only] [--summary] [--diff] [
 
 The list is sorted newest-first by creation time. This default order is intentional so the most recent Plan is always the first row.
 
-The recommended pre-apply review workflow is `omym2 plans <PLAN_ID> --blocked-only --diff`, which shows exactly the actions that will not be applied and why.
+The recommended pre-apply review workflow is `omym2 plans <PLAN_ID> --blocked-only --diff`. It lists PlanActions recorded as `blocked` and their recorded reasons.
 
 `--json` output is stable enough for scripting, but it is not a versioned public API. `--json` cannot be combined with `--summary` or `--diff`.
 
@@ -168,8 +169,8 @@ Config validation is implemented through the config adapter and settings usecase
 `artist-ids generate` creates editable artist ID entries in TOML config.
 
 Without `--overwrite`, existing saved entries are preserved. With
-`--fasttext-model`, the command can use fastText to decide whether a source
-artist should attempt Japanese handling and then use MusicBrainz to prefer an
+`--fasttext-model`, the command uses fastText to identify Japanese source artist
+names. For each name that needs generation, it queries MusicBrainz to prefer an
 English or Latin name before deterministic ID generation.
 
 The command does not create internal Artist identities and does not write
@@ -177,6 +178,4 @@ SQLite state.
 
 ## settings
 
-`settings` opens the local settings screen in a browser.
-
-Settings UI is represented by `omym2 settings`.
+`settings` opens the local Web UI in a browser.

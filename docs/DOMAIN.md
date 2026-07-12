@@ -3,7 +3,7 @@ type: Domain Model
 title: Domain
 description: Defines OMYM2's core domain entities, including Track stat baselines and snapshot trust boundaries, their invariants, and the UUIDv7-based identity policy.
 tags: [domain-model, entities, invariants, id-design]
-timestamp: 2026-07-11T21:32:08+09:00
+timestamp: 2026-07-12T02:41:12+09:00
 ---
 
 # Domain
@@ -141,7 +141,9 @@ Representative fields:
 
 The `library_id` is the stable internal identity of the Library. The initial implementation uses UUIDv7 for `library_id`.
 
-`root_path` is mutable because a Library may move to another directory. Moving a Library must preserve `library_id` and must not duplicate Tracks, Plans, PlanActions, FileEvents, or Library-managed history records.
+`root_path` is mutable so a future relink can update a Library's location. When
+relink is implemented, it must preserve `library_id` and must not duplicate
+Tracks, Plans, PlanActions, FileEvents, or Library-managed history records.
 
 Allowed Library status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#library-status). Library registration behavior is defined in [execution/organize.md](execution/organize.md#library-registration-behavior), and storage representation is defined in [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 

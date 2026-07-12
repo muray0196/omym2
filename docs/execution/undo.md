@@ -3,7 +3,7 @@ type: Execution Spec
 title: Undo Execution
 description: Defines per-Run undo, terminal Run requirements, refresh_metadata rejection, reverse FileEvent tracing, restore-destination conflict handling, and external restore Track removal.
 tags: [undo, file-event, plan-creation, restore]
-timestamp: 2026-07-12T02:13:19+09:00
+timestamp: 2026-07-12T02:41:12+09:00
 ---
 
 # Undo Execution
@@ -23,7 +23,7 @@ Undo Plan creation must reject any source Run whose Plan contains a `refresh_met
 ```text
 run
   ↓
-trace succeeded file_events in reverse order
+trace succeeded FileEvents in reverse order
   ↓
 create undo plan
   ↓

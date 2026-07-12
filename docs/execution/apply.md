@@ -3,7 +3,7 @@ type: Execution Spec
 title: Apply Execution
 description: Defines apply state transitions, mandatory full source verification, verified Track baseline writes, FileEvent ordering, and Library-root preconditions.
 tags: [apply, plan-state, run, file-event]
-timestamp: 2026-07-12T02:13:19+09:00
+timestamp: 2026-07-12T02:41:12+09:00
 ---
 
 # Apply Execution
@@ -31,10 +31,10 @@ Expected apply flow:
    c. For each planned move or refresh_metadata action, verify preconditions.
    d. If a precondition fails, mark the PlanAction as failed without executing a Library music file mutation.
    e. For a refresh_metadata action, update the Track in place and mark the action applied without creating a FileEvent or mutating files.
-   f. For a move action, record a file_event as pending.
+   f. For a move action, record a FileEvent as pending.
    g. Execute the Library music file mutation.
-   h. Update the file_event to succeeded or failed.
-   i. Update tracks and plan_actions as needed.
+   h. Update the FileEvent to succeeded or failed.
+   i. Update Tracks and PlanActions as needed.
 4. Mark the run as succeeded, failed, or partial_failed.
 5. Mark the Plan as applied, failed, or partial_failed.
 ```
