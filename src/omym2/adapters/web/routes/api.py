@@ -192,6 +192,9 @@ PLAN_PATH_NOT_DIRECTORY_MESSAGE = "Plan path must be a directory"
 PLAN_PATH_NOT_FOUND_MESSAGE = "Plan path was not found"
 PLAN_ACTIONS_GROUP_FILTER_PAIR_MESSAGE = "Query parameters group_by and group_key must be provided together."
 CHECK_ISSUES_GROUP_FILTER_PAIR_MESSAGE = "Query parameters group_by and group_key must be provided together."
+TRACKS_GROUP_FILTER_PAIR_MESSAGE = "Query parameters group_by and group_key must be provided together."
+TRACK_GROUP_PARENT_KEY_REQUIRED_MESSAGE = "Query parameter parent_key is required for this group_by."
+TRACK_GROUP_PARENT_KEY_UNSUPPORTED_MESSAGE = "Query parameter parent_key is not supported for this group_by."
 RUN_EVENTS_GROUP_BY_TARGET_DIRECTORY = "target_directory"  # only supported FileEvent group_by value
 
 type CheckPortsFactory = Callable[[], "CheckLibraryPorts"]
@@ -1105,8 +1108,11 @@ def _get_tracks(context: ApiRouteContext, request: Request) -> JSONResponse:
     library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
     track_id, track_errors = _track_id_from_query(request.query_params.get("track_id"))
     status, status_errors = _track_status_from_query(request.query_params.get("status"))
+    grouping, grouping_errors = _optional_track_grouping_from_query(request.query_params.get("group_by"))
+    group_key = _optional_query_text(request.query_params.get("group_key"))
+    group_filter_errors = _track_group_filter_pairing_errors(grouping, grouping_errors, group_key)
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    filter_errors = library_errors + track_errors + status_errors + limit_errors
+    filter_errors = library_errors + track_errors + status_errors + grouping_errors + group_filter_errors + limit_errors
     if filter_errors:
         return _list_error_response(filter_errors)
 
@@ -1120,6 +1126,8 @@ def _get_tracks(context: ApiRouteContext, request: Request) -> JSONResponse:
                 track_id=track_id,
                 search=search,
                 status=status,
+                grouping=grouping,
+                group_key=group_key,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
         )
@@ -1172,9 +1180,11 @@ def _get_track_groups(context: ApiRouteContext, request: Request) -> JSONRespons
         return _group_error_response(cursor_errors)
 
     grouping, grouping_errors = _track_grouping_from_query(request.query_params.get("group_by"))
+    parent_key = _optional_query_text(request.query_params.get("parent_key"))
+    parent_key_errors = _track_group_parent_key_errors(grouping, grouping_errors, parent_key)
     library_id, library_errors = _library_id_from_query(request.query_params.get("library_id"))
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    filter_errors = grouping_errors + library_errors + limit_errors
+    filter_errors = grouping_errors + parent_key_errors + library_errors + limit_errors
     if filter_errors:
         return _group_error_response(filter_errors)
 
@@ -1186,6 +1196,7 @@ def _get_track_groups(context: ApiRouteContext, request: Request) -> JSONRespons
             GroupTracksRequest(
                 grouping=effective_grouping,
                 library_id=library_id,
+                parent_key=parent_key,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
         )
@@ -1525,6 +1536,42 @@ def _track_grouping_from_query(raw_value: str | None) -> tuple[TrackGrouping | N
         return TrackGrouping(raw_value), ()
     except ValueError:
         return None, (f"Invalid group_by filter: {raw_value}",)
+
+
+def _optional_track_grouping_from_query(raw_value: str | None) -> tuple[TrackGrouping | None, tuple[str, ...]]:
+    """Parse the optional Track group drill-down filter on the list endpoint."""
+    if raw_value is None or raw_value == "":
+        return None, ()
+    try:
+        return TrackGrouping(raw_value), ()
+    except ValueError:
+        return None, (f"Invalid group_by filter: {raw_value}",)
+
+
+def _track_group_filter_pairing_errors(
+    grouping: TrackGrouping | None,
+    grouping_errors: tuple[str, ...],
+    group_key: str | None,
+) -> tuple[str, ...]:
+    """Require Track group_by/group_key together without masking an invalid group_by value."""
+    if grouping_errors:
+        return ()
+    if (grouping is None) == (group_key is None):
+        return ()
+    return (TRACKS_GROUP_FILTER_PAIR_MESSAGE,)
+
+
+def _track_group_parent_key_errors(
+    grouping: TrackGrouping | None,
+    grouping_errors: tuple[str, ...],
+    parent_key: str | None,
+) -> tuple[str, ...]:
+    """Enforce the fixed artist-to-album-to-disc hierarchy without interpreting opaque keys."""
+    if grouping_errors or grouping is None:
+        return ()
+    if grouping in {TrackGrouping.ALBUM, TrackGrouping.DISC}:
+        return () if parent_key is not None else (TRACK_GROUP_PARENT_KEY_REQUIRED_MESSAGE,)
+    return () if parent_key is None else (TRACK_GROUP_PARENT_KEY_UNSUPPORTED_MESSAGE,)
 
 
 def _list_envelope(

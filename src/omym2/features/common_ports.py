@@ -155,21 +155,24 @@ class TrackRepository(Protocol):
         """Persist a Track without recalculating identity or paths."""
         ...
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # Track browse filters form the repository's stable read contract.
         self,
         library_id: LibraryId | None,
         *,
         track_id: TrackId | None,
         search: str | None,
         status: TrackStatus | None,
+        grouping: TrackGrouping | None,
+        group_key: str | None,
         page: PageRequest,
     ) -> Page[Track]:
         """Return one keyset page of Tracks, ordered (current_path, track_id).
 
         `library_id=None` scopes across every known Library. `search` matches
         title, artist, album, current_path, or track_id, case-insensitive
-        substring. `page.total` counts rows matching the filters, ignoring
-        the cursor.
+        substring. An exact `grouping`/`group_key` pair instead orders matching
+        group members by positive track number, title, then track ID. In both
+        modes `page.total` counts rows matching the filters, ignoring the cursor.
         """
         ...
 
@@ -181,6 +184,7 @@ class TrackRepository(Protocol):
         self,
         library_id: LibraryId | None,
         grouping: TrackGrouping,
+        parent_key: str | None,
         page: PageRequest,
     ) -> Page[GroupCount]:
         """Return one keyset page of Track groups, ordered count DESC then key ASC."""

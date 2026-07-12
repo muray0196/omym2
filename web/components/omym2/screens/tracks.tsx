@@ -1,14 +1,15 @@
 /*
-Summary: Renders paged managed Track browsing.
-Why: Lets users inspect library records without fetching every track.
+Summary: Renders hierarchy and table views for managed Track browsing.
+Why: Lets users explore library records without fetching every track.
 */
 
 "use client"
 
-import { Music, Search, TriangleAlert } from "lucide-react"
+import { ListTree, Music, Search, Table2, TriangleAlert } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { getTracksPage } from "../api-client"
 import { useApp } from "../app-context"
+import { TracksBrowser } from "../tracks-browser"
 import { cn, truncateMiddle, truncatePathTail } from "../lib"
 import type { TrackStatus, TrackSummary } from "../types"
 import { usePagedList } from "../use-paged-list"
@@ -20,8 +21,10 @@ import {
   Mono,
   Notice,
   Panel,
+  SegmentedControl,
   StatusBadge,
   type Column,
+  type SegmentedOption,
 } from "../primitives"
 import { Field, Select, TextInput } from "../forms"
 import { AppIconTile } from "../command-kit"
@@ -34,6 +37,13 @@ const STATUS_OPTIONS = [
 ]
 
 const TRACK_PAGE_LIMIT = 100
+
+type TracksViewMode = "browser" | "table"
+
+const VIEW_MODE_OPTIONS: SegmentedOption<TracksViewMode>[] = [
+  { value: "browser", label: "Browser", icon: ListTree },
+  { value: "table", label: "Table", icon: Table2 },
+]
 
 function metadataText(value: string | null): string {
   return value?.trim() || "—"
@@ -139,6 +149,7 @@ function TrackDetail({ track }: { track: TrackSummary }) {
 
 export function TracksScreen() {
   const { navigate, route } = useApp()
+  const [viewMode, setViewMode] = useState<TracksViewMode>("browser")
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState<TrackStatus | "all">("all")
   const [selectedTrack, setSelectedTrack] = useState<TrackSummary | null>(null)
@@ -153,14 +164,18 @@ export function TracksScreen() {
   const selectTrack = (trackId: string) => navigate({ name: "tracks", trackId }, { replace: true })
 
   const loadTracksPage = useCallback(
-    (cursor?: string) =>
-      getTracksPage({
+    (cursor?: string) => {
+      if (viewMode !== "table") {
+        return Promise.resolve({ errors: [], items: [], page: null })
+      }
+      return getTracksPage({
         cursor,
         limit: TRACK_PAGE_LIMIT,
         query: query.trim() || undefined,
         status,
-      }),
-    [query, status],
+      })
+    },
+    [query, status, viewMode],
   )
   const tracksPage = usePagedList({
     errorMessage: "Tracks failed to load.",
@@ -271,73 +286,94 @@ export function TracksScreen() {
     <>
       <PageHeading
         title="Tracks"
-        description="Inspect managed track records and compare current paths against canonical paths. This is not a music player."
+        description="Explore managed library metadata and compare current paths against canonical paths. This is not a music player."
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <Panel title="Managed tracks" icon={Music} bodyClassName="flex flex-col gap-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Search" help="Match title, artist, album, path, or track_id.">
-                {(id) => (
-                  <div className="relative">
-                    <Search
-                      className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-mute"
-                      aria-hidden="true"
-                    />
-                    <TextInput
-                      id={id}
-                      className="pl-8"
-                      placeholder="Search tracks…"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                    />
-                  </div>
-                )}
-              </Field>
-              <Field label="Status">
-                {(id) => (
-                  <Select
-                    id={id}
-                    options={STATUS_OPTIONS}
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as TrackStatus | "all")}
-                  />
-                )}
-              </Field>
-            </div>
-            {tracksPage.errors.length > 0 ? (
-              <Notice tone="warning" title="Track data is incomplete">
-                {tracksPage.errors.join(" ")}
-              </Notice>
-            ) : null}
+          <Panel
+            title={viewMode === "browser" ? "Library browser" : "Managed tracks"}
+            icon={Music}
+            bodyClassName="flex flex-col gap-4"
+            actions={
+              <SegmentedControl
+                ariaLabel="Tracks view mode"
+                size="sm"
+                options={VIEW_MODE_OPTIONS}
+                value={viewMode}
+                onChange={setViewMode}
+              />
+            }
+          >
+            {viewMode === "browser" ? (
+              <TracksBrowser selectedTrackId={selectedId} onSelectTrack={selectTrack} />
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Search" help="Match title, artist, album, path, or track_id.">
+                    {(id) => (
+                      <div className="relative">
+                        <Search
+                          className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-mute"
+                          aria-hidden="true"
+                        />
+                        <TextInput
+                          id={id}
+                          className="pl-8"
+                          placeholder="Search tracks…"
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                        />
+                      </div>
+                    )}
+                  </Field>
+                  <Field label="Status">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        options={STATUS_OPTIONS}
+                        value={status}
+                        onChange={(e) => setStatus(e.target.value as TrackStatus | "all")}
+                      />
+                    )}
+                  </Field>
+                </div>
+                {tracksPage.errors.length > 0 ? (
+                  <Notice tone="warning" title="Track data is incomplete">
+                    {tracksPage.errors.join(" ")}
+                  </Notice>
+                ) : null}
 
-            <DataTable
-              columns={columns}
-              rows={tracksPage.items}
-              getRowKey={(t) => t.track_id}
-              onRowClick={(t) => selectTrack(t.track_id)}
-              rowIsActive={(t) => t.track_id === selectedId}
-              rowActiveClassName="bg-surface-active"
-              caption="Managed tracks"
-              empty={
-                <EmptyState
-                  icon={Music}
-                  title={tracksPage.loaded ? "No tracks match your filters." : "Loading tracks..."}
-                  description={
-                    tracksPage.loaded
-                      ? "Clear filters or adjust your search to see managed track records."
-                      : "Managed track records will appear here once they are loaded."
+                <DataTable
+                  columns={columns}
+                  rows={tracksPage.items}
+                  getRowKey={(t) => t.track_id}
+                  onRowClick={(t) => selectTrack(t.track_id)}
+                  rowIsActive={(t) => t.track_id === selectedId}
+                  rowActiveClassName="bg-surface-active"
+                  caption="Managed tracks"
+                  empty={
+                    <EmptyState
+                      icon={Music}
+                      title={
+                        tracksPage.loaded ? "No tracks match your filters." : "Loading tracks..."
+                      }
+                      description={
+                        tracksPage.loaded
+                          ? "Clear filters or adjust your search to see managed track records."
+                          : "Managed track records will appear here once they are loaded."
+                      }
+                    />
                   }
+                  loadMore={{
+                    hasMore: tracksPage.hasMore,
+                    loading: tracksPage.loadingMore,
+                    onLoadMore: tracksPage.loadMore,
+                    total: tracksPage.page?.total ?? tracksPage.items.length,
+                  }}
                 />
-              }
-              loadMore={{
-                hasMore: tracksPage.hasMore,
-                loading: tracksPage.loadingMore,
-                onLoadMore: tracksPage.loadMore,
-                total: tracksPage.page?.total ?? tracksPage.items.length,
-              }}
-            />
+              </>
+            )}
           </Panel>
         </div>
 

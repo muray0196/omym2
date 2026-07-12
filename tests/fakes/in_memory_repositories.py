@@ -16,6 +16,7 @@ from omym2.features.check.usecases.group_check_issues import (
     derive_check_issue_group_key,
 )
 from omym2.features.common_ports import CheckIssueGroup, PlanActionGroupRow
+from omym2.features.tracks.usecases.group_tracks import derive_track_group_key, track_group_member_sort_key
 from omym2.shared.pagination import (
     INVALID_CURSOR_MESSAGE,
     CursorDecodeError,
@@ -41,11 +42,10 @@ if TYPE_CHECKING:
     from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
     from omym2.shared.pagination import PageRequest
 
-UNKNOWN_TRACK_GROUP_LABEL = "(unknown)"
-TRACK_GROUP_LABEL_SEPARATOR = " — "  # em dash joiner, matching SQLiteTrackRepository.group_page
-UNSUPPORTED_TRACK_GROUPING_MESSAGE = "Unsupported Track grouping"
 KEYSET_CURSOR_KEY_LENGTH = 2  # every Track/Track-group cursor key is a 2-tuple
+TRACK_GROUP_MEMBER_CURSOR_KEY_LENGTH = 4  # grouped Track member cursor: rank, number, title, track ID
 CHECK_ISSUE_CURSOR_KEY_LENGTH = 1  # a CheckIssue cursor key is a single issue_seq value
+TRACK_GROUP_FILTER_PAIRING_MESSAGE = "grouping and group_key must be provided together."
 
 
 @dataclass(slots=True)
@@ -218,16 +218,20 @@ class InMemoryTrackRepository:
         """Store or replace one Track."""
         self.records[track.track_id] = track
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # Mirrors the stable TrackRepository browse-filter contract.
         self,
         library_id: LibraryId | None,
         *,
         track_id: TrackId | None,
         search: str | None,
         status: TrackStatus | None,
+        grouping: TrackGrouping | None,
+        group_key: str | None,
         page: PageRequest,
     ) -> Page[Track]:
         """Return one keyset page of Tracks ordered (current_path, track_id)."""
+        if (grouping is None) != (group_key is None):
+            raise ValueError(TRACK_GROUP_FILTER_PAIRING_MESSAGE)
         tracks = [
             track
             for track in self.records.values()
@@ -235,21 +239,38 @@ class InMemoryTrackRepository:
             and (track_id is None or track.track_id == track_id)
             and (status is None or track.status == status)
             and (not search or _track_matches_search(track, search))
+            and (grouping is None or group_key is None or derive_track_group_key(track, grouping).key == group_key)
         ]
-        tracks.sort(key=lambda track: (track.current_path, str(track.track_id)))
+        if grouping is None:
+            tracks.sort(key=lambda track: (track.current_path, str(track.track_id)))
+        else:
+            tracks.sort(key=track_group_member_sort_key)
         total = len(tracks)
 
         if page.cursor_key is not None:
-            if len(page.cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
-                raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
-            cursor_path, cursor_track_id = page.cursor_key
-            tracks = [
-                track for track in tracks if (track.current_path, str(track.track_id)) > (cursor_path, cursor_track_id)
-            ]
+            if grouping is None:
+                if len(page.cursor_key) != KEYSET_CURSOR_KEY_LENGTH:
+                    raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+                cursor_path, cursor_track_id = page.cursor_key
+                tracks = [
+                    track
+                    for track in tracks
+                    if (track.current_path, str(track.track_id)) > (cursor_path, cursor_track_id)
+                ]
+            else:
+                cursor = _track_group_member_cursor_from_key(page.cursor_key)
+                tracks = [track for track in tracks if track_group_member_sort_key(track) > cursor]
 
         page_items = tuple(tracks[: page.limit])
         has_more = len(tracks) > page.limit
-        next_cursor_key = (page_items[-1].current_path, str(page_items[-1].track_id)) if has_more else None
+        if has_more:
+            next_cursor_key = (
+                (page_items[-1].current_path, str(page_items[-1].track_id))
+                if grouping is None
+                else tuple(str(value) for value in track_group_member_sort_key(page_items[-1]))
+            )
+        else:
+            next_cursor_key = None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
     def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
@@ -266,30 +287,29 @@ class InMemoryTrackRepository:
         self,
         library_id: LibraryId | None,
         grouping: TrackGrouping,
+        parent_key: str | None,
         page: PageRequest,
     ) -> Page[GroupCount]:
         """Return one keyset page of Track groups ordered count DESC then key ASC."""
-        if grouping is not TrackGrouping.ARTIST_ALBUM:
-            unsupported_grouping_message = f"{UNSUPPORTED_TRACK_GROUPING_MESSAGE}: {grouping}"
-            raise ValueError(unsupported_grouping_message)  # pyright: ignore[reportUnreachable]
-
-        counts: dict[tuple[str, str], int] = {}
+        groups: dict[str, tuple[str, int]] = {}
         for track in self.records.values():
             if library_id is not None and track.library_id != library_id:
                 continue
-            group_artist = track.metadata.album_artist or track.metadata.artist or UNKNOWN_TRACK_GROUP_LABEL
-            group_album = track.metadata.album or UNKNOWN_TRACK_GROUP_LABEL
-            counts[(group_artist, group_album)] = counts.get((group_artist, group_album), 0) + 1
+            if (
+                grouping is TrackGrouping.ALBUM
+                and derive_track_group_key(track, TrackGrouping.ARTIST).key != parent_key
+            ):
+                continue
+            if grouping is TrackGrouping.DISC and derive_track_group_key(track, TrackGrouping.ALBUM).key != parent_key:
+                continue
+            derived = derive_track_group_key(track, grouping)
+            label, count = groups.get(derived.key, (derived.label, 0))
+            groups[derived.key] = (label, count + 1)
 
-        groups = [
-            GroupCount(
-                key=f"{group_artist}\x1f{group_album}",
-                label=f"{group_artist}{TRACK_GROUP_LABEL_SEPARATOR}{group_album}",
-                count=count,
-            )
-            for (group_artist, group_album), count in counts.items()
-        ]
-        return paginate_group_counts(groups, page)
+        return paginate_group_counts(
+            [GroupCount(key=key, label=label, count=count) for key, (label, count) in groups.items()],
+            page,
+        )
 
 
 def _track_matches_search(track: Track, search: str) -> bool:
@@ -302,6 +322,17 @@ def _track_matches_search(track: Track, search: str) -> bool:
         str(track.track_id),
     )
     return any(haystack is not None and needle in haystack.lower() for haystack in haystacks)
+
+
+def _track_group_member_cursor_from_key(cursor_key: tuple[str, ...]) -> tuple[int, int, str, str]:
+    """Decode the exact grouped Track member cursor shape used by the SQLite adapter."""
+    if len(cursor_key) != TRACK_GROUP_MEMBER_CURSOR_KEY_LENGTH:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+    rank_text, number_text, title, track_id = cursor_key
+    try:
+        return (int(rank_text), int(number_text), title, track_id)
+    except ValueError as error:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
 
 
 @dataclass(slots=True)

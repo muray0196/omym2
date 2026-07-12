@@ -8,6 +8,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
+import pytest
+
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
@@ -35,6 +37,19 @@ PAGINATED_TRACK_TOTAL = 4
 STATUS_FACET_TRACK_TOTAL = 3
 GROUPED_TRACK_GROUP_TOTAL = 3
 KEYSET_GROUP_TOTAL = 2
+HIERARCHY_ARTIST = "Library Artist"
+HIERARCHY_ALBUM = "Library Album"
+HIERARCHY_YEAR = 2026
+HIERARCHY_DISC_NUMBER = 1
+HIERARCHY_ARTIST_KEY = '["Library Artist"]'
+HIERARCHY_ALBUM_KEY = '["Library Artist","Library Album",2026]'
+HIERARCHY_DISC_KEY = '["Library Artist","Library Album",2026,1]'
+HIERARCHY_UNNUMBERED_DISC_KEY = '["Library Artist","Library Album",2026,"(unknown)"]'
+HIERARCHY_TRACK_COUNT = 2
+FOUR_TRACK_GROUP_TOTAL = 4
+ASCII_WHITESPACE_FALLBACK_ARTIST = "Whitespace Fallback"
+ASCII_WHITESPACE_ARTIST_KEY = '["Whitespace Fallback"]'
+ASCII_WHITESPACE_UNKNOWN_ALBUM_KEY = '["Whitespace Fallback","(unknown)",null]'
 
 
 def test_list_tracks_returns_all_known_tracks_in_display_order_without_commit() -> None:
@@ -224,6 +239,156 @@ def test_group_tracks_paginates_with_count_then_key_keyset() -> None:
         cursor = page.next_cursor_key
 
     assert visited_keys == ["Nova\x1f(unknown)", "Echo\x1f(unknown)"]
+
+
+def test_group_tracks_hierarchy_derives_metadata_keys_labels_and_parent_scopes() -> None:
+    """Artist, album, and disc groups use persisted metadata and their opaque parent keys."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID))
+    uow.tracks.save(
+        _track(
+            TRACK_ID,
+            LIBRARY_ID,
+            current_path="A/1.flac",
+            metadata=TrackMetadata(
+                album_artist="   ",
+                artist=HIERARCHY_ARTIST,
+                album=HIERARCHY_ALBUM,
+                year=HIERARCHY_YEAR,
+                disc_number=HIERARCHY_DISC_NUMBER,
+            ),
+        )
+    )
+    uow.tracks.save(
+        _track(
+            SECOND_TRACK_ID,
+            LIBRARY_ID,
+            current_path="A/2.flac",
+            metadata=TrackMetadata(
+                artist=HIERARCHY_ARTIST,
+                album=HIERARCHY_ALBUM,
+                year=HIERARCHY_YEAR,
+                disc_number=0,
+            ),
+        )
+    )
+    uow.tracks.save(
+        _track(
+            THIRD_TRACK_ID,
+            LIBRARY_ID,
+            current_path="B/1.flac",
+            metadata=TrackMetadata(artist="Other Artist", album="Other Album", disc_number=1),
+        )
+    )
+    usecase = GroupTracksUseCase(TracksPorts(uow))
+
+    artist_page = usecase.execute(GroupTracksRequest(grouping=TrackGrouping.ARTIST))
+    album_page = usecase.execute(GroupTracksRequest(grouping=TrackGrouping.ALBUM, parent_key=HIERARCHY_ARTIST_KEY))
+    disc_page = usecase.execute(GroupTracksRequest(grouping=TrackGrouping.DISC, parent_key=HIERARCHY_ALBUM_KEY))
+
+    artist_groups = {group.key: group for group in artist_page.items}
+    album_groups = {group.key: group for group in album_page.items}
+    disc_groups = {group.key: group for group in disc_page.items}
+    assert artist_groups[HIERARCHY_ARTIST_KEY].label == HIERARCHY_ARTIST
+    assert artist_groups[HIERARCHY_ARTIST_KEY].count == HIERARCHY_TRACK_COUNT
+    assert album_groups[HIERARCHY_ALBUM_KEY].label == f"{HIERARCHY_ALBUM} — {HIERARCHY_YEAR}"
+    assert album_groups[HIERARCHY_ALBUM_KEY].count == HIERARCHY_TRACK_COUNT
+    assert disc_groups[HIERARCHY_DISC_KEY].label == f"Disc {HIERARCHY_DISC_NUMBER}"
+    assert disc_groups[HIERARCHY_UNNUMBERED_DISC_KEY].label == "Unnumbered disc"
+
+
+def test_group_tracks_rejects_invalid_hierarchy_parents() -> None:
+    """Only album and disc levels accept the opaque parent key their hierarchy requires."""
+    usecase = GroupTracksUseCase(TracksPorts(InMemoryUnitOfWork()))
+
+    with pytest.raises(ValueError, match="does not accept parent_key"):
+        _ = usecase.execute(GroupTracksRequest(grouping=TrackGrouping.ARTIST, parent_key=HIERARCHY_ARTIST_KEY))
+    with pytest.raises(ValueError, match="requires parent_key"):
+        _ = usecase.execute(GroupTracksRequest(grouping=TrackGrouping.ALBUM))
+    with pytest.raises(ValueError, match="requires parent_key"):
+        _ = usecase.execute(GroupTracksRequest(grouping=TrackGrouping.DISC))
+
+
+def test_group_tracks_treats_ascii_tabs_and_newlines_as_blank_metadata() -> None:
+    """The in-memory fake shares the hierarchy blank-value semantics used by SQLite."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID))
+    uow.tracks.save(
+        _track(
+            TRACK_ID,
+            LIBRARY_ID,
+            current_path="Whitespace/1.flac",
+            metadata=TrackMetadata(
+                album_artist="\t",
+                artist=ASCII_WHITESPACE_FALLBACK_ARTIST,
+                album="\n",
+            ),
+        )
+    )
+    usecase = GroupTracksUseCase(TracksPorts(uow))
+
+    artist_page = usecase.execute(GroupTracksRequest(grouping=TrackGrouping.ARTIST))
+    album_page = usecase.execute(
+        GroupTracksRequest(grouping=TrackGrouping.ALBUM, parent_key=ASCII_WHITESPACE_ARTIST_KEY)
+    )
+
+    assert [(group.key, group.label) for group in artist_page.items] == [
+        (ASCII_WHITESPACE_ARTIST_KEY, ASCII_WHITESPACE_FALLBACK_ARTIST)
+    ]
+    assert [(group.key, group.label) for group in album_page.items] == [
+        (ASCII_WHITESPACE_UNKNOWN_ALBUM_KEY, "(unknown)")
+    ]
+
+
+def test_list_tracks_group_members_use_music_order_and_require_a_group_filter_pair() -> None:
+    """Disc members paginate by positive track number, title, track ID, and reject unpaired filters."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID))
+    metadata_values = (
+        (TRACK_ID, "A/2.flac", "Zulu", 2),
+        (SECOND_TRACK_ID, "A/1.flac", "Beta", 1),
+        (THIRD_TRACK_ID, "A/0.flac", "Alpha", 0),
+        (FOURTH_TRACK_ID, "A/missing.flac", "Aardvark", None),
+    )
+    for track_id, path, title, track_number in metadata_values:
+        uow.tracks.save(
+            _track(
+                track_id,
+                LIBRARY_ID,
+                current_path=path,
+                metadata=TrackMetadata(
+                    title=title,
+                    artist=HIERARCHY_ARTIST,
+                    album=HIERARCHY_ALBUM,
+                    year=HIERARCHY_YEAR,
+                    disc_number=HIERARCHY_DISC_NUMBER,
+                    track_number=track_number,
+                ),
+            )
+        )
+    usecase = ListTracksUseCase(TracksPorts(uow))
+
+    first_page = usecase.execute(
+        ListTracksRequest(
+            grouping=TrackGrouping.DISC,
+            group_key=HIERARCHY_DISC_KEY,
+            page=PageRequest(limit=TWO_ITEM_LIMIT),
+        )
+    )
+    second_page = usecase.execute(
+        ListTracksRequest(
+            grouping=TrackGrouping.DISC,
+            group_key=HIERARCHY_DISC_KEY,
+            page=PageRequest(limit=TWO_ITEM_LIMIT, cursor_key=first_page.next_cursor_key),
+        )
+    )
+
+    assert tuple(track.track_id for track in first_page.items) == (SECOND_TRACK_ID, TRACK_ID)
+    assert tuple(track.track_id for track in second_page.items) == (FOURTH_TRACK_ID, THIRD_TRACK_ID)
+    assert first_page.total == FOUR_TRACK_GROUP_TOTAL
+    assert second_page.next_cursor_key is None
+    with pytest.raises(ValueError, match="grouping and group_key"):
+        _ = usecase.execute(ListTracksRequest(grouping=TrackGrouping.DISC))
 
 
 def _library(library_id: LibraryId) -> Library:

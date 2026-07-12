@@ -1,6 +1,6 @@
 """
-Summary: Defines current managed track state.
-Why: Keeps Track identity stable independent of paths and hashes.
+Summary: Defines managed Track state and browse grouping keys.
+Why: Keeps Track identity stable while giving inspection a shared hierarchy vocabulary.
 """
 
 from __future__ import annotations
@@ -29,9 +29,18 @@ class TrackStatus(StrEnum):
 class TrackGrouping(StrEnum):
     """Known Track group-by query groupings."""
 
+    ARTIST = "artist"
+    ALBUM = "album"
+    DISC = "disc"
     ARTIST_ALBUM = "artist_album"
 
 
+TRACK_GROUP_UNKNOWN_KEY = "(unknown)"
+TRACK_GROUP_ARTIST_ALBUM_SEPARATOR = "\x1f"  # collision-resistant separator for the legacy artist/album key
+TRACK_GROUP_LABEL_SEPARATOR = " — "
+TRACK_GROUP_DISC_LABEL_PREFIX = "Disc "
+TRACK_GROUP_UNNUMBERED_DISC_LABEL = "Unnumbered disc"
+TRACK_GROUP_METADATA_WHITESPACE = " \t\r\n\v\f"  # shared ASCII blank characters for hierarchy metadata values
 NEGATIVE_TRACK_SIZE_MESSAGE = "Track file size must not be negative."
 
 

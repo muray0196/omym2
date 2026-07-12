@@ -26,7 +26,16 @@ from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.run import Run, RunStatus
-from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
+from omym2.domain.models.track import (
+    TRACK_GROUP_DISC_LABEL_PREFIX,
+    TRACK_GROUP_LABEL_SEPARATOR,
+    TRACK_GROUP_METADATA_WHITESPACE,
+    TRACK_GROUP_UNKNOWN_KEY,
+    TRACK_GROUP_UNNUMBERED_DISC_LABEL,
+    Track,
+    TrackGrouping,
+    TrackStatus,
+)
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.features.common_ports import CheckIssueGroup, PlanActionGroupRow
 from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId, parse_uuid
@@ -46,10 +55,14 @@ INVALID_ROW_INTEGER_MESSAGE = "Expected SQLite integer value."
 INVALID_SUMMARY_VALUE_MESSAGE = "Persisted summary JSON must contain string values."
 LIKE_ESCAPE_CHAR = "\\"  # escape character used for LIKE search patterns
 UNSUPPORTED_TRACK_GROUPING_MESSAGE = "Unsupported Track grouping"
-UNKNOWN_TRACK_GROUP_LABEL = "(unknown)"
-TRACK_GROUP_LABEL_SEPARATOR = " — "  # em dash joiner between group artist and group album labels
+TRACK_GROUP_FILTER_PAIRING_MESSAGE = "grouping and group_key must be provided together."
 KEYSET_CURSOR_KEY_LENGTH = 2  # every keyset cursor key in this module is a 2-tuple
 CHECK_ISSUE_CURSOR_KEY_LENGTH = 1  # a CheckIssue cursor key is a single issue_seq value
+TRACK_GROUP_MEMBER_CURSOR_KEY_LENGTH = 4  # grouped Track member cursor: rank, number, title, track ID
+MIN_POSITIVE_METADATA_NUMBER = 1  # positive raw TrackMetadata disc/track number lower bound
+NUMBERED_TRACK_ORDER_RANK = 0  # grouped Track members with a positive track number sort first
+UNNUMBERED_TRACK_ORDER_RANK = 1  # grouped Track members without a positive track number sort last
+UNNUMBERED_TRACK_ORDER_VALUE = 0  # neutral numeric key for unnumbered grouped Track members
 
 TRACK_SEARCH_WHERE_CLAUSE = f"""(
                 LOWER(json_extract(metadata_json, '$.title')) LIKE LOWER(?) ESCAPE '{LIKE_ESCAPE_CHAR}' OR
@@ -624,16 +637,31 @@ class SQLiteTrackRepository(_SQLiteRepository):
             ),
         )
 
-    def query_page(
+    def query_page(  # noqa: PLR0913  # Track browse filters form the repository's stable read contract.
         self,
         library_id: LibraryId | None,
         *,
         track_id: TrackId | None,
         search: str | None,
         status: TrackStatus | None,
+        grouping: TrackGrouping | None,
+        group_key: str | None,
         page: PageRequest,
     ) -> Page[Track]:
         """Return one keyset page of Tracks ordered (current_path, track_id)."""
+        if (grouping is None) != (group_key is None):
+            raise ValueError(TRACK_GROUP_FILTER_PAIRING_MESSAGE)
+        if grouping is not None and group_key is not None:
+            return self._group_member_page(
+                library_id,
+                track_id=track_id,
+                search=search,
+                status=status,
+                grouping=grouping,
+                group_key=group_key,
+                page=page,
+            )
+
         where_sql, where_params = _track_filter_where(library_id, track_id, status, search)
         # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
         count_sql = f"SELECT COUNT(*) FROM tracks{where_sql}"  # noqa: S608
@@ -657,6 +685,51 @@ class SQLiteTrackRepository(_SQLiteRepository):
         next_cursor_key = (page_items[-1].current_path, str(page_items[-1].track_id)) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
+    def _group_member_page(  # noqa: PLR0913  # Delegates every Track browse filter to one exact group query.
+        self,
+        library_id: LibraryId | None,
+        *,
+        track_id: TrackId | None,
+        search: str | None,
+        status: TrackStatus | None,
+        grouping: TrackGrouping,
+        group_key: str,
+        page: PageRequest,
+    ) -> Page[Track]:
+        """Return one exact metadata group in deterministic music-friendly order."""
+        where_sql, where_params = _track_filter_where(library_id, track_id, status, search)
+        source_sql, source_params = _track_group_member_source_sql(grouping, where_sql, where_params)
+        total = _scalar_int(
+            self._connection,
+            source_sql  # noqa: S608  # source SQL uses static grouping expressions and bound filters only
+            + """
+            SELECT COUNT(*)
+            FROM source
+            WHERE group_key = ?
+            """,
+            (*source_params, group_key),
+        )
+
+        cursor_sql, cursor_params = _track_group_member_cursor_clause(page.cursor_key)
+        rows = _fetch_all(
+            self._connection,
+            source_sql  # noqa: S608  # source SQL uses static grouping expressions and bound filters only
+            + f"""
+            SELECT *
+            FROM source
+            WHERE group_key = ?{cursor_sql}
+            ORDER BY track_number_rank, track_number_value, track_title, track_id
+            LIMIT ?
+            """,  # noqa: S608  # cursor SQL is a static keyset clause with bound values
+            (*source_params, group_key, *cursor_params, page.limit + 1),
+        )
+
+        tracks = tuple(_track_from_row(row) for row in rows)
+        page_items = tracks[: page.limit]
+        has_more = len(tracks) > page.limit
+        next_cursor_key = _track_group_member_cursor_key(page_items[-1]) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
     def status_facets(self, library_id: LibraryId | None) -> tuple[FacetValue, ...]:
         """Return Track status facet counts, ordered count DESC then value ASC."""
         where_sql, where_params = _optional_library_clause(library_id)
@@ -678,15 +751,22 @@ class SQLiteTrackRepository(_SQLiteRepository):
         self,
         library_id: LibraryId | None,
         grouping: TrackGrouping,
+        parent_key: str | None,
         page: PageRequest,
     ) -> Page[GroupCount]:
         """Return one keyset page of Track groups ordered count DESC then key ASC."""
-        if grouping is not TrackGrouping.ARTIST_ALBUM:
-            unsupported_grouping_message = f"{UNSUPPORTED_TRACK_GROUPING_MESSAGE}: {grouping}"
-            raise ValueError(unsupported_grouping_message)  # pyright: ignore[reportUnreachable]
+        if grouping is TrackGrouping.ARTIST_ALBUM:
+            return self._legacy_artist_album_group_page(library_id, page)
+        return self._hierarchy_group_page(library_id, grouping, parent_key, page)
 
+    def _legacy_artist_album_group_page(
+        self,
+        library_id: LibraryId | None,
+        page: PageRequest,
+    ) -> Page[GroupCount]:
+        """Return the existing artist/album grouping without changing its key contract."""
         library_where, library_params = _optional_library_clause(library_id)
-        source_params = [UNKNOWN_TRACK_GROUP_LABEL, UNKNOWN_TRACK_GROUP_LABEL, *library_params]
+        source_params = [TRACK_GROUP_UNKNOWN_KEY, TRACK_GROUP_UNKNOWN_KEY, *library_params]
 
         # SQL-injection safety note: TRACK_GROUP_SOURCE_SELECT and library_where are static templates bound with `?`.
         total = _scalar_int(
@@ -728,12 +808,68 @@ class SQLiteTrackRepository(_SQLiteRepository):
             """,  # noqa: S608
             (
                 TRACK_GROUP_LABEL_SEPARATOR,
-                UNKNOWN_TRACK_GROUP_LABEL,
-                UNKNOWN_TRACK_GROUP_LABEL,
+                TRACK_GROUP_UNKNOWN_KEY,
+                TRACK_GROUP_UNKNOWN_KEY,
                 *library_params,
                 *cursor_params,
                 page.limit + 1,
             ),
+        )
+
+        groups = tuple(
+            GroupCount(key=_row_text(row, "key"), label=_row_text(row, "label"), count=_row_int(row, "count"))
+            for row in rows
+        )
+        page_items = groups[: page.limit]
+        has_more = len(groups) > page.limit
+        next_cursor_key = (str(page_items[-1].count), page_items[-1].key) if has_more else None
+        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def _hierarchy_group_page(
+        self,
+        library_id: LibraryId | None,
+        grouping: TrackGrouping,
+        parent_key: str | None,
+        page: PageRequest,
+    ) -> Page[GroupCount]:
+        """Return artist, album, or disc hierarchy groups from stored metadata."""
+        where_sql, where_params = _track_filter_where(library_id, None, None, None)
+        source_sql, source_params = _track_hierarchy_source_sql(
+            grouping,
+            where_sql,
+            where_params,
+            parent_key=parent_key,
+            apply_parent_scope=True,
+        )
+        total = _scalar_int(
+            self._connection,
+            source_sql  # noqa: S608  # source SQL uses static grouping expressions and bound filters only
+            + """
+            SELECT COUNT(*) FROM (
+                SELECT 1
+                FROM source
+                GROUP BY group_key
+            )
+            """,
+            tuple(source_params),
+        )
+
+        cursor_sql, cursor_params = _track_group_cursor_clause(page.cursor_key)
+        rows = _fetch_all(
+            self._connection,
+            source_sql  # noqa: S608  # source SQL uses static grouping expressions and bound filters only
+            + f"""
+            SELECT key, label, count
+            FROM (
+                SELECT group_key AS key, MIN(group_label) AS label, COUNT(*) AS count
+                FROM source
+                GROUP BY group_key
+            )
+            {cursor_sql}
+            ORDER BY count DESC, key ASC
+            LIMIT ?
+            """,  # noqa: S608  # cursor SQL is a static keyset clause with bound values
+            (*source_params, *cursor_params, page.limit + 1),
         )
 
         groups = tuple(
@@ -1541,6 +1677,227 @@ def _track_cursor_clause(where_sql: str, cursor_key: tuple[str, ...] | None) -> 
         raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
     prefix = " AND " if where_sql else " WHERE "
     return f"{prefix}(current_path, track_id) > (?, ?)", list(cursor_key)
+
+
+def _track_group_member_source_sql(
+    grouping: TrackGrouping,
+    where_sql: str,
+    where_params: list[object],
+) -> tuple[str, list[object]]:
+    """Return a static source CTE for one exact Track group's members."""
+    if grouping is TrackGrouping.ARTIST_ALBUM:
+        return _legacy_artist_album_member_source_sql(where_sql, where_params)
+    return _track_hierarchy_source_sql(
+        grouping,
+        where_sql,
+        where_params,
+        parent_key=None,
+        apply_parent_scope=False,
+    )
+
+
+def _legacy_artist_album_member_source_sql(
+    where_sql: str,
+    where_params: list[object],
+) -> tuple[str, list[object]]:
+    """Return the existing artist_album key derivation plus grouped-member ordering columns."""
+    source_sql = f"""
+            WITH base AS (
+                SELECT
+                    tracks.*,
+                    COALESCE(
+                        json_extract(metadata_json, '$.album_artist'),
+                        json_extract(metadata_json, '$.artist'),
+                        ?
+                    ) AS group_artist,
+                    COALESCE(json_extract(metadata_json, '$.album'), ?) AS group_album,
+                    CASE
+                        WHEN json_extract(metadata_json, '$.track_number') >= ? THEN ?
+                        ELSE ?
+                    END AS track_number_rank,
+                    CASE
+                        WHEN json_extract(metadata_json, '$.track_number') >= ?
+                            THEN json_extract(metadata_json, '$.track_number')
+                        ELSE ?
+                    END AS track_number_value,
+                    COALESCE(json_extract(metadata_json, '$.title'), '') AS track_title
+                FROM tracks
+                {where_sql}
+            ), source AS (
+                SELECT
+                    base.*,
+                    group_artist || char(31) || group_album AS group_key
+                FROM base
+            )
+    """  # noqa: S608  # where_sql is built only from static clauses and bound values
+    params = [
+        TRACK_GROUP_UNKNOWN_KEY,
+        TRACK_GROUP_UNKNOWN_KEY,
+        *_track_group_member_order_params(),
+        *where_params,
+    ]
+    return source_sql, params
+
+
+def _track_hierarchy_source_sql(
+    grouping: TrackGrouping,
+    where_sql: str,
+    where_params: list[object],
+    *,
+    parent_key: str | None,
+    apply_parent_scope: bool,
+) -> tuple[str, list[object]]:
+    """Return a static source CTE for a Track hierarchy level or its members."""
+    group_key_sql, group_label_sql, group_label_params = _track_hierarchy_group_expressions(grouping)
+    parent_where, parent_params = (
+        _track_hierarchy_parent_clause(grouping, parent_key) if apply_parent_scope else ("", [])
+    )
+    source_sql = f"""
+            WITH base AS (
+                SELECT
+                    tracks.*,
+                    CASE
+                        WHEN NULLIF(TRIM(json_extract(metadata_json, '$.album_artist'), ?), '') IS NOT NULL
+                            THEN json_extract(metadata_json, '$.album_artist')
+                        WHEN NULLIF(TRIM(json_extract(metadata_json, '$.artist'), ?), '') IS NOT NULL
+                            THEN json_extract(metadata_json, '$.artist')
+                        ELSE ?
+                    END AS hierarchy_artist,
+                    COALESCE(NULLIF(TRIM(json_extract(metadata_json, '$.album'), ?), ''), ?) AS hierarchy_album,
+                    json_extract(metadata_json, '$.year') AS hierarchy_year,
+                    CASE
+                        WHEN json_extract(metadata_json, '$.disc_number') >= ?
+                            THEN json_extract(metadata_json, '$.disc_number')
+                        ELSE ?
+                    END AS hierarchy_disc_key,
+                    CASE
+                        WHEN json_extract(metadata_json, '$.track_number') >= ? THEN ?
+                        ELSE ?
+                    END AS track_number_rank,
+                    CASE
+                        WHEN json_extract(metadata_json, '$.track_number') >= ?
+                            THEN json_extract(metadata_json, '$.track_number')
+                        ELSE ?
+                    END AS track_number_value,
+                    COALESCE(json_extract(metadata_json, '$.title'), '') AS track_title
+                FROM tracks
+                {where_sql}
+            ), derived AS (
+                SELECT
+                    base.*,
+                    json_array(hierarchy_artist) AS artist_key,
+                    json_array(hierarchy_artist, hierarchy_album, hierarchy_year) AS album_key
+                FROM base
+            ), source AS (
+                SELECT
+                    derived.*,
+                    {group_key_sql} AS group_key,
+                    {group_label_sql} AS group_label
+                FROM derived
+                {parent_where}
+            )
+    """  # noqa: S608  # SQL fragments come only from static TrackGrouping branches
+    params = [
+        TRACK_GROUP_METADATA_WHITESPACE,
+        TRACK_GROUP_METADATA_WHITESPACE,
+        TRACK_GROUP_UNKNOWN_KEY,
+        TRACK_GROUP_METADATA_WHITESPACE,
+        TRACK_GROUP_UNKNOWN_KEY,
+        MIN_POSITIVE_METADATA_NUMBER,
+        TRACK_GROUP_UNKNOWN_KEY,
+        *_track_group_member_order_params(),
+        *where_params,
+        *group_label_params,
+        *parent_params,
+    ]
+    return source_sql, params
+
+
+def _track_group_member_order_params() -> tuple[object, ...]:
+    """Return the bound constants used by every grouped Track member ordering projection."""
+    return (
+        MIN_POSITIVE_METADATA_NUMBER,
+        NUMBERED_TRACK_ORDER_RANK,
+        UNNUMBERED_TRACK_ORDER_RANK,
+        MIN_POSITIVE_METADATA_NUMBER,
+        UNNUMBERED_TRACK_ORDER_VALUE,
+    )
+
+
+def _track_hierarchy_group_expressions(grouping: TrackGrouping) -> tuple[str, str, tuple[object, ...]]:
+    """Return static key/label expressions and bound label literals for one hierarchy level."""
+    if grouping is TrackGrouping.ARTIST:
+        return "artist_key", "hierarchy_artist", ()
+    if grouping is TrackGrouping.ALBUM:
+        return (
+            "album_key",
+            """
+                CASE
+                    WHEN hierarchy_year IS NULL THEN hierarchy_album
+                    ELSE hierarchy_album || ? || hierarchy_year
+                END
+            """,
+            (TRACK_GROUP_LABEL_SEPARATOR,),
+        )
+    if grouping is TrackGrouping.DISC:
+        return (
+            "json_array(hierarchy_artist, hierarchy_album, hierarchy_year, hierarchy_disc_key)",
+            """
+                CASE
+                    WHEN hierarchy_disc_key = ? THEN ?
+                    ELSE ? || hierarchy_disc_key
+                END
+            """,
+            (
+                TRACK_GROUP_UNKNOWN_KEY,
+                TRACK_GROUP_UNNUMBERED_DISC_LABEL,
+                TRACK_GROUP_DISC_LABEL_PREFIX,
+            ),
+        )
+    unsupported_grouping_message = f"{UNSUPPORTED_TRACK_GROUPING_MESSAGE}: {grouping}"
+    raise ValueError(unsupported_grouping_message)
+
+
+def _track_hierarchy_parent_clause(
+    grouping: TrackGrouping,
+    parent_key: str | None,
+) -> tuple[str, list[object]]:
+    """Return the static parent-scope predicate for an artist, album, or disc level."""
+    if grouping is TrackGrouping.ARTIST:
+        return "", []
+    if grouping is TrackGrouping.ALBUM:
+        return " WHERE artist_key = ?", [parent_key]
+    if grouping is TrackGrouping.DISC:
+        return " WHERE album_key = ?", [parent_key]
+    unsupported_grouping_message = f"{UNSUPPORTED_TRACK_GROUPING_MESSAGE}: {grouping}"
+    raise ValueError(unsupported_grouping_message)
+
+
+def _track_group_member_cursor_clause(cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:
+    """Build the fixed music-order keyset predicate for one exact Track group."""
+    if cursor_key is None:
+        return "", []
+    if len(cursor_key) != TRACK_GROUP_MEMBER_CURSOR_KEY_LENGTH:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE)
+    rank_text, number_text, title, track_id = cursor_key
+    try:
+        rank = int(rank_text)
+        number = int(number_text)
+    except ValueError as error:
+        raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
+    return (
+        " AND (track_number_rank, track_number_value, track_title, track_id) > (?, ?, ?, ?)",
+        [rank, number, title, track_id],
+    )
+
+
+def _track_group_member_cursor_key(track: Track) -> tuple[str, str, str, str]:
+    """Return the cursor key matching the grouped Track member SQL ordering exactly."""
+    track_number = track.metadata.track_number
+    title = track.metadata.title or ""
+    if track_number is not None and track_number >= MIN_POSITIVE_METADATA_NUMBER:
+        return (str(NUMBERED_TRACK_ORDER_RANK), str(track_number), title, str(track.track_id))
+    return (str(UNNUMBERED_TRACK_ORDER_RANK), str(UNNUMBERED_TRACK_ORDER_VALUE), title, str(track.track_id))
 
 
 def _check_issue_filter_where(
