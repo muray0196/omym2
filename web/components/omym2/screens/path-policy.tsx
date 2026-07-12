@@ -139,7 +139,6 @@ export function PathPolicyScreen() {
       setSelectedTrack(null)
       setSelectedTrackErrors([])
       setSelectedTrackLoading(false)
-      setPresetId((current) => (current === "track" ? "custom" : current))
       return
     }
 
@@ -175,6 +174,12 @@ export function PathPolicyScreen() {
       cancelled = true
     }
   }, [selectedTrackId])
+
+  useEffect(() => {
+    if (selectedTrackId !== null || presetId !== "track") return
+    setMeta(SAMPLE_PRESETS[0].meta)
+    setPresetId(SAMPLE_PRESETS[0].id)
+  }, [presetId, selectedTrackId])
 
   function clearSelectedTrackContext() {
     if (selectedTrackId !== null) {

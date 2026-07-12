@@ -297,7 +297,7 @@ export function PlanDetailScreen({ planId, actionId }: { planId: string; actionI
               size="sm"
               onClick={() => {
                 setActionStatus("blocked")
-                setViewMode("table")
+                changeViewMode("table")
               }}
             >
               View blocked actions
