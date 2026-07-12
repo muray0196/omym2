@@ -68,6 +68,7 @@ ROOT_GROUP_LABEL = "(root)"
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 ONE_ITEM_LIMIT = 1
 CLAMPED_LIMIT_REQUEST = 1000
+BLOCKED_ACTION_COUNT = "2"
 
 ADD_OLD_TARGET = "Artist/1998_Album/1-01_Old-Title.flac"
 ADD_NEW_TARGET = "Artist/1998_Album/1-02_New-Title.flac"
@@ -177,6 +178,51 @@ def test_plans_api_filters_by_status_and_type(tmp_path: Path) -> None:
     assert page["total"] == 1
 
 
+def test_plans_api_filters_to_ready_plans_with_blocked_actions(tmp_path: Path) -> None:
+    """The blocked filter is global and composes with ready status before the limit."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    with SQLiteUnitOfWork(app_paths.database_file) as uow:
+        uow.libraries.save(_library(str(library_root)))
+        uow.plans.save(
+            _plan(
+                str(library_root),
+                summary={"blocked_actions": BLOCKED_ACTION_COUNT},
+            )
+        )
+        uow.plans.save(
+            _plan(
+                str(library_root),
+                plan_id=SECOND_PLAN_ID,
+                status=PlanStatus.APPLIED,
+                created_at=datetime(2026, 1, 2, tzinfo=UTC),
+                summary={"blocked_actions": BLOCKED_ACTION_COUNT},
+            )
+        )
+        uow.plans.save(
+            _plan(
+                str(library_root),
+                plan_id=THIRD_PLAN_ID,
+                created_at=datetime(2026, 1, 3, tzinfo=UTC),
+            )
+        )
+        uow.commit()
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    response = client.get(
+        WEB_API_PLANS_ROUTE,
+        params={"status": "ready", "blocked": "true", "limit": str(ONE_ITEM_LIMIT)},
+    )
+
+    assert response.status_code == SUCCESS_STATUS_CODE
+    payload = _json_payload(response)
+    items = _object_list_payload(payload, "items")
+    page = _object_payload(payload, "page")
+    assert [item["plan_id"] for item in items] == [str(PLAN_ID)]
+    assert page["total"] == 1
+
+
 def test_plans_api_rejects_invalid_cursor_status_and_low_limit(tmp_path: Path) -> None:
     """Malformed cursors, unknown statuses, and limit=0 return the documented 400 envelope."""
     app_paths = default_application_paths(tmp_path)
@@ -184,6 +230,7 @@ def test_plans_api_rejects_invalid_cursor_status_and_low_limit(tmp_path: Path) -
 
     cursor_response = client.get(WEB_API_PLANS_ROUTE, params={"cursor": "not-valid-base64url!!"})
     status_response = client.get(WEB_API_PLANS_ROUTE, params={"status": "not-a-status"})
+    blocked_response = client.get(WEB_API_PLANS_ROUTE, params={"blocked": "sometimes"})
     limit_response = client.get(WEB_API_PLANS_ROUTE, params={"limit": "0"})
 
     assert cursor_response.status_code == ERROR_STATUS_CODE
@@ -193,6 +240,12 @@ def test_plans_api_rejects_invalid_cursor_status_and_low_limit(tmp_path: Path) -
         "items": [],
         "page": None,
         "errors": ["Invalid plan status filter: not-a-status"],
+    }
+    assert blocked_response.status_code == ERROR_STATUS_CODE
+    assert blocked_response.json() == {
+        "items": [],
+        "page": None,
+        "errors": ["Invalid blocked filter: sometimes"],
     }
     assert limit_response.status_code == ERROR_STATUS_CODE
     assert limit_response.json()["page"] is None
@@ -988,13 +1041,14 @@ def _track(current_path: str = TARGET_PATH, *, metadata: TrackMetadata = REFRESH
     )
 
 
-def _plan(
+def _plan(  # noqa: PLR0913 - test fixture spans the Plan API filter matrix.
     library_root: str,
     *,
     plan_id: PlanId = PLAN_ID,
     plan_type: PlanType = PlanType.ADD,
     status: PlanStatus = PlanStatus.READY,
     created_at: datetime = BASE_TIME,
+    summary: dict[str, str] | None = None,
 ) -> Plan:
     return Plan(
         plan_id=plan_id,
@@ -1004,7 +1058,7 @@ def _plan(
         created_at=created_at,
         config_hash=calculate_config_fingerprint(AppConfig()),
         library_root_at_plan=library_root,
-        summary={"action_count": "2"},
+        summary={"action_count": "2"} if summary is None else summary,
     )
 
 

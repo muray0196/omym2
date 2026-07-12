@@ -695,8 +695,12 @@ def _get_plans(context: ApiRouteContext, request: Request) -> JSONResponse:
 
     status, status_errors = _plan_status_from_query(request.query_params.get("status"))
     plan_type, type_errors = _plan_type_from_query(request.query_params.get("type"))
+    blocked_only, blocked_errors = _optional_boolean_query_filter(
+        request.query_params.get("blocked"),
+        "blocked",
+    )
     limit, limit_errors = _limit_from_query(request.query_params.get("limit"))
-    filter_errors = status_errors + type_errors + limit_errors
+    filter_errors = status_errors + type_errors + blocked_errors + limit_errors
     if filter_errors:
         return _list_error_response(filter_errors)
 
@@ -707,6 +711,7 @@ def _get_plans(context: ApiRouteContext, request: Request) -> JSONResponse:
             ListPlansRequest(
                 status=status,
                 plan_type=plan_type,
+                blocked_only=blocked_only,
                 page=PageRequest(limit=effective_limit, cursor_key=cursor_key),
             )
         )
@@ -1405,6 +1410,14 @@ def _plan_type_from_query(raw_value: str | None) -> tuple[PlanType | None, tuple
         return PlanType(raw_value), ()
     except ValueError:
         return None, (f"Invalid plan type filter: {raw_value}",)
+
+
+def _optional_boolean_query_filter(raw_value: str | None, field_name: str) -> tuple[bool, tuple[str, ...]]:
+    if raw_value is None or raw_value in {"", "false"}:
+        return False, ()
+    if raw_value == "true":
+        return True, ()
+    return False, (f"Invalid {field_name} filter: {raw_value}",)
 
 
 def _action_status_from_query(raw_value: str | None) -> tuple[ActionStatus | None, tuple[str, ...]]:

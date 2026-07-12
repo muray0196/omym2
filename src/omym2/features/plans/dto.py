@@ -54,6 +54,7 @@ class ListPlansRequest:
     library_id: LibraryId | None = None
     status: PlanStatus | None = None
     plan_type: PlanType | None = None
+    blocked_only: bool = False
     page: PageRequest = field(default_factory=PageRequest)
 
 

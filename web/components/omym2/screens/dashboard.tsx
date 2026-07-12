@@ -45,7 +45,7 @@ import {
 import { CliCommand } from "../widgets"
 
 const DASHBOARD_RUN_LIMIT = 4
-const DASHBOARD_PLAN_LIMIT = 8
+const DASHBOARD_NEXT_ACTION_LIMIT = 1
 
 interface NextAction {
   icon: LucideIcon
@@ -103,7 +103,8 @@ export function DashboardScreen() {
   >({})
   const [historyErrors, setHistoryErrors] = useState<string[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
-  const [recentPlans, setRecentPlans] = useState<PlanSummary[]>([])
+  const [failedRuns, setFailedRuns] = useState<RunSummary[]>([])
+  const [blockedPlans, setBlockedPlans] = useState<PlanSummary[]>([])
   const [planErrors, setPlanErrors] = useState<string[]>([])
   const [plansLoaded, setPlansLoaded] = useState(false)
   const [checkIssueCounts, setCheckIssueCounts] = useState<Partial<Record<CheckIssueType, number>>>(
@@ -126,15 +127,19 @@ export function DashboardScreen() {
     async function loadDashboardState() {
       const [
         historyPageResult,
+        failedHistoryPageResult,
+        partialFailedHistoryPageResult,
         historyFacetsResult,
-        plansPageResult,
+        blockedPlansPageResult,
         checkFacetsResult,
         trackFacetsResult,
         trackSampleResult,
       ] = await Promise.allSettled([
         getHistoryPage({ limit: DASHBOARD_RUN_LIMIT }),
+        getHistoryPage({ status: "failed", limit: DASHBOARD_NEXT_ACTION_LIMIT }),
+        getHistoryPage({ status: "partial_failed", limit: DASHBOARD_NEXT_ACTION_LIMIT }),
         getHistoryFacets(),
-        getPlansPage({ limit: DASHBOARD_PLAN_LIMIT }),
+        getPlansPage({ status: "ready", blockedOnly: true, limit: DASHBOARD_NEXT_ACTION_LIMIT }),
         getCheckFacets(),
         getTrackFacets(),
         getTracksPage({ limit: 1 }),
@@ -158,15 +163,38 @@ export function DashboardScreen() {
           errorMessage(historyFacetsResult.reason, "Run status summary failed to load."),
         )
       }
+      const nextFailedRuns: RunSummary[] = []
+      if (failedHistoryPageResult.status === "fulfilled") {
+        nextFailedRuns.push(...failedHistoryPageResult.value.items)
+        nextHistoryErrors.push(...failedHistoryPageResult.value.errors)
+      } else {
+        nextHistoryErrors.push(
+          errorMessage(failedHistoryPageResult.reason, "Failed run summary failed to load."),
+        )
+      }
+      if (partialFailedHistoryPageResult.status === "fulfilled") {
+        nextFailedRuns.push(...partialFailedHistoryPageResult.value.items)
+        nextHistoryErrors.push(...partialFailedHistoryPageResult.value.errors)
+      } else {
+        nextHistoryErrors.push(
+          errorMessage(
+            partialFailedHistoryPageResult.reason,
+            "Partially failed run summary failed to load.",
+          ),
+        )
+      }
+      setFailedRuns(nextFailedRuns)
       setHistoryErrors(nextHistoryErrors)
       setHistoryLoaded(true)
 
-      if (plansPageResult.status === "fulfilled") {
-        setRecentPlans(plansPageResult.value.items)
-        setPlanErrors(plansPageResult.value.errors)
+      if (blockedPlansPageResult.status === "fulfilled") {
+        setBlockedPlans(blockedPlansPageResult.value.items)
+        setPlanErrors(blockedPlansPageResult.value.errors)
       } else {
-        setRecentPlans([])
-        setPlanErrors([errorMessage(plansPageResult.reason, "Plan summary failed to load.")])
+        setBlockedPlans([])
+        setPlanErrors([
+          errorMessage(blockedPlansPageResult.reason, "Blocked Plan summary failed to load."),
+        ])
       }
       setPlansLoaded(true)
 
@@ -240,11 +268,10 @@ export function DashboardScreen() {
   const warningIssues = issueSeverityCounts.warning
   const knownLibraryId = trackSampleLibraryId ?? recentRuns[0]?.library_id ?? null
   const inspectionErrors = [...historyErrors, ...planErrors, ...checkErrors, ...trackErrors]
-  const blockedPlans = recentPlans.filter((plan) => summaryNumber(plan, "blocked_actions") > 0)
+  const nextActionErrors = [...historyErrors, ...planErrors, ...checkErrors]
+  const checkInspectionFailed = checkErrors.length > 0
   const blockedPlan = blockedPlans[0]
-  const failedRun = recentRuns
-    .filter((run) => run.status === "failed" || run.status === "partial_failed")
-    .sort((a, b) => b.started_at.localeCompare(a.started_at))[0]
+  const failedRun = [...failedRuns].sort((a, b) => b.started_at.localeCompare(a.started_at))[0]
   const nextActions: NextAction[] = []
 
   if (settingsLoaded) {
@@ -401,18 +428,24 @@ export function DashboardScreen() {
         />
         <MetricCard
           label="Check issues"
-          value={checkLoaded ? issueCount : "—"}
+          value={checkLoaded && !checkInspectionFailed ? issueCount : "—"}
           tone={
             !checkLoaded
               ? "neutral"
-              : errorIssues > 0
-                ? "danger"
-                : warningIssues > 0
-                  ? "warning"
-                  : "success"
+              : checkInspectionFailed
+                ? "warning"
+                : errorIssues > 0
+                  ? "danger"
+                  : warningIssues > 0
+                    ? "warning"
+                    : "success"
           }
           hint={
-            checkLoaded ? `${errorIssues} error · ${warningIssues} warning` : "Loading checks..."
+            !checkLoaded
+              ? "Loading checks..."
+              : checkInspectionFailed
+                ? "Failed to inspect"
+                : `${errorIssues} error · ${warningIssues} warning`
           }
           icon={ShieldCheck}
         />
@@ -439,8 +472,13 @@ export function DashboardScreen() {
             <Notice tone="info" title="Loading next actions">
               Checking settings, diagnostics, Plans, and recent runs.
             </Notice>
-          ) : nextActions.length > 0 ? (
+          ) : nextActionErrors.length > 0 || nextActions.length > 0 ? (
             <div className="flex flex-col gap-2">
+              {nextActionErrors.length > 0 ? (
+                <Notice tone="warning" title="Next actions are incomplete">
+                  {nextActionErrors.join(" ")}
+                </Notice>
+              ) : null}
               {nextActions.map((action) => (
                 <NextActionRow key={action.title} action={action} />
               ))}
@@ -521,6 +559,10 @@ export function DashboardScreen() {
             {!checkLoaded ? (
               <Notice tone="info" title="Loading issue summary">
                 Consistency diagnostics are still loading.
+              </Notice>
+            ) : checkInspectionFailed ? (
+              <Notice tone="warning" title="Check summary is unavailable">
+                {checkErrors.join(" ")}
               </Notice>
             ) : issueCount === 0 ? (
               <Notice tone="success" title="No issues found">

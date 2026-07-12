@@ -40,6 +40,7 @@ ACTION_ID_4 = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456e4"))
 TWO_ITEM_LIMIT = 2
 FIVE_PLAN_TOTAL = 5
 THREE_ACTION_TOTAL = 3
+BLOCKED_ACTION_COUNT = "2"
 
 
 def test_plan_query_page_walks_every_plan_newest_first_with_desc_keyset_cursor(tmp_path: Path) -> None:
@@ -130,6 +131,42 @@ def test_plan_query_page_pushes_status_and_type_filters_into_sql(tmp_path: Path)
             status=PlanStatus.READY,
             plan_type=PlanType.ADD,
             page=PageRequest(),
+        )
+
+    assert tuple(plan.plan_id for plan in page.items) == (PLAN_ID_1,)
+    assert page.total == 1
+
+
+def test_plan_query_page_filters_persisted_blocked_summary_before_limit(tmp_path: Path) -> None:
+    """Blocked-only returns an older actionable Plan despite newer clean and terminal Plans."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(LIBRARY_ID))
+        uow.plans.save(
+            _plan(
+                PLAN_ID_1,
+                created_at=BASE_TIME,
+                summary={"blocked_actions": BLOCKED_ACTION_COUNT},
+            )
+        )
+        uow.plans.save(
+            _plan(
+                PLAN_ID_2,
+                created_at=BASE_TIME + timedelta(days=1),
+                status=PlanStatus.APPLIED,
+                summary={"blocked_actions": BLOCKED_ACTION_COUNT},
+            )
+        )
+        uow.plans.save(_plan(PLAN_ID_3, created_at=BASE_TIME + timedelta(days=2)))
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        page = uow.plans.query_page(
+            None,
+            status=PlanStatus.READY,
+            plan_type=None,
+            blocked_only=True,
+            page=PageRequest(limit=1),
         )
 
     assert tuple(plan.plan_id for plan in page.items) == (PLAN_ID_1,)
@@ -348,13 +385,14 @@ def _library(library_id: LibraryId) -> Library:
     )
 
 
-def _plan(
+def _plan(  # noqa: PLR0913 - test fixture spans the Plan browse filter matrix.
     plan_id: PlanId,
     *,
     created_at: datetime,
     status: PlanStatus = PlanStatus.READY,
     plan_type: PlanType = PlanType.ADD,
     library_id: LibraryId = LIBRARY_ID,
+    summary: dict[str, str] | None = None,
 ) -> Plan:
     return Plan(
         plan_id=plan_id,
@@ -364,6 +402,7 @@ def _plan(
         created_at=created_at,
         config_hash=CONFIG_HASH,
         library_root_at_plan=LIBRARY_ROOT,
+        summary={} if summary is None else summary,
     )
 
 

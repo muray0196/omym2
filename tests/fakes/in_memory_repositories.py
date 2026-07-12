@@ -49,6 +49,13 @@ CHECK_ISSUE_CURSOR_KEY_LENGTH = 1  # a CheckIssue cursor key is a single issue_s
 TRACK_GROUP_FILTER_PAIRING_MESSAGE = "grouping and group_key must be provided together."
 
 
+def _summary_count(summary: dict[str, str], key: str) -> int:
+    try:
+        return int(summary.get(key, "0"))
+    except ValueError:
+        return 0
+
+
 @dataclass(slots=True)
 class InMemoryLibraryRepository:
     """In-memory LibraryRepository fake."""
@@ -393,6 +400,7 @@ class InMemoryPlanRepository:
         *,
         status: PlanStatus | None,
         plan_type: PlanType | None,
+        blocked_only: bool = False,
         page: PageRequest,
     ) -> Page[Plan]:
         """Return one keyset page of Plans ordered (created_at DESC, plan_id DESC)."""
@@ -402,6 +410,7 @@ class InMemoryPlanRepository:
             if (library_id is None or plan.library_id == library_id)
             and (status is None or plan.status == status)
             and (plan_type is None or plan.plan_type == plan_type)
+            and (not blocked_only or _summary_count(plan.summary, "blocked_actions") > 0)
         ]
         plans.sort(key=lambda plan: (plan.created_at, str(plan.plan_id)), reverse=True)
         total = len(plans)

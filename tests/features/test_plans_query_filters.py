@@ -66,6 +66,7 @@ TWO_ITEM_LIMIT = 2
 FIVE_PLAN_TOTAL = 5
 THREE_PLAN_TOTAL = 3
 TWO_PLAN_TOTAL = 2
+BLOCKED_ACTION_COUNT = "2"
 
 
 def test_list_plans_filters_by_status() -> None:
@@ -93,6 +94,36 @@ def test_list_plans_filters_by_type() -> None:
     page = ListPlansUseCase(PlanQueryPorts(uow)).execute(ListPlansRequest(plan_type=PlanType.ADD))
 
     assert tuple(plan.plan_id for plan in page.items) == (PLAN_ID_3, PLAN_ID_1)
+
+
+def test_list_plans_filters_to_ready_plans_with_blocked_actions() -> None:
+    """Blocked-only combines with status before paging so terminal and clean Plans are excluded."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(
+        _plan(
+            PLAN_ID_1,
+            status=PlanStatus.READY,
+            created_at=BASE_TIME,
+            summary={"blocked_actions": BLOCKED_ACTION_COUNT},
+        )
+    )
+    uow.plans.save(
+        _plan(
+            PLAN_ID_2,
+            status=PlanStatus.APPLIED,
+            created_at=BASE_TIME + timedelta(days=1),
+            summary={"blocked_actions": BLOCKED_ACTION_COUNT},
+        )
+    )
+    uow.plans.save(_plan(PLAN_ID_3, status=PlanStatus.READY, created_at=BASE_TIME + timedelta(days=2)))
+
+    page = ListPlansUseCase(PlanQueryPorts(uow)).execute(
+        ListPlansRequest(status=PlanStatus.READY, blocked_only=True),
+    )
+
+    assert tuple(plan.plan_id for plan in page.items) == (PLAN_ID_1,)
+    assert page.total == 1
 
 
 def test_list_plans_orders_newest_first_by_default() -> None:
@@ -514,6 +545,7 @@ def _plan(
     created_at: datetime,
     status: PlanStatus = PlanStatus.READY,
     plan_type: PlanType = PlanType.ADD,
+    summary: dict[str, str] | None = None,
 ) -> Plan:
     return Plan(
         plan_id=plan_id,
@@ -523,6 +555,7 @@ def _plan(
         created_at=created_at,
         config_hash=CONFIG_HASH,
         library_root_at_plan=LIBRARY_ROOT,
+        summary={} if summary is None else summary,
     )
 
 

@@ -937,10 +937,16 @@ class SQLitePlanRepository(_SQLiteRepository):
         *,
         status: PlanStatus | None,
         plan_type: PlanType | None,
+        blocked_only: bool = False,
         page: PageRequest,
     ) -> Page[Plan]:
         """Return one keyset page of Plans ordered (created_at DESC, plan_id DESC)."""
-        where_sql, where_params = _plan_filter_where(library_id, status, plan_type)
+        where_sql, where_params = _plan_filter_where(
+            library_id,
+            status,
+            plan_type,
+            blocked_only=blocked_only,
+        )
         # SQL-injection safety note: where_sql is built only from static clause templates bound with `?`; never raw input.
         count_sql = f"SELECT COUNT(*) FROM plans{where_sql}"  # noqa: S608
         total = _scalar_int(self._connection, count_sql, tuple(where_params))
@@ -2109,6 +2115,8 @@ def _plan_filter_where(
     library_id: LibraryId | None,
     status: PlanStatus | None,
     plan_type: PlanType | None,
+    *,
+    blocked_only: bool,
 ) -> tuple[str, list[object]]:
     clauses: list[str] = []
     params: list[object] = []
@@ -2121,6 +2129,8 @@ def _plan_filter_where(
     if plan_type is not None:
         clauses.append("plan_type = ?")
         params.append(plan_type.value)
+    if blocked_only:
+        clauses.append("CAST(json_extract(summary_json, '$.blocked_actions') AS INTEGER) > 0")
     if not clauses:
         return "", params
     return " WHERE " + " AND ".join(clauses), params
