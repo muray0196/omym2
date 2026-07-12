@@ -11,6 +11,13 @@ export type PlanStatus =
   "ready" | "applying" | "applied" | "partial_failed" | "failed" | "cancelled" | "expired"
 export type PlanActionType = "move" | "skip" | "refresh_metadata"
 export type PlanActionStatus = "planned" | "blocked" | "applied" | "failed"
+export type PlanActionReason =
+  | "target_exists"
+  | "missing_required_metadata"
+  | "invalid_path"
+  | "source_missing"
+  | "source_changed"
+  | "duplicate_hash"
 export type RunStatus = "running" | "succeeded" | "partial_failed" | "failed"
 export type FileEventStatus = "pending" | "succeeded" | "failed"
 
@@ -173,7 +180,7 @@ export interface PlanAction {
   content_hash_at_plan: string | null
   metadata_hash_at_plan: string | null
   status: PlanActionStatus
-  reason: string | null
+  reason: PlanActionReason | null
   sort_order: number
 }
 

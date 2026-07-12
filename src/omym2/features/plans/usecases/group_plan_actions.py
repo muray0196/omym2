@@ -15,6 +15,7 @@ from omym2.features.plans.usecases.get_plan_header import PLAN_NOT_FOUND_MESSAGE
 from omym2.shared.pagination import paginate_group_counts
 
 if TYPE_CHECKING:
+    from omym2.domain.models.plan_action import ActionType, PlanActionReason
     from omym2.features.common_ports import PlanActionGroupRow
     from omym2.features.plans.dto import GroupPlanActionsRequest
     from omym2.features.plans.ports import PlanQueryPorts
@@ -35,6 +36,35 @@ class PlanActionGroupKey:
 
     key: str
     label: str
+
+
+def plan_action_group_row_matches_filters(
+    row: PlanActionGroupRow,
+    *,
+    search: str | None,
+    status: ActionStatus | None,
+    action_type: ActionType | None,
+    reason: PlanActionReason | None,
+) -> bool:
+    """Return whether one action projection matches the shared browse filters."""
+    if status is not None and row.status is not status:
+        return False
+    if action_type is not None and row.action_type is not action_type:
+        return False
+    if reason is not None and row.reason is not reason:
+        return False
+    if not search:
+        return True
+    needle = search.casefold()
+    values = (
+        str(row.action_id),
+        None if row.track_id is None else str(row.track_id),
+        row.source_path,
+        row.target_path,
+        row.content_hash_at_plan,
+        row.metadata_hash_at_plan,
+    )
+    return any(value is not None and needle in value.casefold() for value in values)
 
 
 def derive_plan_action_group_key(row: PlanActionGroupRow, grouping: PlanActionGrouping) -> PlanActionGroupKey | None:
@@ -90,6 +120,14 @@ class GroupPlanActionsUseCase:
 
         accumulators: dict[str, _GroupAccumulator] = {}
         for row in rows:
+            if not plan_action_group_row_matches_filters(
+                row,
+                search=request.search,
+                status=request.status,
+                action_type=request.action_type,
+                reason=request.reason,
+            ):
+                continue
             derived = derive_plan_action_group_key(row, request.grouping)
             if derived is None:
                 continue

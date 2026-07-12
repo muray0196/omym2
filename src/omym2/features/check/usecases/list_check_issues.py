@@ -35,6 +35,7 @@ class ListCheckIssuesUseCase:
         with self.ports.uow as uow:
             page = uow.check_issues.query_page(
                 request.library_id,
+                search=request.search,
                 issue_type=request.issue_type,
                 grouping=request.grouping,
                 group_key=request.group_key,

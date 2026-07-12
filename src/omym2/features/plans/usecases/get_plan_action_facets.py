@@ -30,14 +30,36 @@ class GetPlanActionFacetsUseCase:
         with self.ports.uow as uow:
             if uow.plans.get(request.plan_id) is None:
                 raise PlanNotFoundError(PLAN_NOT_FOUND_MESSAGE)
-            status_facets = uow.plan_actions.status_facets(request.plan_id)
-            action_type_facets = uow.plan_actions.action_type_facets(request.plan_id)
-            reason_facets = uow.plan_actions.reason_facets(request.plan_id)
+            status_facets = uow.plan_actions.status_facets(
+                request.plan_id,
+                search=request.search,
+                action_type=request.action_type,
+                reason=request.reason,
+            )
+            action_type_facets = uow.plan_actions.action_type_facets(
+                request.plan_id,
+                search=request.search,
+                status=request.status,
+                reason=request.reason,
+            )
+            reason_facets = uow.plan_actions.reason_facets(
+                request.plan_id,
+                search=request.search,
+                status=request.status,
+                action_type=request.action_type,
+            )
+            total = uow.plan_actions.count_filtered(
+                request.plan_id,
+                search=request.search,
+                status=request.status,
+                action_type=request.action_type,
+                reason=request.reason,
+            )
             target_collisions = uow.plan_actions.count_target_collisions(request.plan_id)
         return PlanActionFacetsResult(
             status_facets=status_facets,
             action_type_facets=action_type_facets,
             reason_facets=reason_facets,
-            total=sum(facet.count for facet in status_facets),
+            total=total,
             target_collisions=target_collisions,
         )

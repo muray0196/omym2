@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines OMYM2's local Web API envelopes, browsing and Plan-creation requests, pagination/facets/groups, and exclusion of CLI-only trust-stat flags.
 tags: [web-api, pagination, json, contract]
-timestamp: 2026-07-12T15:18:04+09:00
+timestamp: 2026-07-12T16:19:06+09:00
 ---
 
 # Web API Contract
@@ -121,8 +121,8 @@ the numbered tracks. This makes a disc readable as a release while keeping the
 ordinary table focused on stored path inspection.
 
 * `GET /api/tracks?query=&status=&track_id=&library_id=&group_by=&group_key=&limit=&cursor=` — list envelope of `TrackSummary` items. `track_id` is an exact identity filter. `query` matches `title`, `artist`, `album`, `current_path`, or `track_id`, case-insensitive substring. `group_by` and `group_key` are an optional drill-down pair: clients must provide both or neither, echoing a key obtained from the groups endpoint unchanged. The group filter combines with the other filters as AND.
-* `GET /api/tracks/facets?library_id=` — facet envelope; facet field: `status`.
-* `GET /api/tracks/groups?group_by=&parent_key=&library_id=&limit=&cursor=` — group envelope. Supported `group_by` values are `artist`, `album`, `disc`, and the retained aggregate `artist_album`.
+* `GET /api/tracks/facets?query=&library_id=` — facet envelope; facet field: `status`. `query` has the same matching semantics as the list endpoint. Status counts apply the query while omitting the list's selected status so the UI can show every available status choice.
+* `GET /api/tracks/groups?group_by=&parent_key=&query=&status=&library_id=&limit=&cursor=` — group envelope. Supported `group_by` values are `artist`, `album`, `disc`, and the retained aggregate `artist_album`. Search and status apply before group counts and carry into hierarchy drill-downs.
 
 Track hierarchy groups are derived only from persisted Track metadata; they do
 not read the filesystem, parse a stored path, load the current PathPolicy, or
@@ -158,9 +158,9 @@ Plan ordering: `created_at DESC, plan_id DESC`. Action ordering: `sort_order ASC
 
 * `GET /api/plans?status=&type=&limit=&cursor=` — list envelope of `PlanSummary` items.
 * `GET /api/plans/{plan_id}` → `{ "detail": { "plan": {...} }, "errors": [] }`. Header only: the previous embedded `actions` array and `total_action_count` field are REMOVED. Actions are fetched separately (below).
-* `GET /api/plans/{plan_id}/actions?status=&group_by=&group_key=&limit=&cursor=` — list envelope of `PlanAction` items. `group_by` and `group_key` are an optional drill-down pair: clients must provide both or neither. The group filter combines with `status` as AND and uses the same membership rules as the groups endpoint.
-* `GET /api/plans/{plan_id}/facets` — facet envelope; facet fields: `status`, `action_type`, and non-null `reason`. The response additionally carries top-level `target_collisions`, counting distinct non-null target paths recorded by two or more actions.
-* `GET /api/plans/{plan_id}/groups?group_by=&limit=&cursor=` — enriched Plan action group envelope. Supported `group_by` values are `target_directory`, `source_directory`, `artist_album`, `action_type`, `status`, `block_reason`, and `extension`.
+* `GET /api/plans/{plan_id}/actions?query=&status=&action_type=&reason=&group_by=&group_key=&limit=&cursor=` — list envelope of `PlanAction` items. `query` matches `action_id`, `track_id`, `source_path`, `target_path`, `content_hash_at_plan`, or `metadata_hash_at_plan`, case-insensitive substring. `group_by` and `group_key` are an optional drill-down pair: clients must provide both or neither. Search, catalog facets, and the group filter combine as AND and use the same membership rules as the groups endpoint.
+* `GET /api/plans/{plan_id}/facets?query=&status=&action_type=&reason=` — facet envelope; facet fields: `status`, `action_type`, and non-null `reason`. Each facet applies the query and the other two facet filters while omitting its own filter, so alternate values remain visible. `total` counts actions matching every supplied filter. The response additionally carries Plan-wide top-level `target_collisions`, counting distinct non-null target paths recorded by two or more actions; browsing filters do not change that reviewed-risk scalar.
+* `GET /api/plans/{plan_id}/groups?group_by=&query=&status=&action_type=&reason=&limit=&cursor=` — enriched Plan action group envelope. Supported `group_by` values are `target_directory`, `source_directory`, `artist_album`, `action_type`, `status`, `block_reason`, and `extension`. Search and catalog facet filters apply before group counts and carry into group drill-downs.
 * `POST /api/plans/add` — creates an add Plan; the body may carry `source_path` as a string or `null`.
 * `POST /api/plans/organize` — registers or organizes a Library; the body may carry `library_root` as a string or `null`.
 * `POST /api/plans/refresh` — creates a refresh Plan; the body may carry `target_path` as a string or `null` and `include_all` as a boolean.
@@ -209,9 +209,9 @@ same members as its corresponding groups response, combines with an optional
 group key from `GET /api/check/groups` and echo it unchanged; they do not
 construct group keys themselves.
 
-* `GET /api/check?issue_type=&group_by=&group_key=&library_id=&limit=&cursor=` — list envelope of `CheckIssue` items, plus a top-level `"checked_at": "<iso>" | null` field. The optional `group_by` / `group_key` pair loads a group’s first examples and, through pagination, its full member list.
-* `GET /api/check/facets?library_id=` — facet envelope; facet field: `issue_type`; carries `checked_at` per the Facet Envelope section above.
-* `GET /api/check/groups?group_by=&library_id=&limit=&cursor=` — enriched Check issue group envelope. Supported `group_by` values are `issue_type`, `severity`, `path_root`, `artist_album`, `suggested_command`, and `library_id`. Group members are not embedded in this response; clients load examples and expanded members through the list endpoint's drill-down pair.
+* `GET /api/check?query=&issue_type=&group_by=&group_key=&library_id=&limit=&cursor=` — list envelope of `CheckIssue` items, plus a top-level `"checked_at": "<iso>" | null` field. `query` matches `library_id`, `path`, `track_id`, `plan_id`, or `detail`, case-insensitive substring. The optional `group_by` / `group_key` pair loads a group’s first examples and, through pagination, its full member list.
+* `GET /api/check/facets?query=&library_id=` — facet envelope; facet field: `issue_type`; carries `checked_at` per the Facet Envelope section above. `query` has the same semantics as the list endpoint, and counts omit the list's selected issue type so every available type remains visible.
+* `GET /api/check/groups?group_by=&query=&issue_type=&library_id=&limit=&cursor=` — enriched Check issue group envelope. Supported `group_by` values are `issue_type`, `severity`, `path_root`, `artist_album`, `suggested_command`, and `library_id`. Search and issue type apply before group counts. Group members are not embedded in this response; clients load examples and expanded members through the list endpoint's drill-down pair.
 * `POST /api/check/run` — CSRF-protected via the `X-OMYM2-CSRF-Token` header; body may carry an optional `library_id`. With it, the request recomputes one Library; without it, the request recomputes every known Library. Returns `{ "checked_at": "<iso>", "total": N, "errors": [] }` for that invocation.
 
 Check group values are derived from each persisted `CheckIssue`; no endpoint
@@ -262,4 +262,4 @@ Run ordering: `started_at DESC, run_id DESC`. Event ordering: `sequence_no ASC, 
 
 ## Search Implementation
 
-Search (`query` filters and substring matching) is implemented with SQL `LIKE` and `json_extract`, not a full-text index. FTS5 is explicitly deferred; it is the escalation path if a Library's track count reaches the hundreds of thousands and `LIKE`-based search is no longer fast enough.
+Search (`query` filters and substring matching) is implemented with SQL `LIKE` and, for Track metadata, `json_extract`, not a full-text index. `%`, `_`, and the escape character in user input are matched literally. FTS5 is explicitly deferred; it is the escalation path if browse-search volume makes `LIKE`-based search too slow.

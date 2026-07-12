@@ -13,7 +13,7 @@ from omym2.shared.pagination import PageRequest
 
 if TYPE_CHECKING:
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-    from omym2.domain.models.plan_action import ActionStatus, PlanAction
+    from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
     from omym2.shared.ids import LibraryId, PlanId
     from omym2.shared.pagination import FacetValue
 
@@ -76,7 +76,10 @@ class ListPlanActionsRequest:
     """
 
     plan_id: PlanId
+    search: str | None = None
     status: ActionStatus | None = None
+    action_type: ActionType | None = None
+    reason: PlanActionReason | None = None
     grouping: PlanActionGrouping | None = None
     group_key: str | None = None
     page: PageRequest = field(default_factory=PageRequest)
@@ -84,9 +87,13 @@ class ListPlanActionsRequest:
 
 @dataclass(frozen=True, slots=True)
 class PlanActionFacetsRequest:
-    """Request PlanAction status/action_type/reason facet counts for one Plan."""
+    """Request filtered PlanAction status/action_type/reason facet counts for one Plan."""
 
     plan_id: PlanId
+    search: str | None = None
+    status: ActionStatus | None = None
+    action_type: ActionType | None = None
+    reason: PlanActionReason | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +119,10 @@ class GroupPlanActionsRequest:
     """Request one keyset page of a Plan's actions grouped by a supported grouping."""
 
     plan_id: PlanId
+    search: str | None = None
+    status: ActionStatus | None = None
+    action_type: ActionType | None = None
+    reason: PlanActionReason | None = None
     grouping: PlanActionGrouping = PlanActionGrouping.TARGET_DIRECTORY
     page: PageRequest = field(default_factory=PageRequest)
 

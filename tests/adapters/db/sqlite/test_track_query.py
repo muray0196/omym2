@@ -219,6 +219,48 @@ def test_status_facets_orders_count_desc_then_value_asc(tmp_path: Path) -> None:
     ]
 
 
+def test_search_and_status_scope_track_facets_and_hierarchy_groups(tmp_path: Path) -> None:
+    """Query-scoped facets and groups use the same search/status predicates as Track lists."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(LIBRARY_ID))
+        uow.tracks.save(
+            _track(
+                TRACK_ID,
+                LIBRARY_ID,
+                current_path="A/Match.flac",
+                metadata=TrackMetadata(title="Match", artist="First", album="Album"),
+            )
+        )
+        uow.tracks.save(
+            _track(
+                SECOND_TRACK_ID,
+                LIBRARY_ID,
+                current_path="B/Match.flac",
+                status=TrackStatus.REMOVED,
+                metadata=TrackMetadata(title="Match", artist="Second", album="Album"),
+            )
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        facets = uow.tracks.status_facets(LIBRARY_ID, search="Match")
+        groups = uow.tracks.group_page(
+            LIBRARY_ID,
+            TrackGrouping.ARTIST,
+            None,
+            PageRequest(),
+            search="Match",
+            status=TrackStatus.REMOVED,
+        )
+
+    assert [(facet.value, facet.count) for facet in facets] == [
+        (TrackStatus.ACTIVE.value, 1),
+        (TrackStatus.REMOVED.value, 1),
+    ]
+    assert [(group.label, group.count) for group in groups.items] == [("Second", 1)]
+
+
 def test_group_page_orders_and_paginates_with_count_then_key_keyset(tmp_path: Path) -> None:
     """group_page orders count DESC/key ASC and its (count, key) keyset visits every group once."""
     database_file = default_application_paths(tmp_path).database_file

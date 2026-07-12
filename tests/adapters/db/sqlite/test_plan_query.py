@@ -208,6 +208,53 @@ def test_plan_action_query_page_filters_by_status_in_sql(tmp_path: Path) -> None
     assert page.total == 1
 
 
+def test_plan_action_search_and_facets_share_combined_filters(tmp_path: Path) -> None:
+    """Search escapes LIKE wildcards and disjunctive facets retain the other active filters."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library(LIBRARY_ID))
+        uow.plans.save(_plan(PLAN_ID_1, created_at=BASE_TIME))
+        uow.plan_actions.save(
+            _action(
+                ACTION_ID_1,
+                sort_order=1,
+                status=ActionStatus.BLOCKED,
+                action_type=ActionType.SKIP,
+                target_path="Artist/50%_Deal.flac",
+                reason=PlanActionReason.TARGET_EXISTS,
+            )
+        )
+        uow.plan_actions.save(_action(ACTION_ID_2, sort_order=2, target_path="Artist/50XXDeal.flac"))
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        page = uow.plan_actions.query_page(
+            PLAN_ID_1,
+            search="50%_Deal",
+            status=ActionStatus.BLOCKED,
+            action_type=ActionType.SKIP,
+            reason=PlanActionReason.TARGET_EXISTS,
+            page=PageRequest(),
+        )
+        status_facets = uow.plan_actions.status_facets(
+            PLAN_ID_1,
+            search="50%_Deal",
+            action_type=ActionType.SKIP,
+            reason=PlanActionReason.TARGET_EXISTS,
+        )
+        total = uow.plan_actions.count_filtered(
+            PLAN_ID_1,
+            search="50%_Deal",
+            status=ActionStatus.BLOCKED,
+            action_type=ActionType.SKIP,
+            reason=PlanActionReason.TARGET_EXISTS,
+        )
+
+    assert tuple(action.action_id for action in page.items) == (ACTION_ID_1,)
+    assert [(facet.value, facet.count) for facet in status_facets] == [(ActionStatus.BLOCKED.value, 1)]
+    assert total == 1
+
+
 def test_plan_action_facets_order_count_desc_then_value_asc(tmp_path: Path) -> None:
     """Status, action-type, and reason facets are ordered count DESC, then value ASC."""
     database_file = default_application_paths(tmp_path).database_file

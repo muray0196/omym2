@@ -250,6 +250,50 @@ def test_track_facets_api_returns_status_counts(tmp_path: Path) -> None:
     assert payload["errors"] == []
 
 
+def test_track_facets_and_groups_apply_search_and_status_scope(tmp_path: Path) -> None:
+    """Track query facets count search matches and groups add the selected status as an AND filter."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    with SQLiteUnitOfWork(app_paths.database_file) as uow:
+        uow.libraries.save(_library(str(library_root)))
+        uow.tracks.save(
+            _track(
+                TRACK_ID,
+                current_path="A/Match.flac",
+                status=TrackStatus.ACTIVE,
+                metadata=TrackMetadata(title="Match", artist="First", album="Album"),
+            )
+        )
+        uow.tracks.save(
+            _track(
+                SECOND_TRACK_ID,
+                current_path="B/Match.flac",
+                status=TrackStatus.REMOVED,
+                metadata=TrackMetadata(title="Match", artist="Second", album="Album"),
+            )
+        )
+        uow.commit()
+    client = TestClient(create_web_app(app_paths.config_file, app_paths.database_file))
+
+    facets_response = client.get(WEB_API_TRACKS_FACETS_ROUTE, params={"query": "Match"})
+    groups_response = client.get(
+        WEB_API_TRACKS_GROUPS_ROUTE,
+        params={"group_by": "artist", "query": "Match", "status": "removed"},
+    )
+
+    assert facets_response.status_code == SUCCESS_STATUS_CODE
+    facets = _object_payload(_json_payload(facets_response), "facets")
+    assert facets["status"] == [
+        {"value": TrackStatus.ACTIVE.value, "count": 1},
+        {"value": TrackStatus.REMOVED.value, "count": 1},
+    ]
+    assert groups_response.status_code == SUCCESS_STATUS_CODE
+    assert _object_list_payload(_json_payload(groups_response), "items") == [
+        {"key": '["Second"]', "label": "Second", "count": 1}
+    ]
+
+
 def test_track_groups_api_returns_ordered_groups_with_keyset(tmp_path: Path) -> None:
     """Groups are ordered count DESC/key ASC, and the (count, key) keyset walks every group once."""
     app_paths = default_application_paths(tmp_path)

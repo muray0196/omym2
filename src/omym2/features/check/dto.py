@@ -45,6 +45,7 @@ class ListCheckIssuesRequest:
     """
 
     library_id: LibraryId | None = None
+    search: str | None = None
     issue_type: CheckIssueType | None = None
     grouping: CheckIssueGrouping | None = None
     group_key: str | None = None
@@ -61,9 +62,10 @@ class ListCheckIssuesResult:
 
 @dataclass(frozen=True, slots=True)
 class CheckIssueFacetsRequest:
-    """Request CheckIssue issue_type facet counts for a Library or every known Library."""
+    """Request CheckIssue issue_type facet counts within a Library/search scope."""
 
     library_id: LibraryId | None = None
+    search: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,5 +82,7 @@ class GroupCheckIssuesRequest:
     """Request one keyset page of CheckIssue groups for a Library or every known Library."""
 
     library_id: LibraryId | None = None
+    search: str | None = None
+    issue_type: CheckIssueType | None = None
     grouping: CheckIssueGrouping = CheckIssueGrouping.ISSUE_TYPE
     page: PageRequest = field(default_factory=PageRequest)

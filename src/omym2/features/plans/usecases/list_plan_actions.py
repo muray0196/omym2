@@ -9,7 +9,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from omym2.features.plans.usecases.get_plan_header import PLAN_NOT_FOUND_MESSAGE, PlanNotFoundError
-from omym2.features.plans.usecases.group_plan_actions import derive_plan_action_group_key
+from omym2.features.plans.usecases.group_plan_actions import (
+    derive_plan_action_group_key,
+    plan_action_group_row_matches_filters,
+)
 from omym2.shared.pagination import INVALID_CURSOR_MESSAGE, CursorDecodeError, Page
 
 if TYPE_CHECKING:
@@ -48,7 +51,14 @@ class ListPlanActionsUseCase:
             if uow.plans.get(request.plan_id) is None:
                 raise PlanNotFoundError(PLAN_NOT_FOUND_MESSAGE)
             if request.grouping is None or request.group_key is None:
-                return uow.plan_actions.query_page(request.plan_id, status=request.status, page=request.page)
+                return uow.plan_actions.query_page(
+                    request.plan_id,
+                    search=request.search,
+                    status=request.status,
+                    action_type=request.action_type,
+                    reason=request.reason,
+                    page=request.page,
+                )
             return _group_member_page(uow, request, request.grouping, request.group_key)
 
 
@@ -64,7 +74,14 @@ def _group_member_page(
         (
             row
             for row in rows
-            if (request.status is None or row.status is request.status) and _is_group_member(row, grouping, group_key)
+            if plan_action_group_row_matches_filters(
+                row,
+                search=request.search,
+                status=request.status,
+                action_type=request.action_type,
+                reason=request.reason,
+            )
+            and _is_group_member(row, grouping, group_key)
         ),
         key=lambda row: (row.sort_order, str(row.action_id)),
     )
