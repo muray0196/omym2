@@ -20,9 +20,6 @@
                 "showReuseMessage": false
             },
             "problemMatcher": [],
-            "runOptions": {
-                "runOn": "folderOpen"
-            }
         }
     ]
 }
