@@ -54,6 +54,7 @@ conformance via the docs bundle test under `tests/docs/`.
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development commands, quality gates, suppressions, and runtime configuration. |
 | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | Pipeline benchmark procedure for performance changes. |
 | [docs/TESTING.md](docs/TESTING.md) | Test policy and coverage expectations. |
-| [docs/codebase/index.md](docs/codebase/index.md) | Detailed source layout, dependency, port, and naming rules. |
-| [docs/contracts/index.md](docs/contracts/index.md) | Config, DB schema, path identity, storage representation, and status values. |
+| [docs/codebase/index.md](docs/codebase/index.md) | Detailed source layout, dependency, port, naming, and Web frontend rules. |
+| [docs/contracts/index.md](docs/contracts/index.md) | Config, DB, Operation, path identity, status, and Web API contracts. |
+| [docs/decisions/index.md](docs/decisions/index.md) | Accepted architecture decisions and their rationale and consequences. |
 | [docs/execution/index.md](docs/execution/index.md) | Plan, apply, undo, refresh, organize, check, and failure semantics. |

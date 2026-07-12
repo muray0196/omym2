@@ -27,6 +27,11 @@ Contract Change Test Requirements table, "Config contract" row.
    `src/omym2/config.py` (e.g. `ALLOWED_UI_THEMES`) rather than assuming
    `docs/contracts/config.md` is exhaustive; when the doc lags the source,
    update the doc in the same change (open `update-docs`).
+5. `config_revision` is opaque raw-storage concurrency state, not an AppConfig
+   field or TOML key. Web and CLI saves acquire the shared exclusive lock,
+   recheck the expected revision, and use the Config adapter's atomic replace.
+   Never add last-write-wins or update SQLite Library status as part of the
+   Config file write; effective staleness is derived from fingerprints.
 
 ## Every changed or added key touches these surfaces
 
@@ -36,6 +41,7 @@ Contract Change Test Requirements table, "Config contract" row.
 | TOML key allow-list, type/choice rule | `src/omym2/adapters/config/config_validator.py` |
 | TOML writer | `src/omym2/adapters/config/toml_config_store.py` |
 | Web settings JSON payload and choices list | `src/omym2/adapters/web/routes/api_serializers.py` |
+| Raw revision read/CAS DTO and ConfigStore port | `src/omym2/features/common_ports.py`, `src/omym2/features/settings/` |
 | Contract doc | `docs/contracts/config.md` (open `update-docs`) |
 | Plan/Library staleness fingerprint, only if the field can change generated paths | `src/omym2/domain/services/config_fingerprint.py` |
 
@@ -59,6 +65,8 @@ Libraries would not detect the settings change as stale.
    changing an environment variable, is out of scope — see
    `docs/DEVELOPMENT.md`.
 2. Edit every surface in the table above in the same change.
+   If the change touches save/load concurrency rather than the TOML schema,
+   edit only the raw-revision/CAS surfaces and do not invent a TOML key.
 3. Decide and implement the backward-compatibility behavior from invariant 3
    for the specific key(s) touched.
 4. If the field affects generated paths or fingerprints, update

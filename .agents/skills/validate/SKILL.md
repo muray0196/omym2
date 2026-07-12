@@ -20,7 +20,14 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 
 `scripts/checks.sh` wraps the authoritative commands in `docs/DEVELOPMENT.md`. If the script is missing or itself broken, run those commands directly.
 
-The wrapper requires an explicit mode and assumes dependencies are already installed. Run `uv sync --locked --dev` and `cd web && npm ci` after checkout, after dependency manifests or lockfiles change, or when the environment is missing. Do not reinstall dependencies during ordinary edit loops or validation reruns.
+The wrapper requires an explicit mode and assumes dependencies are already
+installed. Run `uv sync --locked --dev` after checkout or Python dependency
+changes. Before M1, the shipping gate still installs under excluded `web/`;
+renewal implementation must not enter it for examples. Once M1 creates the
+clean-room project, install and run renewal gates in `web-v2/` through M4; M5
+changes that path to `web/`. `docs/DEVELOPMENT.md` and `scripts/checks.sh` must
+change with each phase before relying on `web` mode. Do not reinstall
+dependencies during ordinary edit loops or validation reruns.
 
 ## Triage table
 

@@ -1,14 +1,17 @@
 ---
 type: Execution Spec
 title: Execution Model
-description: Defines the common Plan-centered execution model shared by all commands, covering Plan/PlanAction/Run/FileEvent behavior, single-use Plan policy, the blocked-vs-failed distinction, and the durable operation log principle.
-tags: [execution-model, plan, run, file-event]
-timestamp: 2026-07-12T02:41:12+09:00
+description: Defines Plan-centered execution, durable Operation versus FileEvent responsibilities, shared exclusion, single-use Plans, and blocked-versus-failed behavior.
+tags: [execution-model, operation, plan, run, file-event, exclusion]
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # Execution Model
 
-This document is authoritative for the common Plan-centered execution model, Plan / PlanAction / Run / FileEvent behavior, single-use Plan policy, blocked-vs-failed distinction, durable operation log principle, and FileEvent creation scope.
+This document is authoritative for the common Plan-centered execution model,
+Operation / Plan / PlanAction / Run / FileEvent responsibilities, shared
+exclusive-operation boundary, single-use Plan policy, blocked-vs-failed
+distinction, and FileEvent creation scope.
 
 Task-specific behavior is in [add.md](add.md), [apply.md](apply.md), [organize.md](organize.md), [refresh.md](refresh.md), [undo.md](undo.md), [check.md](check.md), and [failure-policy.md](failure-policy.md).
 
@@ -42,6 +45,34 @@ finish run
 Plan actions that do not mutate Library music files, such as `skip` and `refresh_metadata` actions, follow the same Plan and Run flow but omit the FileEvent steps.
 
 This allows the CLI, Web UI, and tests to share the same processing model.
+
+## Durable Background Operations
+
+Add, Organize, Refresh, Check, Apply, and Undo Plan generation are represented
+by durable Operations when executed as long-running state-changing work. The
+Web dispatches accepted work after returning `202`; the CLI may run the worker
+inline, but it persists the same Operation lifecycle and holds the same lock.
+
+An Operation records request acceptance, idempotency, progress, terminal
+result, and interruption. It is not evidence that a particular Library music
+file mutation happened. FileEvents remain the only mutation log and preserve
+their pending-before-mutation ordering.
+
+Operation lifecycle, retention, and restart reconciliation are authoritative in
+[../contracts/operations.md](../contracts/operations.md).
+
+## Shared Exclusive Operation
+
+Web and CLI use one application-root cross-process lock for every state-changing
+operation, including Config writes, Plan generation, Check, Apply, ready-Plan
+Cancel, Undo Plan generation, and Operation cleanup/reconciliation. Read-only
+snapshot requests remain available while the lock is held.
+
+A conflicting state-changing request fails immediately rather than queueing.
+The lock is held for the full worker lifetime, not merely while accepting an
+HTTP request or opening a transaction. Its mechanism and conflict matrix are
+recorded in
+[../decisions/0003-cross-process-exclusive-operation-lock.md](../decisions/0003-cross-process-exclusive-operation-lock.md).
 
 User-facing commands should be purpose-based. Internal Plan concepts should not dominate primary command names.
 
@@ -87,9 +118,11 @@ eligible action succeeds, an eligible-action failure makes the Run `failed`.
 
 ## FileEvent Behavior
 
-A FileEvent is a durable operation log entry for one Library music file mutation.
+A FileEvent is a durable mutation-log entry for one Library music file mutation.
 
-A FileEvent is created as `pending` before the Library music file mutation. After the mutation, it is updated to `succeeded` or `failed`.
+A FileEvent is created as `pending` before the Library music file mutation.
+After the process observes the mutation result, it is updated to `succeeded` or
+`failed`; a crash or otherwise unobserved result remains `pending`.
 
 FileEvents represent Library music file mutations only. DB-only state changes such as registering or updating Tracks are not FileEvents. Applying a `refresh_metadata` action updates the Track in place without moving files, so it becomes `applied` without a FileEvent.
 
@@ -104,6 +137,10 @@ FileEvents are used for:
 
 A Plan is single-use in the initial version. Once apply starts, the same Plan must not be applied again.
 
+Apply starts only through an atomic claim that transitions the ready Plan,
+creates its running Run, and reserves its queued Operation in one transaction
+while the shared lock is held. Worker dispatch occurs only after that commit.
+
 If recovery or retry is needed, the user creates a new Plan from the current DB and filesystem state.
 
 ## Blocked Vs Failed
@@ -114,10 +151,16 @@ Precondition failures detected during apply are represented as `failed`.
 
 Action types and allowed status / reason values are cataloged in [../contracts/status-reason-catalog.md](../contracts/status-reason-catalog.md).
 
-## Durable Operation Log
+## Durable File-Mutation Log
 
 Library music file operations and DB transactions cannot be made fully atomic. Therefore, apply does not rely on one large transaction that covers the whole run.
 
-FileEvents are the durable operation log. Each Library music file mutation records a FileEvent as `pending` before executing the mutation and updates it after the mutation succeeds or fails.
+FileEvents are the durable Library music file mutation log. Each mutation
+records a FileEvent as `pending` before executing the mutation and updates it
+only after the process observes success or a definite failure.
 
-If the process crashes, pending or partially recorded FileEvents are used to inspect what may have happened. The initial recovery policy is conservative: report the state through `check` and require manual review rather than automatically repairing the filesystem.
+If the process crashes or cannot observe the result, the FileEvent remains
+`pending`; it is not rewritten to `failed` merely to make the Run terminal.
+Restart reconciliation marks the durable Operation `interrupted` and makes its
+Plan/Run terminal from confirmed evidence only. `check` reports pending events
+and requires manual review rather than automatically repairing the filesystem.

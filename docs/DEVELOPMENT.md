@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies dependency setup, developer quality gates, checks.sh, suppression rules, and Python runtime configuration policy.
-tags: [development, tooling, quality-gates, validation]
-timestamp: 2026-07-11T21:38:58+09:00
+description: Specifies dependency setup, current and renewal-transition quality gates, checks.sh, suppressions, and Python runtime configuration policy.
+tags: [development, tooling, quality-gates, validation, web-renewal]
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # Development Harness
@@ -27,6 +27,21 @@ cd ..
 ```
 
 Dependency installation is setup, not a quality check. Reuse `.venv`, `web/node_modules/`, and tool caches during ordinary edit loops and validation reruns. Do not routinely delete or reinstall them; clean installation rewrites the complete dependency tree. Hosted CI performs both locked installations before running the quality wrapper.
+
+## Web Renewal Transition
+
+Until M1 creates `web-v2/`, the runnable frontend commands in this document
+continue validating the packaged pre-cutover UI under `web/`. That directory is
+an exclusion zone for renewal implementation; its commands and dependencies
+keep the shipping package green but are not examples or design inputs.
+
+In the M1 foundation change, update dependency setup, `scripts/checks.sh`, npm
+cache paths, and CI working directories together to target `web-v2/`, and add
+the OpenAPI drift, strict typecheck, unit/component, Playwright, package audit,
+and performance commands required by [TESTING.md](TESTING.md) and
+[codebase/web-frontend.md](codebase/web-frontend.md). Document the exact
+runnable commands here in that same change. M5 changes only those path
+references from `web-v2/` to `web/` as part of the mechanical rename.
 
 ## Edit-Loop Commands
 

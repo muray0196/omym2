@@ -3,15 +3,16 @@ type: Command Reference
 title: Commands
 description: Lists the OMYM2 CLI surface, including Plan workflows, diagnostics, settings, and the explicit organize/refresh/check trust-stat optimization flags.
 tags: [cli, commands, reference]
-timestamp: 2026-07-12T02:41:12+09:00
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # Commands
 
 This document is authoritative for the CLI command surface. Per-command descriptions are summaries only. Detailed Plan, Run, FileEvent, and failure semantics live in [execution/](execution/), and storage details live in [STORAGE.md](STORAGE.md).
 
-The CLI is the primary execution interface. Complex settings editing is handled
-in the local Web UI.
+The CLI is a complete execution interface. The local Web UI is a peer inbound
+surface over the same usecases and safety contracts; this document specifies
+only CLI syntax and behavior.
 
 ## Command List
 
@@ -63,6 +64,20 @@ omym2 inspect <file>
 ```
 
 Primary commands are purpose-based. Plan orchestration and lazy bootstrap rules are defined in [execution/model.md](execution/model.md).
+
+## Durable Command Coordination
+
+Long-running state-changing CLI flows—Add, Organize, Refresh, Check, Apply, and
+Undo Plan generation—run synchronously from the caller's perspective while
+recording the same durable Operation lifecycle used by the Web worker. Platform
+orchestration generates the internal idempotency key; no CLI flag or new
+user-facing key is added.
+
+These commands hold the shared application-root exclusive lock for their full
+execution. A conflicting CLI command fails immediately rather than queueing,
+and a crashed Operation is marked interrupted and never resumed automatically.
+This control-plane record does not change the command's Plan/Run/FileEvent
+output semantics or replace FileEvents for music-file mutation evidence.
 
 ## add
 

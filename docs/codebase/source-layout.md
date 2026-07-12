@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Source Layout
-description: Authoritative description of OMYM2's src/ layout and Feature-oriented Hexagonal Architecture, covering the domain, features, adapters, platform, and shared packages and rules for adding new directories.
-tags: [source-layout, architecture, hexagonal-architecture, python]
-timestamp: 2026-07-12T02:41:12+09:00
+description: Defines OMYM2's feature-oriented source layout, including durable Operation placement, dependency layers, composition, and directory rules.
+tags: [source-layout, architecture, operations, hexagonal-architecture, python]
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # Source Layout
@@ -28,9 +28,13 @@ src/
     shared/
 ```
 
-Core concepts such as Library, Track, Plan, Run, FileEvent, and PathPolicy are not split by feature. They are placed in `domain/` as the shared domain kernel for all of OMYM2.
+Core concepts such as Library, Track, Plan, Run, FileEvent, Operation, and
+PathPolicy are not split by feature. They are placed in `domain/` as the shared
+domain kernel for all of OMYM2.
 
-Features are divided by user goal, such as `settings`, `artist_ids`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`, `plans`, `history`, `tracks`, and `inspect`.
+Features are divided by user goal, such as `settings`, `artist_ids`, `organize`,
+`add`, `refresh`, `apply`, `undo`, `check`, `operations`, `plans`, `history`,
+`tracks`, and `inspect`.
 
 CLI and Web call feature usecases as inbound adapters. DB, filesystem, metadata
 reader, config loader, and artist-ID integrations implement ports as outbound
@@ -56,6 +60,7 @@ src/
       apply/
       undo/
       check/
+      operations/
       plans/
       history/
       inspect/
@@ -92,6 +97,7 @@ Main targets:
 * PlanAction
 * Run
 * FileEvent
+* Operation
 * PathPolicy
 * CollisionPolicy
 * CheckRun
@@ -113,6 +119,8 @@ PathPolicy is a pure domain service.
 * `apply`: apply a Plan and update run / file_events / tracks
 * `undo`: create an undo plan from a run and apply it if needed
 * `check`: detect inconsistencies between the DB and the filesystem
+* `operations`: retrieve durable Operation state and reconcile interrupted
+  lifecycle records without dispatching another feature
 * `plans`: get plan lists and details
 * `history`: get runs / file_events
 * `tracks`: list managed Tracks for read-only inspection
@@ -127,7 +135,8 @@ When a usecase needs files from a directory, it uses FileScanner only to discove
 `adapters/` implement ports and handle external I/O.
 
 * `adapters/db/sqlite`: SQLite repositories / UnitOfWork
-* `adapters/fs`: file discovery / snapshot capture / move / path operations / hash calculation
+* `adapters/fs`: file discovery / snapshot capture / move / path operations /
+  hash calculation / native application-root exclusive lock
 * `adapters/metadata`: metadata reading with mutagen
 * `adapters/artist_ids`: fastText Japanese-name detection and MusicBrainz artist name lookup
 * `adapters/config`: TOML config store / validator / defaults
@@ -147,6 +156,10 @@ Adapters may create and restore domain models. They must not contain business ru
 * `cli_path_normalization.py`: `normalize_cli_path(...)`, injected into add, organize, and refresh command dependencies so their handlers do not resolve filesystem paths directly.
 * `cli_entry_point.py`: `main()` / `run_cli(...)`, the process entry point that both the `omym2` console script and `python -m omym2` route through.
 * `web_composition.py`: `build_api_route_context(...)` and `build_web_app(...)`, which build the Web UI's `ApiRouteContext` and FastAPI app.
+* `operation_composition.py`: wires durable Operation persistence, the
+  application-root lock, progress reporting, reconciliation, and the one-slot
+  worker that invokes already-wired feature usecases without making features
+  import each other.
 
 Feature-to-feature chaining belongs in CLI, Web, or platform orchestration, not inside a feature importing another feature's internals.
 

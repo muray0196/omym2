@@ -73,7 +73,7 @@ DIRECTORY_METADATA: dict[str, DirectoryMetadata] = {
         heading="Codebase",
         intro="This folder contains detailed source layout, dependency, port, and naming rules.",
         display_name="Codebase",
-        parent_description="Source layout, dependency, port, and naming rules.",
+        parent_description="Source layout, dependency, ports, naming, and Web frontend rules.",
         file_order=(
             "source-layout.md",
             "dependency-boundaries.md",
@@ -86,12 +86,25 @@ DIRECTORY_METADATA: dict[str, DirectoryMetadata] = {
         heading="Contracts",
         intro=("This folder contains concrete contracts for persisted state and externally\nobservable values."),
         display_name="Contracts",
-        parent_description="Config, DB schema, path identity, storage representation, and status values.",
+        parent_description="Config, DB, Operation, path identity, status, and Web API contracts.",
         file_order=(
             "config.md",
             "db-schema.md",
+            "operations.md",
             "path-identity-storage.md",
             "status-reason-catalog.md",
+            "web-api.md",
+        ),
+    ),
+    "decisions": DirectoryMetadata(
+        heading="Architecture Decisions",
+        intro="This folder records accepted architecture decisions and their consequences.",
+        display_name="Architecture Decisions",
+        parent_description="Accepted architecture decisions, rationale, and consequences.",
+        file_order=(
+            "0001-breaking-bundled-web-api.md",
+            "0002-durable-operations-over-polling.md",
+            "0003-cross-process-exclusive-operation-lock.md",
         ),
     ),
     "execution": DirectoryMetadata(

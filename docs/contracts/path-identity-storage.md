@@ -3,7 +3,7 @@ type: Contract
 title: Path Identity And Storage Contract
 description: Defines the authoritative rules for Library and Track identity stability, stored path representation, PathResolver boundaries, absolute-path exceptions, and path escape prevention.
 tags: [paths, identity, storage, library]
-timestamp: 2026-07-12T02:13:19+09:00
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # Path Identity And Storage Contract
@@ -71,7 +71,12 @@ Absolute paths are allowed only where the path points outside Library-managed st
 
 Library-managed Track paths must not be stored as absolute paths.
 
-An absolute undo target must equal the external source of a succeeded add/import FileEvent whose originating PlanAction imported the same Track, and the restore source must equal that Track's current Library path, which may differ from the original import target after later in-Library moves. Merely attaching a Track ID to an absolute PlanAction target is not sufficient provenance.
+An absolute Undo target must equal the external source of the succeeded
+add/import FileEvent identified by that Undo PlanAction's `reverses_event_id`;
+the originating PlanAction must have imported the same Track, and the restore
+source must equal that Track's current Library path, which may differ from the
+original import target after later in-Library moves. Merely attaching a Track
+ID to an absolute PlanAction target is not sufficient provenance.
 
 ## PathPolicy Change
 

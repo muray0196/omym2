@@ -1,22 +1,28 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines OMYM2's SQLite tables, nullable Track stat baselines, forward-only migrations, performance indexes, stored JSON boundaries, and timestamp policy.
+description: Defines OMYM2's SQLite tables, Operation schema draft and atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-12T02:41:12+09:00
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # DB Schema Contract
 
 This document is authoritative for the OMYM2 SQLite schema contract, table responsibilities, migrations, stored JSON fields, timestamp policy, and repository persistence boundaries.
 
-Storage responsibility is summarized in [../STORAGE.md](../STORAGE.md). Path and identity representation rules are in [path-identity-storage.md](path-identity-storage.md).
+Storage responsibility is summarized in [../STORAGE.md](../STORAGE.md). Durable
+Operation lifecycle and retention behavior are authoritative in
+[operations.md](operations.md). Path and identity representation rules are in
+[path-identity-storage.md](path-identity-storage.md).
 
 Do not invent exact SQL here unless it exists in the implementation. When implementation evidence is missing, describe the required behavior as a contract.
 
 ## Responsibilities
 
-As summarized in the storage overview, the DB records OMYM2's last known managed state, scheduled plans, execution attempts, and durable Library music file operation logs.
+As summarized in the storage overview, the DB records OMYM2's last known
+managed state, scheduled plans, execution attempts, durable background-request
+state, durable Library music file operation logs, and persisted check
+diagnostics.
 
 The DB is not:
 
@@ -54,6 +60,7 @@ plans
 plan_actions
 runs
 file_events
+operations
 check_runs
 check_issues
 ```
@@ -106,6 +113,7 @@ Minimum representative fields:
 
 * `plan_id`
 * `library_id`
+* `source_run_id` nullable
 * `plan_type`
 * `status`
 * `created_at`
@@ -114,6 +122,18 @@ Minimum representative fields:
 * `summary_json`
 
 Storage must retain `config_hash` to preserve the reviewed configuration context and `library_root_at_plan` for the apply-time Library-root precondition.
+
+`source_run_id` is a nullable reference to `runs.run_id`. It records the
+source Run only for an Undo Plan; ordinary Plans store `NULL`. It provides
+durable Undo provenance and supports the deduplication query that finds an
+existing `ready`, `applying`, or `applied` Undo Plan for one source Run. It
+is not globally unique because a terminal unsuccessful or cancelled Undo Plan
+does not prohibit a later reviewed attempt. Undo behavior remains authoritative
+in [Undo Execution](../execution/undo.md).
+
+Deleting a source Run is restricted while any Undo Plan references it.
+Persistence must never silently set `source_run_id` to null or orphan that
+provenance.
 
 ### plan_actions
 
@@ -128,6 +148,7 @@ Minimum representative fields:
 * `action_type`
 * `source_path`
 * `target_path`
+* `reverses_event_id` nullable
 * `content_hash_at_plan`
 * `metadata_hash_at_plan`
 * `status`
@@ -135,6 +156,16 @@ Minimum representative fields:
 * `sort_order`
 
 `conflict` and `error` are not action types. They are represented by status and reason values.
+
+`reverses_event_id` references the succeeded source `file_events.event_id` for
+each Undo PlanAction and is `NULL` for every non-Undo action. It is durable
+event identity: Undo eligibility and regeneration must not infer reversal from
+matching paths or Track IDs. Non-null values are unique within one Plan.
+
+Deleting a source FileEvent is restricted while any Undo PlanAction references
+it. A future history-deletion feature would need an explicit safe whole-
+dependency contract; the initial migration must not use `SET NULL` or silently
+cascade away provenance.
 
 ### runs
 
@@ -151,6 +182,83 @@ Minimum representative fields:
 * `error_summary`
 
 A Run is created before applying PlanActions and before any Library music file mutation.
+
+### operations
+
+Schema draft: stores durable state for accepted background requests. An
+Operation is distinct from a FileEvent: it supports acceptance, idempotency,
+polling, progress, retention, and restart reconciliation, while a FileEvent is
+evidence for one attempted Library music file mutation.
+
+Minimum representative fields:
+
+* `operation_id`
+* `library_id` nullable
+* `plan_id` nullable
+* `run_id` nullable
+* `kind`
+* `status`
+* `idempotency_key`
+* `request_fingerprint`
+* `stage_code` nullable
+* `completed_units` nullable
+* `total_units` nullable
+* `progress_message` nullable
+* `result_kind` nullable
+* `result_json` nullable
+* `error_code` nullable
+* `error_json` nullable
+* `requested_at`
+* `started_at` nullable
+* `updated_at`
+* `completed_at` nullable
+* `result_expires_at` nullable
+* `tombstone_expires_at` nullable
+
+`operation_id` is the Operation identity. `idempotency_key` is globally
+unique in the application database. `request_fingerprint` represents the
+validated canonical request; the raw request body is not persisted for
+idempotency. `library_id`, `plan_id`, and `run_id` are nullable references
+that record associations when the Operation kind has created or selected those
+resources, but they do not replace the resources' own identities.
+
+`kind` and `status` are constrained to the closed catalogs in
+[Durable Operation Contract](operations.md#identity-and-kinds) and
+[Operation Lifecycle](operations.md#lifecycle). Typed success and failure
+persistence requires a discriminant (`result_kind` or `error_code`) together
+with its validated, redacted payload; an untyped JSON payload alone is not a
+business-policy boundary. Progress counts are either both `NULL` or both
+present and constrained to `0 <= completed_units <= total_units`.
+
+Terminal writes derive `result_expires_at` at 24 hours and
+`tombstone_expires_at` at 30 days after `completed_at`. Result/error payloads
+may be cleared at result expiry, but the minimal Operation and globally unique
+idempotency tombstone remain until tombstone expiry. The authoritative lookup
+behavior is in [Retention And Lookup](operations.md#retention-and-lookup).
+
+The persistence-versus-mutation distinction is recorded in
+[ADR 0002](../decisions/0002-durable-operations-over-polling.md).
+
+#### Atomic Apply Acceptance
+
+Apply acceptance occurs while the shared exclusive-operation lock is held:
+
+1. Verify the current Library root against `library_root_at_plan`.
+2. In one SQLite transaction, classify the idempotency key before touching the
+   Plan. An exact retained kind/fingerprint returns that Operation; a mismatch
+   conflicts; only a new key proceeds.
+3. For a new key, compare-and-set the Plan from `ready` to `applying`, insert
+   its `running` Run, and insert the reserved `queued` Operation linked to that
+   Plan and Run.
+4. Commit all three writes before dispatching the worker.
+
+If the compare-and-set or either insert fails, the transaction rolls back all
+three writes. No competing request may observe a Run or Operation without the
+single-use Plan claim. The database transaction does not include later
+filesystem mutation; pending FileEvent ordering remains authoritative in
+[Apply Execution](../execution/apply.md). The lock mechanism and rationale are
+recorded in
+[ADR 0003](../decisions/0003-cross-process-exclusive-operation-lock.md).
 
 ### file_events
 
@@ -215,6 +323,23 @@ Every schema change needs tests for:
 * path representation changes when affected
 * foreign-key or uniqueness behavior when affected
 
+The `plans.source_run_id` and `plan_actions.reverses_event_id` columns plus the
+`operations` table above are an accepted schema draft, not a claim that the
+current database already contains them. Implementation requires one or more
+new forward migrations whose filenames sort after every applied migration. Do
+not edit an existing migration. Exact DDL, constraint syntax, foreign-key
+actions, and index names must be finalized with the domain models,
+repositories, and migration tests; this M0 contract does not invent SQL before
+that implementation exists.
+
+Before altering a database that already contains Undo Plans, migration
+preflight must prove a unique source Run and source FileEvent for every such
+Plan/action from existing durable records. It may backfill only those proven
+one-to-one associations. If any association is absent or ambiguous, migration
+fails explicitly before applying or recording any schema change; it must not
+leave legacy Undo rows with null provenance while enabling dedupe-sensitive
+Undo creation.
+
 ### Migration Safety Rules
 
 * Applied migrations are tracked by filename: `schema_migrations` has
@@ -235,6 +360,33 @@ Every schema change needs tests for:
 ## Indexes
 
 Indexes exist to keep the Web API's list, facet, and group-by endpoints (authoritative in [web-api.md](web-api.md)) fast at scale. They are persistence details: they change lookup cost, never table responsibilities or stored data.
+
+The forward Operation/Undo migration must provide lookup shapes for:
+
+* `plans (source_run_id, status, created_at, plan_id)` — finds prior Undo
+  Plans for the source-Run provenance and deduplication query.
+* `plan_actions (reverses_event_id, status, action_id)` — finds prior Undo
+  attempts and confirmed reversals for one source FileEvent.
+* `operations (status, updated_at, operation_id)` — finds active Operations
+  and unfinished rows during restart reconciliation.
+* `operations (result_expires_at, operation_id)` and
+  `operations (tombstone_expires_at, operation_id)` — finds rows eligible for
+  the two retention phases without scanning active rows.
+* `operations (plan_id, operation_id)` and
+  `operations (run_id, operation_id)` — resolves Plan/Run associations.
+
+The globally unique `idempotency_key` constraint must also have an indexed
+lookup. The forward migration must additionally enforce:
+
+* at most one `queued` or `running` Operation in the application database;
+* at most one Run for a single-use Plan (`runs.plan_id` is unique);
+* at most one `ready`, `applying`, or `applied` Undo Plan for one non-null
+  `source_run_id`;
+* at most one action per non-null `reverses_event_id` within one Undo Plan.
+
+These constraints are defense in depth behind the cross-process lock and
+compare-and-set usecases. Exact index names and partial-index clauses are
+deferred to the forward migration and its query-plan tests.
 
 `202607090001_browsing_indexes.sql` adds:
 
@@ -273,10 +425,14 @@ The migration does not backfill existing rows. Both values therefore remain
 
 ## Stored JSON Fields
 
-Stored JSON fields, such as `metadata_json` and `summary_json`, are persistence details. Repositories restore typed domain models from them and must not use JSON shape to decide business policy.
+Stored JSON fields, such as `metadata_json`, `summary_json`, and typed
+Operation result/error payloads, are persistence details. Their explicit
+discriminants select a validated typed model; repositories must not inspect
+arbitrary JSON shape to decide business policy. The raw Operation request body
+is not a stored JSON field.
 
 ## Timestamp Policy
 
-Timestamps are persisted to support history, inspection, and deterministic tests through the `Clock` port. A non-null Track `mtime` baseline follows the same UTC timestamp serialization as other persisted timestamps.
+Timestamps are persisted to support history, inspection, retention, and deterministic tests through the `Clock` port. A non-null Track `mtime` baseline follows the same UTC timestamp serialization as other persisted timestamps. Operation expiry timestamps are derived from its terminal `completed_at` through that same clock boundary.
 
 Adapters may serialize timestamps, but usecases decide when state transitions occur.

@@ -1,16 +1,26 @@
 ---
 type: Contract
 title: Status And Reason Catalog
-description: Defines the authoritative catalog of allowed status, reason, action type, event type, and check issue values, plus the FileEvent error-code schema used across Library, Track, Plan, PlanAction, Run, and FileEvent entities.
-tags: [status, reason-codes, catalog, execution]
-timestamp: 2026-07-11T21:33:40+09:00
+description: Defines the versioned status, reason, action, event, check, and durable-operation catalogs plus required unknown-value and status presentation behavior.
+tags: [status, reason-codes, catalog, execution, operations]
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # Status And Reason Catalog
 
-This document is authoritative for allowed status, reason, action type, event type, and check issue values, plus the FileEvent error-code schema.
+This document is authoritative for allowed status, reason, action type, event
+type, check issue, Operation kind/status/result values, the FileEvent error-code
+schema, and cross-surface status presentation behavior.
 
 Domain concepts are in [../DOMAIN.md](../DOMAIN.md). Execution state transitions are in [../execution/model.md](../execution/model.md), [../execution/apply.md](../execution/apply.md), and [../execution/failure-policy.md](../execution/failure-policy.md).
+
+## Catalog Version
+
+The catalog version returned by Bootstrap is integer `1`. It versions the
+closed catalogs in this document as one bundled client/server contract. Adding,
+removing, or redefining a closed value increments the version in the same
+coordinated change. It does not version the open FileEvent error-code or
+Operation stage-code schemas.
 
 ## Library Status
 
@@ -86,9 +96,13 @@ invalid_path
 source_missing
 source_changed
 duplicate_hash
+operation_interrupted
 ```
 
 Plan creation problems are blocked. Apply-time precondition failures are failed.
+`operation_interrupted` marks an eligible action whose completion could not be
+confirmed after worker dispatch failure or process restart. A related pending
+FileEvent remains the authority for an unknown mutation outcome.
 
 ## Run Status
 
@@ -139,6 +153,7 @@ Current core apply codes are:
 | --- | --- |
 | `target_exists` | The FileMover reported `FileExistsError` after the pending event was recorded, including a target that appeared after planning. |
 | `source_missing` | The FileMover reported `FileNotFoundError` after the pending event was recorded. A source missing during precondition verification creates no FileEvent. |
+| `invalid_path` | The anchored FileMover rejected a symlink, path escape, or pathname replacement after the pending event was recorded. Invalid restore provenance found during precondition verification creates no FileEvent. |
 | `move_failed` | The FileMover raised another `OSError` that has no more-specific stable code. |
 
 New codes are permitted when a new observable mutation failure needs a stable
@@ -164,6 +179,76 @@ library_stale
 library_blocked
 ```
 
+## Operation Kind
+
+Field: `Operation.kind`.
+
+```text
+add_plan
+organize_plan
+refresh_plan
+check
+apply_plan
+undo_plan
+```
+
+## Operation Status
+
+Field: `Operation.status`.
+
+```text
+queued
+running
+succeeded
+failed
+interrupted
+```
+
+`interrupted` applies only to durable Operations. Restart reconciliation makes
+an associated Run and Plan terminal using their existing `failed` or
+`partial_failed` statuses; it does not add an `interrupted` Run or Plan status.
+
+## Operation Result Kind
+
+Field: `Operation.result.kind` when status is `succeeded`.
+
+```text
+plan_created
+registered_without_plan
+check_completed
+run_completed
+```
+
+The lifecycle, result fields, and retention contract are in
+[operations.md](operations.md).
+
+## Status Presentation Contract
+
+Every known closed value has an explicit product-default-language label,
+meaning, tone, and icon mapping in the renewed frontend. Every open schema and
+every server value newer than the bundled mapping has a neutral unknown-value
+fallback that displays the raw stable code without crashing or enabling an
+operation.
+
+Presentation follows these rules:
+
+* status is never communicated by color alone; text or an accessible name is
+  mandatory;
+* a Plan with blocked actions may still be applied when its backend capability
+  permits it; executable and unresolved blocked counts remain separate;
+* `partial_failed` means confirmed work and failure coexist and must never be
+  described as rollback;
+* a `pending` FileEvent means the mutation outcome is unknown and requires
+  manual review; no automatic repair action is presented;
+* a terminal Plan is never presented with Retry; the recovery action is
+  “Create a new Plan from the current state”;
+* a succeeded Run with zero FileEvents is valid for blocked-only, skip-only, or
+  `refresh_metadata` actions and displays its linked PlanAction summary;
+* a Run whose Plan contains `refresh_metadata` is presented as Undo-ineligible
+  before Apply and in History;
+* disabled controls remain visible with backend-provided reasons and
+  remediation. The frontend never infers permission from these statuses.
+
 ## Cross-Cutting Rules
 
 * Skip actions become applied without FileEvent.
@@ -171,4 +256,6 @@ library_blocked
 * Blocked actions remain blocked during apply.
 * Precondition failures before mutation do not create FileEvents.
 * Terminal Plans are single-use.
+* Operation stage codes and FileEvent error codes are open stable snake_case
+  schemas and require unknown-value fallbacks.
 * Status catalog changes require state transition and failure behavior tests.

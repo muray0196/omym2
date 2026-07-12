@@ -2,8 +2,8 @@
 
 This folder contains detailed source layout, dependency, port, and naming rules.
 
-* [Source Layout](source-layout.md) - Authoritative description of OMYM2's src/ layout and Feature-oriented Hexagonal Architecture, covering the domain, features, adapters, platform, and shared packages and rules for adding new directories.
+* [Source Layout](source-layout.md) - Defines OMYM2's feature-oriented source layout, including durable Operation placement, dependency layers, composition, and directory rules.
 * [Dependency Boundaries](dependency-boundaries.md) - Defines OMYM2's dependency direction between adapters, features, domain, and shared layers, the forbidden dependencies, and where business rules must live.
-* [Ports And UnitOfWork](ports-uow.md) - Defines OMYM2's port and UnitOfWork repository inventory, scan/stat/snapshot ports, ordered batch capture, independent transactions, durable FileEvents, and persisted check diagnostics.
+* [Ports And UnitOfWork](ports-uow.md) - Defines OMYM2's ports and UnitOfWork contract, including durable Operations, Config revision CAS, exclusive-operation coordination, atomic Apply claims, and FileEvent transaction ordering.
 * [Source Naming](naming.md) - Authoritative Python naming conventions for OMYM2 modules, classes, functions, and constants, including banned vague names and per-layer naming rules for domain, features, and adapters.
-* [Web Frontend](web-frontend.md) - Authoritative reference for the Next.js web/ frontend layout, its audited static export build and packaging pipeline into the Python package, and the JSON API boundary between frontend and backend.
+* [Web Frontend](web-frontend.md) - Defines the clean-room React and Vite Web frontend contract, including routes, design rules, API boundaries, responsive behavior, production serving, packaging, security, and performance gates.

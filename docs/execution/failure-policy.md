@@ -3,7 +3,7 @@ type: Execution Spec
 title: Failure Policy
 description: Catalogs cross-cutting execution failure cases, such as target conflicts, missing metadata, duplicate hashes, and stale Library roots, and the policy applied to each.
 tags: [failure-policy, blocked-vs-failed, conflicts, error-handling]
-timestamp: 2026-07-12T02:41:12+09:00
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # Failure Policy
@@ -38,5 +38,6 @@ not count toward either result.
 | undo destination is occupied during plan creation | block the undo PlanAction with `target_exists`; do not overwrite automatically |
 | DB and filesystem are out of sync | detect with check |
 | pending FileEvent exists | report through check and require manual review |
+| worker dispatch fails or restart finds an unfinished Operation | mark the Operation `interrupted`; reconcile the Plan/Run from durable evidence; leave pending FileEvents pending; mark planned `skip` actions `applied`, planned `move` and `refresh_metadata` actions `failed` with `operation_interrupted`, and blocked actions unchanged; never resume automatically |
 | add requested when no sole registered Library can be selected | reject add plan creation; no Plan, Run, or FileEvent |
 | PathPolicy changed after a Library was registered | mark or report that Library as stale; require organize before add |

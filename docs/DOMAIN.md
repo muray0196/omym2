@@ -1,9 +1,9 @@
 ---
 type: Domain Model
 title: Domain
-description: Defines OMYM2's core domain entities, including Track stat baselines and snapshot trust boundaries, their invariants, and the UUIDv7-based identity policy.
-tags: [domain-model, entities, invariants, id-design]
-timestamp: 2026-07-12T02:41:12+09:00
+description: Defines OMYM2's core entities, including durable Operations and Track stat baselines, their invariants, snapshot boundaries, and UUIDv7 identity policy.
+tags: [domain-model, entities, invariants, operations, id-design]
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # Domain
@@ -201,6 +201,7 @@ Representative fields:
 * created_at
 * config_hash
 * library_root_at_plan
+* source_run_id (nullable; set only for undo Plans)
 * summary
 * actions
 
@@ -217,6 +218,10 @@ Execution summary: a Plan stores reviewed action data, including `library_root_a
 
 A Plan is single-use in the initial version.
 
+An undo Plan records the terminal Run it reverses in `source_run_id`. This is
+provenance and deduplication state, not a path or display-only link. Non-undo
+Plans have no source Run.
+
 ## PlanAction
 
 A planned action for one file or one managed track inside a Plan.
@@ -232,6 +237,7 @@ Representative fields:
 * action_type
 * source_path
 * target_path
+* reverses_event_id (nullable; set only for Undo actions)
 * content_hash_at_plan
 * metadata_hash_at_plan
 * status
@@ -251,6 +257,12 @@ Issues detected during plan creation are represented as `blocked`. Precondition 
 `conflict` and `error` are not action types. They are represented as status and reason.
 
 `track_id` may be nullable for PlanActions that target files not yet registered as Tracks, such as new files in an add plan.
+
+Each Undo PlanAction records the succeeded source FileEvent it reverses in
+`reverses_event_id`. Non-Undo actions leave it null. This durable provenance
+lets later Undo generation distinguish an event already reversed by a prior
+partial attempt from one still eligible; path/Track matching alone is not
+identity.
 
 ## Run
 
@@ -274,7 +286,7 @@ A Run is not merely a historical label. It is the parent unit for FileEvents and
 
 ## FileEvent
 
-A durable operation log entry for one Library music file mutation.
+A durable mutation-log entry for one Library music file mutation.
 
 Execution summary: FileEvent creation and result updates follow [execution/model.md](execution/model.md#fileevent-behavior) and [execution/apply.md](execution/apply.md#fileevent-status).
 
@@ -328,6 +340,41 @@ Representative fields:
 
 A Library has at most one CheckRun at a time: each new check run for a Library replaces its prior CheckRun and prior CheckIssues wholesale. CheckRun and CheckIssue persistence is authoritative in [contracts/db-schema.md](contracts/db-schema.md#check_runs).
 
+## Operation
+
+A durable record of one accepted background application request.
+
+Operation is a shared typed entity because Add, Organize, Refresh, Check, Apply,
+and Undo use the same lifecycle, persistence, idempotency, and recovery
+contract. It contains no HTTP, thread, worker-pool, FastAPI, SQLite, or
+filesystem behavior.
+
+Representative fields:
+
+* operation_id
+* library_id (nullable before a Library exists or can be selected)
+* kind
+* status
+* idempotency_key
+* request_fingerprint
+* stage_code (nullable)
+* completed_units / total_units (nullable pair)
+* progress_message (nullable and redacted)
+* result (nullable typed union)
+* error_code / error_message (nullable and redacted)
+* plan_id / run_id (nullable durable links)
+* requested_at / started_at / completed_at
+* result_expires_at / tombstone_expires_at
+
+Operation identity is stable by `operation_id`, generated as UUIDv7. An
+idempotency key identifies a client request replay; it is not Operation
+identity and is never reused as `operation_id`.
+
+Operation is distinct from Run and FileEvent. A Run remains one Apply attempt,
+and a FileEvent remains the pre-mutation durable record for one Library music
+file change. Operation lifecycle and recovery are authoritative in
+[contracts/operations.md](contracts/operations.md).
+
 ## Domain Invariants
 
 The following invariants belong to the domain / usecase layer, not to adapters:
@@ -347,6 +394,8 @@ The following invariants belong to the domain / usecase layer, not to adapters:
 * Absolute path resolution is performed at I/O boundaries through PathResolver.
 * Config loading and saving are adapter concerns.
 * Metadata reading is an adapter concern.
+* Durable Operations never replace FileEvents or weaken their
+  pending-before-mutation ordering.
 
 ## ID Design Policy
 
@@ -362,6 +411,7 @@ run_id          UUIDv7 generated when an apply attempt starts
 action_id       UUIDv7 generated when a PlanAction is created
 event_id        UUIDv7 generated when a FileEvent is created
 check_run_id    UUIDv7 generated when a check run is persisted
+operation_id    UUIDv7 generated when a background request is accepted
 ```
 
 `track_id` must not be derived from:
