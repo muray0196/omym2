@@ -3,21 +3,21 @@
  * Why: Makes degraded and disconnected states visible without blocking navigation.
  */
 .banner {
-  align-items: flex-start;
+  align-items: center;
   background: var(--color-surface);
   border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-10);
+  border-radius: var(--radius-8);
   display: flex;
-  gap: var(--space-12);
-  margin-bottom: var(--space-24);
-  padding: var(--space-12) var(--space-16);
+  gap: var(--space-8);
+  margin-bottom: var(--space-20);
+  min-height: 36px;
+  padding: var(--space-8) var(--space-12);
 }
 
 .banner svg {
   flex: 0 0 auto;
-  height: 20px;
-  margin-top: 2px;
-  width: 20px;
+  height: 16px;
+  width: 16px;
 }
 
 .normal svg {
@@ -36,33 +36,50 @@
   color: var(--color-blue);
 }
 
-.degraded svg {
-  color: var(--color-yellow);
+.degraded,
+.disconnected,
+.unexpected {
+  align-items: flex-start;
 }
 
-.disconnected svg {
-  color: var(--color-red);
-}
-
+.degraded svg,
+.disconnected svg,
 .unexpected svg {
-  color: var(--color-red);
+  margin-top: 2px;
 }
 
 .content {
+  flex: 1;
   min-width: 0;
+}
+
+.normal .content,
+.activeOperation .content {
+  align-items: baseline;
+  column-gap: var(--space-12);
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 2px;
 }
 
 .summary {
   color: var(--color-ink);
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   margin: 0;
 }
 
 .detail {
   color: var(--color-mute);
-  font-size: 14px;
-  margin: var(--space-4) 0 0;
+  font-size: 13px;
+  margin: 0;
   overflow-wrap: anywhere;
+}
+
+.degraded .detail,
+.disconnected .detail,
+.unexpected .detail {
+  margin-top: var(--space-4);
 }
 
 .path {
@@ -70,6 +87,8 @@
 }
 
 .diagnostics {
+  color: var(--color-body);
+  font-size: 13px;
   margin: var(--space-8) 0 0;
   padding-left: var(--space-20);
 }
@@ -100,7 +119,8 @@
 .recoveryLink,
 .remediationLabel {
   color: var(--color-ink);
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .recoveryLink {
@@ -112,5 +132,6 @@
 .command {
   color: var(--color-body);
   font-family: var(--font-mono);
+  font-size: 13px;
   overflow-wrap: anywhere;
 }

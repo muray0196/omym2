@@ -9,9 +9,15 @@ export type IconName =
   | "check"
   | "close"
   | "command"
+  | "health"
+  | "history"
   | "info"
+  | "library"
   | "menu"
+  | "overview"
+  | "plans"
   | "search"
+  | "settings"
   | "warning";
 
 type IconProps = {

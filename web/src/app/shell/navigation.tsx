@@ -4,6 +4,7 @@
  */
 import { NavLink } from "react-router-dom";
 
+import { Icon } from "../../ui/icon";
 import { navigationItems, shellCopy } from "./shell-copy";
 import styles from "./app-shell.module.css";
 
@@ -18,6 +19,7 @@ export function Navigation({ onNavigate }: { onNavigate?: () => void }) {
           onClick={onNavigate}
           to={item.to}
         >
+          <Icon name={item.icon} />
           {item.label}
         </NavLink>
       ))}

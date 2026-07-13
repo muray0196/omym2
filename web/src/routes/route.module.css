@@ -13,30 +13,32 @@
 
 .eyebrow {
   color: var(--color-blue);
-  font-size: 12px;
-  font-weight: 750;
-  letter-spacing: 0.1em;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
   margin: 0 0 var(--space-8);
   text-transform: uppercase;
 }
 
 .header h1 {
   color: var(--color-ink);
-  font-size: clamp(20px, 3vw, 24px);
-  letter-spacing: -0.025em;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   line-height: 1.15;
   margin: 0;
 }
 
 .description {
-  color: var(--color-body);
-  font-size: 17px;
-  margin: var(--space-12) 0 0;
+  color: var(--color-mute);
+  font-size: 14px;
+  margin: var(--space-8) 0 0;
+  max-width: 620px;
 }
 
 .cards {
   display: grid;
-  gap: var(--space-16);
+  gap: var(--space-12);
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
 }
 
@@ -44,31 +46,49 @@
 .placeholder {
   background: var(--color-surface);
   border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-16);
-  padding: var(--space-24);
+  border-radius: var(--radius-10);
+  padding: var(--space-16);
 }
 
 .card h2 {
+  color: var(--color-mute);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0 0 var(--space-8);
+}
+
+.placeholder h2 {
   color: var(--color-ink);
-  font-size: 18px;
+  font-size: 15px;
+  font-weight: 650;
   margin: 0 0 var(--space-8);
 }
 
 .card p,
 .placeholder p {
   color: var(--color-mute);
+  font-size: 13px;
   margin: 0;
 }
 
-.cardValue {
-  color: var(--color-ink) !important;
-  font-size: 18px;
-  font-weight: 750;
+.card .cardBody {
+  color: var(--color-ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.card .cardValue {
+  color: var(--color-ink);
+  font-size: 15px;
+  font-weight: 600;
   text-transform: capitalize;
 }
 
-.path {
+.card .path {
   font-family: var(--font-mono);
+  font-size: 13px;
+  margin-top: var(--space-8);
   overflow-wrap: anywhere;
 }
 
@@ -76,13 +96,30 @@
   align-items: center;
   color: var(--color-ink);
   display: inline-flex;
-  font-weight: 700;
-  margin-top: var(--space-16);
+  font-size: 14px;
+  font-weight: 600;
+  gap: var(--space-4);
+  margin-top: var(--space-12);
   min-height: var(--target-dense);
+  text-decoration: none;
+}
+
+.cardLink::after {
+  color: var(--color-mute);
+  content: "→";
+  transition: color var(--motion-control) ease;
+}
+
+.cardLink:hover {
+  text-decoration: underline;
+}
+
+.cardLink:hover::after {
+  color: var(--color-ink);
 }
 
 .error {
-  border-color: var(--color-red);
+  border-color: color-mix(in srgb, var(--color-red) 55%, transparent);
 }
 
 .retryButton {
@@ -90,11 +127,22 @@
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-8);
   color: var(--color-ink);
+  cursor: pointer;
   font: inherit;
-  font-weight: 700;
-  margin-top: var(--space-16);
-  min-height: var(--target-default);
-  padding: var(--space-8) var(--space-16);
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: var(--space-12);
+  min-height: var(--target-dense);
+  padding: 0 14px;
+  transition:
+    background-color var(--motion-control) ease,
+    border-color var(--motion-control) ease,
+    color var(--motion-control) ease;
+  width: fit-content;
+}
+
+.retryButton:hover {
+  background: var(--color-surface-card);
 }
 
 .homeLink {
@@ -104,9 +152,18 @@
   border-radius: var(--radius-8);
   color: var(--color-canvas);
   display: inline-flex;
-  font-weight: 700;
-  min-height: var(--target-default);
-  padding: var(--space-8) var(--space-16);
+  font-size: 14px;
+  font-weight: 600;
+  min-height: var(--target-dense);
+  padding: 0 14px;
   text-decoration: none;
+  transition:
+    background-color var(--motion-control) ease,
+    border-color var(--motion-control) ease;
   width: fit-content;
+}
+
+.homeLink:hover {
+  background: var(--color-body);
+  border-color: var(--color-body);
 }

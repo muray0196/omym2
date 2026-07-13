@@ -6,12 +6,35 @@
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-12);
+  gap: var(--space-8);
   justify-content: flex-end;
+  min-height: var(--target-dense);
+}
+
+.controls button {
+  background: transparent;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-6);
+  color: var(--color-body);
+  font-size: 13px;
+  min-height: 32px;
+  padding: 0 var(--space-12);
+}
+
+.controls button:hover:not(:disabled) {
+  background: var(--color-surface-elevated);
+  color: var(--color-ink);
+}
+
+.controls button:disabled {
+  border-color: var(--color-hairline);
+  color: var(--color-ash);
 }
 
 .position {
   color: var(--color-mute);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
   margin: 0;
   text-align: center;
 }
