@@ -44,20 +44,11 @@ the row for the contract you changed (Config, DB schema, Path identity,
 Status catalog, Execution, Architecture, Web API, durable Operation, exclusive
 operation, or generated API).
 
-## Anti-patterns (reject these in your own work)
-
-- Asserting on implementation details (private attributes, call order) instead of observable behavior.
-- Over-mocking: if you mock the thing under test, the test is void.
-- Tests that depend on wall-clock time, real UUIDs, ordering of dict/set iteration, or files outside `tmp_path`.
-- Editing an unrelated failing test to green it — report it instead.
-
 ## Procedure
 
 1. Find the existing test file for the module (mirror path). Extend it; create a new file only if none exists.
-2. For Python, copy the naming and fixture style of a neighboring test. Test
-   functions use `test_<behavior>`. For frontend work, use the patterns defined
-   inside `web/` itself.
-3. Cover the normal case, one error case, and the boundary the change introduces. Do not pad with redundant cases.
+2. Match the naming and fixture style of a neighboring test; Python test functions use `test_<behavior>`.
+3. Test observable behavior and the contract boundary introduced by the change. Add error cases only when they protect a distinct behavior or invariant.
 
 ## Done means
 

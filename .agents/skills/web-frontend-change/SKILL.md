@@ -1,6 +1,6 @@
 ---
 name: web-frontend-change
-description: Procedure for the bundled React and Vite frontend under web/, its generated API boundary, static packaging, validation, and Web adapter routes.
+description: Change the OMYM2 React and Vite frontend, generated API boundary, static packaging, or Web adapter routes. Use for implementation work under web/ or src/omym2/adapters/web/.
 ---
 
 # Web Frontend Change
@@ -10,8 +10,6 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
 ## Current Facts
 
 - The React + TypeScript + Vite SPA lives in `web/`.
-- M5 deleted the legacy frontend before moving the clean-room implementation
-  into this path. There is no parallel frontend or compatibility surface.
 - `web/dist/` and `src/omym2/adapters/web/static_dist/` are generated. Never
   hand-edit or commit `static_dist/`.
 
@@ -33,8 +31,7 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
 ## Procedure
 
 1. Read the authoritative docs above.
-2. Edit frontend source only under `web/`; do not create a parallel Web tree
-   or compatibility implementation.
+2. Edit frontend source only under `web/`; do not create a parallel Web tree.
 3. If the change needs new backend data, treat it as a coordinated two-sided
    contract change:
    - update Pydantic models and the route under

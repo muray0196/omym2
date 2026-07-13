@@ -70,4 +70,5 @@ Fix the first failing gate before looking at later ones.
 
 ## Stop and report when
 
-- After 2 focused fix attempts on the same failure, stop and report the failure output plus your hypothesis.
+- The failure requires a product decision, contract change, unavailable credential, or environment change outside the task's authority.
+- Repeated evidence rules out the current hypotheses and no safe in-scope diagnostic remains; report the failure output and what was ruled out.

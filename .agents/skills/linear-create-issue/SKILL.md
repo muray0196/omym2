@@ -5,21 +5,13 @@ description: Create Linear issues from user requests without starting local exec
 
 # Linear Create Issue
 
-## Overview
-
-Create a clear Linear issue and stop after reporting it. Treat issue creation as a handoff, not permission to edit local files, install dependencies, run implementation checks, create branches, or start the ticket execution workflow.
-
 ## Local boundary
 
-- Do not make local code or documentation changes for the issue being created.
-- Do not scaffold implementation, add dependencies, run formatters, run tests, create commits, push branches, or create workpad comments.
-- Allowed local actions are read-only context gathering: reading user-attached files, relevant repo docs, existing issue references, or lightweight repository searches.
-- Do not move the new issue to an active execution status unless the user explicitly asks to start work.
-- Do not create a `## Codex Workpad` comment for a newly created issue unless entering an explicit ticket execution workflow.
+Issue creation authorizes the Linear mutation and read-only context gathering only. Do not edit the worktree, install dependencies, run implementation checks, create branches or commits, change the issue to an active execution status, or create a workpad unless the user explicitly requests local execution.
 
 ## Issue Content
 
-Use the user's language for scope boundaries when it is precise. Preserve "minimal", "docs-only", "no compatibility work", "no extra features", and similar constraints in the issue body.
+Preserve precise user constraints such as "minimal", "docs-only", "no compatibility work", and "no extra features".
 
 Prefer this compact structure:
 
@@ -44,28 +36,15 @@ Omit sections that would be empty. Keep the issue specific enough that a later a
 
 ## Linear Handling
 
-Use the available Linear tools or app. If Linear tools are unavailable, state the blocker and ask the user to connect Linear; do not substitute local TODO files.
-
-Search for near-duplicate issues before creating a new one when the title or topic is specific enough. If a matching issue already exists, update or report it instead of creating a duplicate.
+Use the available Linear tools or app. Search for near-duplicates before creating an issue. If Linear is unavailable, report the blocker; do not create a local substitute.
 
 ## Procedure
 
-1. Read only the context needed to make the issue accurate.
-2. Use Linear to find the relevant team, project, labels, statuses, and potential duplicates.
-3. Create or update the Linear issue with:
-   - concise title
-   - scope and non-goals
-   - implementation plan
-   - acceptance criteria
-   - validation expectations
-   - links or attached-context references when useful
+1. Read only the context needed for an accurate issue.
+2. Resolve the relevant Linear team, project, labels, status, and duplicates.
+3. Create or update the issue using the compact structure above, including links or attached-context references when useful.
 4. Stop unless the user explicitly asks to execute the work locally.
 
 ## Done means
 
 - The issue is created or updated, and its identifier and URL are reported.
-
-## Stop and report when
-
-- A command would change the worktree, dependency state, generated files, branches, or external ticket status beyond issue creation.
-- The same user request also asks to execute the work locally — create the issue first, report it, then continue only because local execution was explicit.

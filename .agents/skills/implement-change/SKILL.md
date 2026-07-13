@@ -1,13 +1,14 @@
 ---
 name: implement-change
-description: Default end-to-end procedure for any OMYM2 Python code change. Use at the start of every implementation task to place files in the right layer, follow naming, validate, and route to the safety skills.
+description: Route OMYM2 implementation work to the applicable architecture, safety, frontend, test, documentation, and validation guidance. Use at the start of every code implementation task.
 ---
 
 # Implement Change
 
 ## Procedure
 
-1. **Classify the task** — Read `ARCHITECTURE.md` first if you have not read it this session. Then open every skill whose row matches the change, before writing code:
+1. Read `ARCHITECTURE.md` if it has not been read in this session.
+2. Open every skill whose row matches the change before editing:
 
    | The change touches... | Open skill |
    | --- | --- |
@@ -17,46 +18,20 @@ description: Default end-to-end procedure for any OMYM2 Python code change. Use 
    | AppConfig shape, TOML config keys, defaults, allowed values, validation rules, or config serialization | `config-schema-change` |
    | A new module or package, or a new import between layers | `architecture-boundaries` |
    | Anything under `web/` or Web adapter routes | `web-frontend-change` |
-   | Anything under `docs/` | `update-docs` |
+   | Behavior documented under `docs/`, or any file under `docs/` | `update-docs` |
 
-2. **Place the code** — put new files where they belong and name them per convention:
-
-   | Kind of code | Location | Naming |
-   | --- | --- | --- |
-   | Pure domain model | `src/omym2/domain/models/` | noun, e.g. `plan_action.py` |
-   | Pure domain rule / policy | `src/omym2/domain/services/` | noun; never a `_service` suffix |
-   | Usecase (one user goal) | `src/omym2/features/<feature>/usecases/` | `{verb}_{object}.py` |
-   | Port definition | `src/omym2/features/<feature>/ports.py` or `src/omym2/features/common_ports.py` | — |
-   | DTO | `src/omym2/features/<feature>/dto.py` | — |
-   | SQLite / filesystem / metadata / config I/O | `src/omym2/adapters/{db,fs,metadata,config}/` | technical names allowed |
-   | CLI command | `src/omym2/adapters/cli/commands/` | command name |
-   | Web API route | `src/omym2/adapters/web/routes/` | — |
-   | Wiring concrete adapters to feature ports / app assembly | `src/omym2/platform/` | composition module, e.g. `{concern}_composition.py` |
-   | Pure helper without domain knowledge | `src/omym2/shared/` | concrete concern name |
-
-   Never create a banned file name or directory — see `architecture-boundaries`'s New file checklist for the full list.
-
-3. **Implement**
-   1. Find one existing module of the same kind and copy its structure, imports, and test style. Good anchors: `src/omym2/features/apply/usecases/apply_plan.py` for usecases, `src/omym2/adapters/db/sqlite/` for repositories.
-   2. Make the smallest change that satisfies the request. Do not refactor, rename, or reformat unrelated code.
-   3. After each edit round, run the check mode `validate` selects for the edit-loop situation. Fix what it reports before continuing.
-
-4. **Prove it**
-   1. Add or update tests for every behavior change — open `write-tests` for placement and fixtures.
-   2. If the change alters behavior described anywhere under `docs/`, update those docs in the same change — open `update-docs`.
-   3. Before declaring done, run the check mode `validate` selects for the completion situation.
+3. Use `docs/codebase/index.md` for placement and naming details not decided by a safety skill.
+4. Open `write-tests` when adding or changing tests. Open `update-docs` when behavior described under `docs/` changes.
+5. Use `validate` to select edit-loop and completion checks.
 
 ## Done means
 
-- The check mode `validate` selects for the completion situation passes.
-- Every behavior change has a test.
-- Affected docs and their `index.md` entries are updated.
+- The applicable safety skills' completion conditions are satisfied.
+- The completion check selected by `validate` passes.
 
 ## Stop and report when
 
-- The task seems to require mutating Library music files outside a Plan.
-- Making it work requires an import that `architecture-boundaries` forbids.
-- The same gate failure persists after 2 focused fix attempts.
-- The request conflicts with `ARCHITECTURE.md` or a `docs/` contract.
+- The request conflicts with `ARCHITECTURE.md` or an authoritative contract.
+- Completion would require compatibility work or an architectural exception the user did not authorize.
 
 State the conflict and the exact rule; do not work around it silently.

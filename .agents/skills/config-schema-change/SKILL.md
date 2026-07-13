@@ -21,8 +21,8 @@ Contract Change Test Requirements table, "Config contract" row.
    instead of being ignored, and bumping `CONFIG_VERSION`
    (`src/omym2/config.py`) rejects every file still at the old version, since
    no version-based migration exists yet. Decide and test the exact
-   backward-compatibility behavior for every removed/renamed key or version
-   bump; do not leave it implicit.
+   existing-file rejection or defaulting behavior for every removed/renamed
+   key or version bump. Do not add a compatibility layer.
 4. Verify allowed values and enums against the constants in
    `src/omym2/config.py` (e.g. `ALLOWED_UI_THEMES`) rather than assuming
    `docs/contracts/config.md` is exhaustive; when the doc lags the source,
@@ -67,8 +67,8 @@ Libraries would not detect the settings change as stale.
 2. Edit every surface in the table above in the same change.
    If the change touches save/load concurrency rather than the TOML schema,
    edit only the raw-revision/CAS surfaces and do not invent a TOML key.
-3. Decide and implement the backward-compatibility behavior from invariant 3
-   for the specific key(s) touched.
+3. Define and test the existing-file behavior from invariant 3 for the
+   specific key(s) touched, without adding compatibility handling.
 4. If the field affects generated paths or fingerprints, update
    `config_fingerprint.py` per the table above.
 5. If PathPolicy, stored paths, or Library identity are affected, open
@@ -77,8 +77,8 @@ Libraries would not detect the settings change as stale.
 
 ## Done means
 
-- Tests cover load, save, validation, defaults, and migration/
-  backward-compatibility behavior per `docs/development/testing.md`'s Contract Change Test
+- Tests cover load, save, validation, defaults, and existing-file rejection or
+  defaulting behavior per `docs/development/testing.md`'s Contract Change Test
   Requirements table. Anchors: `tests/adapters/config/test_toml_config_store.py`
   and `tests/domain/test_app_config.py`; when the typed Web Settings slice
   exists, its route-level Pydantic contract tests are required too.
