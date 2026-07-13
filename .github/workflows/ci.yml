@@ -257,8 +257,8 @@ jobs:
           if ($null -eq $wheel) { throw "Audited wheel was not downloaded." }
           python scripts/smoke_web_wheel.py --wheel $wheel.FullName
 
-  performance-record:
-    name: Installed Package Performance Record
+  performance-budget:
+    name: Installed Package Performance Budgets
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -297,10 +297,10 @@ jobs:
         working-directory: web-v2
         run: npm exec -- playwright install --with-deps chromium
 
-      - name: Record installed-package performance
+      - name: Enforce installed-package performance budgets
         run: scripts/checks.sh performance
 
-      - name: Upload performance record
+      - name: Upload performance measurement
         uses: actions/upload-artifact@v5
         with:
           name: web-renewal-performance-${{ github.sha }}

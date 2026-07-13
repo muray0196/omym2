@@ -1,10 +1,9 @@
 /**
- * Summary: Defines the lazy Library browsing route boundary.
- * Why: Freezes navigation without bypassing the future typed track API.
+ * Summary: Defines the lazy read-only Library browsing route boundary.
+ * Why: Loads persisted Track inspection without pulling feature code into the app shell.
  */
-import { PlaceholderRoute } from "../placeholder-route";
-import { routeCopy } from "../route-copy";
+import { LibraryList } from "../../features/library/library-list";
 
 export function Component() {
-  return <PlaceholderRoute {...routeCopy.library} />;
+  return <LibraryList />;
 }

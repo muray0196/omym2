@@ -60,6 +60,41 @@
   margin: 0;
 }
 
+.cardValue {
+  color: var(--color-ink) !important;
+  font-size: 18px;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+
+.path {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.cardLink {
+  color: var(--color-ink);
+  display: inline-block;
+  font-weight: 700;
+  margin-top: var(--space-16);
+}
+
+.error {
+  border-color: var(--color-red);
+}
+
+.retryButton {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-8);
+  color: var(--color-ink);
+  font: inherit;
+  font-weight: 700;
+  margin-top: var(--space-16);
+  min-height: var(--target-default);
+  padding: var(--space-8) var(--space-16);
+}
+
 .status {
   align-items: center;
   color: var(--color-blue);

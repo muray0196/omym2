@@ -3,7 +3,7 @@ type: Development Guide
 title: Development Harness
 description: Specifies dependency setup, current and renewal-transition quality gates, checks.sh, suppressions, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation, web-renewal]
-timestamp: 2026-07-13T01:34:09+09:00
+timestamp: 2026-07-13T09:49:07+09:00
 ---
 
 # Development Harness
@@ -111,8 +111,8 @@ All gates must pass:
   loopback FastAPI application root.
 * Wheel/sdist audit, sdist-to-wheel rebuild without Node.js, and clean-install
   smoke pass for the direct and rebuilt wheels.
-* `npm run test:performance` records the installed-package M1 measurement. M1
-  does not enforce the M2 time or JavaScript-size budgets.
+* `npm run test:performance` enforces the installed-package interactive-shell
+  time and initial JavaScript-size budgets from M2 onward.
 * Linting fails if any lint error remains.
 * Formatting fails if Ruff would change any file.
 * Type checking fails if `basedpyright` reports any error or warning.
@@ -144,7 +144,7 @@ The mode is required; there is no default. The wrapper does not install dependen
 * `package`: Vite build, complete static replacement/audit, wheel/sdist audit,
   Node-poisoned sdist rebuild, and clean-install smoke
 * `performance`: `package` plus the installed-package frontend performance
-  record
+  budget gate and measurement record
 * `all`: `web` + `py` + E2E + package/performance, the final local gate
 * `docs`: docs bundle conformance tests
 * `arch`: architecture tests

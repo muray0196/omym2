@@ -1,6 +1,6 @@
 /**
- * Summary: Records deterministic installed-package shell timing and JavaScript size evidence.
- * Why: Establishes the M1 performance baseline without enforcing later milestone budgets.
+ * Summary: Measures and enforces installed-package shell timing and JavaScript size budgets.
+ * Why: Prevents M2 and later renewal work from exceeding the frozen performance contract.
  */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -75,7 +75,10 @@ try {
     protocol: {
       measuredRuns: performanceProtocol.measuredRuns,
       warmupRuns: performanceProtocol.warmupRuns,
-      enforcement: "record-only",
+      enforcement: "m2-budgets",
+      maximumInteractiveShellMs: performanceProtocol.maximumInteractiveShellMs,
+      maximumInitialJavascriptBytes:
+        performanceProtocol.maximumInitialJavascriptBytes,
     },
     runner: {
       image: process.env.ImageOS ?? process.platform,
@@ -105,8 +108,32 @@ try {
     mkdirSync(dirname(absoluteOutputPath), { recursive: true });
     writeFileSync(absoluteOutputPath, serialized, "utf8");
   }
+  enforcePerformanceBudgets(report.results);
 } finally {
   await browser.close();
+}
+
+function enforcePerformanceBudgets(results) {
+  const failures = [];
+  if (
+    results.coldMedianMs > performanceProtocol.maximumInteractiveShellMs ||
+    results.warmMedianMs > performanceProtocol.maximumInteractiveShellMs
+  ) {
+    failures.push(
+      `interactive shell median exceeded ${String(performanceProtocol.maximumInteractiveShellMs)} ms`,
+    );
+  }
+  if (
+    results.gzippedJavascriptBytes >
+    performanceProtocol.maximumInitialJavascriptBytes
+  ) {
+    failures.push(
+      `initial JavaScript exceeded ${String(performanceProtocol.maximumInitialJavascriptBytes)} gzipped bytes`,
+    );
+  }
+  if (failures.length > 0) {
+    throw new Error(`Performance budget failed: ${failures.join("; ")}.`);
+  }
 }
 
 async function runColdNavigation(browserInstance, url) {

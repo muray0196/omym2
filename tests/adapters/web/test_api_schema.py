@@ -16,7 +16,30 @@ from omym2.adapters.web.routes.api_context import ApiRouteContext
 from omym2.adapters.web.schema_app import create_api_schema_app
 from omym2.adapters.web.schemas.api_envelopes import ApiEnvelope
 from omym2.adapters.web.schemas.api_errors import ApiError, ApiErrorCode
-from omym2.config import WEB_API_BOOTSTRAP_ROUTE, WEB_CORRELATION_HEADER_NAME
+from omym2.config import (
+    WEB_API_BOOTSTRAP_ROUTE,
+    WEB_API_CHECK_FACETS_ROUTE,
+    WEB_API_CHECK_GROUPS_ROUTE,
+    WEB_API_CHECK_ROUTE,
+    WEB_API_HISTORY_FACETS_ROUTE,
+    WEB_API_HISTORY_ROUTE,
+    WEB_API_LIBRARIES_ROUTE,
+    WEB_API_LIBRARY_DETAIL_ROUTE,
+    WEB_API_PLAN_ACTIONS_ROUTE,
+    WEB_API_PLAN_DETAIL_ROUTE,
+    WEB_API_PLAN_FACETS_ROUTE,
+    WEB_API_PLAN_GROUPS_ROUTE,
+    WEB_API_PLANS_ROUTE,
+    WEB_API_RUN_DETAIL_ROUTE,
+    WEB_API_RUN_EVENT_FACETS_ROUTE,
+    WEB_API_RUN_EVENT_GROUPS_ROUTE,
+    WEB_API_RUN_EVENTS_ROUTE,
+    WEB_API_TRACK_DETAIL_ROUTE,
+    WEB_API_TRACK_FACETS_ROUTE,
+    WEB_API_TRACK_GROUPS_ROUTE,
+    WEB_API_TRACKS_ROUTE,
+    WEB_CORRELATION_HEADER_NAME,
+)
 
 SCHEMA_EXECUTION_MESSAGE = "Schema generation must not execute route dependencies."
 
@@ -24,8 +47,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_schema_app_exports_only_the_production_bootstrap_route(tmp_path: Path) -> None:
-    """Schema generation registers no legacy or future route and performs no I/O."""
+def test_schema_app_exports_the_production_m2_read_routes_without_io(tmp_path: Path) -> None:
+    """Schema generation registers the exact M2 reads and performs no application I/O."""
     schema_app = create_api_schema_app()
     production_app = create_web_app(
         ApiRouteContext(csrf_token="unused", get_bootstrap=_must_not_execute),  # noqa: S106  # Non-secret test value.
@@ -36,12 +59,64 @@ def test_schema_app_exports_only_the_production_bootstrap_route(tmp_path: Path) 
     production_schema = cast("dict[str, object]", production_app.openapi())
     paths = _mapping(schema, "paths")
     production_paths = _mapping(production_schema, "paths")
-    schemas = _mapping(_mapping(schema, "components"), "schemas")
 
-    assert set(paths) == {WEB_API_BOOTSTRAP_ROUTE}
+    assert set(paths) == {
+        WEB_API_BOOTSTRAP_ROUTE,
+        WEB_API_LIBRARIES_ROUTE,
+        WEB_API_LIBRARY_DETAIL_ROUTE,
+        WEB_API_PLANS_ROUTE,
+        WEB_API_PLAN_DETAIL_ROUTE,
+        WEB_API_PLAN_ACTIONS_ROUTE,
+        WEB_API_PLAN_FACETS_ROUTE,
+        WEB_API_PLAN_GROUPS_ROUTE,
+        WEB_API_TRACKS_ROUTE,
+        WEB_API_TRACK_DETAIL_ROUTE,
+        WEB_API_TRACK_FACETS_ROUTE,
+        WEB_API_TRACK_GROUPS_ROUTE,
+        WEB_API_CHECK_ROUTE,
+        WEB_API_CHECK_FACETS_ROUTE,
+        WEB_API_CHECK_GROUPS_ROUTE,
+        WEB_API_HISTORY_ROUTE,
+        WEB_API_HISTORY_FACETS_ROUTE,
+        WEB_API_RUN_DETAIL_ROUTE,
+        WEB_API_RUN_EVENTS_ROUTE,
+        WEB_API_RUN_EVENT_FACETS_ROUTE,
+        WEB_API_RUN_EVENT_GROUPS_ROUTE,
+    }
     assert production_paths == paths
+    schemas = _mapping(_mapping(schema, "components"), "schemas")
     assert "HTTPValidationError" not in schemas
     assert not tuple(tmp_path.iterdir())
+
+
+def test_plan_read_operations_have_stable_ids_and_declared_typed_errors() -> None:
+    """Generated clients receive stable operation names and envelope-only error models."""
+    schema = cast("dict[str, object]", create_api_schema_app().openapi())
+    paths = _mapping(schema, "paths")
+
+    assert _operation(paths, WEB_API_PLANS_ROUTE)["operationId"] == "listPlans"
+    assert _operation(paths, WEB_API_PLAN_ACTIONS_ROUTE)["operationId"] == "listPlanActions"
+    assert _operation(paths, WEB_API_PLAN_FACETS_ROUTE)["operationId"] == "getPlanActionFacets"
+    assert _operation(paths, WEB_API_PLAN_GROUPS_ROUTE)["operationId"] == "groupPlanActions"
+    for path in (
+        WEB_API_PLANS_ROUTE,
+        WEB_API_PLAN_ACTIONS_ROUTE,
+        WEB_API_PLAN_FACETS_ROUTE,
+        WEB_API_PLAN_GROUPS_ROUTE,
+    ):
+        responses = _mapping(_operation(paths, path), "responses")
+        assert "422" in responses
+        assert "500" in responses
+    schemas = _mapping(_mapping(schema, "components"), "schemas")
+    for path in (
+        WEB_API_PLANS_ROUTE,
+        WEB_API_PLAN_ACTIONS_ROUTE,
+        WEB_API_PLAN_FACETS_ROUTE,
+        WEB_API_PLAN_GROUPS_ROUTE,
+    ):
+        failure_schema = _response_schema(_mapping(_operation(paths, path), "responses"), "422")
+        assert failure_schema != {"$ref": "#/components/schemas/HTTPValidationError"}
+    assert "ApiFailureEnvelope" in schemas
 
 
 def test_openapi_output_is_deterministic_and_declares_typed_responses() -> None:
@@ -92,3 +167,16 @@ def _mapping(value: dict[str, object], key: str) -> dict[str, object]:
     nested = value[key]
     assert isinstance(nested, dict)
     return cast("dict[str, object]", nested)
+
+
+def _operation(paths: dict[str, object], path: str) -> dict[str, object]:
+    """Return one GET operation object from the generated schema."""
+    return _mapping(_mapping(paths, path), "get")
+
+
+def _response_schema(responses: dict[str, object], status_code: str) -> dict[str, object]:
+    """Return one declared JSON response schema."""
+    response = _mapping(responses, status_code)
+    content = _mapping(response, "content")
+    media_type = _mapping(content, "application/json")
+    return _mapping(media_type, "schema")

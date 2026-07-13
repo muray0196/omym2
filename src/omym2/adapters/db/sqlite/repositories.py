@@ -1183,6 +1183,32 @@ class SQLitePlanActionRepository(_SQLiteRepository):
             (str(plan_id),),
         )
 
+    def action_counts_by_plan(
+        self,
+        plan_ids: Sequence[PlanId],
+    ) -> dict[PlanId, dict[tuple[ActionStatus, ActionType], int]]:
+        """Return current status/action-type counts for a bounded Plan page in one query."""
+        counts_by_plan: dict[PlanId, dict[tuple[ActionStatus, ActionType], int]] = {plan_id: {} for plan_id in plan_ids}
+        if not counts_by_plan:
+            return {}
+        placeholders = ", ".join("?" for _ in counts_by_plan)
+        rows = _fetch_all(
+            self._connection,
+            f"""
+            SELECT plan_id, status, action_type, COUNT(*) AS count
+            FROM plan_actions
+            WHERE plan_id IN ({placeholders})
+            GROUP BY plan_id, status, action_type
+            """,  # noqa: S608  # Placeholder text is generated solely from bound IDs.
+            tuple(str(plan_id) for plan_id in counts_by_plan),
+        )
+        for row in rows:
+            plan_id = PlanId(parse_uuid(_row_text(row, "plan_id")))
+            counts = counts_by_plan[plan_id]
+            key = (ActionStatus(_row_text(row, "status")), ActionType(_row_text(row, "action_type")))
+            counts[key] = _row_int(row, "count")
+        return counts_by_plan
+
     def list_by_ids(self, action_ids: Sequence[ActionId]) -> tuple[PlanAction, ...]:
         """Return the PlanActions with the given IDs, ordered (sort_order, action_id)."""
         if not action_ids:
@@ -2144,7 +2170,8 @@ def _plan_filter_where(
         clauses.append("plan_type = ?")
         params.append(plan_type.value)
     if blocked_only:
-        clauses.append("CAST(json_extract(summary_json, '$.blocked_actions') AS INTEGER) > 0")
+        clauses.append("EXISTS (SELECT 1 FROM plan_actions WHERE plan_actions.plan_id = plans.plan_id AND status = ?)")
+        params.append(ActionStatus.BLOCKED.value)
     if not clauses:
         return "", params
     return " WHERE " + " AND ".join(clauses), params

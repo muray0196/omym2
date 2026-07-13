@@ -1,6 +1,27 @@
 {
   "components": {
     "schemas": {
+      "ActionStatus": {
+        "description": "Supported planned action statuses.",
+        "enum": [
+          "planned",
+          "blocked",
+          "applied",
+          "failed"
+        ],
+        "title": "ActionStatus",
+        "type": "string"
+      },
+      "ActionType": {
+        "description": "Supported planned action types.",
+        "enum": [
+          "move",
+          "skip",
+          "refresh_metadata"
+        ],
+        "title": "ActionType",
+        "type": "string"
+      },
       "ApiEnvelope_BootstrapData_": {
         "additionalProperties": false,
         "properties": {
@@ -27,6 +48,566 @@
           "errors"
         ],
         "title": "ApiEnvelope[BootstrapData]",
+        "type": "object"
+      },
+      "ApiEnvelope_CheckIssueFacetsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckIssueFacetsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[CheckIssueFacetsData]",
+        "type": "object"
+      },
+      "ApiEnvelope_CheckIssueGroupsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckIssueGroupsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[CheckIssueGroupsData]",
+        "type": "object"
+      },
+      "ApiEnvelope_CheckIssuesData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckIssuesData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[CheckIssuesData]",
+        "type": "object"
+      },
+      "ApiEnvelope_FileEventFacetsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileEventFacetsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[FileEventFacetsData]",
+        "type": "object"
+      },
+      "ApiEnvelope_FileEventGroupsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileEventGroupsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[FileEventGroupsData]",
+        "type": "object"
+      },
+      "ApiEnvelope_LibrariesData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibrariesData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[LibrariesData]",
+        "type": "object"
+      },
+      "ApiEnvelope_LibraryResource_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryResource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[LibraryResource]",
+        "type": "object"
+      },
+      "ApiEnvelope_PaginatedData_FileEventResource__": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaginatedData_FileEventResource_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[PaginatedData[FileEventResource]]",
+        "type": "object"
+      },
+      "ApiEnvelope_PaginatedData_PlanActionResource__": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaginatedData_PlanActionResource_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[PaginatedData[PlanActionResource]]",
+        "type": "object"
+      },
+      "ApiEnvelope_PaginatedData_PlanSummary__": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaginatedData_PlanSummary_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[PaginatedData[PlanSummary]]",
+        "type": "object"
+      },
+      "ApiEnvelope_PaginatedData_RunHeader__": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaginatedData_RunHeader_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[PaginatedData[RunHeader]]",
+        "type": "object"
+      },
+      "ApiEnvelope_PaginatedData_TrackResource__": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaginatedData_TrackResource_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[PaginatedData[TrackResource]]",
+        "type": "object"
+      },
+      "ApiEnvelope_PlanActionFacetsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanActionFacetsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[PlanActionFacetsData]",
+        "type": "object"
+      },
+      "ApiEnvelope_PlanActionGroupsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanActionGroupsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[PlanActionGroupsData]",
+        "type": "object"
+      },
+      "ApiEnvelope_PlanDetailData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanDetailData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[PlanDetailData]",
+        "type": "object"
+      },
+      "ApiEnvelope_RunDetailData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunDetailData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[RunDetailData]",
+        "type": "object"
+      },
+      "ApiEnvelope_RunFacetsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunFacetsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[RunFacetsData]",
+        "type": "object"
+      },
+      "ApiEnvelope_TrackFacetsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackFacetsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[TrackFacetsData]",
+        "type": "object"
+      },
+      "ApiEnvelope_TrackGroupsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackGroupsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[TrackGroupsData]",
+        "type": "object"
+      },
+      "ApiEnvelope_TrackResource_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackResource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[TrackResource]",
         "type": "object"
       },
       "ApiError": {
@@ -218,6 +799,253 @@
         "title": "BootstrapData",
         "type": "object"
       },
+      "CheckIssueFacetSets": {
+        "additionalProperties": false,
+        "description": "CheckIssue type facets.",
+        "properties": {
+          "issue_type": {
+            "items": {
+              "$ref": "#/components/schemas/FacetValueResource_CheckIssueType_"
+            },
+            "title": "Issue Type",
+            "type": "array"
+          }
+        },
+        "required": [
+          "issue_type"
+        ],
+        "title": "CheckIssueFacetSets",
+        "type": "object"
+      },
+      "CheckIssueFacetsData": {
+        "additionalProperties": false,
+        "description": "CheckIssue facets, matching total, and freshness evidence.",
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "facets": {
+            "$ref": "#/components/schemas/CheckIssueFacetSets"
+          },
+          "total": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          }
+        },
+        "required": [
+          "facets",
+          "total",
+          "checked_at"
+        ],
+        "title": "CheckIssueFacetsData",
+        "type": "object"
+      },
+      "CheckIssueGroupResource": {
+        "additionalProperties": false,
+        "description": "One CheckIssue group with its most common non-null path root.",
+        "properties": {
+          "common_path_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Common Path Root"
+          },
+          "count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "count",
+          "common_path_root"
+        ],
+        "title": "CheckIssueGroupResource",
+        "type": "object"
+      },
+      "CheckIssueGrouping": {
+        "description": "Supported group-by keys for persisted CheckIssue browsing.",
+        "enum": [
+          "issue_type",
+          "severity",
+          "path_root",
+          "artist_album",
+          "suggested_command",
+          "library_id"
+        ],
+        "title": "CheckIssueGrouping",
+        "type": "string"
+      },
+      "CheckIssueGroupsData": {
+        "additionalProperties": false,
+        "description": "One page of persisted CheckIssue groups.",
+        "properties": {
+          "group_by": {
+            "$ref": "#/components/schemas/CheckIssueGrouping"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CheckIssueGroupResource"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "group_by",
+          "items",
+          "page"
+        ],
+        "title": "CheckIssueGroupsData",
+        "type": "object"
+      },
+      "CheckIssueResource": {
+        "additionalProperties": false,
+        "description": "One persisted finding from the latest Check for its Library.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "issue_type": {
+            "$ref": "#/components/schemas/CheckIssueType"
+          },
+          "library_id": {
+            "format": "uuid",
+            "title": "Library Id",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          }
+        },
+        "required": [
+          "issue_type",
+          "library_id",
+          "path",
+          "track_id",
+          "plan_id",
+          "detail"
+        ],
+        "title": "CheckIssueResource",
+        "type": "object"
+      },
+      "CheckIssueType": {
+        "description": "Supported check issue types.",
+        "enum": [
+          "db_file_missing",
+          "unmanaged_file_exists",
+          "content_hash_changed",
+          "metadata_hash_changed",
+          "current_path_differs_from_canonical_path",
+          "duplicate_candidate",
+          "plan_source_changed",
+          "pending_file_event_exists",
+          "library_unregistered",
+          "library_stale",
+          "library_blocked"
+        ],
+        "title": "CheckIssueType",
+        "type": "string"
+      },
+      "CheckIssuesData": {
+        "additionalProperties": false,
+        "description": "One persisted CheckIssue page plus freshness evidence.",
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CheckIssueResource"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "checked_at"
+        ],
+        "title": "CheckIssuesData",
+        "type": "object"
+      },
       "ConfigValidationResource": {
         "additionalProperties": false,
         "description": "Current Config validity and opaque raw-storage revision.",
@@ -251,6 +1079,351 @@
           "errors"
         ],
         "title": "ConfigValidationResource",
+        "type": "object"
+      },
+      "FacetValueResource_ActionStatus_": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "value": {
+            "$ref": "#/components/schemas/ActionStatus"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "FacetValueResource[ActionStatus]",
+        "type": "object"
+      },
+      "FacetValueResource_ActionType_": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "value": {
+            "$ref": "#/components/schemas/ActionType"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "FacetValueResource[ActionType]",
+        "type": "object"
+      },
+      "FacetValueResource_CheckIssueType_": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "value": {
+            "$ref": "#/components/schemas/CheckIssueType"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "FacetValueResource[CheckIssueType]",
+        "type": "object"
+      },
+      "FacetValueResource_FileEventStatus_": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "value": {
+            "$ref": "#/components/schemas/FileEventStatus"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "FacetValueResource[FileEventStatus]",
+        "type": "object"
+      },
+      "FacetValueResource_PlanActionReason_": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "value": {
+            "$ref": "#/components/schemas/PlanActionReason"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "FacetValueResource[PlanActionReason]",
+        "type": "object"
+      },
+      "FacetValueResource_RunStatus_": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "value": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "FacetValueResource[RunStatus]",
+        "type": "object"
+      },
+      "FacetValueResource_TrackStatus_": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "value": {
+            "$ref": "#/components/schemas/TrackStatus"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "FacetValueResource[TrackStatus]",
+        "type": "object"
+      },
+      "FileEventFacetSets": {
+        "additionalProperties": false,
+        "description": "FileEvent status facets.",
+        "properties": {
+          "status": {
+            "items": {
+              "$ref": "#/components/schemas/FacetValueResource_FileEventStatus_"
+            },
+            "title": "Status",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "FileEventFacetSets",
+        "type": "object"
+      },
+      "FileEventFacetsData": {
+        "additionalProperties": false,
+        "description": "FileEvent status facets plus total events for one Run.",
+        "properties": {
+          "facets": {
+            "$ref": "#/components/schemas/FileEventFacetSets"
+          },
+          "total": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          }
+        },
+        "required": [
+          "facets",
+          "total"
+        ],
+        "title": "FileEventFacetsData",
+        "type": "object"
+      },
+      "FileEventGrouping": {
+        "const": "target_directory",
+        "type": "string"
+      },
+      "FileEventGroupsData": {
+        "additionalProperties": false,
+        "description": "One page of FileEvent target-directory groups.",
+        "properties": {
+          "group_by": {
+            "$ref": "#/components/schemas/FileEventGrouping"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroupResource"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "group_by",
+          "items",
+          "page"
+        ],
+        "title": "FileEventGroupsData",
+        "type": "object"
+      },
+      "FileEventResource": {
+        "additionalProperties": false,
+        "description": "One durable Library music-file mutation record.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/FileEventType"
+          },
+          "library_id": {
+            "format": "uuid",
+            "title": "Library Id",
+            "type": "string"
+          },
+          "plan_action_id": {
+            "format": "uuid",
+            "title": "Plan Action Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sequence_no": {
+            "title": "Sequence No",
+            "type": "integer"
+          },
+          "source_path": {
+            "title": "Source Path",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FileEventStatus"
+          },
+          "target_path": {
+            "title": "Target Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "library_id",
+          "run_id",
+          "plan_action_id",
+          "event_type",
+          "source_path",
+          "target_path",
+          "status",
+          "started_at",
+          "completed_at",
+          "error_code",
+          "error_message",
+          "sequence_no"
+        ],
+        "title": "FileEventResource",
+        "type": "object"
+      },
+      "FileEventStatus": {
+        "description": "Supported durable operation event statuses.",
+        "enum": [
+          "pending",
+          "succeeded",
+          "failed"
+        ],
+        "title": "FileEventStatus",
+        "type": "string"
+      },
+      "FileEventType": {
+        "description": "Supported durable operation event types.",
+        "enum": [
+          "move_file"
+        ],
+        "title": "FileEventType",
+        "type": "string"
+      },
+      "GroupResource": {
+        "additionalProperties": false,
+        "description": "One stable group key, display label, and matching row count.",
+        "properties": {
+          "count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "count"
+        ],
+        "title": "GroupResource",
+        "type": "object"
+      },
+      "LibrariesData": {
+        "additionalProperties": false,
+        "description": "Every persisted Library in stable repository order.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryResource"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LibrariesData",
         "type": "object"
       },
       "LibraryResource": {
@@ -317,6 +1490,10 @@
         "title": "LibraryStatus",
         "type": "string"
       },
+      "NonNegativeCount": {
+        "minimum": 0.0,
+        "type": "integer"
+      },
       "OperationPollingPolicy": {
         "additionalProperties": false,
         "description": "Polling policy serialized from backend-owned tunables.",
@@ -341,6 +1518,814 @@
         ],
         "title": "OperationPollingPolicy",
         "type": "object"
+      },
+      "PageInfo": {
+        "additionalProperties": false,
+        "description": "One effective keyset page with an opaque next cursor.",
+        "properties": {
+          "limit": {
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          }
+        },
+        "required": [
+          "limit",
+          "next_cursor",
+          "total"
+        ],
+        "title": "PageInfo",
+        "type": "object"
+      },
+      "PaginatedData_FileEventResource_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileEventResource"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ],
+        "title": "PaginatedData[FileEventResource]",
+        "type": "object"
+      },
+      "PaginatedData_PlanActionResource_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanActionResource"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ],
+        "title": "PaginatedData[PlanActionResource]",
+        "type": "object"
+      },
+      "PaginatedData_PlanSummary_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ],
+        "title": "PaginatedData[PlanSummary]",
+        "type": "object"
+      },
+      "PaginatedData_RunHeader_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunHeader"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ],
+        "title": "PaginatedData[RunHeader]",
+        "type": "object"
+      },
+      "PaginatedData_TrackResource_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TrackResource"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ],
+        "title": "PaginatedData[TrackResource]",
+        "type": "object"
+      },
+      "PlanActionFacetSets": {
+        "additionalProperties": false,
+        "description": "The filter-aware status, action type, and non-null reason facets.",
+        "properties": {
+          "action_type": {
+            "items": {
+              "$ref": "#/components/schemas/FacetValueResource_ActionType_"
+            },
+            "title": "Action Type",
+            "type": "array"
+          },
+          "reason": {
+            "items": {
+              "$ref": "#/components/schemas/FacetValueResource_PlanActionReason_"
+            },
+            "title": "Reason",
+            "type": "array"
+          },
+          "status": {
+            "items": {
+              "$ref": "#/components/schemas/FacetValueResource_ActionStatus_"
+            },
+            "title": "Status",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status",
+          "action_type",
+          "reason"
+        ],
+        "title": "PlanActionFacetSets",
+        "type": "object"
+      },
+      "PlanActionFacetsData": {
+        "additionalProperties": false,
+        "description": "PlanAction facets plus the Plan-wide target-collision risk count.",
+        "properties": {
+          "facets": {
+            "$ref": "#/components/schemas/PlanActionFacetSets"
+          },
+          "target_collisions": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "total": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          }
+        },
+        "required": [
+          "facets",
+          "total",
+          "target_collisions"
+        ],
+        "title": "PlanActionFacetsData",
+        "type": "object"
+      },
+      "PlanActionGroupResource": {
+        "additionalProperties": false,
+        "description": "One enriched PlanAction group row for drill-down browsing.",
+        "properties": {
+          "blocked_count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "count": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "top_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanActionReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "count",
+          "blocked_count",
+          "top_reason"
+        ],
+        "title": "PlanActionGroupResource",
+        "type": "object"
+      },
+      "PlanActionGrouping": {
+        "description": "Supported group_by keys for browsing one Plan's actions.",
+        "enum": [
+          "target_directory",
+          "source_directory",
+          "artist_album",
+          "action_type",
+          "status",
+          "block_reason",
+          "extension"
+        ],
+        "title": "PlanActionGrouping",
+        "type": "string"
+      },
+      "PlanActionGroupsData": {
+        "additionalProperties": false,
+        "description": "One filter-aware page of enriched PlanAction groups.",
+        "properties": {
+          "group_by": {
+            "$ref": "#/components/schemas/PlanActionGrouping"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanActionGroupResource"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "group_by",
+          "items",
+          "page"
+        ],
+        "title": "PlanActionGroupsData",
+        "type": "object"
+      },
+      "PlanActionReason": {
+        "description": "Documented reasons for blocked, skipped, or failed actions.",
+        "enum": [
+          "target_exists",
+          "missing_required_metadata",
+          "invalid_path",
+          "source_missing",
+          "source_changed",
+          "duplicate_hash",
+          "operation_interrupted"
+        ],
+        "title": "PlanActionReason",
+        "type": "string"
+      },
+      "PlanActionResource": {
+        "additionalProperties": false,
+        "description": "One recorded PlanAction in immutable review order.",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "action_type": {
+            "$ref": "#/components/schemas/ActionType"
+          },
+          "content_hash_at_plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Hash At Plan"
+          },
+          "library_id": {
+            "format": "uuid",
+            "title": "Library Id",
+            "type": "string"
+          },
+          "metadata_hash_at_plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Hash At Plan"
+          },
+          "plan_id": {
+            "format": "uuid",
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanActionReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActionStatus"
+          },
+          "target_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Path"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          }
+        },
+        "required": [
+          "action_id",
+          "plan_id",
+          "library_id",
+          "track_id",
+          "action_type",
+          "source_path",
+          "target_path",
+          "content_hash_at_plan",
+          "metadata_hash_at_plan",
+          "status",
+          "reason",
+          "sort_order"
+        ],
+        "title": "PlanActionResource",
+        "type": "object"
+      },
+      "PlanActionSummary": {
+        "additionalProperties": false,
+        "description": "Typed current action count summary that replaces opaque Plan storage data.",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/PlanActionSummaryCounts"
+          },
+          "total": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          }
+        },
+        "required": [
+          "total",
+          "counts"
+        ],
+        "title": "PlanActionSummary",
+        "type": "object"
+      },
+      "PlanActionSummaryCounts": {
+        "additionalProperties": false,
+        "description": "The complete status matrix for one Plan's current recorded actions.",
+        "properties": {
+          "applied": {
+            "$ref": "#/components/schemas/PlanActionTypeCounts"
+          },
+          "blocked": {
+            "$ref": "#/components/schemas/PlanActionTypeCounts"
+          },
+          "failed": {
+            "$ref": "#/components/schemas/PlanActionTypeCounts"
+          },
+          "planned": {
+            "$ref": "#/components/schemas/PlanActionTypeCounts"
+          }
+        },
+        "required": [
+          "planned",
+          "blocked",
+          "applied",
+          "failed"
+        ],
+        "title": "PlanActionSummaryCounts",
+        "type": "object"
+      },
+      "PlanActionTypeCounts": {
+        "additionalProperties": false,
+        "description": "Counts for the three recorded PlanAction types within one status.",
+        "properties": {
+          "move": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "refresh_metadata": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "skip": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          }
+        },
+        "required": [
+          "move",
+          "skip",
+          "refresh_metadata"
+        ],
+        "title": "PlanActionTypeCounts",
+        "type": "object"
+      },
+      "PlanCapabilities": {
+        "additionalProperties": false,
+        "description": "Backend-authoritative operation availability for one Plan.",
+        "properties": {
+          "can_apply": {
+            "title": "Can Apply",
+            "type": "boolean"
+          },
+          "can_cancel": {
+            "title": "Can Cancel",
+            "type": "boolean"
+          },
+          "can_recreate": {
+            "title": "Can Recreate",
+            "type": "boolean"
+          },
+          "disabled_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Disabled Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "can_apply",
+          "can_cancel",
+          "can_recreate",
+          "disabled_reasons"
+        ],
+        "title": "PlanCapabilities",
+        "type": "object"
+      },
+      "PlanDetailData": {
+        "additionalProperties": false,
+        "description": "Plan header, current action summary, and advisory capabilities.",
+        "properties": {
+          "active_operation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Operation Id"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/PlanCapabilities"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanHeader"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PlanActionSummary"
+          }
+        },
+        "required": [
+          "plan",
+          "summary",
+          "capabilities",
+          "active_operation_id"
+        ],
+        "title": "PlanDetailData",
+        "type": "object"
+      },
+      "PlanHeader": {
+        "additionalProperties": false,
+        "description": "One Plan header without actions or an opaque persisted summary.",
+        "properties": {
+          "config_hash": {
+            "title": "Config Hash",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "library_id": {
+            "format": "uuid",
+            "title": "Library Id",
+            "type": "string"
+          },
+          "library_root_at_plan": {
+            "title": "Library Root At Plan",
+            "type": "string"
+          },
+          "plan_id": {
+            "format": "uuid",
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "plan_type": {
+            "$ref": "#/components/schemas/PlanType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PlanStatus"
+          }
+        },
+        "required": [
+          "plan_id",
+          "library_id",
+          "plan_type",
+          "status",
+          "created_at",
+          "config_hash",
+          "library_root_at_plan"
+        ],
+        "title": "PlanHeader",
+        "type": "object"
+      },
+      "PlanStatus": {
+        "description": "Supported Plan statuses.",
+        "enum": [
+          "ready",
+          "applying",
+          "applied",
+          "partial_failed",
+          "failed",
+          "cancelled",
+          "expired"
+        ],
+        "title": "PlanStatus",
+        "type": "string"
+      },
+      "PlanSummary": {
+        "additionalProperties": false,
+        "description": "One Plan list row without execution capabilities or opaque persistence fields.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "library_id": {
+            "format": "uuid",
+            "title": "Library Id",
+            "type": "string"
+          },
+          "plan_id": {
+            "format": "uuid",
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "plan_type": {
+            "$ref": "#/components/schemas/PlanType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PlanStatus"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PlanActionSummary"
+          }
+        },
+        "required": [
+          "plan_id",
+          "library_id",
+          "plan_type",
+          "status",
+          "created_at",
+          "summary"
+        ],
+        "title": "PlanSummary",
+        "type": "object"
+      },
+      "PlanType": {
+        "description": "Supported Plan types.",
+        "enum": [
+          "add",
+          "organize",
+          "refresh",
+          "undo"
+        ],
+        "title": "PlanType",
+        "type": "string"
+      },
+      "RunCapabilities": {
+        "additionalProperties": false,
+        "description": "Backend-authoritative Undo Plan availability for one Run.",
+        "properties": {
+          "can_create_undo": {
+            "title": "Can Create Undo",
+            "type": "boolean"
+          },
+          "disabled_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Disabled Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "can_create_undo",
+          "disabled_reasons"
+        ],
+        "title": "RunCapabilities",
+        "type": "object"
+      },
+      "RunDetailData": {
+        "additionalProperties": false,
+        "description": "One Run header with capability and active-operation projections.",
+        "properties": {
+          "active_operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Operation Id"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/RunCapabilities"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunHeader"
+          }
+        },
+        "required": [
+          "run",
+          "capabilities",
+          "active_operation_id"
+        ],
+        "title": "RunDetailData",
+        "type": "object"
+      },
+      "RunFacetSets": {
+        "additionalProperties": false,
+        "description": "Run status facets.",
+        "properties": {
+          "status": {
+            "items": {
+              "$ref": "#/components/schemas/FacetValueResource_RunStatus_"
+            },
+            "title": "Status",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "RunFacetSets",
+        "type": "object"
+      },
+      "RunFacetsData": {
+        "additionalProperties": false,
+        "description": "Run status facets plus total Runs in scope.",
+        "properties": {
+          "facets": {
+            "$ref": "#/components/schemas/RunFacetSets"
+          },
+          "total": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          }
+        },
+        "required": [
+          "facets",
+          "total"
+        ],
+        "title": "RunFacetsData",
+        "type": "object"
+      },
+      "RunHeader": {
+        "additionalProperties": false,
+        "description": "One apply Run header without embedded FileEvents.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Summary"
+          },
+          "library_id": {
+            "format": "uuid",
+            "title": "Library Id",
+            "type": "string"
+          },
+          "plan_id": {
+            "format": "uuid",
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "run_id",
+          "plan_id",
+          "library_id",
+          "status",
+          "started_at",
+          "completed_at",
+          "error_summary"
+        ],
+        "title": "RunHeader",
+        "type": "object"
+      },
+      "RunStatus": {
+        "description": "Supported Run statuses.",
+        "enum": [
+          "running",
+          "succeeded",
+          "partial_failed",
+          "failed"
+        ],
+        "title": "RunStatus",
+        "type": "string"
       },
       "RuntimeCapabilities": {
         "additionalProperties": false,
@@ -374,6 +2359,310 @@
         ],
         "title": "RuntimeCapabilities",
         "type": "object"
+      },
+      "TrackFacetSets": {
+        "additionalProperties": false,
+        "description": "Filter-aware Track status facets.",
+        "properties": {
+          "status": {
+            "items": {
+              "$ref": "#/components/schemas/FacetValueResource_TrackStatus_"
+            },
+            "title": "Status",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "TrackFacetSets",
+        "type": "object"
+      },
+      "TrackFacetsData": {
+        "additionalProperties": false,
+        "description": "Track facets and total count for the current search scope.",
+        "properties": {
+          "facets": {
+            "$ref": "#/components/schemas/TrackFacetSets"
+          },
+          "total": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          }
+        },
+        "required": [
+          "facets",
+          "total"
+        ],
+        "title": "TrackFacetsData",
+        "type": "object"
+      },
+      "TrackGrouping": {
+        "description": "Known Track group-by query groupings.",
+        "enum": [
+          "artist",
+          "album",
+          "disc",
+          "artist_album"
+        ],
+        "title": "TrackGrouping",
+        "type": "string"
+      },
+      "TrackGroupsData": {
+        "additionalProperties": false,
+        "description": "One filter-aware page of opaque Track hierarchy groups.",
+        "properties": {
+          "group_by": {
+            "$ref": "#/components/schemas/TrackGrouping"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroupResource"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        },
+        "required": [
+          "group_by",
+          "items",
+          "page"
+        ],
+        "title": "TrackGroupsData",
+        "type": "object"
+      },
+      "TrackMetadataResource": {
+        "additionalProperties": false,
+        "description": "Persisted tag metadata for one managed Track.",
+        "properties": {
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "album_artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album Artist"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "disc_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disc Number"
+          },
+          "disc_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disc Total"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "track_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Number"
+          },
+          "track_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Total"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "required": [
+          "title",
+          "artist",
+          "album",
+          "album_artist",
+          "genre",
+          "year",
+          "track_number",
+          "track_total",
+          "disc_number",
+          "disc_total"
+        ],
+        "title": "TrackMetadataResource",
+        "type": "object"
+      },
+      "TrackResource": {
+        "additionalProperties": false,
+        "description": "One persisted Track inspection resource.",
+        "properties": {
+          "canonical_path": {
+            "title": "Canonical Path",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "current_path": {
+            "title": "Current Path",
+            "type": "string"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "library_id": {
+            "format": "uuid",
+            "title": "Library Id",
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/TrackMetadataResource"
+          },
+          "metadata_hash": {
+            "title": "Metadata Hash",
+            "type": "string"
+          },
+          "mtime": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mtime"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NonNegativeCount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/TrackStatus"
+          },
+          "track_id": {
+            "format": "uuid",
+            "title": "Track Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track_id",
+          "library_id",
+          "current_path",
+          "canonical_path",
+          "content_hash",
+          "metadata_hash",
+          "size",
+          "mtime",
+          "metadata",
+          "status",
+          "first_seen_at",
+          "last_seen_at",
+          "updated_at"
+        ],
+        "title": "TrackResource",
+        "type": "object"
+      },
+      "TrackStatus": {
+        "description": "Known managed Track states.",
+        "enum": [
+          "active",
+          "removed"
+        ],
+        "title": "TrackStatus",
+        "type": "string"
       }
     }
   },
@@ -425,6 +2714,2479 @@
           }
         },
         "summary": "Get Bootstrap"
+      }
+    },
+    "/api/check": {
+      "get": {
+        "operationId": "getCheckIssues",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issue_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CheckIssueType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Issue Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CheckIssueGrouping"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group By"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "library_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Library Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_CheckIssuesData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Check Issues"
+      }
+    },
+    "/api/check/facets": {
+      "get": {
+        "operationId": "getCheckIssueFacets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "library_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Library Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_CheckIssueFacetsData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Check Issue Facets"
+      }
+    },
+    "/api/check/groups": {
+      "get": {
+        "operationId": "getCheckIssueGroups",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/CheckIssueGrouping"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issue_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CheckIssueType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Issue Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "library_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Library Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_CheckIssueGroupsData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Check Issue Groups"
+      }
+    },
+    "/api/history": {
+      "get": {
+        "operationId": "getHistory",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RunStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "plan_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Plan Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "library_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Library Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_PaginatedData_RunHeader__"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get History"
+      }
+    },
+    "/api/history/facets": {
+      "get": {
+        "operationId": "getHistoryFacets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "library_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Library Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_RunFacetsData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get History Facets"
+      }
+    },
+    "/api/history/{run_id}": {
+      "get": {
+        "operationId": "getRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_RunDetailData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Run"
+      }
+    },
+    "/api/history/{run_id}/events": {
+      "get": {
+        "operationId": "getRunEvents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FileEventStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_PaginatedData_FileEventResource__"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Run Events"
+      }
+    },
+    "/api/history/{run_id}/events/facets": {
+      "get": {
+        "operationId": "getRunEventFacets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_FileEventFacetsData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Run Event Facets"
+      }
+    },
+    "/api/history/{run_id}/events/groups": {
+      "get": {
+        "operationId": "getRunEventGroups",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": true,
+            "schema": {
+              "const": "target_directory",
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_FileEventGroupsData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Run Event Groups"
+      }
+    },
+    "/api/libraries": {
+      "get": {
+        "operationId": "getLibraries",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_LibrariesData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Libraries"
+      }
+    },
+    "/api/libraries/{library_id}": {
+      "get": {
+        "operationId": "getLibrary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Library Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_LibraryResource_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Library"
+      }
+    },
+    "/api/plans": {
+      "get": {
+        "operationId": "listPlans",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PlanStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PlanType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "blocked",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Blocked",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_PaginatedData_PlanSummary__"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Plans"
+      }
+    },
+    "/api/plans/{plan_id}": {
+      "get": {
+        "operationId": "getPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_PlanDetailData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Plan"
+      }
+    },
+    "/api/plans/{plan_id}/actions": {
+      "get": {
+        "operationId": "listPlanActions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PlanActionReason"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PlanActionGrouping"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group By"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_PaginatedData_PlanActionResource__"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Plan Actions"
+      }
+    },
+    "/api/plans/{plan_id}/facets": {
+      "get": {
+        "operationId": "getPlanActionFacets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PlanActionReason"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_PlanActionFacetsData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Plan Action Facets"
+      }
+    },
+    "/api/plans/{plan_id}/groups": {
+      "get": {
+        "operationId": "groupPlanActions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/PlanActionGrouping"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ActionType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PlanActionReason"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_PlanActionGroupsData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Plan Action Groups"
+      }
+    },
+    "/api/tracks": {
+      "get": {
+        "operationId": "listTracks",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TrackStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "track_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Track Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "library_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Library Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TrackGrouping"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group By"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_PaginatedData_TrackResource__"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Tracks"
+      }
+    },
+    "/api/tracks/facets": {
+      "get": {
+        "operationId": "getTrackFacets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "library_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Library Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_TrackFacetsData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Track Facets"
+      }
+    },
+    "/api/tracks/groups": {
+      "get": {
+        "operationId": "getTrackGroups",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/TrackGrouping"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TrackStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "library_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Library Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_TrackGroupsData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Track Groups"
+      }
+    },
+    "/api/tracks/{track_id}": {
+      "get": {
+        "operationId": "getTrack",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_TrackResource_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Track"
       }
     }
   }

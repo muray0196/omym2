@@ -1,12 +1,12 @@
 /**
- * Summary: Proves every M1 Web route leaves the Library music tree byte-for-byte unchanged.
+ * Summary: Proves every M2 Web route leaves the Library music tree byte-for-byte unchanged.
  * Why: Enforces the pre-M4 boundary that the renewed UI cannot mutate music files.
  */
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { expect, test } from "@playwright/test";
 
-import { allM1RoutePaths } from "./route-fixtures";
+import { allM2RoutePaths } from "./route-fixtures";
 
 test("does not mutate Library music files before M4", async ({ page }) => {
   const applicationRoot = process.env.OMYM2_E2E_APPLICATION_ROOT;
@@ -20,7 +20,7 @@ test("does not mutate Library music files before M4", async ({ page }) => {
   const before = await snapshotTree(libraryRoot);
   expect(before.some((entry) => entry.path === "sentinel.flac")).toBe(true);
 
-  for (const route of allM1RoutePaths) {
+  for (const route of allM2RoutePaths) {
     await page.goto(route);
     await expect(
       page.locator("[data-omym2-shell-interactive='true']"),

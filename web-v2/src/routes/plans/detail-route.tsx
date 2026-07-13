@@ -1,10 +1,9 @@
 /**
- * Summary: Defines the lazy Plan review route boundary.
- * Why: Reserves backend-authoritative capability presentation for later integration.
+ * Summary: Defines the lazy Plan detail inspection route.
+ * Why: Keeps recorded action review outside the initial application bundle.
  */
-import { PlaceholderRoute } from "../placeholder-route";
-import { routeCopy } from "../route-copy";
+import { PlanDetail } from "../../features/plans/plan-detail";
 
 export function Component() {
-  return <PlaceholderRoute {...routeCopy.planDetail} />;
+  return <PlanDetail />;
 }

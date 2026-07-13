@@ -9,12 +9,21 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
+import {
+  getHistory,
+  listPlans,
+  listTracks,
+  type PlanSummary,
+  type RunHeader,
+  type TrackResource,
+} from "../../api/generated";
 import { Icon } from "../../ui/icon";
 import { Dialog } from "../../ui/primitives/dialog";
 import { commandCenterCopy } from "./command-center-copy";
-import { filterCommands } from "./command-sources";
+import { buildCommands, filterCommands } from "./command-sources";
 import styles from "./command-center.module.css";
 
 type CommandCenterDialogProps = {
@@ -33,7 +42,12 @@ export function CommandCenterDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   const navigate = useNavigate();
-  const results = filterCommands(query);
+  const records = useQuery({
+    enabled: open,
+    queryKey: ["command-center", "recent-records"],
+    queryFn: loadRecentRecords,
+  });
+  const results = filterCommands(query, buildCommands(records.data));
   const activeItem = results[activeIndex] ?? results[0];
 
   function openItem(index: number) {
@@ -102,7 +116,7 @@ export function CommandCenterDialog({
       {results.length === 0 ? (
         <p className={styles.empty}>{commandCenterCopy.empty}</p>
       ) : (
-        <p className={styles.groupLabel}>{commandCenterCopy.navigationGroup}</p>
+        <p className={styles.groupLabel}>{commandCenterCopy.resultsGroup}</p>
       )}
       <div
         aria-label={commandCenterCopy.resultsLabel}
@@ -129,4 +143,26 @@ export function CommandCenterDialog({
       </div>
     </Dialog>
   );
+}
+
+async function loadRecentRecords() {
+  const [plansResponse, historyResponse, tracksResponse] = await Promise.all([
+    listPlans({ baseUrl: globalThis.location.origin, query: { limit: 5 } }),
+    getHistory({ baseUrl: globalThis.location.origin, query: { limit: 5 } }),
+    listTracks({ baseUrl: globalThis.location.origin, query: { limit: 5 } }),
+  ]);
+  return {
+    plans: unwrap<PlanSummary>(plansResponse),
+    runs: unwrap<RunHeader>(historyResponse),
+    tracks: unwrap<TrackResource>(tracksResponse),
+  };
+}
+
+function unwrap<T>(response: {
+  data?: { data: { items: T[] } | null };
+  error?: unknown;
+}): T[] {
+  return response.error === undefined && response.data?.data !== null
+    ? (response.data?.data?.items ?? [])
+    : [];
 }

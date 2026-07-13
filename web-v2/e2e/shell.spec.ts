@@ -70,13 +70,13 @@ test("restores a matched detail route after a direct load and reload", async ({
 }) => {
   await page.goto(deepPlanRoute);
   await expect(
-    page.getByRole("heading", { name: "Plan review" }),
+    page.getByRole("heading", { name: "Plan not found" }),
   ).toBeVisible();
 
   await page.reload();
 
   await expect(page).toHaveURL(new RegExp(`${deepPlanRoute}$`));
   await expect(
-    page.getByRole("heading", { name: "Plan review" }),
+    page.getByRole("heading", { name: "Plan not found" }),
   ).toBeFocused();
 });

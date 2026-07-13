@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
 from omym2.domain.models.file_event import FileEventStatus
+from omym2.domain.models.plan_action import ActionStatus
 from omym2.domain.models.track import TrackGrouping
 from omym2.features.check.usecases.group_check_issues import (
     common_path_root_for_check_issue,
@@ -37,7 +38,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.library import Library
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-    from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+    from omym2.domain.models.plan_action import ActionType, PlanAction, PlanActionReason
     from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackStatus
     from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
@@ -47,13 +48,6 @@ KEYSET_CURSOR_KEY_LENGTH = 2  # every Track/Track-group cursor key is a 2-tuple
 TRACK_GROUP_MEMBER_CURSOR_KEY_LENGTH = 4  # grouped Track member cursor: rank, number, title, track ID
 CHECK_ISSUE_CURSOR_KEY_LENGTH = 1  # a CheckIssue cursor key is a single issue_seq value
 TRACK_GROUP_FILTER_PAIRING_MESSAGE = "grouping and group_key must be provided together."
-
-
-def _summary_count(summary: dict[str, str], key: str) -> int:
-    try:
-        return int(summary.get(key, "0"))
-    except ValueError:
-        return 0
 
 
 @dataclass(slots=True)
@@ -381,6 +375,7 @@ class InMemoryPlanRepository:
     """In-memory PlanRepository fake."""
 
     records: dict[PlanId, Plan] = field(default_factory=dict)
+    plan_actions: InMemoryPlanActionRepository | None = field(default=None, repr=False)
 
     def get(self, plan_id: PlanId) -> Plan | None:
         """Return one Plan by ID."""
@@ -412,7 +407,7 @@ class InMemoryPlanRepository:
             and (search is None or _plan_matches_search(plan, search))
             and (status is None or plan.status == status)
             and (plan_type is None or plan.plan_type == plan_type)
-            and (not blocked_only or _summary_count(plan.summary, "blocked_actions") > 0)
+            and (not blocked_only or self._has_blocked_action(plan.plan_id))
         ]
         plans.sort(key=lambda plan: (plan.created_at, str(plan.plan_id)), reverse=True)
         total = len(plans)
@@ -431,6 +426,14 @@ class InMemoryPlanRepository:
         has_more = len(plans) > page.limit
         next_cursor_key = (page_items[-1].created_at.isoformat(), str(page_items[-1].plan_id)) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def _has_blocked_action(self, plan_id: PlanId) -> bool:
+        """Return whether this fake UnitOfWork records a currently blocked action for the Plan."""
+        repository = self.plan_actions
+        return repository is not None and any(
+            action.plan_id == plan_id and action.status is ActionStatus.BLOCKED
+            for action in repository.records.values()
+        )
 
 
 def _plan_matches_search(plan: Plan, search: str) -> bool:
@@ -603,6 +606,20 @@ class InMemoryPlanActionRepository:
                 continue
             counts[action.target_path] = counts.get(action.target_path, 0) + 1
         return sum(1 for count in counts.values() if count > 1)
+
+    def action_counts_by_plan(
+        self,
+        plan_ids: Sequence[PlanId],
+    ) -> dict[PlanId, dict[tuple[ActionStatus, ActionType], int]]:
+        """Return current status/action-type counts for every requested Plan."""
+        counts_by_plan: dict[PlanId, dict[tuple[ActionStatus, ActionType], int]] = {plan_id: {} for plan_id in plan_ids}
+        for action in self.records.values():
+            counts = counts_by_plan.get(action.plan_id)
+            if counts is None:
+                continue
+            key = (action.status, action.action_type)
+            counts[key] = counts.get(key, 0) + 1
+        return counts_by_plan
 
     def list_by_ids(self, action_ids: Sequence[ActionId]) -> tuple[PlanAction, ...]:
         """Return the PlanActions with the given IDs, ordered (sort_order, action_id)."""
@@ -844,6 +861,10 @@ class InMemoryUnitOfWork:
     rollback_count: int = 0
     usecase_scope_enter_count: int = 0
     usecase_scope_exit_count: int = 0
+
+    def __post_init__(self) -> None:
+        """Wire the Plan query fake to the current PlanAction fake for blocked filtering."""
+        self.plans.plan_actions = self.plan_actions
 
     @contextmanager
     def usecase_scope(self) -> Generator[None]:

@@ -22,3 +22,9 @@ class LibraryResource(ApiModel):
     registered_at: datetime | None
     path_policy_fingerprint: str
     is_path_policy_current: bool
+
+
+class LibrariesData(ApiModel):
+    """Every persisted Library in stable repository order."""
+
+    items: tuple[LibraryResource, ...]

@@ -42,6 +42,7 @@ class PlanActionReason(StrEnum):
     SOURCE_MISSING = "source_missing"
     SOURCE_CHANGED = "source_changed"
     DUPLICATE_HASH = "duplicate_hash"
+    OPERATION_INTERRUPTED = "operation_interrupted"
 
 
 @dataclass(frozen=True, slots=True)

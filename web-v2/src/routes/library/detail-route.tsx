@@ -1,10 +1,9 @@
 /**
- * Summary: Defines the lazy Track detail route boundary.
- * Why: Reserves identity and history fields for generated API integration.
+ * Summary: Defines the lazy persisted Track detail route boundary.
+ * Why: Keeps metadata and hash inspection outside the initial app-shell bundle.
  */
-import { PlaceholderRoute } from "../placeholder-route";
-import { routeCopy } from "../route-copy";
+import { TrackDetail } from "../../features/library/track-detail";
 
 export function Component() {
-  return <PlaceholderRoute {...routeCopy.trackDetail} />;
+  return <TrackDetail />;
 }

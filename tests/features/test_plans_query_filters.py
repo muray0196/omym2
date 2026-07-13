@@ -15,6 +15,7 @@ from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.features.plans.dto import (
+    GetPlanActionSummariesRequest,
     GetPlanHeaderRequest,
     GroupPlanActionsRequest,
     ListPlanActionsRequest,
@@ -24,6 +25,7 @@ from omym2.features.plans.dto import (
 )
 from omym2.features.plans.ports import PlanQueryPorts
 from omym2.features.plans.usecases.get_plan_action_facets import GetPlanActionFacetsUseCase
+from omym2.features.plans.usecases.get_plan_action_summaries import GetPlanActionSummariesUseCase
 from omym2.features.plans.usecases.get_plan_header import (
     PLAN_NOT_FOUND_MESSAGE,
     GetPlanHeaderUseCase,
@@ -66,7 +68,6 @@ TWO_ITEM_LIMIT = 2
 FIVE_PLAN_TOTAL = 5
 THREE_PLAN_TOTAL = 3
 TWO_PLAN_TOTAL = 2
-BLOCKED_ACTION_COUNT = "2"
 
 
 def test_list_plans_filters_by_status() -> None:
@@ -109,26 +110,20 @@ def test_list_plans_searches_header_fields_case_insensitively() -> None:
 
 
 def test_list_plans_filters_to_ready_plans_with_blocked_actions() -> None:
-    """Blocked-only combines with status before paging so terminal and clean Plans are excluded."""
+    """Blocked-only uses current actions rather than the opaque persisted Plan summary."""
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library())
-    uow.plans.save(
-        _plan(
-            PLAN_ID_1,
-            status=PlanStatus.READY,
-            created_at=BASE_TIME,
-            summary={"blocked_actions": BLOCKED_ACTION_COUNT},
-        )
-    )
+    uow.plans.save(_plan(PLAN_ID_1, status=PlanStatus.READY, created_at=BASE_TIME))
     uow.plans.save(
         _plan(
             PLAN_ID_2,
-            status=PlanStatus.APPLIED,
+            status=PlanStatus.READY,
             created_at=BASE_TIME + timedelta(days=1),
-            summary={"blocked_actions": BLOCKED_ACTION_COUNT},
+            summary={"blocked_actions": "1"},
         )
     )
     uow.plans.save(_plan(PLAN_ID_3, status=PlanStatus.READY, created_at=BASE_TIME + timedelta(days=2)))
+    uow.plan_actions.save(_action(ACTION_ID_1, status=ActionStatus.BLOCKED, sort_order=0))
 
     page = ListPlansUseCase(PlanQueryPorts(uow)).execute(
         ListPlansRequest(status=PlanStatus.READY, blocked_only=True),
@@ -209,6 +204,48 @@ def test_list_plans_does_not_commit() -> None:
 
     _ = ListPlansUseCase(PlanQueryPorts(uow)).execute(ListPlansRequest())
 
+    assert uow.commit_count == 0
+
+
+def test_get_plan_action_summaries_returns_the_full_status_type_matrix() -> None:
+    """One aggregate query returns zero-filled current counts for every requested Plan."""
+    uow = InMemoryUnitOfWork()
+    uow.plans.save(_plan(PLAN_ID_1, created_at=BASE_TIME))
+    uow.plans.save(_plan(PLAN_ID_2, created_at=BASE_TIME + timedelta(days=1)))
+    uow.plan_actions.save(_action(ACTION_ID_1, status=ActionStatus.PLANNED, sort_order=0))
+    uow.plan_actions.save(
+        _action(
+            ACTION_ID_2,
+            status=ActionStatus.BLOCKED,
+            sort_order=1,
+            action_type=ActionType.SKIP,
+        )
+    )
+    uow.plan_actions.save(
+        _action(
+            ACTION_ID_3,
+            status=ActionStatus.APPLIED,
+            sort_order=2,
+            action_type=ActionType.REFRESH_METADATA,
+        )
+    )
+
+    summaries = GetPlanActionSummariesUseCase(PlanQueryPorts(uow)).execute(
+        GetPlanActionSummariesRequest((PLAN_ID_1, PLAN_ID_2)),
+    )
+
+    first = summaries[PLAN_ID_1]
+    second = summaries[PLAN_ID_2]
+    assert first.total == THREE_ACTIONS
+    assert first.planned.move == 1
+    assert first.blocked.skip == 1
+    assert first.applied.refresh_metadata == 1
+    assert first.failed.move == 0
+    assert second.total == 0
+    assert second.planned.move == 0
+    assert second.blocked.skip == 0
+    assert second.applied.refresh_metadata == 0
+    assert second.failed.move == 0
     assert uow.commit_count == 0
 
 
@@ -580,10 +617,11 @@ def _action(  # noqa: PLR0913 - test fixture spans every grouped-review action f
     source_path: str | None = "Source/Track.flac",
     target_path: str | None = "Target/Track.flac",
     reason: PlanActionReason | None = None,
+    plan_id: PlanId = PLAN_ID_1,
 ) -> PlanAction:
     return PlanAction(
         action_id=action_id,
-        plan_id=PLAN_ID_1,
+        plan_id=plan_id,
         library_id=LIBRARY_ID,
         track_id=None,
         action_type=action_type,

@@ -17,6 +17,13 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
+class GetTrackRequest:
+    """Request one persisted Track by stable identity."""
+
+    track_id: TrackId
+
+
+@dataclass(frozen=True, slots=True)
 class ListTracksRequest:
     """Request one keyset page of Tracks, optionally narrowed to one exact group."""
 

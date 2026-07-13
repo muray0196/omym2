@@ -1,10 +1,9 @@
 /**
- * Summary: Defines the lazy Plans list route boundary.
- * Why: Freezes the route without inventing inspection data before M2.
+ * Summary: Defines the lazy Plans inspection list route.
+ * Why: Keeps the read-only Plan catalog outside the initial application bundle.
  */
-import { PlaceholderRoute } from "../placeholder-route";
-import { routeCopy } from "../route-copy";
+import { PlanList } from "../../features/plans/plan-list";
 
 export function Component() {
-  return <PlaceholderRoute {...routeCopy.plans} />;
+  return <PlanList />;
 }

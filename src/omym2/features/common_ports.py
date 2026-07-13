@@ -14,7 +14,7 @@ from omym2.shared import ids as shared_ids
 from omym2.shared.time import utc_now
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
     from contextlib import AbstractContextManager
     from datetime import datetime
     from types import TracebackType
@@ -354,6 +354,13 @@ class PlanActionRepository(Protocol):
 
     def count_target_collisions(self, plan_id: PlanId) -> int:
         """Return how many distinct non-null target_path values are recorded by 2+ of the Plan's actions."""
+        ...
+
+    def action_counts_by_plan(
+        self,
+        plan_ids: Sequence[PlanId],
+    ) -> Mapping[PlanId, Mapping[tuple[ActionStatus, ActionType], int]]:
+        """Return current status/action-type counts for all requested Plans in one aggregate query."""
         ...
 
     def list_group_rows(self, plan_id: PlanId) -> Sequence[PlanActionGroupRow]:

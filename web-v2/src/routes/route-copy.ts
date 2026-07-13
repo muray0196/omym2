@@ -5,24 +5,32 @@
 export const routeCopy = {
   overview: {
     title: "Operations overview",
-    eyebrow: "Foundation",
+    eyebrow: "Inspection console",
     description:
-      "The local operations console is ready for typed backend integration.",
+      "Review current readiness, ready Plans, recent execution, and persisted Health evidence.",
+    readinessTitle: "Readiness",
+    readinessBody: "No current Library path is available.",
+    noLibrary: "No active Library",
+    plansTitle: "Ready Plans",
+    historyTitle: "Recent execution",
+    healthTitle: "Health",
+    openPlans: "Open Plans",
+    openHistory: "Open History",
+    openHealth: "Open Health",
+    loading: "Loading persisted state…",
+    noReadyPlans: "No ready Plans",
+    readyPlans: "ready Plans",
+    noRuns: "No Runs have been recorded",
+    noHealthIssues: "No persisted Health issues",
+    healthIssues: "persisted issues",
+    errorTitle: "Overview data could not be loaded",
+    errorBody:
+      "Readiness remains available. Retry the persisted inspection requests.",
+    retry: "Try again",
+    plansError: "Ready Plans could not be loaded.",
+    historyError: "Recent History could not be loaded.",
+    healthError: "Persisted Health could not be loaded.",
   },
-  overviewCards: [
-    {
-      title: "Readiness",
-      body: "Bootstrap will report configuration and library readiness here.",
-    },
-    {
-      title: "Plan review",
-      body: "Plans remain reviewable evidence before any execution is offered.",
-    },
-    {
-      title: "History and health",
-      body: "Persisted Runs and Checks will provide verification after each operation.",
-    },
-  ],
   plans: {
     title: "Plans",
     description:

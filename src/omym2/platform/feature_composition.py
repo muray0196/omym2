@@ -20,6 +20,7 @@ from omym2.features.check.ports import CheckLibraryPorts, CheckQueryPorts
 from omym2.features.common_ports import SystemClock, Uuid7IdGenerator
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.inspect.ports import InspectFilePorts
+from omym2.features.libraries.ports import LibraryInspectionPorts
 from omym2.features.organize.ports import CreateOrganizePlanPorts
 from omym2.features.plans.ports import PlanQueryPorts
 from omym2.features.refresh.ports import CreateRefreshPlanPorts
@@ -84,6 +85,14 @@ def build_check_query_ports(runtime: RuntimeContext) -> CheckQueryPorts:
 def build_history_ports(runtime: RuntimeContext) -> HistoryPorts:
     """Build ports for history queries."""
     return HistoryPorts(uow=SQLiteUnitOfWork(runtime.database_file))
+
+
+def build_library_inspection_ports(runtime: RuntimeContext) -> LibraryInspectionPorts:
+    """Build ports for read-only effective Library readiness inspection."""
+    return LibraryInspectionPorts(
+        uow=SQLiteUnitOfWork(runtime.database_file),
+        config_snapshot_reader=runtime.config_store,
+    )
 
 
 def build_inspect_file_ports(runtime: RuntimeContext) -> InspectFilePorts:
