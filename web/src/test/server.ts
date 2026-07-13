@@ -1,5 +1,5 @@
 /**
- * Summary: Owns the clean-room MSW server used by frontend tests.
+ * Summary: Owns the MSW server used by frontend tests.
  * Why: Gives generated API handlers one strict shared interception boundary.
  */
 import { http, HttpResponse } from "msw";

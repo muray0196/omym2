@@ -1,6 +1,6 @@
 /**
  * Summary: Defines deterministic typed Plan review and capability fixtures.
- * Why: Makes M4 execution-control tests drift with generated API envelopes.
+ * Why: Makes execution-control tests drift with generated API envelopes.
  */
 import type {
   ApiEnvelopePaginatedDataPlanActionResource,

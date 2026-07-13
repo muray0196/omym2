@@ -3,14 +3,14 @@ type: Development Guide
 title: Testing
 description: Defines OMYM2's Python, bundled-frontend, desktop-browser, architecture, integration, contract, fixture, and CI test policy.
 tags: [testing, pytest, vitest, playwright, architecture-tests, fixtures]
-timestamp: 2026-07-14T01:06:39+09:00
+timestamp: 2026-07-14T01:47:14+09:00
 ---
 
 # Testing
 
 This document is authoritative for Python, frontend, browser, architecture,
-integration, contract, fixture, and clean-room test policy, and for deciding
-which contract changes require which tests.
+integration, contract, and fixture test policy, and for deciding which contract
+changes require which tests.
 
 Domain rules are in [DOMAIN.md](../DOMAIN.md), execution semantics are in [execution/](../execution/), storage rules are in [STORAGE.md](../STORAGE.md), contract docs are in [contracts/](../contracts/), and developer validation commands are in [harness.md](harness.md).
 
@@ -98,8 +98,7 @@ a temporary application root, Config state, SQLite database, and music-file
 tree. Tests must not open a user's browser, read user state, or access the
 network; an automatic context guard fails every non-loopback runtime request.
 
-Required browser coverage, as the corresponding milestone makes each flow
-available, is:
+Required browser coverage is:
 
 1. first run through Settings save and both Organize outcomes (`plan_created` and `registered_without_plan`)
 2. Add Plan through review, Apply, and successful History
@@ -123,9 +122,9 @@ browser behavior is not duplicated across browser engines without measured need.
 
 ## Visual Regression
 
-Visual baselines may contain only the clean-room UI rendered from the fixture
-catalog below. Screenshots, snapshots, layouts, or assets from the excluded
-frontend are prohibited as inputs or comparison targets.
+Visual baselines may contain only the current UI rendered from the fixture
+catalog below. Screenshots, snapshots, layouts, or assets from previous
+frontends are prohibited as inputs or comparison targets.
 
 The baseline matrix covers supported desktop layouts plus loading, empty,
 error, long-path, large-count, 200% browser zoom, and reduced-motion states.
@@ -160,7 +159,7 @@ Filesystem fixtures should be minimal and task-focused. Read-only filesystem fix
 
 ### Web Fixture Catalog
 
-The clean-room Web test boundary implements these canonical scenarios. Fixture
+The bundled Web test boundary implements these canonical scenarios. Fixture
 IDs and entity IDs are fixed, full UUID values; timestamps, operation progress,
 paths, hashes, counts, and ordering are deterministic.
 
@@ -186,11 +185,10 @@ The bundled frontend requires these independently diagnosable CI gates:
 2. OpenAPI export and generated-client drift check
 3. frontend format, lint, strict typecheck, unit/component tests, and production build
 4. pinned-Chromium Playwright E2E with keyboard and axe checks
-5. installed-package performance measurement (`npm run test:performance`):
-   record in M1 and enforce the documented budgets from M2
+5. installed-package performance budget measurement (`npm run test:performance`)
 6. wheel/sdist content audit, clean install, installed-package smoke, and sdist-to-wheel rebuild without Node
-7. Windows package/static smoke and, from M3 onward, real multiprocess
-   exclusive-lock contention/crash-release tests
+7. Windows package/static smoke and real multiprocess exclusive-lock
+   contention/crash-release tests
 
 Pull requests and protected branches run gates 1–6 on Linux. Windows CI runs
 the package/static smoke and real multiprocess lock tests from gate 7. Completed

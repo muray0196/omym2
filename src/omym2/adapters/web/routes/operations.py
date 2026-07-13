@@ -128,7 +128,7 @@ type RequiredCsrfToken = Annotated[str, Header(alias=WEB_CSRF_HEADER_NAME, min_l
 
 
 def create_operations_router() -> APIRouter:  # noqa: C901  # One factory keeps schema and production routes identical.
-    """Create durable Operation and M3 planning routes without application I/O."""
+    """Create durable Operation and planning routes without application I/O."""
     router = APIRouter()
     error_responses = _error_responses()
 

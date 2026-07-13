@@ -1,5 +1,5 @@
 """
-Summary: Tests M4 Web execution mutations against real lock and SQLite adapters.
+Summary: Tests Web execution mutations against real lock and SQLite adapters.
 Why: Proves synchronous preflight and Apply/Cancel race responses before dispatch.
 """
 

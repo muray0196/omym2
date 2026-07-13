@@ -15,7 +15,6 @@ from omym2.config import (
     ALLOWED_COMMAND_MODES,
     ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
-    ALLOWED_UI_THEMES,
     PATH_POLICY_ALLOWED_PLACEHOLDERS,
     PATH_POLICY_PREVIEW_ALBUM,
     PATH_POLICY_PREVIEW_ALBUM_ARTIST,
@@ -108,7 +107,6 @@ def validate_settings_config(config: AppConfig) -> tuple[SettingsValidationIssue
         "collision.on_missing_metadata",
         issues,
     )
-    _validate_choice(config.ui.theme, ALLOWED_UI_THEMES, "ui.theme", issues)
     issues.extend(
         SettingsValidationIssue(field="artist_ids.entries", message=EMPTY_ARTIST_NAME_MESSAGE)
         for source_artist in sorted(config.artist_ids.entries or {})
@@ -177,12 +175,6 @@ def settings_field_changes(before: AppConfig, after: AppConfig) -> tuple[Setting
             "collision.on_missing_metadata",
             before.collision.on_missing_metadata,
             after.collision.on_missing_metadata,
-        ),
-        ("ui.theme", before.ui.theme, after.ui.theme),
-        (
-            "ui.show_advanced_settings",
-            before.ui.show_advanced_settings,
-            after.ui.show_advanced_settings,
         ),
     )
     changes = [

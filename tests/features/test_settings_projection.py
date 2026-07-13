@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from omym2.config import DEFAULT_COMMAND_MODE, DEFAULT_UI_THEME
+from omym2.config import DEFAULT_COMMAND_MODE
 from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
@@ -18,7 +18,6 @@ from omym2.domain.models.app_config import (
     OrganizeConfig,
     PathPolicyConfig,
     PathsConfig,
-    UiConfig,
 )
 from omym2.features.artist_ids.dto import GenerateArtistIdDraftRequest
 from omym2.features.artist_ids.usecases.generate_artist_id_draft import (
@@ -84,7 +83,6 @@ def test_validate_settings_candidate_reports_every_unchecked_closed_choice_in_fi
             on_duplicate_hash=UNSUPPORTED_CHOICE,
             on_missing_metadata=UNSUPPORTED_CHOICE,
         ),
-        ui=UiConfig(theme=UNSUPPORTED_CHOICE),
     )
 
     result = ValidateSettingsCandidateUseCase(SettingsPorts(FakeConfigStore())).execute(
@@ -101,7 +99,6 @@ def test_validate_settings_candidate_reports_every_unchecked_closed_choice_in_fi
         "collision.on_target_exists",
         "collision.on_duplicate_hash",
         "collision.on_missing_metadata",
-        "ui.theme",
         "artist_ids.entries",
     ]
 
@@ -131,7 +128,7 @@ def test_save_settings_candidate_checks_revision_then_validation_before_writing(
     """Stale and invalid candidates never reach ConfigStore.save."""
     store = FakeConfigStore()
     usecase = SaveSettingsCandidateUseCase(SettingsPorts(store))
-    invalid = AppConfig(ui=UiConfig(theme=UNSUPPORTED_CHOICE))
+    invalid = AppConfig(add=CommandConfig(default_mode=UNSUPPORTED_CHOICE))
 
     with pytest.raises(ConfigRevisionMismatchError):
         _ = usecase.execute(SaveSettingsRequest(invalid, STALE_CONFIG_REVISION))
@@ -139,7 +136,7 @@ def test_save_settings_candidate_checks_revision_then_validation_before_writing(
         _ = usecase.execute(SaveSettingsRequest(invalid, CONFIG_REVISION))
 
     assert store.save_count == 0
-    valid = AppConfig(paths=PathsConfig(library="/music/library"), ui=UiConfig(theme=DEFAULT_UI_THEME))
+    valid = AppConfig(paths=PathsConfig(library="/music/library"))
     result = usecase.execute(SaveSettingsRequest(valid, CONFIG_REVISION))
     assert store.save_count == 1
     assert result.config_revision == SAVED_CONFIG_REVISION

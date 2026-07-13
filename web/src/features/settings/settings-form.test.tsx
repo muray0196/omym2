@@ -34,7 +34,7 @@ import {
 import { server } from "../../test/server";
 
 describe("Settings route", () => {
-  it("renders the generated Config draft, backend choices, and default preview without exposing theme", async () => {
+  it("renders the generated Config draft, backend choices, and default preview", async () => {
     const user = userEvent.setup();
     const captured: { preview?: PathPreviewRequest } = {};
     server.use(
@@ -63,7 +63,6 @@ describe("Settings route", () => {
     expect(
       screen.getByText("North Harbor/2026_Night Signals/1-1_First Light.flac"),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText(/theme/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Update preview" }));
     await waitFor(() => expect(captured.preview).toBeDefined());
@@ -78,7 +77,7 @@ describe("Settings route", () => {
     expect(captured.preview).not.toHaveProperty("expected_config_revision");
   });
 
-  it("reviews a deterministic diff and saves the complete Config with CSRF while preserving unexposed UI values", async () => {
+  it("reviews a deterministic diff and saves the complete Config with CSRF", async () => {
     const user = userEvent.setup();
     const captured: {
       request?: SettingsCandidateRequest;
@@ -113,10 +112,6 @@ describe("Settings route", () => {
     expect(captured.request?.expected_config_revision).toBe(
       "settings-revision-one",
     );
-    expect(captured.request?.config.ui).toEqual({
-      show_advanced_settings: true,
-      theme: "oled",
-    });
   });
 
   it("refreshes Bootstrap and retries the identical save exactly once only for csrf_invalid", async () => {

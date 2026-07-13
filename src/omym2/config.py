@@ -150,7 +150,6 @@ ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES: Final = frozenset(
 ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS: Final = frozenset(
     {PATH_POLICY_DISC_NUMBER_CONDITION_ALWAYS, PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS}
 )  # supported {disc} rendering condition values
-ALLOWED_UI_THEMES: Final = frozenset({"system", "light", "dark", "oled"})  # supported local UI themes
 CONFIG_VERSION: Final = 1  # supported user config schema version
 DEFAULT_COMMAND_MODE: Final = "plan_first"  # initial plan creation mode for mutating commands
 DEFAULT_ADD_AUTO_APPLY: Final = False  # add command auto-apply default
@@ -173,8 +172,6 @@ DEFAULT_METADATA_REQUIRE_ALBUM: Final = False  # require album metadata during p
 DEFAULT_COLLISION_ON_TARGET_EXISTS: Final = "conflict"  # target collision policy name
 DEFAULT_COLLISION_ON_DUPLICATE_HASH: Final = "skip"  # duplicate content policy name
 DEFAULT_COLLISION_ON_MISSING_METADATA: Final = "block"  # missing metadata policy name
-DEFAULT_UI_THEME: Final = "system"  # default UI color mode
-DEFAULT_UI_SHOW_ADVANCED_SETTINGS: Final = False  # default advanced settings visibility
 DEFAULT_ARTIST_ID_MAX_LENGTH: Final = 8  # maximum generated artist ID length, characters
 DEFAULT_ARTIST_ID_FALLBACK: Final = "NOART"  # artist ID used when source text has no usable characters
 ARTIST_ID_ALLOWED_PATTERN: Final = r"[A-Za-z0-9]+"  # characters kept while normalizing artist ID input

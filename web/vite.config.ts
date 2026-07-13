@@ -1,5 +1,5 @@
 /**
- * Summary: Configures the clean-room Vite production and development builds.
+ * Summary: Configures the bundled Vite production and development builds.
  * Why: Keeps the bundled SPA same-origin in development and CSP-safe in production.
  */
 import react from "@vitejs/plugin-react";

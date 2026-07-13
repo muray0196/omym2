@@ -1,6 +1,6 @@
 /**
  * Summary: Renders URL-owned Track search, hierarchy groups, facets, and cursor pages.
- * Why: Delivers read-only Library inspection from persisted backend state in M2.
+ * Why: Delivers read-only Library inspection from persisted backend state.
  */
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useDeferredValue } from "react";

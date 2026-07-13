@@ -45,10 +45,6 @@ export const settingsConfig = {
     library: "/music/library",
   },
   refresh: { auto_apply: false, default_mode: "plan_first" },
-  ui: {
-    show_advanced_settings: true,
-    theme: "oled",
-  },
   version: 1,
 } satisfies AppConfigResource;
 

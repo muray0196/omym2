@@ -1,6 +1,6 @@
 /**
- * Summary: Captures the required clean-room desktop visual baseline matrix.
- * Why: Makes M5 layout, state, zoom, and reduced-motion regressions executable in Chromium.
+ * Summary: Captures the required desktop visual baseline matrix.
+ * Why: Makes layout, state, zoom, and reduced-motion regressions executable in Chromium.
  */
 import type { Page, Route } from "@playwright/test";
 

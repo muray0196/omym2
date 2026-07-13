@@ -24,7 +24,6 @@ from omym2.domain.models.app_config import (
     MetadataConfig,
     PathPolicyConfig,
     PathsConfig,
-    UiConfig,
 )
 from omym2.features.common_ports import (
     ConfigRevisionMismatchError,
@@ -37,7 +36,6 @@ CONFIG_FILE_NAME = "config.toml"
 INCOMING_PATH = "/music/incoming"
 INVALID_MAX_FILENAME_LENGTH = 0
 LIBRARY_PATH = "/music/library"
-UI_THEME_DARK = "dark"
 ARTIST_NAME = "Jane Doe"
 ARTIST_ID = "JAND"
 INJECTED_ARTIST_NAME = "Injected"
@@ -67,7 +65,6 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
         paths=PathsConfig(library=LIBRARY_PATH, incoming=INCOMING_PATH),
         artist_ids=ArtistIdConfig(entries={ARTIST_NAME: ARTIST_ID}),
         metadata=MetadataConfig(album_year_resolution=ALBUM_YEAR_RESOLUTION_OLDEST),
-        ui=UiConfig(theme=UI_THEME_DARK),
     )
 
     _save_current(store, config)
@@ -103,7 +100,7 @@ def test_toml_config_store_load_caches_parsed_config(tmp_path: Path, monkeypatch
     """A second load of an unchanged file reuses the parsed AppConfig."""
     config_path = tmp_path / CONFIG_FILE_NAME
     store = TomlConfigStore(config_path)
-    _save_current(store, AppConfig(ui=UiConfig(theme=UI_THEME_DARK)))
+    _save_current(store, AppConfig(paths=PathsConfig(library=LIBRARY_PATH)))
     parse_calls = 0
     real_load_config_text = toml_config_store.load_config_text
 
@@ -146,7 +143,7 @@ def test_toml_config_store_load_reparses_after_external_rewrite(tmp_path: Path) 
 
     assert store.load() == AppConfig()
 
-    updated_config = AppConfig(ui=UiConfig(theme=UI_THEME_DARK))
+    updated_config = AppConfig(paths=PathsConfig(library=LIBRARY_PATH))
     _ = config_path.write_text(dump_config_toml(updated_config), encoding=CONFIG_FILE_ENCODING)
 
     assert store.load() == updated_config
@@ -177,7 +174,7 @@ def test_toml_config_store_save_invalidates_cached_load(tmp_path: Path) -> None:
 
     assert store.load() == AppConfig()
 
-    updated_config = AppConfig(ui=UiConfig(theme=UI_THEME_DARK))
+    updated_config = AppConfig(paths=PathsConfig(library=LIBRARY_PATH))
     _save_current(store, updated_config)
 
     assert store.load() == updated_config
@@ -288,6 +285,18 @@ def test_toml_config_store_validation_fails_removed_organize_only_misplaced_key(
     )
 
     with pytest.raises(ConfigStoreValidationError, match=r"Unknown config key: organize\.only_misplaced\."):
+        _ = TomlConfigStore(config_path).load()
+
+
+def test_toml_config_store_validation_fails_removed_ui_section(tmp_path: Path) -> None:
+    """A config file still containing the removed UI section is rejected."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        'version = 1\n\n[ui]\ntheme = "dark"\nshow_advanced_settings = true\n',
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError, match="Unknown config key: ui"):
         _ = TomlConfigStore(config_path).load()
 
 
@@ -437,7 +446,7 @@ def test_config_save_can_replace_invalid_raw_state_with_its_observed_revision(tm
     _ = config_path.write_text("version = ", encoding=CONFIG_FILE_ENCODING)
     store = TomlConfigStore(config_path)
     invalid_snapshot = store.read_snapshot()
-    replacement = AppConfig(ui=UiConfig(theme=UI_THEME_DARK))
+    replacement = AppConfig(paths=PathsConfig(library=LIBRARY_PATH))
 
     installed = store.save(replacement, expected_config_revision=invalid_snapshot.config_revision)
 
@@ -490,7 +499,10 @@ def test_config_save_detects_external_replacement_before_atomic_replace(
     monkeypatch.setattr(os, "fsync", _replace_after_temp_sync)
 
     with pytest.raises(ConfigRevisionMismatchError):
-        _ = store.save(AppConfig(ui=UiConfig(theme=UI_THEME_DARK)), expected_config_revision=expected_revision)
+        _ = store.save(
+            AppConfig(paths=PathsConfig(library=LIBRARY_PATH)),
+            expected_config_revision=expected_revision,
+        )
 
     assert store.load() == external_config
     assert tuple(tmp_path.glob(f".{CONFIG_FILE_NAME}.*.tmp")) == ()
@@ -514,7 +526,10 @@ def test_config_save_propagates_replace_io_failure_and_removes_temp_file(
     monkeypatch.setattr(os, "replace", _fail_replace)
 
     with pytest.raises(ConfigStoreIoError, match=REPLACE_FAILURE_MESSAGE) as exc_info:
-        _ = store.save(AppConfig(ui=UiConfig(theme=UI_THEME_DARK)), expected_config_revision=expected_revision)
+        _ = store.save(
+            AppConfig(paths=PathsConfig(library=LIBRARY_PATH)),
+            expected_config_revision=expected_revision,
+        )
 
     assert isinstance(exc_info.value.cause, OSError)
     assert config_path.read_bytes() == current_bytes

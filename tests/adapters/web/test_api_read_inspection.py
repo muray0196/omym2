@@ -1,5 +1,5 @@
 """
-Summary: Tests isolated M2 read-only Web route families.
+Summary: Tests isolated read-only Web route families.
 Why: Verifies typed envelopes, cursor projection, and persisted Check freshness before parent wiring.
 """
 

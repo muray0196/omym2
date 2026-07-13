@@ -3,7 +3,7 @@ type: Product Overview
 title: Product
 description: Defines OMYM2 as a Plan-centered local music operations core with peer CLI and desktop Web surfaces, including the Web execution boundary and non-goals.
 tags: [product, overview, cli, web-ui, operations-console]
-timestamp: 2026-07-13T21:02:26+09:00
+timestamp: 2026-07-14T01:47:14+09:00
 ---
 
 # Product
@@ -112,11 +112,8 @@ UI never derives permission from a status string, recalculates a target path,
 repairs a pending FileEvent, overwrites a restore conflict, or automatically
 retries a mutation.
 
-Apply, Cancel, and Undo controls must not be exposed until the durable Operation,
-shared lock, atomic Apply claim, crash reconciliation, and mutation E2E gates
-are implemented together. Earlier renewal milestones may change Config,
-Library registration, Plans, and persisted Check results but must not mutate a
-Library music file.
+Apply, Cancel, and Undo controls use the durable Operation, shared lock, atomic
+Apply claim, crash reconciliation, and mutation contracts together.
 
 ## Product Non-Goals
 
@@ -144,7 +141,7 @@ and [development/testing.md](development/testing.md).
 
 This section is a product-facing summary of technology choices.
 
-Accepted stack for the renewed Web surface:
+Accepted stack for the bundled Web surface:
 
 ```text
 Language: Python
@@ -161,10 +158,9 @@ Metadata extractor: mutagen
 
 The SPA is bundled in the Python wheel and sdist and runs without Node.js in
 production. It is served on loopback by `omym2 settings`. Presentation is
-dark-only. The existing persisted `ui.theme` Config field is outside the
-renewal's schema scope and is not interpreted by the renewed UI.
+dark-only.
 
-The clean-room implementation, route map, presentation tokens, distribution,
-and cutover contract are authoritative in
+The implementation, route map, presentation tokens, and distribution contract
+are authoritative in
 [codebase/web-frontend.md](codebase/web-frontend.md). Test policy is
 authoritative in [development/testing.md](development/testing.md).

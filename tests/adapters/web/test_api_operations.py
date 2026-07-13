@@ -213,7 +213,7 @@ def test_operation_start_routes_return_accepted_reference_and_location(
     kind: OperationKind,
     expected_request: object,
 ) -> None:
-    """Every M3 start route translates its body and returns one typed polling reference."""
+    """Every start route translates its body and returns one typed polling reference."""
     operations = FakeOperations(_queued_operation(kind))
 
     response = _client(tmp_path, operations).post(route, json=body, headers=_mutation_headers())

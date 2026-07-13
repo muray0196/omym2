@@ -3,7 +3,7 @@ type: Development Guide
 title: Development Harness
 description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, suppressions, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation, web]
-timestamp: 2026-07-14T01:15:53+09:00
+timestamp: 2026-07-14T01:47:14+09:00
 ---
 
 # Development Harness
@@ -109,7 +109,7 @@ All gates must pass:
 * Wheel/sdist audit, sdist-to-wheel rebuild without Node.js, and clean-install
   smoke pass for the direct and rebuilt wheels.
 * `npm run test:performance` enforces the installed-package interactive-shell
-  time and initial JavaScript-size budgets from M2 onward.
+  time and initial JavaScript-size budgets.
 * Linting fails if any lint error remains.
 * Formatting fails if Ruff would change any file.
 * Type checking fails if `basedpyright` reports any error or warning.

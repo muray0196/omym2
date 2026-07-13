@@ -2,8 +2,8 @@
 type: Codebase Reference
 title: Web Frontend
 description: Defines the bundled desktop React and Vite Web frontend contract, including routes, design rules, API boundaries, layout behavior, production serving, packaging, security, and performance gates.
-tags: [web-frontend, react, vite, clean-room, static-spa, performance]
-timestamp: 2026-07-14T01:06:39+09:00
+tags: [web-frontend, react, vite, static-spa, performance]
+timestamp: 2026-07-14T01:47:14+09:00
 ---
 
 # Web Frontend
@@ -22,29 +22,14 @@ and exclusive coordination in
 [Cross-Process Exclusive Operation Lock](../decisions/0003-cross-process-exclusive-operation-lock.md).
 Test categories and fixture policy are authoritative in [Testing](../development/testing.md).
 
-## Clean-Room Provenance And Current Boundary
-
-The current `web/` frontend was built from an empty tree and moved into its
-final path only after the legacy frontend was deleted at M5. The legacy source,
-tests, assets, and dependencies are no longer present and do not define a
-compatibility surface. Current work is evaluated against this document, the
-Web API and product contracts, the canonical fixtures, and accessibility
-acceptance tests.
-
-`OMYM2_REACT_WEB_UI_RENEWAL_PLAN.md` is superseded planning provenance, not an
-implementation source. Keep it on the denylist so obsolete `DESIGN.md`,
-packaging, and open-decision assumptions cannot re-enter the build.
+## Current Boundary
 
 There is one frontend under `web/`: no feature flag, parallel tree,
 compatibility implementation, or screen-by-screen migration path is allowed.
-
-## Atomic Cutover
-
-M1-M4 were kept on one unreleased integration line. M5 deleted the legacy tree,
-moved the implementation to `web/`, and established the only releasable source
-path. The SPA and breaking API therefore ship atomically; there is no runtime
-feature flag, dual API mount, compatibility route set, or separately shipped
-staging UI.
+Previous frontend source, tests, assets, and dependencies do not define a
+compatibility surface. Current work is evaluated against this document, the
+Web API and product contracts, the canonical fixtures, and accessibility
+acceptance tests.
 
 ## Stack And Source Layout
 
@@ -76,8 +61,7 @@ define query keys without redefining schema fields.
 ## Dark-Only Design Contract
 
 The frontend is dark-only. It must not implement light, system, or OLED
-rendering modes. Any persisted UI theme field is outside this presentation
-contract and does not alter the frontend.
+rendering modes.
 
 Core color tokens are fixed as follows:
 
@@ -351,7 +335,6 @@ by `/` before the interactive marker. Each unique resource is compressed with
 byte count deterministic; lazy feature chunks not requested by `/` are not
 included.
 
-Beginning with M2, the median interactive-shell time must not exceed `1000ms`
-and initial-route JavaScript must not exceed `250000` gzipped bytes. M1 records
-the measurements but does not enforce those two thresholds. Any later budget
-change must update this contract with the measurement evidence and rationale.
+The median interactive-shell time must not exceed `1000ms`, and initial-route
+JavaScript must not exceed `250000` gzipped bytes. Any budget change must update
+this contract with the measurement evidence and rationale.

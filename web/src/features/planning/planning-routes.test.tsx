@@ -1,5 +1,5 @@
 /**
- * Summary: Tests accessible M3 planning inputs and typed terminal navigation.
+ * Summary: Tests accessible planning inputs and typed terminal navigation.
  * Why: Proves Add and Refresh create review evidence without exposing file execution.
  */
 import { QueryClientProvider } from "@tanstack/react-query";

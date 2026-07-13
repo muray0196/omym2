@@ -176,7 +176,7 @@ test("polls Organize registration and Refresh planning without moving the sentin
   expect(await snapshotIsolatedLibrary()).toEqual(libraryBefore);
 });
 
-test.describe("M4 execution console", () => {
+test.describe("execution console", () => {
   test.describe.configure({ mode: "serial", retries: 0 });
 
   test("applies partial work, reviews evidence, undoes it, and cancels a fresh Plan", async ({

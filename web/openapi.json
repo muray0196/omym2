@@ -958,9 +958,6 @@
           "refresh": {
             "$ref": "#/components/schemas/CommandConfigResource"
           },
-          "ui": {
-            "$ref": "#/components/schemas/UiConfigResource"
-          },
           "version": {
             "title": "Version",
             "type": "integer"
@@ -975,8 +972,7 @@
           "path_policy",
           "artist_ids",
           "metadata",
-          "collision",
-          "ui"
+          "collision"
         ],
         "title": "AppConfigResource",
         "type": "object"
@@ -4018,26 +4014,6 @@
         ],
         "title": "TrackStatus",
         "type": "string"
-      },
-      "UiConfigResource": {
-        "additionalProperties": false,
-        "description": "Persisted legacy UI values retained for complete Config round trips.",
-        "properties": {
-          "show_advanced_settings": {
-            "title": "Show Advanced Settings",
-            "type": "boolean"
-          },
-          "theme": {
-            "title": "Theme",
-            "type": "string"
-          }
-        },
-        "required": [
-          "theme",
-          "show_advanced_settings"
-        ],
-        "title": "UiConfigResource",
-        "type": "object"
       }
     }
   },

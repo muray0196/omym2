@@ -199,7 +199,7 @@ def test_ephemeral_server_runner_requires_a_command() -> None:
 
 
 def test_ephemeral_server_runner_seeds_registered_library_state() -> None:
-    """Browser gates receive temp Config, SQLite, and deterministic M4 file fixtures."""
+    """Browser gates receive temp Config, SQLite, and deterministic file fixtures."""
     probe = (
         "import os, pathlib; "
         f"root=pathlib.Path(os.environ['{APPLICATION_ROOT_ENVIRONMENT_VARIABLE}']); "
@@ -218,7 +218,7 @@ def test_ephemeral_server_runner_seeds_registered_library_state() -> None:
 
 
 def test_ephemeral_server_runner_allows_isolated_m4_library_mutation() -> None:
-    """M4 browser flows may mutate only the runner's disposable Library tree."""
+    """Browser flows may mutate only the runner's disposable Library tree."""
     mutation = (
         "import os, pathlib; "
         f"root=pathlib.Path(os.environ['{APPLICATION_ROOT_ENVIRONMENT_VARIABLE}']); "

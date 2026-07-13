@@ -40,7 +40,7 @@ CORRELATION_HEADER_SCHEMA = {
 
 
 def create_bootstrap_router() -> APIRouter:
-    """Create the M1 Bootstrap router without resolving application state."""
+    """Create the Bootstrap router without resolving application state."""
     router = APIRouter()
 
     @router.get(

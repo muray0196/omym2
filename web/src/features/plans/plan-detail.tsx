@@ -1,6 +1,6 @@
 /**
  * Summary: Renders one Plan review with exact capabilities and recorded action evidence.
- * Why: Keeps M4 execution controls beside the immutable Plan data they act on.
+ * Why: Keeps execution controls beside the immutable Plan data they act on.
  */
 import {
   type InfiniteData,

@@ -17,7 +17,6 @@ from omym2.config import (
     ALLOWED_COMMAND_MODES,
     ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
-    ALLOWED_UI_THEMES,
     CONFIG_VERSION,
     DEFAULT_ADD_AUTO_APPLY,
     DEFAULT_ALBUM_YEAR_RESOLUTION,
@@ -38,8 +37,6 @@ from omym2.config import (
     DEFAULT_PATH_POLICY_SANITIZE,
     DEFAULT_PATH_POLICY_TEMPLATE,
     DEFAULT_REFRESH_AUTO_APPLY,
-    DEFAULT_UI_SHOW_ADVANCED_SETTINGS,
-    DEFAULT_UI_THEME,
     DEFAULT_UNKNOWN_ALBUM,
     DEFAULT_UNKNOWN_ARTIST,
 )
@@ -52,7 +49,6 @@ from omym2.domain.models.app_config import (
     OrganizeConfig,
     PathPolicyConfig,
     PathsConfig,
-    UiConfig,
 )
 from omym2.features.common_ports import ConfigStoreValidationError
 
@@ -96,10 +92,7 @@ REQUIRE_ALBUM_KEY = "require_album"
 REQUIRE_ARTIST_KEY = "require_artist"
 REQUIRE_TITLE_KEY = "require_title"
 SANITIZE_KEY = "sanitize"
-SHOW_ADVANCED_SETTINGS_KEY = "show_advanced_settings"
 TEMPLATE_KEY = "template"
-THEME_KEY = "theme"
-UI_SECTION = "ui"
 UNKNOWN_ALBUM_KEY = "unknown_album"
 UNKNOWN_ARTIST_KEY = "unknown_artist"
 VERSION_KEY = "version"
@@ -115,7 +108,6 @@ ROOT_KEYS = frozenset(
         ARTIST_IDS_SECTION,
         METADATA_SECTION,
         COLLISION_SECTION,
-        UI_SECTION,
     }
 )
 PATHS_KEYS = frozenset({LIBRARY_KEY, INCOMING_KEY})
@@ -137,7 +129,6 @@ METADATA_KEYS = frozenset(
     {PREFER_ALBUM_ARTIST_KEY, REQUIRE_TITLE_KEY, REQUIRE_ARTIST_KEY, REQUIRE_ALBUM_KEY, ALBUM_YEAR_RESOLUTION_KEY}
 )
 COLLISION_KEYS = frozenset({ON_TARGET_EXISTS_KEY, ON_DUPLICATE_HASH_KEY, ON_MISSING_METADATA_KEY})
-UI_KEYS = frozenset({THEME_KEY, SHOW_ADVANCED_SETTINGS_KEY})
 
 BOOL_TYPE_NAME = "a boolean"
 INT_TYPE_NAME = "an integer"
@@ -179,7 +170,6 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
         artist_id_config = ArtistIdConfig()
     metadata_config = _metadata_config(_section(raw_config, METADATA_SECTION, errors), errors)
     collision_config = _collision_config(_section(raw_config, COLLISION_SECTION, errors), errors)
-    ui_config = _ui_config(_section(raw_config, UI_SECTION, errors), errors)
 
     if errors:
         raise ConfigStoreValidationError(errors)
@@ -195,7 +185,6 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
             artist_ids=artist_id_config,
             metadata=metadata_config,
             collision=collision_config,
-            ui=ui_config,
         )
     except ValueError as exc:
         raise ConfigStoreValidationError((str(exc),)) from exc
@@ -381,24 +370,6 @@ def _collision_config(table: ConfigTable, errors: list[str]) -> CollisionConfig:
                 allowed_values=ALLOWED_COLLISION_MISSING_METADATA_POLICIES,
             ),
             errors,
-        ),
-    )
-
-
-def _ui_config(table: ConfigTable, errors: list[str]) -> UiConfig:
-    _reject_unknown_keys(table, UI_KEYS, UI_SECTION, errors)
-    return UiConfig(
-        theme=_choice(
-            table,
-            ChoiceRule(key=THEME_KEY, section=UI_SECTION, default=DEFAULT_UI_THEME, allowed_values=ALLOWED_UI_THEMES),
-            errors,
-        ),
-        show_advanced_settings=_bool(
-            table,
-            SHOW_ADVANCED_SETTINGS_KEY,
-            UI_SECTION,
-            default=DEFAULT_UI_SHOW_ADVANCED_SETTINGS,
-            errors=errors,
         ),
     )
 

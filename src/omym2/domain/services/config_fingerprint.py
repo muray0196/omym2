@@ -93,7 +93,6 @@ def _app_config_payload(config: AppConfig) -> dict[str, object]:
         "artist_ids": _artist_id_payload(config.artist_ids),
         "metadata": asdict(config.metadata),
         "collision": asdict(config.collision),
-        "ui": asdict(config.ui),
     }
 
 

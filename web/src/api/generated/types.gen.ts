@@ -416,7 +416,6 @@ export type AppConfigResource = {
     path_policy: PathPolicyConfigResource;
     paths: PathsConfigResource;
     refresh: CommandConfigResource;
-    ui: UiConfigResource;
     /**
      * Version
      */
@@ -2070,22 +2069,6 @@ export type TrackResource = {
  * Known managed Track states.
  */
 export type TrackStatus = 'active' | 'removed';
-
-/**
- * UiConfigResource
- *
- * Persisted legacy UI values retained for complete Config round trips.
- */
-export type UiConfigResource = {
-    /**
-     * Show Advanced Settings
-     */
-    show_advanced_settings: boolean;
-    /**
-     * Theme
-     */
-    theme: string;
-};
 
 export type GetBootstrapData = {
     body?: never;

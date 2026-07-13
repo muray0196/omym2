@@ -3,7 +3,7 @@ type: Contract
 title: Config Contract
 description: Defines OMYM2's TOML config schema, raw-storage revision and atomic-save protocol, path policy, artist IDs, and metadata/collision policy.
 tags: [config, toml, concurrency, atomic-save, path-policy, artist-ids]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-14T01:47:14+09:00
 ---
 
 # Config Contract
@@ -142,8 +142,6 @@ except `[artist_ids.entries]` has a fixed key set.
 | `collision.on_target_exists` | `"conflict"` | `"conflict"` |
 | `collision.on_duplicate_hash` | `"skip"` | `"skip"` |
 | `collision.on_missing_metadata` | `"block"` | `"block"` |
-| `ui.theme` | `"system"`, `"light"`, `"dark"`, or `"oled"` | `"system"` |
-| `ui.show_advanced_settings` | boolean | `false` |
 
 Every named section is optional. A missing section, or a missing key in a
 present section, uses the table's default; `version` is the sole exception.
@@ -158,6 +156,10 @@ Its values must be non-empty strings. All ordinary string settings must be
 non-empty when present; integers reject booleans; booleans must be TOML
 booleans. TOML validation checks configured paths only for string type and
 non-emptiness, not filesystem existence or accessibility.
+
+The obsolete `[ui]` section is not part of AppConfig. Existing files that
+still contain it fail validation as unknown-key configs; no migration or
+compatibility translation is applied.
 
 ## Versioning And Migration
 
@@ -275,16 +277,5 @@ Collision policy controls what plan creation records when:
 * required metadata is missing
 
 The current policy blocks target conflicts, skips duplicate hashes, and blocks missing required metadata.
-
-## UI Settings
-
-UI settings are application config. They are stored in TOML, not SQLite.
-
-`theme` accepts one of `system`, `light`, `dark`, or `oled`; default `system`.
-
-The renewed Web UI is dark-only and does not expose or interpret `ui.theme`.
-This renewal does not alter the persisted TOML schema, migrate values, or add a
-fallback/translation layer. Removing or redefining the existing key would be a
-separate Config-schema change.
 
 The local Web UI may edit settings, validate settings, and preview PathPolicy output. It must use config usecases and config adapters rather than reading or writing TOML directly from route logic.

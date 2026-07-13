@@ -1,5 +1,5 @@
 /**
- * Summary: Mounts the clean-room React application and its local fonts.
+ * Summary: Mounts the bundled React application and its local fonts.
  * Why: Provides one CSP-safe browser entry point with no remote runtime assets.
  */
 import { StrictMode } from "react";
