@@ -1,6 +1,6 @@
 /**
- * Summary: Defines deterministic clean-room durable Operation fixtures.
- * Why: Keeps M3 mutation and polling tests synchronized with generated types.
+ * Summary: Defines deterministic durable Operation fixtures.
+ * Why: Keeps mutation and polling tests synchronized with generated types.
  */
 import type {
   ApiEnvelopeOperationRef,

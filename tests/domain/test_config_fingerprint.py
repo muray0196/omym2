@@ -18,10 +18,10 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig, UiConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig, PathsConfig
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 
-UI_THEME_DARK = "dark"
+LIBRARY_PATH = "/music/library"
 JSON_SEPARATORS = (CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR, CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR)
 
 
@@ -35,7 +35,7 @@ def test_config_fingerprint_is_stable_for_equal_configs() -> None:
 def test_config_fingerprint_changes_when_config_changes() -> None:
     """Different AppConfig values produce different fingerprints."""
     default_hash = calculate_config_fingerprint(AppConfig())
-    changed_hash = calculate_config_fingerprint(AppConfig(ui=UiConfig(theme=UI_THEME_DARK)))
+    changed_hash = calculate_config_fingerprint(AppConfig(paths=PathsConfig(library=LIBRARY_PATH)))
 
     assert changed_hash != default_hash
 

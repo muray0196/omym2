@@ -54,7 +54,7 @@ def smoke_wheel(wheel: Path) -> None:
         _run(
             (
                 str(python),
-                str(root / "scripts/run_web_test_server.py"),
+                str(root / "scripts/web/run_web_test_server.py"),
                 "--require-installed",
                 "--environment-variable",
                 "OMYM2_PACKAGE_BASE_URL",
@@ -62,7 +62,7 @@ def smoke_wheel(wheel: Path) -> None:
                 str(workspace),
                 "--",
                 str(python),
-                str(root / "scripts/smoke_installed_web.py"),
+                str(root / "scripts/web/smoke_installed_web.py"),
             ),
             workspace,
             environment,

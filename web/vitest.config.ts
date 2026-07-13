@@ -1,5 +1,5 @@
 /**
- * Summary: Configures clean-room frontend unit and component tests.
+ * Summary: Configures bundled frontend unit and component tests.
  * Why: Makes accessibility-focused browser behavior deterministic under jsdom and MSW.
  */
 import react from "@vitejs/plugin-react";

@@ -13,7 +13,7 @@ run(
   [
     "run",
     "python",
-    "scripts/export_web_openapi.py",
+    "scripts/web/export_web_openapi.py",
     "--output",
     "web/openapi.json",
   ],

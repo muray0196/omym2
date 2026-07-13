@@ -1,5 +1,5 @@
 """
-Summary: Defines durable Operation, polling, and M3 planning Web resources.
+Summary: Defines durable Operation, polling, and planning Web resources.
 Why: Generates one typed client contract for accepted work, progress, and navigation results.
 """
 

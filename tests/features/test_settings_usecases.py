@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from omym2.domain.models.app_config import AppConfig, UiConfig
+from omym2.domain.models.app_config import AppConfig, PathsConfig
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint
 from omym2.features.common_ports import (
     ConfigRevisionMismatchError,
@@ -24,7 +24,7 @@ from omym2.features.settings.usecases.save_settings import SaveSettingsUseCase
 from omym2.features.settings.usecases.validate_settings import ValidateSettingsUseCase
 
 EXPECTED_ERROR = "expected config validation error"
-UI_THEME_DARK = "dark"
+LIBRARY_PATH = "/music/library"
 CONFIG_REVISION = "v1:current"
 SAVED_CONFIG_REVISION = "v1:saved"
 STALE_CONFIG_REVISION = "v1:stale"
@@ -32,7 +32,7 @@ STALE_CONFIG_REVISION = "v1:stale"
 
 def test_settings_usecases_load_and_save_with_raw_config_revisions() -> None:
     """Load exposes raw identity and save returns the atomically installed revision."""
-    config = AppConfig(ui=UiConfig(theme=UI_THEME_DARK))
+    config = AppConfig(paths=PathsConfig(library=LIBRARY_PATH))
     store = FakeConfigStore(config=config)
     ports = SettingsPorts(config_store=store)
 

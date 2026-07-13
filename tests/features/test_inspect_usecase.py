@@ -87,7 +87,6 @@ def test_inspect_file_usecase_uses_metadata_disc_total_for_multiple_disc_paths()
         artist_ids=config.artist_ids,
         metadata=config.metadata,
         collision=config.collision,
-        ui=config.ui,
     )
 
     result = InspectFileUseCase(InspectFilePorts(StaticSnapshotReader(snapshot), StaticConfigStore(config))).execute(

@@ -1,6 +1,6 @@
 /**
  * Summary: Verifies exact Plan review, capability controls, Apply polling, and safe Cancel.
- * Why: Prevents M4 execution from inferring permission or retrying unsafe mutations.
+ * Why: Prevents execution from inferring permission or retrying unsafe mutations.
  */
 import { http, HttpResponse } from "msw";
 import { render, screen, waitFor, within } from "@testing-library/react";

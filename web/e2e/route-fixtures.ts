@@ -1,5 +1,5 @@
 /**
- * Summary: Centralizes deterministic M3 browser route fixtures.
+ * Summary: Centralizes deterministic browser route fixtures.
  * Why: Keeps inspection deep links, accessibility, and passive-route checks aligned.
  */
 export const allM3RoutePaths = [

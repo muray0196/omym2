@@ -42,10 +42,7 @@ from omym2.adapters.config.config_validator import (
     REQUIRE_ARTIST_KEY,
     REQUIRE_TITLE_KEY,
     SANITIZE_KEY,
-    SHOW_ADVANCED_SETTINGS_KEY,
     TEMPLATE_KEY,
-    THEME_KEY,
-    UI_SECTION,
     UNKNOWN_ALBUM_KEY,
     UNKNOWN_ARTIST_KEY,
     VERSION_KEY,
@@ -361,14 +358,6 @@ def dump_config_toml(config: AppConfig) -> str:
             (ON_TARGET_EXISTS_KEY, config.collision.on_target_exists),
             (ON_DUPLICATE_HASH_KEY, config.collision.on_duplicate_hash),
             (ON_MISSING_METADATA_KEY, config.collision.on_missing_metadata),
-        ),
-    )
-    _append_section(
-        lines,
-        UI_SECTION,
-        (
-            (THEME_KEY, config.ui.theme),
-            (SHOW_ADVANCED_SETTINGS_KEY, config.ui.show_advanced_settings),
         ),
     )
     return "\n".join(lines).rstrip() + "\n"

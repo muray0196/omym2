@@ -24,7 +24,7 @@ from omym2.config import (
     WEB_API_SETTINGS_VALIDATE_ROUTE,
     WEB_CSRF_HEADER_NAME,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathsConfig, UiConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, CommandConfig, PathsConfig
 from omym2.features.artist_ids.usecases.generate_artist_id_draft import GenerateArtistIdDraftUseCase
 from omym2.features.common_ports import ConfigRevisionMismatchError, ConfigSnapshot, ConfigSnapshotState
 from omym2.features.settings.ports import SettingsPorts
@@ -43,7 +43,7 @@ SAVED_CONFIG_REVISION = "v1:web-settings-saved"
 STALE_CONFIG_REVISION = "v1:web-settings-stale"
 CSRF_TOKEN = "settings-csrf-token"  # noqa: S105  # Deterministic non-secret test token.
 PERSISTED_CONFIG_ERROR = "Persisted Config is invalid."
-UNSUPPORTED_THEME = "sepia"
+UNSUPPORTED_COMMAND_MODE = "unsafe"
 LIBRARY_PATH = "/music/library"
 SOURCE_ARTIST = "Existing Artist"
 SOURCE_ARTIST_ID = "EXST"
@@ -69,12 +69,9 @@ def test_get_settings_returns_invalid_recovery_data_choices_and_preview(tmp_path
     assert _object(data, "preview")["path"] == "Aimer/2024_Example-Album/1-03_Example-Song.flac"
 
 
-def test_app_config_resource_round_trips_complete_hidden_config_fields() -> None:
-    """Settings serialization retains fields hidden by the bundled presentation."""
-    config = AppConfig(
-        paths=PathsConfig(library=LIBRARY_PATH),
-        ui=UiConfig(theme="dark", show_advanced_settings=True),
-    )
+def test_app_config_resource_round_trips_complete_config() -> None:
+    """Settings serialization retains every supported Config field."""
+    config = AppConfig(paths=PathsConfig(library=LIBRARY_PATH))
 
     resource = AppConfigResource.from_domain(config)
 
@@ -82,10 +79,13 @@ def test_app_config_resource_round_trips_complete_hidden_config_fields() -> None
 
 
 def test_validate_settings_returns_field_changes_and_typed_invalid_result(tmp_path: Path) -> None:
-    """Candidate validation is read-only and reports unsupported hidden round-trip choices."""
+    """Candidate validation is read-only and reports unsupported closed choices."""
     store = FakeConfigStore()
     client = _client(tmp_path, store)
-    candidate = AppConfig(paths=PathsConfig(library=LIBRARY_PATH), ui=UiConfig(theme=UNSUPPORTED_THEME))
+    candidate = AppConfig(
+        paths=PathsConfig(library=LIBRARY_PATH),
+        add=CommandConfig(default_mode=UNSUPPORTED_COMMAND_MODE),
+    )
 
     response = client.post(WEB_API_SETTINGS_VALIDATE_ROUTE, json=_candidate_body(candidate, CONFIG_REVISION))
 
@@ -93,8 +93,8 @@ def test_validate_settings_returns_field_changes_and_typed_invalid_result(tmp_pa
     data = _data(response)
     validation = _object(data, "validation")
     assert validation["valid"] is False
-    assert _first_error(validation)["field"] == "ui.theme"
-    assert [change["field"] for change in _list(data, "changes")] == ["paths.library", "ui.theme"]
+    assert _first_error(validation)["field"] == "add.default_mode"
+    assert [change["field"] for change in _list(data, "changes")] == ["paths.library", "add.default_mode"]
     assert store.save_count == 0
 
 
@@ -146,7 +146,10 @@ def test_save_settings_returns_new_revision_and_rejects_invalid_or_stale_candida
     )
     invalid = client.put(
         WEB_API_SETTINGS_ROUTE,
-        json=_candidate_body(AppConfig(ui=UiConfig(theme=UNSUPPORTED_THEME)), SAVED_CONFIG_REVISION),
+        json=_candidate_body(
+            AppConfig(add=CommandConfig(default_mode=UNSUPPORTED_COMMAND_MODE)),
+            SAVED_CONFIG_REVISION,
+        ),
         headers={WEB_CSRF_HEADER_NAME: CSRF_TOKEN},
     )
     stale = client.put(
@@ -159,7 +162,7 @@ def test_save_settings_returns_new_revision_and_rejects_invalid_or_stale_candida
     assert _data(saved)["config_revision"] == SAVED_CONFIG_REVISION
     assert [change["field"] for change in _list(_data(saved), "changes")] == ["paths.library"]
     assert invalid.status_code == HTTP_UNPROCESSABLE_CONTENT_STATUS
-    assert _first_error(_response_object(invalid))["field"] == "ui.theme"
+    assert _first_error(_response_object(invalid))["field"] == "add.default_mode"
     assert stale.status_code == HTTP_CONFLICT_STATUS
     assert _first_error(_response_object(stale))["code"] == "config_changed"
     assert store.save_count == 1

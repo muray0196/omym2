@@ -1,5 +1,5 @@
 /**
- * Summary: Runs axe against primary M3 clean-room browser states.
+ * Summary: Runs axe against primary bundled Web browser states.
  * Why: Makes WCAG regressions in the shell, palette, and fallback independently diagnosable.
  */
 import AxeBuilder from "@axe-core/playwright";

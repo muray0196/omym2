@@ -1,5 +1,5 @@
 /**
- * Summary: Exercises the installed clean-room shell and keyboard Command Center.
+ * Summary: Exercises the installed shell and keyboard Command Center.
  * Why: Verifies browser behavior against the real FastAPI static-serving boundary.
  */
 import { expect, test } from "./playwright-fixtures";

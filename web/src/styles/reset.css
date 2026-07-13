@@ -1,6 +1,6 @@
 /**
  * Summary: Normalizes browser defaults for predictable semantic layouts.
- * Why: Gives accessible native elements a stable clean-room rendering baseline.
+ * Why: Gives accessible native elements a stable bundled rendering baseline.
  */
 *,
 *::before,

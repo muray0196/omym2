@@ -1,6 +1,6 @@
 /**
  * Summary: Centralizes product-default-language copy for Plan review and execution.
- * Why: Keeps recorded evidence, capability, and M4 recovery wording consistent.
+ * Why: Keeps recorded evidence, capability, and recovery wording consistent.
  */
 export const planCopy = {
   list: {

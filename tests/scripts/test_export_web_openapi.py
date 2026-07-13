@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import cast
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
-EXPORT_SCRIPT_RELATIVE_PATH = "scripts/export_web_openapi.py"
+EXPORT_SCRIPT_RELATIVE_PATH = "scripts/web/export_web_openapi.py"
 
 
 def test_openapi_export_is_deterministic_and_checkable(tmp_path: Path) -> None:

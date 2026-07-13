@@ -1,6 +1,6 @@
 /**
  * Summary: Verifies Library URL state, opaque cursor/group transport, detail, and failure presentation.
- * Why: Protects the M2 clean-room Track inspection contract through generated types and MSW.
+ * Why: Protects the Track inspection contract through generated types and MSW.
  */
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";

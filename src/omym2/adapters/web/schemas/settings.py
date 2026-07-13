@@ -17,7 +17,6 @@ from omym2.domain.models.app_config import (
     OrganizeConfig,
     PathPolicyConfig,
     PathsConfig,
-    UiConfig,
 )
 from omym2.domain.models.track_metadata import TrackMetadata
 
@@ -96,13 +95,6 @@ class CollisionConfigResource(ApiModel):
     on_missing_metadata: str
 
 
-class UiConfigResource(ApiModel):
-    """Persisted legacy UI values retained for complete Config round trips."""
-
-    theme: str
-    show_advanced_settings: bool
-
-
 class AppConfigResource(ApiModel):
     """Complete supported AppConfig representation."""
 
@@ -115,7 +107,6 @@ class AppConfigResource(ApiModel):
     artist_ids: ArtistIdConfigResource
     metadata: MetadataConfigResource
     collision: CollisionConfigResource
-    ui: UiConfigResource
 
     @classmethod
     def from_domain(cls, config: AppConfig) -> AppConfigResource:
@@ -152,10 +143,6 @@ class AppConfigResource(ApiModel):
                 on_duplicate_hash=config.collision.on_duplicate_hash,
                 on_missing_metadata=config.collision.on_missing_metadata,
             ),
-            ui=UiConfigResource(
-                theme=config.ui.theme,
-                show_advanced_settings=config.ui.show_advanced_settings,
-            ),
         )
 
     def to_domain(self) -> AppConfig:
@@ -185,10 +172,6 @@ class AppConfigResource(ApiModel):
                 on_target_exists=self.collision.on_target_exists,
                 on_duplicate_hash=self.collision.on_duplicate_hash,
                 on_missing_metadata=self.collision.on_missing_metadata,
-            ),
-            ui=UiConfig(
-                theme=self.ui.theme,
-                show_advanced_settings=self.ui.show_advanced_settings,
             ),
         )
 

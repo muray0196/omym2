@@ -1,6 +1,6 @@
 /**
  * Summary: Centralizes the installed-package performance protocol and enforced budgets.
- * Why: Keeps M2 timing and bundle-size gates aligned with the frozen frontend contract.
+ * Why: Keeps timing and bundle-size gates aligned with the frontend contract.
  */
 export const performanceProtocol = Object.freeze({
   measuredRuns: 5,

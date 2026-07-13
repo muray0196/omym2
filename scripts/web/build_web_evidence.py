@@ -17,10 +17,27 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from audit_web_packages import PackageAuditError, audit_packages
-from audit_web_static import StaticAuditError, audit_static_export
-from run_web_test_server import CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE
-from sync_web_static import StaticSyncError, sync_static_export
+if __package__:
+    from scripts.web.audit_web_packages import PackageAuditError, audit_packages
+    from scripts.web.audit_web_static import StaticAuditError, audit_static_export
+    from scripts.web.run_web_test_server import CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE
+    from scripts.web.sync_web_static import StaticSyncError, sync_static_export
+else:
+    from audit_web_packages import (  # pyright: ignore[reportImplicitRelativeImport]  # direct script execution imports sibling tooling.
+        PackageAuditError,
+        audit_packages,
+    )
+    from audit_web_static import (  # pyright: ignore[reportImplicitRelativeImport]  # direct script execution imports sibling tooling.
+        StaticAuditError,
+        audit_static_export,
+    )
+    from run_web_test_server import (  # pyright: ignore[reportImplicitRelativeImport]  # direct script execution imports sibling tooling.
+        CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE,
+    )
+    from sync_web_static import (  # pyright: ignore[reportImplicitRelativeImport]  # direct script execution imports sibling tooling.
+        StaticSyncError,
+        sync_static_export,
+    )
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -106,7 +123,7 @@ def _smoke_wheel(wheel: Path, root: Path, *, environment: dict[str, str]) -> Non
         _run(
             (
                 str(python),
-                str(root / "scripts/run_web_test_server.py"),
+                str(root / "scripts/web/run_web_test_server.py"),
                 "--require-installed",
                 "--environment-variable",
                 "OMYM2_PACKAGE_BASE_URL",
@@ -114,7 +131,7 @@ def _smoke_wheel(wheel: Path, root: Path, *, environment: dict[str, str]) -> Non
                 str(workspace),
                 "--",
                 str(python),
-                str(root / "scripts/smoke_installed_web.py"),
+                str(root / "scripts/web/smoke_installed_web.py"),
             ),
             cwd=workspace,
             environment=environment,
@@ -148,7 +165,7 @@ def _run_performance(wheel: Path, root: Path, *, environment: dict[str, str]) ->
         _run(
             (
                 str(python),
-                str(root / "scripts/run_web_test_server.py"),
+                str(root / "scripts/web/run_web_test_server.py"),
                 "--require-installed",
                 "--environment-variable",
                 PERFORMANCE_BASE_URL_ENVIRONMENT_VARIABLE,

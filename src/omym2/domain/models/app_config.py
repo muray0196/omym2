@@ -36,8 +36,6 @@ from omym2.config import (
     DEFAULT_PATH_POLICY_SANITIZE,
     DEFAULT_PATH_POLICY_TEMPLATE,
     DEFAULT_REFRESH_AUTO_APPLY,
-    DEFAULT_UI_SHOW_ADVANCED_SETTINGS,
-    DEFAULT_UI_THEME,
     DEFAULT_UNKNOWN_ALBUM,
     DEFAULT_UNKNOWN_ARTIST,
     LOGICAL_PATH_SEPARATOR,
@@ -174,14 +172,6 @@ class CollisionConfig:
     on_missing_metadata: str = DEFAULT_COLLISION_ON_MISSING_METADATA
 
 
-@dataclass(frozen=True, slots=True)
-class UiConfig:
-    """Settings for local UI display preferences."""
-
-    theme: str = DEFAULT_UI_THEME
-    show_advanced_settings: bool = DEFAULT_UI_SHOW_ADVANCED_SETTINGS
-
-
 def _validate_artist_id_entries(entries: dict[str, str]) -> None:
     # Entry keys are free-form source artist text; only saved ID values feed
     # PathPolicy path rendering, so only values must be sanitizer-stable.
@@ -220,7 +210,6 @@ class AppConfig:
     artist_ids: ArtistIdConfig = field(default_factory=ArtistIdConfig)
     metadata: MetadataConfig = MetadataConfig()
     collision: CollisionConfig = CollisionConfig()
-    ui: UiConfig = UiConfig()
 
     def __post_init__(self) -> None:
         """Reject config versions that this domain model cannot interpret."""

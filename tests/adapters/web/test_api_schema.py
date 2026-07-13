@@ -166,7 +166,7 @@ def test_plan_read_operations_have_stable_ids_and_declared_typed_errors() -> Non
 
 
 def test_m4_execution_operations_have_stable_ids_and_typed_errors() -> None:
-    """Generated clients receive frozen M4 names, errors, and required mutation headers."""
+    """Generated clients receive stable names, errors, and required mutation headers."""
     schema = cast("dict[str, object]", create_api_schema_app().openapi())
     paths = _mapping(schema, "paths")
 

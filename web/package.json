@@ -17,7 +17,7 @@
     "test:unit": "vitest run",
     "build": "tsc -b && vite build",
     "test:e2e": "playwright test",
-    "test:package": "uv run python ../scripts/build_web_evidence.py",
+    "test:package": "uv run python ../scripts/web/build_web_evidence.py",
     "test:performance": "node scripts/measure-performance.mjs"
   },
   "dependencies": {

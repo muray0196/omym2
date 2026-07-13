@@ -1,6 +1,6 @@
 /**
  * Summary: Verifies observable Plan list URL filters, cursor paging, and recovery states.
- * Why: Protects M2 inspection browsing from accidental local state or cursor derivation.
+ * Why: Protects inspection browsing from accidental local state or cursor derivation.
  */
 import { http, HttpResponse } from "msw";
 import { render, screen, waitFor } from "@testing-library/react";

@@ -1,5 +1,5 @@
 /**
- * Summary: Defines deterministic clean-room Bootstrap fixtures from generated API types.
+ * Summary: Defines deterministic Bootstrap fixtures from generated API types.
  * Why: Makes normal and recovery tests drift when the backend contract changes.
  */
 import type { ApiEnvelopeBootstrapData } from "../../api/generated";

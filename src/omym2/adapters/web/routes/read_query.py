@@ -1,6 +1,6 @@
 """
 Summary: Translates shared read-query pagination and failures for Web routes.
-Why: Keeps opaque cursor and typed error handling consistent across M2 slices.
+Why: Keeps opaque cursor and typed error handling consistent across read routes.
 """
 
 from __future__ import annotations

@@ -27,11 +27,11 @@ from omym2.config import (
     WEB_REFERRER_POLICY,
     WEB_REFERRER_POLICY_HEADER_NAME,
 )
-from scripts.run_web_test_server import CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE
+from scripts.web.run_web_test_server import CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
-SMOKE_SCRIPT_RELATIVE_PATH = "scripts/smoke_installed_web.py"
-SERVER_SCRIPT_RELATIVE_PATH = "scripts/run_web_test_server.py"
+SMOKE_SCRIPT_RELATIVE_PATH = "scripts/web/smoke_installed_web.py"
+SERVER_SCRIPT_RELATIVE_PATH = "scripts/web/run_web_test_server.py"
 APPLICATION_ROOT_ENVIRONMENT_VARIABLE = "OMYM2_E2E_APPLICATION_ROOT"
 LOOPBACK_HOST = "127.0.0.1"
 EPHEMERAL_PORT = 0
@@ -199,7 +199,7 @@ def test_ephemeral_server_runner_requires_a_command() -> None:
 
 
 def test_ephemeral_server_runner_seeds_registered_library_state() -> None:
-    """Browser gates receive temp Config, SQLite, and deterministic M4 file fixtures."""
+    """Browser gates receive temp Config, SQLite, and deterministic file fixtures."""
     probe = (
         "import os, pathlib; "
         f"root=pathlib.Path(os.environ['{APPLICATION_ROOT_ENVIRONMENT_VARIABLE}']); "
@@ -218,7 +218,7 @@ def test_ephemeral_server_runner_seeds_registered_library_state() -> None:
 
 
 def test_ephemeral_server_runner_allows_isolated_m4_library_mutation() -> None:
-    """M4 browser flows may mutate only the runner's disposable Library tree."""
+    """Browser flows may mutate only the runner's disposable Library tree."""
     mutation = (
         "import os, pathlib; "
         f"root=pathlib.Path(os.environ['{APPLICATION_ROOT_ENVIRONMENT_VARIABLE}']); "
