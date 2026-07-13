@@ -1,15 +1,15 @@
 ---
 type: Codebase Reference
 title: Web Frontend
-description: Defines the clean-room React and Vite Web frontend contract, including routes, design rules, API boundaries, responsive behavior, production serving, packaging, security, and performance gates.
+description: Defines the clean-room desktop React and Vite Web frontend contract, including routes, design rules, API boundaries, layout behavior, production serving, packaging, security, and performance gates.
 tags: [web-frontend, react, vite, clean-room, static-spa, performance]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-13T13:24:49+09:00
 ---
 
 # Web Frontend
 
-This document is authoritative for the clean-room Web frontend, its route and
-responsive layout contract, its generated API boundary, its static production
+This document is authoritative for the clean-room desktop Web frontend, its
+route and layout contract, its generated API boundary, its static production
 runtime, its Python-package distribution, and its performance measurement
 conditions.
 
@@ -146,10 +146,10 @@ The accessibility target is WCAG 2.2 AA. The implementation must provide:
 * keyboard access to every operation and visible control
 * no single-character shortcut activation from editable elements
 * `prefers-reduced-motion` handling for pulses and transitions
-* complete operation at 200% zoom
+* complete operation at 200% zoom on a supported desktop viewport
 * error-summary links that focus the affected field
 * live-region announcements for operation start, completion, and failure
-* a `44px` default touch target; `36px` is allowed only for dense desktop rows
+* pointer targets of at least `36px`; touch-first sizing is not required
 
 The red diagonal stripe motif may appear once, only as the top band of the
 first-run guided state. It is prohibited from routine Overview, Plan Review,
@@ -213,25 +213,29 @@ surface does not add a browser/native directory picker or infer a path from
 browser file handles. A native picker requires a separate architecture and
 security decision.
 
-## URL And Responsive Behavior
+## URL And Desktop Layout Behavior
 
 The URL is authoritative for the selected entity, search query, filters,
 grouping, sorting, and detail state. Reloading or sharing a URL must restore
 that state. Changing a browse filter updates the URL and query key together and
 resets the cursor.
 
+The supported Web surface is a desktop browser viewport at least `1024px`
+wide. Phone and tablet browsers, touch-first interaction, mobile-specific
+navigation, and layouts below `1024px` are not product requirements or test
+targets. Responsive rules used to preserve desktop window resizing, browser
+zoom, or assistive-technology access do not establish mobile support.
+
 At widths of at least `1280px`, the shell may show a navigation rail, a
 `320px` to `420px` list pane, and one detail pane. No more than three regions
-may appear side by side. From `768px` through `1279px`, navigation is compact or
-drawer-based and the route shows either the list or detail view. Below `768px`,
-the route is single-column, navigation uses a drawer, and dialogs may become
-full-screen.
+may appear side by side. From `1024px` through `1279px`, navigation may be
+compact and the route may show either the list or detail view.
 
-The list-detail surface remains keyboard-operable at every breakpoint. Detail
+The list-detail surface remains keyboard-operable throughout the supported
+desktop range. Detail
 selection is a route state, not an unaddressable modal-only state. Primary
-operations remain reachable without horizontal page scrolling from `320px`
-through desktop widths; a dense data region may use explicit internal
-scrolling.
+operations remain reachable without horizontal page scrolling at supported
+desktop widths; a dense data region may use explicit internal scrolling.
 
 ## Backend-Authoritative Behavior
 

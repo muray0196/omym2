@@ -21,8 +21,9 @@ A keyboard-first local operations console built around the safe operating
 loop: choose an objective, generate a Plan, review actions, apply, verify in
 History and Check, and undo through a new Plan. It stays localhost-only,
 offline-first, and telemetry-free; the SPA is bundled in the wheel with no
-Node at runtime; presentation is dark-only under the tracked Web frontend
-contract. It is still not a
+Node at runtime; presentation is dark-only and desktop-browser-only under the
+tracked Web frontend contract. Phone, tablet, touch-first, and mobile-specific
+layout support are outside the product and test boundary. It is still not a
 music player: no playback, tag editing, cover art, or cloud features.
 
 The current review-only UI remains the supported `main`/`stable` release until

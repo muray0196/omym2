@@ -1,9 +1,9 @@
 ---
 type: Product Overview
 title: Product
-description: Defines OMYM2 as a Plan-centered local music operations core with peer CLI and Web surfaces, including the Web execution boundary and non-goals.
+description: Defines OMYM2 as a Plan-centered local music operations core with peer CLI and desktop Web surfaces, including the Web execution boundary and non-goals.
 tags: [product, overview, cli, web-ui, operations-console]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-13T13:24:49+09:00
 ---
 
 # Product
@@ -125,12 +125,20 @@ The Web UI does not add:
 * music playback, tag editing, cover-art management, or streaming integrations
 * arbitrary browser-directed file moves or overwrites
 * cloud sync, accounts, remote binding, analytics, telemetry, or a service worker
+* phone or tablet support, touch-first interaction, or mobile-specific
+  navigation and layout behavior
 * an initial multi-Library switcher, automatic moved-Library relink, Check
   history, in-flight operation cancellation, or localization
 
 The application remains localhost-only, offline-first, and telemetry-free.
 Unknown or interrupted mutation state is surfaced for Check and manual review,
 never hidden behind automatic repair.
+
+The Web UI supports desktop browsers only. Accessibility requirements such as
+keyboard operation, browser zoom, and reflow on a supported desktop viewport
+do not establish phone or tablet support. The supported viewport and test
+conditions are defined in [codebase/web-frontend.md](codebase/web-frontend.md)
+and [TESTING.md](TESTING.md).
 
 ## Product-Facing Technical Policy
 

@@ -1,9 +1,9 @@
 ---
 type: Testing Guide
 title: Testing
-description: Defines OMYM2's Python, frontend, browser, architecture, integration, contract, fixture, and clean-room test policy.
+description: Defines OMYM2's Python, frontend, desktop-browser, architecture, integration, contract, fixture, and clean-room test policy.
 tags: [testing, pytest, vitest, playwright, architecture-tests, fixtures]
-timestamp: 2026-07-13T01:34:09+09:00
+timestamp: 2026-07-13T13:24:49+09:00
 ---
 
 # Testing
@@ -19,6 +19,8 @@ This document is not a test backlog.
 Python test authoring uses `pytest` and `pytest-mock`. Frontend unit and
 component tests use Vitest, React Testing Library, `user-event`, and MSW.
 Browser tests use Playwright with its pinned Chromium build and axe integration.
+Web browser tests use desktop viewports only; phone, tablet, touch-first, and
+mobile-navigation coverage is not required.
 
 `pytest-cov` may exist in the development environment for optional local coverage inspection, but coverage reporting is not a separate required test category unless this document defines a threshold.
 
@@ -124,10 +126,11 @@ Visual baselines may contain only the clean-room UI rendered from the fixture
 catalog below. Screenshots, snapshots, layouts, or assets from the excluded
 frontend are prohibited as inputs or comparison targets.
 
-The baseline matrix covers desktop, tablet, and mobile layouts plus loading,
-empty, error, long-path, large-count, and reduced-motion states. Visual checks
-run in the pinned Linux Chromium environment so rendering differences are not
-hidden by cross-platform snapshot churn.
+The baseline matrix covers supported desktop layouts plus loading, empty,
+error, long-path, large-count, 200% browser zoom, and reduced-motion states.
+Phone and tablet baselines are prohibited from becoming release requirements.
+Visual checks run in the pinned Linux Chromium environment so rendering
+differences are not hidden by cross-platform snapshot churn.
 
 ## Contract Change Test Requirements
 
