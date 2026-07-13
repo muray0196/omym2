@@ -22,6 +22,7 @@ BLOCK_EXIT_CODE = 2
 GIT_FAILURE_EXIT_CODE = 128
 HOOK_SCRIPT = Path(__file__).parents[2] / "scripts/codex_stop_hook.py"
 HOOK_CONFIG = Path(__file__).parents[2] / ".codex/hooks.json"
+HOOK_CONFIG_COMMAND = 'python3 "$(git rev-parse --show-toplevel)/scripts/codex_stop_hook.py"'
 HOOK_MARKER_ENVIRONMENT_VARIABLE = "OMYM2_CODEX_HOOK_TEST_MARKER"
 HOOK_EXIT_CODE_ENVIRONMENT_VARIABLE = "OMYM2_CODEX_HOOK_TEST_EXIT_CODE"
 QUALITY_GATE_STDOUT = "quality gate stdout"
@@ -54,11 +55,33 @@ def test_hook_config_registers_exactly_one_synchronous_stop_handler() -> None:
     assert len(handlers) == 1
     assert handlers[0] == {
         "type": "command",
-        "command": "python3 scripts/codex_stop_hook.py",
+        "command": HOOK_CONFIG_COMMAND,
         "timeout": 150,
         "async": False,
         "statusMessage": "Running OMYM2 completion checks",
     }
+
+
+def test_configured_command_runs_from_a_repository_subdirectory(tmp_path: Path) -> None:
+    """The repo-local handler resolves its script independently of the session CWD."""
+    repository, marker = _repository(tmp_path)
+    shell_executable = shutil.which("sh")
+    assert shell_executable is not None
+
+    result = subprocess.run(  # noqa: S603 -- Fixed shell runs the reviewed repo-local hook command.
+        (shell_executable, "-c", HOOK_CONFIG_COMMAND),
+        cwd=repository / "nested",
+        input=json.dumps({"hook_event_name": "Stop", "stop_hook_active": False}),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_hook_environment(marker),
+    )
+
+    assert result.returncode == SUCCESS_EXIT_CODE, result.stderr
+    assert json.loads(result.stdout) == {}
+    assert result.stderr == ""
+    assert not marker.exists()
 
 
 def test_clean_repository_skips_validation(tmp_path: Path) -> None:
@@ -68,6 +91,7 @@ def test_clean_repository_skips_validation(tmp_path: Path) -> None:
     result = _run_hook(repository, marker=marker)
 
     assert result.returncode == SUCCESS_EXIT_CODE
+    assert json.loads(result.stdout) == {}
     assert not marker.exists()
 
 
@@ -136,7 +160,7 @@ def test_successful_validation_returns_zero(tmp_path: Path) -> None:
     result = _run_hook(repository, marker=marker)
 
     assert result.returncode == SUCCESS_EXIT_CODE
-    assert result.stdout == ""
+    assert json.loads(result.stdout) == {}
     assert result.stderr == ""
 
 
@@ -321,6 +345,7 @@ def _repository(tmp_path: Path, *, configure_origin: bool = True) -> tuple[Path,
     _git(repository, "config", "user.email", "codex-hook@example.invalid")
     _git(repository, "config", "user.name", "Codex Hook Test")
     _write(repository / "tracked.txt", "baseline\n")
+    _write(repository / "nested/.keep", "fixture\n")
     checks_script = repository / "scripts/checks.sh"
     checks_script_content = "\n".join(
         (
@@ -338,7 +363,9 @@ def _repository(tmp_path: Path, *, configure_origin: bool = True) -> tuple[Path,
         checks_script_content,
     )
     checks_script.chmod(0o755)
-    _git(repository, "add", "tracked.txt", "scripts/checks.sh")
+    _ = shutil.copy2(HOOK_SCRIPT, repository / "scripts/codex_stop_hook.py")
+    _ = shutil.copy2(HOOK_SCRIPT.parent / "config.py", repository / "scripts/config.py")
+    _git(repository, "add", "tracked.txt", "nested/.keep", "scripts")
     _git(repository, "commit", "-m", "baseline")
     if configure_origin:
         _git(repository, "update-ref", "refs/remotes/origin/main", "HEAD")
@@ -371,9 +398,7 @@ def _run_hook(
     stop_hook_active: bool = False,
     payload: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    environment = os.environ.copy()
-    environment[HOOK_MARKER_ENVIRONMENT_VARIABLE] = str(marker)
-    environment[HOOK_EXIT_CODE_ENVIRONMENT_VARIABLE] = str(gate_exit_code)
+    environment = _hook_environment(marker, gate_exit_code=gate_exit_code)
     hook_payload = payload or json.dumps(
         {
             "hook_event_name": "Stop",
@@ -390,6 +415,14 @@ def _run_hook(
         check=False,
         env=environment,
     )
+
+
+def _hook_environment(marker: Path, *, gate_exit_code: int = SUCCESS_EXIT_CODE) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment[HOOK_MARKER_ENVIRONMENT_VARIABLE] = str(marker)
+    environment[HOOK_EXIT_CODE_ENVIRONMENT_VARIABLE] = str(gate_exit_code)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    return environment
 
 
 def _marker_runs(marker: Path) -> int:

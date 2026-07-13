@@ -428,7 +428,7 @@ def main() -> int:
     """Read one Stop payload and return the Codex hook protocol exit code."""
     try:
         payload = _parse_payload(sys.stdin.read())
-        return run_hook(payload)
+        exit_code = run_hook(payload)
     except KeyboardInterrupt:
         print(
             "OMYM2 completion validation was interrupted; run scripts/checks.sh completion and try again.",
@@ -441,6 +441,9 @@ def main() -> int:
     except Exception as error:  # noqa: BLE001 -- Hooks must never expose an uncontrolled traceback.
         print(f"OMYM2 completion validation failed unexpectedly: {error}", file=sys.stderr)
         return BLOCK_EXIT_CODE
+    if exit_code == 0:
+        print(json.dumps({}))
+    return exit_code
 
 
 if __name__ == "__main__":

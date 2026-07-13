@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 scripts/codex_stop_hook.py",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/codex_stop_hook.py\"",
             "timeout": 150,
             "async": false,
             "statusMessage": "Running OMYM2 completion checks"
