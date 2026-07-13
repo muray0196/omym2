@@ -13,7 +13,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
-AUDIT_SCRIPT_RELATIVE_PATH = "scripts/audit_web_packages.py"
+AUDIT_SCRIPT_RELATIVE_PATH = "scripts/web/audit_web_packages.py"
 WHEEL_STATIC_PREFIX = PurePosixPath("omym2/adapters/web/static_dist")
 SDIST_STATIC_PREFIX = PurePosixPath("omym2-0.1.0/src/omym2/adapters/web/static_dist")
 STATIC_FILES = {

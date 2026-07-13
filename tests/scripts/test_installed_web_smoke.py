@@ -27,11 +27,11 @@ from omym2.config import (
     WEB_REFERRER_POLICY,
     WEB_REFERRER_POLICY_HEADER_NAME,
 )
-from scripts.run_web_test_server import CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE
+from scripts.web.run_web_test_server import CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
-SMOKE_SCRIPT_RELATIVE_PATH = "scripts/smoke_installed_web.py"
-SERVER_SCRIPT_RELATIVE_PATH = "scripts/run_web_test_server.py"
+SMOKE_SCRIPT_RELATIVE_PATH = "scripts/web/smoke_installed_web.py"
+SERVER_SCRIPT_RELATIVE_PATH = "scripts/web/run_web_test_server.py"
 APPLICATION_ROOT_ENVIRONMENT_VARIABLE = "OMYM2_E2E_APPLICATION_ROOT"
 LOOPBACK_HOST = "127.0.0.1"
 EPHEMERAL_PORT = 0

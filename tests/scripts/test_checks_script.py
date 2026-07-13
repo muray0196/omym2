@@ -31,7 +31,7 @@ SUCCESS_EXIT_CODE = 0
         ),
         (
             "web/src/example.ts",
-            ("npm:run api:check", "npm:run test:unit", "uv:run python scripts/audit_web_static.py"),
+            ("npm:run api:check", "npm:run test:unit", "uv:run python scripts/web/audit_web_static.py"),
             ("uv:run pytest -q", "uv:run pytest tests/docs -q"),
         ),
         (

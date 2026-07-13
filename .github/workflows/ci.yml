@@ -263,7 +263,7 @@ jobs:
         run: |
           $wheel = Get-ChildItem build/web-package-evidence -Filter *.whl -File | Select-Object -First 1
           if ($null -eq $wheel) { throw "Audited wheel was not downloaded." }
-          python scripts/smoke_web_wheel.py --wheel $wheel.FullName
+          python scripts/web/smoke_web_wheel.py --wheel $wheel.FullName
 
   performance-budget:
     name: Installed Package Performance Budgets

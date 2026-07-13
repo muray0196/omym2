@@ -10,8 +10,8 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
-SYNC_SCRIPT_RELATIVE_PATH = "scripts/sync_web_static.py"
-AUDIT_SCRIPT_RELATIVE_PATH = "scripts/audit_web_static.py"
+SYNC_SCRIPT_RELATIVE_PATH = "scripts/web/sync_web_static.py"
+AUDIT_SCRIPT_RELATIVE_PATH = "scripts/web/audit_web_static.py"
 VALID_INDEX_HTML = """<!doctype html>
 <html lang="en">
   <head><link rel="stylesheet" href="/assets/app-abcdefgh.css"></head>

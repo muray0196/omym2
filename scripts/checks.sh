@@ -66,14 +66,14 @@ run_web() {
     npm run test:unit
     npm run build
     )
-    uv run python scripts/sync_web_static.py
-    uv run python scripts/audit_web_static.py
+    uv run python scripts/web/sync_web_static.py
+    uv run python scripts/web/audit_web_static.py
 }
 
 run_e2e_profile() {
     local fixture_profile="$1"
     shift
-    uv run python scripts/run_web_test_server.py \
+    uv run python scripts/web/run_web_test_server.py \
         --environment-variable OMYM2_E2E_BASE_URL \
         --working-directory web \
         --fixture-profile "$fixture_profile" \
@@ -91,11 +91,11 @@ run_e2e() {
 }
 
 run_package() {
-    uv run python scripts/build_web_evidence.py
+    uv run python scripts/web/build_web_evidence.py
 }
 
 run_performance() {
-    uv run python scripts/build_web_evidence.py --run-performance
+    uv run python scripts/web/build_web_evidence.py --run-performance
 }
 
 run_docs() {

@@ -3,7 +3,7 @@ type: Development Guide
 title: Development Harness
 description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, suppressions, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation, web]
-timestamp: 2026-07-14T01:47:14+09:00
+timestamp: 2026-07-14T02:00:00+09:00
 ---
 
 # Development Harness
@@ -80,8 +80,8 @@ npm run typecheck
 npm run test:unit
 npm run build
 cd ..
-uv run python scripts/sync_web_static.py
-uv run python scripts/audit_web_static.py
+uv run python scripts/web/sync_web_static.py
+uv run python scripts/web/audit_web_static.py
 ```
 
 The sync performs a complete destination replacement. The audit hashes both
