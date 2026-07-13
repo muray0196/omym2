@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING, cast, override
+from typing import TYPE_CHECKING, Never, override
 from uuid import UUID
 
 from omym2.adapters.cli.commands.add import AddCommandDependencies, run_add_command
@@ -32,8 +32,6 @@ if TYPE_CHECKING:
 
     import pytest
 
-    from omym2.features.add.ports import CreateAddPlanPorts
-    from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
@@ -54,9 +52,7 @@ UNEXPECTED_STDIN_READ_MESSAGE = "stdin should not be read"
 YEAR = 2026
 
 
-def test_add_command_passes_normalized_source_path_to_request(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_add_command_passes_normalized_source_path_to_request() -> None:
     """add delegates source normalization before creating the usecase request."""
     captured_requests: list[CreateAddPlanRequest] = []
 
@@ -72,7 +68,6 @@ def test_add_command_passes_normalized_source_path_to_request(
             captured_requests.append(request)
             return _empty_plan(PlanType.ADD)
 
-    monkeypatch.setattr("omym2.adapters.cli.commands.add.CreateAddPlanUseCase", CapturingCreateAddPlanUseCase)
     stdout = StringIO()
     stderr = StringIO()
 
@@ -81,8 +76,8 @@ def test_add_command_passes_normalized_source_path_to_request(
         stdout,
         stderr,
         AddCommandDependencies(
-            create_add_plan_ports_factory=_stub_create_add_plan_ports,
-            apply_plan_ports_factory=_stub_apply_plan_ports,
+            create_add_plan=CapturingCreateAddPlanUseCase(object()).execute,
+            apply_plan=_unexpected_apply,
             normalize_source_path=lambda path: f"normalized:{path}",
         ),
     )
@@ -402,12 +397,9 @@ def _empty_plan(plan_type: PlanType) -> Plan:
     )
 
 
-def _stub_create_add_plan_ports() -> CreateAddPlanPorts:
-    return cast("CreateAddPlanPorts", object())
-
-
-def _stub_apply_plan_ports() -> ApplyPlanPorts:
-    return cast("ApplyPlanPorts", object())
+def _unexpected_apply(*_args: object) -> Never:
+    """Fail if a Plan-only command test unexpectedly enters Apply."""
+    raise AssertionError
 
 
 def _register_library(database_file: Path, library_root: str) -> None:

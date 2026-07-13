@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
-    from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
+    from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, TrackId
 
 
 class ActionType(StrEnum):
@@ -42,6 +42,7 @@ class PlanActionReason(StrEnum):
     SOURCE_MISSING = "source_missing"
     SOURCE_CHANGED = "source_changed"
     DUPLICATE_HASH = "duplicate_hash"
+    OPERATION_INTERRUPTED = "operation_interrupted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,7 @@ class PlanAction:
     status: ActionStatus
     reason: PlanActionReason | None
     sort_order: int
+    reverses_event_id: EventId | None = None
 
     def __post_init__(self) -> None:
         """Normalize Library-managed path references stored in the action."""
@@ -94,4 +96,5 @@ class PlanAction:
             status=status,
             reason=reason,
             sort_order=self.sort_order,
+            reverses_event_id=self.reverses_event_id,
         )

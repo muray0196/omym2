@@ -12,10 +12,9 @@ from omym2.adapters.cli.commands.apply_execution import confirm_and_apply_plan
 from omym2.adapters.cli.commands.confirmation import ConfirmationOptions
 from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
 from omym2.domain.models.plan_action import ActionStatus
-from omym2.features.common_ports import ConfigStoreValidationError, MetadataReadError
+from omym2.features.common_ports import ConfigStoreValidationError, ExclusiveOperationBusyError, MetadataReadError
 from omym2.features.organize.dto import CreateOrganizePlanRequest, OrganizeLibraryResult
 from omym2.features.organize.usecases.create_organize_plan import (
-    CreateOrganizePlanUseCase,
     OrganizeLibrarySelectionError,
 )
 
@@ -23,9 +22,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from typing import TextIO
 
-    from omym2.features.apply.ports import ApplyPlanPorts
+    from omym2.domain.models.run import Run
     from omym2.features.common_ports import FileSystemPath
-    from omym2.features.organize.ports import CreateOrganizePlanPorts
+    from omym2.shared.ids import PlanId
 
 APPLY_FLAG = "--apply"
 ERROR_EXIT_CODE = 1
@@ -41,8 +40,8 @@ USAGE_EXIT_CODE = 2
 class OrganizeCommandDependencies:
     """Factories for the ports needed by organize plan creation and optional apply."""
 
-    create_organize_plan_ports_factory: Callable[[], CreateOrganizePlanPorts]
-    apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
+    create_organize_plan: Callable[[CreateOrganizePlanRequest], OrganizeLibraryResult]
+    apply_plan: Callable[[PlanId], Run]
     normalize_library_root: Callable[[FileSystemPath], str]
 
 
@@ -72,10 +71,8 @@ def _run_organize(
     normalized_library_root = (
         dependencies.normalize_library_root(options.library_root) if options.library_root is not None else None
     )
-    ports = dependencies.create_organize_plan_ports_factory()
-
     try:
-        result = CreateOrganizePlanUseCase(ports).execute(
+        result = dependencies.create_organize_plan(
             CreateOrganizePlanRequest(
                 trust_stat=options.trust_stat,
                 library_root=normalized_library_root,
@@ -90,8 +87,9 @@ def _run_organize(
     except MetadataReadError as exc:
         write_line(stderr, f"Metadata read error: {exc}")
         return ERROR_EXIT_CODE
-    except OSError as exc:
-        write_line(stderr, f"Organize I/O error: {exc}")
+    except (ExclusiveOperationBusyError, OSError) as exc:
+        message = str(exc) if isinstance(exc, ExclusiveOperationBusyError) else f"Organize I/O error: {exc}"
+        write_line(stderr, message)
         return ERROR_EXIT_CODE
 
     _write_result(stdout, result)
@@ -100,7 +98,7 @@ def _run_organize(
             result.plan.plan_id,
             stdout,
             stderr,
-            dependencies.apply_plan_ports_factory,
+            dependencies.apply_plan,
             confirmation=ConfirmationOptions(),
         )
 

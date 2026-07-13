@@ -9,7 +9,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omym2.shared.ids import PlanId
+    from uuid import UUID
+
+    from omym2.domain.models.operation import OperationLookup
+    from omym2.shared.ids import OperationId, PlanId, RunId
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,4 +27,23 @@ class ApplyPlanRequest:
     """Request to apply one reviewed Plan."""
 
     plan_id: PlanId
+    run_id: RunId
+    operation_id: OperationId
     options: ApplyOptions = field(default_factory=ApplyOptions)
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimApplyRequest:
+    """Validated durable identity for atomically claiming one ready Plan."""
+
+    plan_id: PlanId
+    idempotency_key: UUID
+    request_fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimApplyResult:
+    """New atomic Apply reservation or one exact retained replay."""
+
+    lookup: OperationLookup
+    is_new: bool

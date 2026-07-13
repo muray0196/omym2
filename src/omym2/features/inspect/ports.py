@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omym2.features.common_ports import ConfigStore, FileSnapshotReader
+    from omym2.features.common_ports import ConfigReader, FileSnapshotReader
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,4 +17,4 @@ class InspectFilePorts:
     """Ports required when single-file inspection is implemented."""
 
     file_snapshot_reader: FileSnapshotReader
-    config_store: ConfigStore
+    config_store: ConfigReader

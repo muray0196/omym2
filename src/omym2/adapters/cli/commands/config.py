@@ -9,9 +9,8 @@ from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
 from omym2.adapters.config.toml_config_store import dump_config_toml
-from omym2.features.common_ports import ConfigStoreValidationError
+from omym2.features.common_ports import ConfigSnapshotState
 from omym2.features.settings.usecases.load_settings import LoadSettingsUseCase
-from omym2.features.settings.usecases.validate_settings import ValidateSettingsUseCase
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -52,26 +51,26 @@ def run_config_command(
 
 def _show_config(ports: SettingsPorts, stdout: TextIO, stderr: TextIO) -> int:
     try:
-        config = LoadSettingsUseCase(ports).execute()
-    except ConfigStoreValidationError as exc:
-        write_validation_errors(stderr, exc.errors)
-        return ERROR_EXIT_CODE
+        result = LoadSettingsUseCase(ports).execute()
     except OSError as exc:
         write_line(stderr, f"Config I/O error: {exc}")
         return ERROR_EXIT_CODE
 
-    _ = stdout.write(dump_config_toml(config))
+    if result.state is ConfigSnapshotState.INVALID:
+        write_validation_errors(stderr, result.errors)
+        return ERROR_EXIT_CODE
+    _ = stdout.write(dump_config_toml(result.config))
     return SUCCESS_EXIT_CODE
 
 
 def _validate_config(ports: SettingsPorts, stdout: TextIO, stderr: TextIO) -> int:
     try:
-        result = ValidateSettingsUseCase(ports).execute()
+        result = LoadSettingsUseCase(ports).execute()
     except OSError as exc:
         write_line(stderr, f"Config I/O error: {exc}")
         return ERROR_EXIT_CODE
 
-    if not result.valid:
+    if result.state is ConfigSnapshotState.INVALID:
         write_validation_errors(stderr, result.errors)
         return ERROR_EXIT_CODE
 

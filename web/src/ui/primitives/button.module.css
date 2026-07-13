@@ -1,0 +1,61 @@
+/**
+ * Summary: Styles semantic buttons with the approved action hierarchy.
+ * Why: Preserves one clear primary action and accessible target sizing.
+ */
+.button {
+  align-items: center;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-8);
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 650;
+  gap: var(--space-8);
+  justify-content: center;
+  min-height: var(--target-default);
+  padding: var(--space-8) var(--space-16);
+  transition:
+    background-color var(--motion-control) ease,
+    border-color var(--motion-control) ease,
+    color var(--motion-control) ease;
+}
+
+.button svg {
+  height: 18px;
+  width: 18px;
+}
+
+.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-canvas);
+}
+
+.secondary {
+  background: var(--color-surface-elevated);
+  color: var(--color-ink);
+}
+
+.quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-body);
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--color-mute);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--color-body);
+  border-color: var(--color-body);
+}
+
+.button:disabled {
+  color: var(--color-ash);
+  cursor: not-allowed;
+}
+
+.iconOnly {
+  padding: var(--space-8);
+  width: var(--target-default);
+}

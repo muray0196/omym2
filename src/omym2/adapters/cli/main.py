@@ -30,11 +30,11 @@ if TYPE_CHECKING:
     from omym2.adapters.cli.commands.add import AddCommandDependencies
     from omym2.adapters.cli.commands.apply import ApplyCommandDependencies
     from omym2.adapters.cli.commands.artist_ids import ArtistIdsCommandPorts
+    from omym2.adapters.cli.commands.check import CheckCommandDependencies
     from omym2.adapters.cli.commands.organize import OrganizeCommandDependencies
     from omym2.adapters.cli.commands.refresh import RefreshCommandDependencies
     from omym2.adapters.cli.commands.settings import SettingsCommandPorts
     from omym2.adapters.cli.commands.undo import UndoCommandDependencies
-    from omym2.features.check.ports import CheckLibraryPorts
     from omym2.features.history.ports import HistoryPorts
     from omym2.features.inspect.ports import InspectFilePorts
     from omym2.features.plans.ports import PlanQueryPorts
@@ -64,7 +64,7 @@ class CommandDependencies:
     add: AddCommandDependencies
     apply: ApplyCommandDependencies
     artist_ids: ArtistIdsCommandPorts
-    check: CheckLibraryPorts
+    check: CheckCommandDependencies
     config: SettingsPorts
     history: HistoryPorts
     inspect: InspectFilePorts

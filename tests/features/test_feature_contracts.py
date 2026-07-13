@@ -23,7 +23,7 @@ from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.features.check.dto import CheckLibraryRequest
 from omym2.features.check.ports import CheckLibraryPorts
-from omym2.features.check.usecases.check_library import CheckLibraryUseCase
+from omym2.features.check.usecases.check_library import CheckLibraryError, CheckLibraryUseCase
 from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath, Uuid7IdGenerator
 from omym2.features.history.dto import GetRunHeaderRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
@@ -32,7 +32,7 @@ from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.undo.dto import CreateUndoPlanRequest
 from omym2.features.undo.ports import CreateUndoPlanPorts
 from omym2.features.undo.usecases.create_undo_plan import CreateUndoPlanUseCase, UndoPlanError
-from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId, is_uuid7
+from omym2.shared.ids import ActionId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId, is_uuid7
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import EMPTY_SEQUENCE_MESSAGE, FixedClock, SequenceIdGenerator
 
@@ -71,6 +71,7 @@ ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 LATE_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
 EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
+OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345686"))
 LATE_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567f"))
 SECOND_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 SECOND_RUN_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
@@ -91,6 +92,7 @@ def test_uuid7_id_generator_returns_documented_id_versions() -> None:
         generator.new_action_id(),
         generator.new_run_id(),
         generator.new_event_id(),
+        generator.new_operation_id(),
     )
 
     for generated_id in generated_ids:
@@ -108,6 +110,7 @@ def test_fixed_clock_and_sequence_id_generator_are_deterministic() -> None:
         action_ids=deque((ACTION_ID,)),
         run_ids=deque((RUN_ID,)),
         event_ids=deque((EVENT_ID,)),
+        operation_ids=deque((OPERATION_ID,)),
     )
 
     assert FixedClock(BASE_TIME).now() == BASE_TIME
@@ -117,6 +120,7 @@ def test_fixed_clock_and_sequence_id_generator_are_deterministic() -> None:
     assert id_generator.new_action_id() == ACTION_ID
     assert id_generator.new_run_id() == RUN_ID
     assert id_generator.new_event_id() == EVENT_ID
+    assert id_generator.new_operation_id() == OPERATION_ID
 
     with pytest.raises(AssertionError, match=EMPTY_SEQUENCE_MESSAGE):
         _ = id_generator.new_library_id()
@@ -192,8 +196,8 @@ def test_diagnostics_and_recovery_usecases_handle_empty_repository_contracts() -
     clock = FixedClock(BASE_TIME)
     id_generator = SequenceIdGenerator()
 
-    assert (
-        CheckLibraryUseCase(
+    with pytest.raises(CheckLibraryError):
+        _ = CheckLibraryUseCase(
             CheckLibraryPorts(
                 uow,
                 scanner,
@@ -204,11 +208,7 @@ def test_diagnostics_and_recovery_usecases_handle_empty_repository_contracts() -
                 clock,
                 id_generator,
             )
-        )
-        .execute(CheckLibraryRequest(trust_stat=False))
-        .issues
-        == ()
-    )
+        ).execute(CheckLibraryRequest(trust_stat=False))
     assert ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest()).items == ()
 
     with pytest.raises(RunNotFoundError):

@@ -40,7 +40,6 @@ ACTION_ID_4 = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456e4"))
 TWO_ITEM_LIMIT = 2
 FIVE_PLAN_TOTAL = 5
 THREE_ACTION_TOTAL = 3
-BLOCKED_ACTION_COUNT = "2"
 
 
 def test_plan_query_page_walks_every_plan_newest_first_with_desc_keyset_cursor(tmp_path: Path) -> None:
@@ -137,27 +136,21 @@ def test_plan_query_page_pushes_status_and_type_filters_into_sql(tmp_path: Path)
     assert page.total == 1
 
 
-def test_plan_query_page_filters_persisted_blocked_summary_before_limit(tmp_path: Path) -> None:
-    """Blocked-only returns an older actionable Plan despite newer clean and terminal Plans."""
+def test_plan_query_page_filters_current_blocked_actions_before_limit(tmp_path: Path) -> None:
+    """Blocked-only ignores stale opaque summaries and filters current action statuses before paging."""
     database_file = default_application_paths(tmp_path).database_file
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library(LIBRARY_ID))
-        uow.plans.save(
-            _plan(
-                PLAN_ID_1,
-                created_at=BASE_TIME,
-                summary={"blocked_actions": BLOCKED_ACTION_COUNT},
-            )
-        )
+        uow.plans.save(_plan(PLAN_ID_1, created_at=BASE_TIME))
         uow.plans.save(
             _plan(
                 PLAN_ID_2,
                 created_at=BASE_TIME + timedelta(days=1),
-                status=PlanStatus.APPLIED,
-                summary={"blocked_actions": BLOCKED_ACTION_COUNT},
+                summary={"blocked_actions": "1"},
             )
         )
         uow.plans.save(_plan(PLAN_ID_3, created_at=BASE_TIME + timedelta(days=2)))
+        uow.plan_actions.save(_action(ACTION_ID_1, sort_order=1, status=ActionStatus.BLOCKED))
         uow.commit()
 
     with SQLiteUnitOfWork(database_file) as uow:

@@ -1,439 +1,315 @@
 """
-Summary: Tests Web settings JSON API routes.
-Why: Verifies React-facing settings load, validation, preview, and saving.
+Summary: Tests typed Settings edit, preview, validation, save, and draft routes.
+Why: Protects recovery, revision conflicts, field errors, and draft-only behavior.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, cast
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, cast
 
 from fastapi.testclient import TestClient
 
-from omym2.adapters.config.toml_config_store import TomlConfigStore
+from omym2.adapters.web.app import create_web_app
+from omym2.adapters.web.routes.api_context import ApiRouteContext, SettingsRouteContext
+from omym2.adapters.web.schemas.settings import AppConfigResource
 from omym2.config import (
-    ALBUM_YEAR_RESOLUTION_OLDEST,
-    CONFIG_FILE_ENCODING,
-    WEB_API_ARTIST_IDS_GENERATE_ROUTE,
+    HTTP_CONFLICT_STATUS,
+    HTTP_FORBIDDEN_STATUS,
+    HTTP_OK_STATUS,
+    HTTP_UNPROCESSABLE_CONTENT_STATUS,
+    WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
     WEB_API_SETTINGS_PREVIEW_ROUTE,
     WEB_API_SETTINGS_ROUTE,
-    WEB_API_SETTINGS_SAVE_ROUTE,
     WEB_API_SETTINGS_VALIDATE_ROUTE,
     WEB_CSRF_HEADER_NAME,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, MetadataConfig, PathPolicyConfig, PathsConfig
-from omym2.platform.web_composition import build_web_app as create_web_app
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathsConfig, UiConfig
+from omym2.features.artist_ids.usecases.generate_artist_id_draft import GenerateArtistIdDraftUseCase
+from omym2.features.common_ports import ConfigRevisionMismatchError, ConfigSnapshot, ConfigSnapshotState
+from omym2.features.settings.ports import SettingsPorts
+from omym2.features.settings.usecases.get_settings_edit import GetSettingsEditUseCase
+from omym2.features.settings.usecases.preview_path_policy import PreviewPathPolicyUseCase
+from omym2.features.settings.usecases.save_settings_candidate import SaveSettingsCandidateUseCase
+from omym2.features.settings.usecases.validate_settings_candidate import ValidateSettingsCandidateUseCase
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-ERROR_STATUS_CODE = 400
-EXPECTED_DEFAULT_PREVIEW = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
-EXPECTED_D_PREFIXED_PREVIEW = "Aimer/2024_Example-Album/D1-03_Example-Song.flac"
-EXPECTED_UPDATED_PREVIEW = "Aimer/03_Example-Song.flac"
-EXPECTED_UNICODE_PREVIEW = "こんにちは/2024_你好/1-03_Café-Song.flac"
-FORBIDDEN_STATUS_CODE = 403
-INCOMING_PATH = "/music/incoming"
+    from httpx2 import Response
+
+CONFIG_REVISION = "v1:web-settings-current"
+SAVED_CONFIG_REVISION = "v1:web-settings-saved"
+STALE_CONFIG_REVISION = "v1:web-settings-stale"
+CSRF_TOKEN = "settings-csrf-token"  # noqa: S105  # Deterministic non-secret test token.
+PERSISTED_CONFIG_ERROR = "Persisted Config is invalid."
+UNSUPPORTED_THEME = "sepia"
 LIBRARY_PATH = "/music/library"
-SUCCESS_STATUS_CODE = 200
-UPDATED_TEMPLATE = "{artist}/{track}_{title}"
-ARTIST_NAME = "John Smith"
-ARTIST_ID = "JOHNSMTH"
-EDITED_ARTIST_ID = "MANUAL"
-DISC_NUMBER_STYLE_D_PREFIXED = "d_prefixed"
-DISC_NUMBER_CONDITION_MULTIPLE_DISCS = "multiple_discs"
+SOURCE_ARTIST = "Existing Artist"
+SOURCE_ARTIST_ID = "EXST"
+NEW_ARTIST = "New Artist"
+UNRELATED_BOOTSTRAP_EXECUTION_MESSAGE = "Unrelated Bootstrap handler must not execute."
 
 
-class _JsonResponse(Protocol):
-    def json(self) -> object: ...
-
-
-def test_get_settings_returns_config_choices_validation_preview_and_csrf(tmp_path: Path) -> None:
-    """Settings load returns the full React settings bootstrap payload."""
-    config_path = tmp_path / "config.toml"
-    client = TestClient(create_web_app(config_path))
+def test_get_settings_returns_invalid_recovery_data_choices_and_preview(tmp_path: Path) -> None:
+    """Malformed persisted Config stays a successful editable recovery resource."""
+    store = FakeConfigStore(state=ConfigSnapshotState.INVALID, errors=(PERSISTED_CONFIG_ERROR,))
+    client = _client(tmp_path, store)
 
     response = client.get(WEB_API_SETTINGS_ROUTE)
 
-    assert response.status_code == SUCCESS_STATUS_CODE
-    payload = _json_payload(response)
-    assert (
-        _object_payload(_object_payload(payload, "config"), "path_policy")["template"]
-        == AppConfig().path_policy.template
-    )
-    assert (
-        _object_payload(_object_payload(payload, "config"), "metadata")["album_year_resolution"]
-        == AppConfig().metadata.album_year_resolution
-    )
-    assert (
-        _object_payload(_object_payload(payload, "config"), "path_policy")["disc_number_style"]
-        == AppConfig().path_policy.disc_number_style
-    )
-    assert _object_payload(_object_payload(payload, "config"), "artist_ids")["entries"] == {}
-    assert _object_payload(payload, "choices")["command_modes"] == ["plan_first"]
-    assert _object_payload(payload, "choices")["album_year_resolution_methods"] == [
-        "latest",
-        "most_frequent",
-        "oldest",
-    ]
-    assert _object_payload(payload, "choices")["disc_number_styles"] == ["d_prefixed", "plain"]
-    assert _object_payload(payload, "choices")["disc_number_conditions"] == ["always", "multiple_discs"]
-    assert _object_payload(payload, "validation")["valid"] is True
-    assert _object_payload(payload, "preview")["path"] == EXPECTED_DEFAULT_PREVIEW
-    assert payload["errors"] == []
-    assert isinstance(payload["csrf_token"], str)
-    assert payload["csrf_token"] != ""
-    assert not config_path.exists()
+    assert response.status_code == HTTP_OK_STATUS
+    data = _data(response)
+    assert data["config_revision"] == CONFIG_REVISION
+    validation = _object(data, "validation")
+    assert validation["valid"] is False
+    assert _first_error(validation)["code"] == "config_invalid"
+    assert _first_error(validation)["field"] == "config"
+    assert _object(data, "choices")["command_modes"] == ["plan_first"]
+    assert _object(data, "preview")["path"] == "Aimer/2024_Example-Album/1-03_Example-Song.flac"
 
 
-def test_validate_settings_returns_changes_and_preview_without_saving(tmp_path: Path) -> None:
-    """Settings validate reports proposed changes without writing TOML."""
-    config_path = tmp_path / "config.toml"
-    client = TestClient(create_web_app(config_path))
-    payload = _settings_payload(AppConfig(paths=PathsConfig(library=LIBRARY_PATH), path_policy=AppConfig().path_policy))
-    _path_policy_payload(payload)["template"] = UPDATED_TEMPLATE
-
-    response = client.post(WEB_API_SETTINGS_VALIDATE_ROUTE, json=payload)
-
-    assert response.status_code == SUCCESS_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["valid"] is True
-    assert response_payload["errors"] == []
-    assert _object_payload(response_payload, "preview")["path"] == EXPECTED_UPDATED_PREVIEW
-    assert response_payload["changes"] == [
-        {"label": "Library path", "before": "Not set", "after": LIBRARY_PATH},
-        {"label": "Path template", "before": AppConfig().path_policy.template, "after": UPDATED_TEMPLATE},
-    ]
-    assert not config_path.exists()
-
-
-def test_preview_settings_returns_backend_path_policy_result(tmp_path: Path) -> None:
-    """Settings preview renders custom sample metadata through the backend usecase."""
-    client = TestClient(create_web_app(tmp_path / "config.toml"))
-    payload = _settings_payload(AppConfig())
-    payload["metadata"] = {
-        "title": "Café Song",
-        "artist": "こんにちは",
-        "album": "你好",
-        "album_artist": "",
-        "year": "2024",
-        "disc_number": "1",
-        "track_number": "3",
-        "extension": "FLAC",
-    }
-
-    response = client.post(WEB_API_SETTINGS_PREVIEW_ROUTE, json=payload)
-
-    assert response.status_code == SUCCESS_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["path"] == EXPECTED_UNICODE_PREVIEW
-    assert response_payload["errors"] == []
-
-
-def test_preview_settings_accepts_disc_total_for_multi_disc_only(tmp_path: Path) -> None:
-    """Settings preview uses disc_total to demonstrate multi-disc-only rendering."""
-    client = TestClient(create_web_app(tmp_path / "config.toml"))
-    payload = _settings_payload(
-        AppConfig(
-            path_policy=PathPolicyConfig(
-                disc_number_style=DISC_NUMBER_STYLE_D_PREFIXED,
-                disc_number_condition=DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
-            )
-        )
-    )
-    payload["metadata"] = {
-        "title": "Example Song",
-        "artist": "Aimer",
-        "album": "Example Album",
-        "album_artist": "Aimer",
-        "year": "2024",
-        "disc_number": "1",
-        "disc_total": "2",
-        "track_number": "3",
-        "extension": "FLAC",
-    }
-
-    response = client.post(WEB_API_SETTINGS_PREVIEW_ROUTE, json=payload)
-
-    assert response.status_code == SUCCESS_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["path"] == EXPECTED_D_PREFIXED_PREVIEW
-    assert response_payload["errors"] == []
-
-
-def test_preview_settings_rejects_invalid_metadata(tmp_path: Path) -> None:
-    """Preview metadata parsing reports invalid sample numbers without saving settings."""
-    client = TestClient(create_web_app(tmp_path / "config.toml"))
-    payload = _settings_payload(AppConfig())
-    payload["metadata"] = {"title": "Song", "track_number": "not-a-number", "extension": "flac"}
-
-    response = client.post(WEB_API_SETTINGS_PREVIEW_ROUTE, json=payload)
-
-    assert response.status_code == ERROR_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["path"] is None
-    assert response_payload["errors"] == ["Preview metadata.track_number must be an integer."]
-
-
-def test_save_settings_persists_valid_config_with_csrf(tmp_path: Path) -> None:
-    """Settings save writes through the settings usecase when CSRF is valid."""
-    config_path = tmp_path / "config.toml"
-    client = TestClient(create_web_app(config_path))
-    csrf_token = _csrf_token(client)
-    payload = _settings_payload(AppConfig(paths=PathsConfig(library=LIBRARY_PATH, incoming=INCOMING_PATH)))
-
-    response = client.post(WEB_API_SETTINGS_SAVE_ROUTE, json=payload, headers={WEB_CSRF_HEADER_NAME: csrf_token})
-
-    assert response.status_code == SUCCESS_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["saved"] is True
-    assert response_payload["errors"] == []
-    assert _object_payload(_object_payload(response_payload, "config"), "paths")["library"] == LIBRARY_PATH
-    saved_config = TomlConfigStore(config_path).load()
-    assert saved_config.paths.library == LIBRARY_PATH
-    assert saved_config.paths.incoming == INCOMING_PATH
-
-
-def test_save_settings_persists_editable_artist_id_entries(tmp_path: Path) -> None:
-    """Settings save lets users edit artist ID entries in TOML config."""
-    config_path = tmp_path / "config.toml"
-    client = TestClient(create_web_app(config_path))
-    csrf_token = _csrf_token(client)
-    payload = _settings_payload(AppConfig(artist_ids=ArtistIdConfig(entries={ARTIST_NAME: EDITED_ARTIST_ID})))
-
-    response = client.post(WEB_API_SETTINGS_SAVE_ROUTE, json=payload, headers={WEB_CSRF_HEADER_NAME: csrf_token})
-
-    assert response.status_code == SUCCESS_STATUS_CODE
-    saved_config = TomlConfigStore(config_path).load()
-    assert saved_config.artist_ids.entries == {ARTIST_NAME: EDITED_ARTIST_ID}
-
-
-def test_save_settings_persists_album_year_resolution(tmp_path: Path) -> None:
-    """Settings save writes the album-year resolution method through TOML."""
-    config_path = tmp_path / "config.toml"
-    client = TestClient(create_web_app(config_path))
-    csrf_token = _csrf_token(client)
-    payload = _settings_payload(AppConfig(metadata=MetadataConfig(album_year_resolution=ALBUM_YEAR_RESOLUTION_OLDEST)))
-
-    response = client.post(WEB_API_SETTINGS_SAVE_ROUTE, json=payload, headers={WEB_CSRF_HEADER_NAME: csrf_token})
-
-    assert response.status_code == SUCCESS_STATUS_CODE
-    saved_config = TomlConfigStore(config_path).load()
-    assert saved_config.metadata.album_year_resolution == ALBUM_YEAR_RESOLUTION_OLDEST
-
-
-def test_save_settings_persists_disc_number_settings(tmp_path: Path) -> None:
-    """Settings save persists path policy disc rendering fields."""
-    config_path = tmp_path / "config.toml"
-    client = TestClient(create_web_app(config_path))
-    csrf_token = _csrf_token(client)
-    payload = _settings_payload(
-        AppConfig(
-            path_policy=PathPolicyConfig(
-                disc_number_style=DISC_NUMBER_STYLE_D_PREFIXED,
-                disc_number_condition=DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
-            )
-        )
+def test_app_config_resource_round_trips_complete_hidden_config_fields() -> None:
+    """Settings serialization retains fields hidden by the bundled presentation."""
+    config = AppConfig(
+        paths=PathsConfig(library=LIBRARY_PATH),
+        ui=UiConfig(theme="dark", show_advanced_settings=True),
     )
 
-    response = client.post(WEB_API_SETTINGS_SAVE_ROUTE, json=payload, headers={WEB_CSRF_HEADER_NAME: csrf_token})
+    resource = AppConfigResource.from_domain(config)
 
-    assert response.status_code == SUCCESS_STATUS_CODE
-    saved_config = TomlConfigStore(config_path).load()
-    assert saved_config.path_policy.disc_number_style == DISC_NUMBER_STYLE_D_PREFIXED
-    assert saved_config.path_policy.disc_number_condition == DISC_NUMBER_CONDITION_MULTIPLE_DISCS
+    assert resource.to_domain() == config
 
 
-def test_generate_artist_ids_saves_missing_entries_without_overwriting(tmp_path: Path) -> None:
-    """Settings API can generate missing IDs and preserve existing manual edits."""
-    config_path = tmp_path / "config.toml"
-    TomlConfigStore(config_path).save(AppConfig(artist_ids=ArtistIdConfig(entries={"Jane Doe": EDITED_ARTIST_ID})))
-    client = TestClient(create_web_app(config_path))
-    csrf_token = _csrf_token(client)
+def test_validate_settings_returns_field_changes_and_typed_invalid_result(tmp_path: Path) -> None:
+    """Candidate validation is read-only and reports unsupported hidden round-trip choices."""
+    store = FakeConfigStore()
+    client = _client(tmp_path, store)
+    candidate = AppConfig(paths=PathsConfig(library=LIBRARY_PATH), ui=UiConfig(theme=UNSUPPORTED_THEME))
+
+    response = client.post(WEB_API_SETTINGS_VALIDATE_ROUTE, json=_candidate_body(candidate, CONFIG_REVISION))
+
+    assert response.status_code == HTTP_OK_STATUS
+    data = _data(response)
+    validation = _object(data, "validation")
+    assert validation["valid"] is False
+    assert _first_error(validation)["field"] == "ui.theme"
+    assert [change["field"] for change in _list(data, "changes")] == ["paths.library", "ui.theme"]
+    assert store.save_count == 0
+
+
+def test_validate_settings_rejects_a_stale_edit_base(tmp_path: Path) -> None:
+    """Validation never reports against raw storage other than the caller's edit base."""
+    client = _client(tmp_path, FakeConfigStore())
+
+    response = client.post(WEB_API_SETTINGS_VALIDATE_ROUTE, json=_candidate_body(AppConfig(), STALE_CONFIG_REVISION))
+
+    assert response.status_code == HTTP_CONFLICT_STATUS
+    assert _first_error(_response_object(response))["code"] == "config_changed"
+
+
+def test_preview_returns_domain_errors_as_data_without_config_writes(tmp_path: Path) -> None:
+    """Self-contained preview failures stay typed 200 results and never touch ConfigStore."""
+    store = FakeConfigStore()
+    client = _client(tmp_path, store)
+    config_resource = AppConfigResource.from_domain(AppConfig()).model_dump(mode="json")
+    path_policy = cast("dict[str, object]", config_resource["path_policy"])
+    path_policy["max_filename_length"] = 0
 
     response = client.post(
-        WEB_API_ARTIST_IDS_GENERATE_ROUTE,
-        json={"artist_names": [ARTIST_NAME, "Jane Doe"]},
-        headers={WEB_CSRF_HEADER_NAME: csrf_token},
+        WEB_API_SETTINGS_PREVIEW_ROUTE,
+        json={
+            "path_policy": path_policy,
+            "artist_ids": config_resource["artist_ids"],
+            "metadata": {"title": "Song", "artist": "Artist"},
+            "file_extension": ".flac",
+        },
     )
 
-    assert response.status_code == SUCCESS_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["generated"] is True
-    assert _list_payload(response_payload, "entries") == [
-        {
-            "source_artist": ARTIST_NAME,
-            "generation_artist": ARTIST_NAME,
-            "artist_id": ARTIST_ID,
-            "saved": True,
-            "overwritten": False,
-        },
-        {
-            "source_artist": "Jane Doe",
-            "generation_artist": "Jane Doe",
-            "artist_id": EDITED_ARTIST_ID,
-            "saved": False,
-            "overwritten": False,
-        },
-    ]
-    assert TomlConfigStore(config_path).load().artist_ids.entries == {
-        ARTIST_NAME: ARTIST_ID,
-        "Jane Doe": EDITED_ARTIST_ID,
-    }
+    assert response.status_code == HTTP_OK_STATUS
+    preview = _data(response)
+    assert preview["path"] is None
+    assert _first_error(preview)["code"] == "validation_failed"
+    assert store.save_count == 0
 
 
-def test_generate_artist_ids_returns_invalid_persisted_config_errors(tmp_path: Path) -> None:
-    """Settings API generation reports TOML validation errors as JSON."""
-    config_path = tmp_path / "config.toml"
-    _ = config_path.write_text(
-        'version = 1\n[artist_ids]\nmax_length = 0\nfallback_id = "NOART"\n',
-        encoding=CONFIG_FILE_ENCODING,
+def test_save_settings_returns_new_revision_and_rejects_invalid_or_stale_candidates(tmp_path: Path) -> None:
+    """PUT reports successful CAS, 422 invalid candidates, and 409 stale revisions without extra writes."""
+    store = FakeConfigStore()
+    client = _client(tmp_path, store)
+    valid = AppConfig(paths=PathsConfig(library=LIBRARY_PATH))
+
+    saved = client.put(
+        WEB_API_SETTINGS_ROUTE,
+        json=_candidate_body(valid, CONFIG_REVISION),
+        headers={WEB_CSRF_HEADER_NAME: CSRF_TOKEN},
     )
-    client = TestClient(create_web_app(config_path))
-    csrf_token = _csrf_token(client)
+    invalid = client.put(
+        WEB_API_SETTINGS_ROUTE,
+        json=_candidate_body(AppConfig(ui=UiConfig(theme=UNSUPPORTED_THEME)), SAVED_CONFIG_REVISION),
+        headers={WEB_CSRF_HEADER_NAME: CSRF_TOKEN},
+    )
+    stale = client.put(
+        WEB_API_SETTINGS_ROUTE,
+        json=_candidate_body(AppConfig(), CONFIG_REVISION),
+        headers={WEB_CSRF_HEADER_NAME: CSRF_TOKEN},
+    )
+
+    assert saved.status_code == HTTP_OK_STATUS
+    assert _data(saved)["config_revision"] == SAVED_CONFIG_REVISION
+    assert [change["field"] for change in _list(_data(saved), "changes")] == ["paths.library"]
+    assert invalid.status_code == HTTP_UNPROCESSABLE_CONTENT_STATUS
+    assert _first_error(_response_object(invalid))["field"] == "ui.theme"
+    assert stale.status_code == HTTP_CONFLICT_STATUS
+    assert _first_error(_response_object(stale))["code"] == "config_changed"
+    assert store.save_count == 1
+
+
+def test_save_settings_requires_csrf_before_config_validation(tmp_path: Path) -> None:
+    """Missing mutation authorization is rejected before Settings callbacks can save."""
+    store = FakeConfigStore()
+    client = _client(tmp_path, store)
+
+    response = client.put(
+        WEB_API_SETTINGS_ROUTE,
+        json=_candidate_body(AppConfig(), CONFIG_REVISION),
+    )
+
+    assert response.status_code == HTTP_FORBIDDEN_STATUS
+    assert _first_error(_response_object(response))["code"] == "csrf_invalid"
+    assert store.save_count == 0
+
+
+def test_artist_id_generation_uses_form_draft_without_saving_config(tmp_path: Path) -> None:
+    """Draft generation preserves existing entries and returns new values without persistence."""
+    store = FakeConfigStore()
+    client = _client(tmp_path, store)
+    artist_ids = AppConfigResource.from_domain(
+        AppConfig(artist_ids=ArtistIdConfig(entries={SOURCE_ARTIST: SOURCE_ARTIST_ID}))
+    ).artist_ids
 
     response = client.post(
-        WEB_API_ARTIST_IDS_GENERATE_ROUTE,
-        json={"artist_names": [ARTIST_NAME]},
-        headers={WEB_CSRF_HEADER_NAME: csrf_token},
+        WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
+        json={
+            "artist_names": [SOURCE_ARTIST, NEW_ARTIST, NEW_ARTIST],
+            "overwrite": False,
+            "artist_ids": artist_ids.model_dump(mode="json"),
+        },
     )
 
-    assert response.status_code == ERROR_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["generated"] is False
-    assert "ArtistIdConfig max_length must be positive." in _list_payload(response_payload, "errors")
-    assert _list_payload(response_payload, "entries") == []
+    assert response.status_code == HTTP_OK_STATUS
+    entries = _list(_data(response), "entries")
+    assert [entry["source_artist"] for entry in entries] == [SOURCE_ARTIST, NEW_ARTIST]
+    assert entries[0]["artist_id"] == SOURCE_ARTIST_ID
+    assert entries[0]["overwritten"] is False
+    assert store.save_count == 0
 
 
-def test_save_settings_clears_existing_config_errors_after_successful_write(tmp_path: Path) -> None:
-    """A successful save must not return stale errors from the replaced TOML file."""
-    config_path = tmp_path / "config.toml"
-    _ = config_path.write_text("version = ", encoding=CONFIG_FILE_ENCODING)
-    client = TestClient(create_web_app(config_path))
-    csrf_token = _csrf_token(client)
-    payload = _settings_payload(AppConfig(paths=PathsConfig(library=LIBRARY_PATH)))
-
-    response = client.post(WEB_API_SETTINGS_SAVE_ROUTE, json=payload, headers={WEB_CSRF_HEADER_NAME: csrf_token})
-
-    assert response.status_code == SUCCESS_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["saved"] is True
-    assert response_payload["errors"] == []
-    assert _object_payload(response_payload, "validation")["valid"] is True
-    assert TomlConfigStore(config_path).load().paths.library == LIBRARY_PATH
-
-
-def test_save_settings_rejects_missing_csrf_without_saving(tmp_path: Path) -> None:
-    """Browser-originated save requests cannot write settings without the API token."""
-    config_path = tmp_path / "config.toml"
-    client = TestClient(create_web_app(config_path))
-    payload = _settings_payload(AppConfig(paths=PathsConfig(library=LIBRARY_PATH, incoming=INCOMING_PATH)))
-
-    response = client.post(WEB_API_SETTINGS_SAVE_ROUTE, json=payload)
-
-    assert response.status_code == FORBIDDEN_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["saved"] is False
-    assert "CSRF validation" in str(_list_payload(response_payload, "errors")[0])
-    assert not config_path.exists()
+def _client(tmp_path: Path, store: FakeConfigStore) -> TestClient:
+    ports = SettingsPorts(config_store=store)
+    context = SettingsRouteContext(
+        get_settings=GetSettingsEditUseCase(ports).execute,
+        validate_settings=ValidateSettingsCandidateUseCase(ports).execute,
+        preview_path_policy=PreviewPathPolicyUseCase().execute,
+        save_settings=SaveSettingsCandidateUseCase(ports).execute,
+        generate_artist_id_draft=GenerateArtistIdDraftUseCase(
+            language_detector=StaticLanguageDetector(),
+            artist_resolver=StaticArtistNameResolver(),
+        ).execute,
+    )
+    app = create_web_app(
+        ApiRouteContext(
+            csrf_token=CSRF_TOKEN,
+            get_bootstrap=_must_not_execute,
+            settings=context,
+        ),
+        tmp_path / "missing-static",
+    )
+    return TestClient(app, base_url="http://localhost", raise_server_exceptions=False)
 
 
-def test_save_settings_rejects_invalid_config_without_saving(tmp_path: Path) -> None:
-    """Invalid JSON config returns validation errors and avoids writing TOML."""
-    config_path = tmp_path / "config.toml"
-    client = TestClient(create_web_app(config_path))
-    csrf_token = _csrf_token(client)
-    payload = _settings_payload(AppConfig())
-    _path_policy_payload(payload)["max_filename_length"] = "not-an-int"
-
-    response = client.post(WEB_API_SETTINGS_SAVE_ROUTE, json=payload, headers={WEB_CSRF_HEADER_NAME: csrf_token})
-
-    assert response.status_code == ERROR_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["saved"] is False
-    assert "must be an integer" in str(_list_payload(response_payload, "errors")[0])
-    assert not config_path.exists()
-
-
-def test_validate_settings_rejects_missing_config_object(tmp_path: Path) -> None:
-    """Settings validate requires the documented request envelope."""
-    client = TestClient(create_web_app(tmp_path / "config.toml"))
-
-    response = client.post(WEB_API_SETTINGS_VALIDATE_ROUTE, json={})
-
-    assert response.status_code == ERROR_STATUS_CODE
-    response_payload = _json_payload(response)
-    assert response_payload["valid"] is False
-    assert response_payload["errors"] == ["Request body must contain a config object."]
-
-
-def _settings_payload(config: AppConfig) -> dict[str, object]:
+def _candidate_body(config: AppConfig, config_revision: str) -> dict[str, object]:
     return {
-        "config": {
-            "version": config.version,
-            "paths": {"library": config.paths.library, "incoming": config.paths.incoming},
-            "add": {"default_mode": config.add.default_mode, "auto_apply": config.add.auto_apply},
-            "organize": {
-                "default_mode": config.organize.default_mode,
-                "auto_apply": config.organize.auto_apply,
-            },
-            "refresh": {"default_mode": config.refresh.default_mode, "auto_apply": config.refresh.auto_apply},
-            "path_policy": {
-                "template": config.path_policy.template,
-                "unknown_artist": config.path_policy.unknown_artist,
-                "unknown_album": config.path_policy.unknown_album,
-                "sanitize": config.path_policy.sanitize,
-                "max_filename_length": config.path_policy.max_filename_length,
-                "disc_number_style": config.path_policy.disc_number_style,
-                "disc_number_condition": config.path_policy.disc_number_condition,
-            },
-            "artist_ids": {
-                "max_length": config.artist_ids.max_length,
-                "fallback_id": config.artist_ids.fallback_id,
-                "entries": dict(config.artist_ids.entries or {}),
-            },
-            "metadata": {
-                "prefer_album_artist": config.metadata.prefer_album_artist,
-                "require_title": config.metadata.require_title,
-                "require_artist": config.metadata.require_artist,
-                "require_album": config.metadata.require_album,
-                "album_year_resolution": config.metadata.album_year_resolution,
-            },
-            "collision": {
-                "on_target_exists": config.collision.on_target_exists,
-                "on_duplicate_hash": config.collision.on_duplicate_hash,
-                "on_missing_metadata": config.collision.on_missing_metadata,
-            },
-            "ui": {
-                "theme": config.ui.theme,
-                "show_advanced_settings": config.ui.show_advanced_settings,
-            },
-        }
+        "config": AppConfigResource.from_domain(config).model_dump(mode="json"),
+        "expected_config_revision": config_revision,
     }
 
 
-def _path_policy_payload(payload: dict[str, object]) -> dict[str, object]:
-    return _object_payload(_object_payload(payload, "config"), "path_policy")
+def _must_not_execute():
+    raise AssertionError(UNRELATED_BOOTSTRAP_EXECUTION_MESSAGE)
 
 
-def _json_payload(response: _JsonResponse) -> dict[str, object]:
+def _response_object(response: Response) -> dict[str, object]:
     return cast("dict[str, object]", response.json())
 
 
-def _object_payload(payload: dict[str, object], key: str) -> dict[str, object]:
-    value = payload[key]
-    assert isinstance(value, dict)
-    return cast("dict[str, object]", value)
+def _data(response: Response) -> dict[str, object]:
+    data = _response_object(response)["data"]
+    assert isinstance(data, dict)
+    return cast("dict[str, object]", data)
 
 
-def _list_payload(payload: dict[str, object], key: str) -> list[object]:
-    value = payload[key]
-    assert isinstance(value, list)
-    return cast("list[object]", value)
+def _object(value: dict[str, object], key: str) -> dict[str, object]:
+    nested = value[key]
+    assert isinstance(nested, dict)
+    return cast("dict[str, object]", nested)
 
 
-def _csrf_token(client: TestClient) -> str:
-    response = client.get(WEB_API_SETTINGS_ROUTE)
-    assert response.status_code == SUCCESS_STATUS_CODE
-    token = _json_payload(response)["csrf_token"]
-    assert isinstance(token, str)
-    return token
+def _list(value: dict[str, object], key: str) -> list[dict[str, object]]:
+    nested = value[key]
+    assert isinstance(nested, list)
+    return cast("list[dict[str, object]]", nested)
+
+
+def _first_error(value: dict[str, object]) -> dict[str, object]:
+    return _list(value, "errors")[0]
+
+
+@dataclass(slots=True)
+class FakeConfigStore:
+    """Revision-aware ConfigStore fake for typed Settings routes."""
+
+    config: AppConfig = field(default_factory=AppConfig)
+    state: ConfigSnapshotState = ConfigSnapshotState.VALID
+    errors: tuple[str, ...] = ()
+    config_revision: str = CONFIG_REVISION
+    save_count: int = 0
+
+    def read_snapshot(self) -> ConfigSnapshot:
+        """Return configured current or recovery state."""
+        return ConfigSnapshot(self.state, self.config, self.config_revision, self.errors)
+
+    def load(self) -> AppConfig:
+        """Return the current recovery Config."""
+        return self.config
+
+    def save(self, config: AppConfig, *, expected_config_revision: str) -> ConfigSnapshot:
+        """Install one candidate only for the current opaque revision."""
+        if expected_config_revision != self.config_revision:
+            raise ConfigRevisionMismatchError(expected_config_revision, self.config_revision)
+        self.save_count += 1
+        self.config = config
+        self.state = ConfigSnapshotState.VALID
+        self.errors = ()
+        self.config_revision = SAVED_CONFIG_REVISION
+        return self.read_snapshot()
+
+
+@dataclass(frozen=True, slots=True)
+class StaticLanguageDetector:
+    """Treat route-test artists as generation-ready."""
+
+    def is_japanese(self, text: str) -> bool:
+        """Return false without model I/O."""
+        _ = text
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class StaticArtistNameResolver:
+    """Resolver fake unused for generation-ready names."""
+
+    def english_or_latin_name(self, source_artist: str) -> str | None:
+        """Return no alternate name."""
+        _ = source_artist
+        return None

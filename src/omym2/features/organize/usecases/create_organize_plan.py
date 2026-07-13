@@ -6,11 +6,24 @@ Why: Registers clean Libraries and records review Plans without moving files.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from omym2.config import PLAN_ACTION_SORT_ORDER_START, PLAN_ACTION_SORT_ORDER_STEP
+from omym2.config import (
+    OPERATION_RESULT_RETENTION_HOURS,
+    OPERATION_TOMBSTONE_RETENTION_DAYS,
+    PLAN_ACTION_SORT_ORDER_START,
+    PLAN_ACTION_SORT_ORDER_STEP,
+)
 from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.models.operation import (
+    Operation,
+    OperationKind,
+    OperationStatus,
+    PlanCreatedResult,
+    RegisteredWithoutPlanResult,
+)
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import Track, TrackStatus
@@ -34,7 +47,7 @@ if TYPE_CHECKING:
     from omym2.features.common_ports import UnitOfWork
     from omym2.features.organize.dto import CreateOrganizePlanRequest
     from omym2.features.organize.ports import CreateOrganizePlanPorts
-    from omym2.shared.ids import LibraryId, TrackId
+    from omym2.shared.ids import LibraryId, OperationId, TrackId
 
 AMBIGUOUS_LIBRARY_SELECTION_MESSAGE = "Multiple known Libraries exist. Use organize --library PATH."
 NO_LIBRARY_SELECTION_MESSAGE = "No known Library can be selected. Use organize --library PATH."
@@ -47,6 +60,7 @@ SUMMARY_BLOCKED_ACTIONS_KEY = "blocked_actions"
 SUMMARY_PLANNED_ACTIONS_KEY = "planned_actions"
 SUMMARY_TRACK_COUNT_KEY = "track_count"
 INCOMPLETE_CANDIDATE_MESSAGE = "Cannot record a Track for an incomplete organize candidate."
+RUNNING_OPERATION_REQUIRED_MESSAGE = "Organize completion requires its corresponding running Operation."
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +82,7 @@ class CreateOrganizePlanUseCase:
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
+            operation = _running_operation(uow, request.operation_id)
             library = self._select_library(uow, request.library_root, path_policy_hash, timestamp)
             existing_track_records = tuple(uow.tracks.list_by_library(library.library_id))
             trust_eligible_tracks = _unique_tracks_by_current_path(existing_track_records)
@@ -105,6 +120,21 @@ class CreateOrganizePlanUseCase:
                     timestamp=timestamp,
                 ),
             )
+            if operation is not None:
+                operation_result = (
+                    PlanCreatedResult(result.plan.plan_id)
+                    if result.plan is not None
+                    else RegisteredWithoutPlanResult(result.library.library_id, result.track_count)
+                )
+                completed_at = self.ports.clock.now()
+                uow.operations.save(
+                    replace(operation, library_id=result.library.library_id).mark_succeeded(
+                        result=operation_result,
+                        completed_at=completed_at,
+                        result_expires_at=completed_at + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS),
+                        tombstone_expires_at=completed_at + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS),
+                    )
+                )
             uow.commit()
             return result
 
@@ -452,6 +482,19 @@ class _OrganizePersistence:
     existing_tracks: dict[str, Track]
     config_hash: str
     timestamp: datetime
+
+
+def _running_operation(uow: UnitOfWork, operation_id: OperationId | None) -> Operation | None:
+    if operation_id is None:
+        return None
+    retained = uow.operations.lookup(operation_id)
+    if (
+        not isinstance(retained, Operation)
+        or retained.kind is not OperationKind.ORGANIZE_PLAN
+        or retained.status is not OperationStatus.RUNNING
+    ):
+        raise RuntimeError(RUNNING_OPERATION_REQUIRED_MESSAGE)
+    return retained
 
 
 def _blocked_candidate(

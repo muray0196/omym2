@@ -6,14 +6,15 @@ Why: Gives CLI and Web inspection stable Run/FileEvent browsing contracts.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from omym2.shared.pagination import PageRequest
 
 if TYPE_CHECKING:
     from omym2.domain.models.file_event import FileEventStatus
-    from omym2.domain.models.run import RunStatus
-    from omym2.shared.ids import LibraryId, PlanId, RunId
+    from omym2.domain.models.run import Run, RunStatus
+    from omym2.shared.ids import LibraryId, OperationId, PlanId, RunId
     from omym2.shared.pagination import FacetValue
 
 
@@ -33,6 +34,33 @@ class GetRunHeaderRequest:
     """Request to load one Run header by ID, without its durable FileEvents."""
 
     run_id: RunId
+
+
+class RunCapabilityReason(StrEnum):
+    """Stable reasons why one Run cannot create an Undo Plan."""
+
+    RUN_NOT_TERMINAL = "run_not_terminal"
+    NOTHING_TO_UNDO = "nothing_to_undo"
+    UNDO_REFRESH_METADATA_UNSUPPORTED = "undo_refresh_metadata_unsupported"
+    PENDING_FILE_EVENT_REQUIRES_REVIEW = "pending_file_event_requires_review"
+    ALREADY_UNDONE_OR_IN_PROGRESS = "already_undone_or_in_progress"
+
+
+@dataclass(frozen=True, slots=True)
+class RunCapabilitiesResult:
+    """Backend-authoritative Undo Plan availability for one Run."""
+
+    can_create_undo: bool
+    disabled_reasons: tuple[RunCapabilityReason, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RunDetailResult:
+    """One Run header with its current read-only capability projection."""
+
+    run: Run
+    capabilities: RunCapabilitiesResult
+    active_operation_id: OperationId | None = None
 
 
 @dataclass(frozen=True, slots=True)

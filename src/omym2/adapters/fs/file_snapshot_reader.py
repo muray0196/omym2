@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from omym2.adapters.fs.hash_calculator import FileContentHasher
 from omym2.config import FILE_SNAPSHOT_CAPTURE_MIN_WORKER_COUNT, FILE_SNAPSHOT_CAPTURE_WORKER_COUNT
-from omym2.domain.models.file_snapshot import FileSnapshot
+from omym2.domain.models.file_snapshot import FileSnapshot, FilesystemIdentity
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.common_ports import (
     Clock,
@@ -24,9 +24,11 @@ from omym2.features.common_ports import (
 )
 
 if TYPE_CHECKING:
+    import os
     from collections.abc import Sequence
 
 INVALID_SNAPSHOT_CAPTURE_WORKER_COUNT_MESSAGE = "Snapshot capture worker count must be positive."
+SOURCE_CHANGED_DURING_SNAPSHOT_MESSAGE = "Source path changed during snapshot capture."
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,16 +65,27 @@ class FilesystemFileSnapshotReader:
         metadata = self.metadata_reader.read(file_path)
         content_hash = self.hasher.calculate(file_path)
 
-        # The snapshot is an observation, not an atomic filesystem lock. Later
-        # Plan and apply workflows re-check hashes before mutating Library files.
+        completed_stat_result = file_path.stat()
+        if not _same_filesystem_identity(stat_result, completed_stat_result):
+            raise ValueError(SOURCE_CHANGED_DURING_SNAPSHOT_MESSAGE)
+
+        # The snapshot is an observation, not an atomic filesystem lock. Apply
+        # carries this exact ephemeral identity into the mutation boundary.
         return FileSnapshot(
             path=str(file_path),
-            size=stat_result.st_size,
-            mtime=datetime.fromtimestamp(stat_result.st_mtime, UTC),
+            size=completed_stat_result.st_size,
+            mtime=datetime.fromtimestamp(completed_stat_result.st_mtime, UTC),
             file_extension=file_path.suffix.lower(),
             content_hash=content_hash,
             metadata_hash=calculate_metadata_fingerprint(metadata),
             metadata=metadata,
+            filesystem_identity=FilesystemIdentity(
+                device_id=completed_stat_result.st_dev,
+                inode=completed_stat_result.st_ino,
+                size=completed_stat_result.st_size,
+                mtime_ns=completed_stat_result.st_mtime_ns,
+                ctime_ns=completed_stat_result.st_ctime_ns,
+            ),
             captured_at=self.clock.now(),
         )
 
@@ -81,3 +94,13 @@ class FilesystemFileSnapshotReader:
             return self.capture(request.path)
         except FileNotFoundError:
             return None
+
+
+def _same_filesystem_identity(left: os.stat_result, right: os.stat_result) -> bool:
+    return (
+        left.st_dev == right.st_dev
+        and left.st_ino == right.st_ino
+        and left.st_size == right.st_size
+        and left.st_mtime_ns == right.st_mtime_ns
+        and left.st_ctime_ns == right.st_ctime_ns
+    )

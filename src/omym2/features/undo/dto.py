@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omym2.shared.ids import RunId
+    from omym2.shared.ids import OperationId, RunId
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,3 +17,4 @@ class CreateUndoPlanRequest:
     """Request to create an undo Plan from a prior Run."""
 
     run_id: RunId
+    operation_id: OperationId | None = None

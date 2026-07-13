@@ -16,17 +16,23 @@ from omym2.adapters.db.sqlite.repositories import (
     SQLiteCheckRunRepository,
     SQLiteFileEventRepository,
     SQLiteLibraryRepository,
+    SQLiteOperationRepository,
     SQLitePlanActionRepository,
     SQLitePlanRepository,
     SQLiteRunRepository,
     SQLiteTrackRepository,
 )
+from omym2.domain.models.plan import PlanStatus
 
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Generator
     from os import PathLike
     from types import TracebackType
+
+    from omym2.domain.models.operation import Operation
+    from omym2.domain.models.run import Run
+    from omym2.shared.ids import PlanId
 
 UNIT_OF_WORK_ALREADY_OPEN_MESSAGE = "SQLiteUnitOfWork is already open."
 UNIT_OF_WORK_NOT_OPEN_MESSAGE = "SQLiteUnitOfWork must be entered before use."
@@ -46,6 +52,7 @@ class SQLiteUnitOfWork:
     _plan_actions: SQLitePlanActionRepository | None = field(default=None, init=False)
     _runs: SQLiteRunRepository | None = field(default=None, init=False)
     _file_events: SQLiteFileEventRepository | None = field(default=None, init=False)
+    _operations: SQLiteOperationRepository | None = field(default=None, init=False)
     _is_completed: bool = field(default=True, init=False)
     _is_transaction_open: bool = field(default=False, init=False)
     _is_usecase_scope_open: bool = field(default=False, init=False)
@@ -119,6 +126,13 @@ class SQLiteUnitOfWork:
             raise RuntimeError(UNIT_OF_WORK_NOT_OPEN_MESSAGE)
         return self._file_events
 
+    @property
+    def operations(self) -> SQLiteOperationRepository:
+        """Repository for durable background request lifecycle records."""
+        if self._operations is None:
+            raise RuntimeError(UNIT_OF_WORK_NOT_OPEN_MESSAGE)
+        return self._operations
+
     def __enter__(self) -> Self:
         """Open the SQLite transaction boundary."""
         if self._is_transaction_open:
@@ -143,6 +157,7 @@ class SQLiteUnitOfWork:
         self._plan_actions = SQLitePlanActionRepository(connection)
         self._runs = SQLiteRunRepository(connection)
         self._file_events = SQLiteFileEventRepository(connection)
+        self._operations = SQLiteOperationRepository(connection)
         self._is_completed = False
         self._is_transaction_open = True
         return self
@@ -183,6 +198,15 @@ class SQLiteUnitOfWork:
             connection.rollback()
             self._is_completed = True
 
+    def claim_apply(self, plan_id: PlanId, run: Run, operation: Operation) -> bool:
+        """Stage one compare-and-set Apply claim and its durable associations."""
+        claimed = self.plans.compare_and_set_status(plan_id, PlanStatus.READY, PlanStatus.APPLYING)
+        if not claimed:
+            return False
+        self.runs.save(run)
+        self.operations.save(operation)
+        return True
+
     def _require_connection(self) -> sqlite3.Connection:
         connection = self._connection
         if connection is None or not self._is_transaction_open:
@@ -198,6 +222,7 @@ class SQLiteUnitOfWork:
         self._plan_actions = None
         self._runs = None
         self._file_events = None
+        self._operations = None
         self._is_completed = True
         self._is_transaction_open = False
 

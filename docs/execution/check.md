@@ -1,14 +1,16 @@
 ---
 type: Execution Spec
 title: Check Execution
-description: Defines persisted check diagnostics, point-in-time snapshot reuse, the explicit trust-stat optimization, unmanaged hashing, and the Track no-mutation boundary.
-tags: [check, consistency, library-state, persistence]
-timestamp: 2026-07-12T02:41:12+09:00
+description: Defines exclusive Check execution as a durable Operation, persisted diagnostics, snapshot reuse, trust-stat optimization, and the Track no-mutation boundary.
+tags: [check, operation, consistency, library-state, persistence]
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # Check Execution
 
-This document is authoritative for check behavior, DB / filesystem inconsistency reporting, Library state reporting, CheckIssue scope, pending FileEvent reporting, and check findings persistence.
+This document is authoritative for Check execution, DB / filesystem
+inconsistency and Library-state reporting, CheckIssue scope, pending FileEvent
+reporting, and Check findings persistence.
 
 Common execution rules are in [model.md](model.md). CheckIssue values are cataloged in [../contracts/status-reason-catalog.md](../contracts/status-reason-catalog.md#checkissue-issue-type).
 
@@ -16,7 +18,21 @@ Common execution rules are in [model.md](model.md). CheckIssue values are catalo
 
 `check` never mutates Library music files, Tracks, Plans, or Runs. It reports inconsistencies between the DB and the filesystem and reports Library state.
 
-`check` persists its own findings: each run replaces the owning Library's prior CheckRun and CheckIssues wholesale (see [../DOMAIN.md](../DOMAIN.md#checkrun) and [../contracts/db-schema.md](../contracts/db-schema.md#check_runs)). `omym2 check` (CLI) and `POST /api/check/run` (Web) both recompute and persist through the same usecase; every `GET /api/check*` endpoint reads only the persisted latest findings and performs no filesystem I/O. The Web API envelope, pagination, facet, and group-by shape for check browsing is authoritative in [../contracts/web-api.md](../contracts/web-api.md#check).
+`check` persists its own findings: each run replaces the owning Library's prior
+CheckRun and CheckIssues wholesale (see [../DOMAIN.md](../DOMAIN.md#checkrun)
+and [../contracts/db-schema.md](../contracts/db-schema.md#check_runs)).
+
+`omym2 check` (CLI) and `POST /api/check/run` (Web) recompute through the same
+usecase while holding the shared exclusive-operation lock. The Web request
+requires an idempotency key and returns `202` plus a durable `check` Operation;
+the CLI records the same Operation and may run its worker inline. The completed
+Check replacement and the Operation's `check_completed` result commit together.
+Another state-changing operation conflicts immediately rather than queueing.
+
+Every `GET /api/check*` endpoint reads only persisted latest findings, remains
+available during an exclusive operation, and performs no filesystem I/O. The
+Web API envelope, pagination, facet, and group-by shape is authoritative in
+[../contracts/web-api.md](../contracts/web-api.md#check-endpoints).
 
 `check` may report whether the Library is `registered`, `unregistered`, `stale`, or `blocked`.
 

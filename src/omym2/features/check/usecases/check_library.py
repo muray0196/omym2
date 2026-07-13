@@ -8,13 +8,16 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import timedelta
 from os import fspath
 from pathlib import PurePath
 from typing import TYPE_CHECKING
 
+from omym2.config import OPERATION_RESULT_RETENTION_HOURS, OPERATION_TOMBSTONE_RETENTION_DAYS
 from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
 from omym2.domain.models.check_run import CheckRun
 from omym2.domain.models.library import LibraryStatus
+from omym2.domain.models.operation import CheckCompletedResult, Operation, OperationKind, OperationStatus
 from omym2.domain.models.plan import PlanStatus
 from omym2.domain.models.plan_action import ActionStatus
 from omym2.domain.models.track import TrackStatus
@@ -37,9 +40,10 @@ if TYPE_CHECKING:
     from omym2.features.check.dto import CheckLibraryRequest
     from omym2.features.check.ports import CheckLibraryPorts
     from omym2.features.common_ports import BatchFileSnapshotReader, FileSystemPath, PathResolver, UnitOfWork
-    from omym2.shared.ids import LibraryId, RunId
+    from omym2.shared.ids import CheckRunId, LibraryId, OperationId, RunId
 
 LIBRARY_NOT_FOUND_MESSAGE = "Library was not found."
+RUNNING_OPERATION_REQUIRED_MESSAGE = "Check completion requires its corresponding running Operation."
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,8 +68,10 @@ class CheckLibraryUseCase:
         snapshot_memo = _SnapshotMemo(self.ports.file_snapshot_reader)
 
         with self.ports.uow as uow:
+            operation = _running_operation(uow, request.operation_id)
             libraries = _selected_libraries(uow, request)
             issues: list[CheckIssue] = []
+            check_run_ids: list[CheckRunId] = []
             for library in libraries:
                 active_tracks = tuple(
                     track
@@ -92,11 +98,25 @@ class CheckLibraryUseCase:
                 library_issues.extend(self._plan_source_issues(uow, library, plans, snapshot_memo))
                 library_issues.extend(_pending_event_issues(uow, library))
 
-                self._persist_check_run(uow, library.library_id, library_issues, checked_at)
+                check_run_ids.append(self._persist_check_run(uow, library.library_id, library_issues, checked_at))
                 issues.extend(library_issues)
 
+            if operation is not None:
+                completed_at = self.ports.clock.now()
+                uow.operations.save(
+                    operation.mark_succeeded(
+                        result=CheckCompletedResult(tuple(check_run_ids), len(issues)),
+                        completed_at=completed_at,
+                        result_expires_at=completed_at + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS),
+                        tombstone_expires_at=completed_at + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS),
+                    )
+                )
             uow.commit()
-            return CheckLibraryResult(issues=tuple(issues), checked_at=checked_at)
+            return CheckLibraryResult(
+                issues=tuple(issues),
+                checked_at=checked_at,
+                check_run_ids=tuple(check_run_ids),
+            )
 
     def _persist_check_run(
         self,
@@ -104,7 +124,7 @@ class CheckLibraryUseCase:
         library_id: LibraryId,
         issues: Sequence[CheckIssue],
         checked_at: datetime,
-    ) -> None:
+    ) -> CheckRunId:
         """Replace one Library's prior check run with its freshly computed findings."""
         uow.check_issues.delete_for_library(library_id)
         uow.check_runs.delete_for_library(library_id)
@@ -116,6 +136,7 @@ class CheckLibraryUseCase:
         )
         uow.check_runs.save(check_run)
         uow.check_issues.save_many(check_run.check_run_id, issues)
+        return check_run.check_run_id
 
     def _track_issues(
         self,
@@ -346,9 +367,25 @@ class _SnapshotMemo:
         return tuple(self._snapshots_by_path[path_key] for path_key in path_keys)
 
 
+def _running_operation(uow: UnitOfWork, operation_id: OperationId | None) -> Operation | None:
+    if operation_id is None:
+        return None
+    retained = uow.operations.lookup(operation_id)
+    if (
+        not isinstance(retained, Operation)
+        or retained.kind is not OperationKind.CHECK
+        or retained.status is not OperationStatus.RUNNING
+    ):
+        raise RuntimeError(RUNNING_OPERATION_REQUIRED_MESSAGE)
+    return retained
+
+
 def _selected_libraries(uow: UnitOfWork, request: CheckLibraryRequest) -> tuple[Library, ...]:
     if request.library_id is None:
-        return tuple(uow.libraries.list_all())
+        libraries = tuple(uow.libraries.list_all())
+        if not libraries:
+            raise CheckLibraryError(LIBRARY_NOT_FOUND_MESSAGE)
+        return libraries
 
     library = uow.libraries.get(request.library_id)
     if library is None:

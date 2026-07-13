@@ -11,21 +11,25 @@ from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
 from omym2.features.artist_ids.dto import GenerateArtistIdsRequest
-from omym2.features.artist_ids.usecases.generate_artist_ids import GenerateArtistIdsUseCase
-from omym2.features.common_ports import ConfigStoreValidationError
+from omym2.features.common_ports import (
+    ConfigRevisionMismatchError,
+    ConfigStoreValidationError,
+    ExclusiveOperationBusyError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from typing import TextIO
 
+    from omym2.features.artist_ids.dto import GenerateArtistIdsResult
     from omym2.features.artist_ids.ports import ArtistLanguageDetector, ArtistNameResolver
-    from omym2.features.common_ports import ConfigStore
 
 ERROR_EXIT_CODE = 1
 FASTTEXT_MODEL_OPTION = "--fasttext-model"
 FASTTEXT_MODEL_LOAD_ERROR_MESSAGE = "fastText model load failed."
 FASTTEXT_OPTIONAL_DEPENDENCY_MESSAGE = "fastText support requires the optional fasttext package."
 FASTTEXT_MODEL_LOAD_ERROR_TYPES = (OSError, RuntimeError, ValueError)
+CONFIG_CHANGED_MESSAGE = "Config changed during artist ID generation; retry the command."
 GENERATE_SUBCOMMAND = "generate"
 OVERWRITE_OPTION = "--overwrite"
 SUCCESS_EXIT_CODE = 0
@@ -37,7 +41,9 @@ USAGE_MESSAGE = "Usage: omym2 artist-ids generate [--overwrite] [--fasttext-mode
 class ArtistIdsCommandPorts:
     """Ports injected for artist ID generation."""
 
-    config_store: ConfigStore
+    generate_artist_ids: Callable[
+        [GenerateArtistIdsRequest, ArtistLanguageDetector, ArtistNameResolver], GenerateArtistIdsResult
+    ]
     language_detector_factory: Callable[[Path | None], ArtistLanguageDetector]
     artist_resolver: ArtistNameResolver
 
@@ -81,18 +87,23 @@ def run_artist_ids_command(
         return ERROR_EXIT_CODE
 
     resolver = command_dependencies.artist_resolver or ports.artist_resolver
-    usecase = GenerateArtistIdsUseCase(
-        config_store=ports.config_store,
-        language_detector=detector,
-        artist_resolver=resolver,
-    )
     try:
-        result = usecase.execute(GenerateArtistIdsRequest(parsed_args.artist_names, overwrite=parsed_args.overwrite))
+        result = ports.generate_artist_ids(
+            GenerateArtistIdsRequest(parsed_args.artist_names, overwrite=parsed_args.overwrite),
+            detector,
+            resolver,
+        )
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
         return ERROR_EXIT_CODE
-    except OSError as exc:
-        write_line(stderr, f"Config I/O error: {exc}")
+    except (ConfigRevisionMismatchError, ExclusiveOperationBusyError, OSError) as exc:
+        if isinstance(exc, ConfigRevisionMismatchError):
+            message = CONFIG_CHANGED_MESSAGE
+        elif isinstance(exc, ExclusiveOperationBusyError):
+            message = str(exc)
+        else:
+            message = f"Config I/O error: {exc}"
+        write_line(stderr, message)
         return ERROR_EXIT_CODE
 
     for entry in result.entries:

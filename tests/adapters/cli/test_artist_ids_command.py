@@ -79,7 +79,11 @@ def test_artist_ids_generate_command_uses_injected_japanese_dependencies(tmp_pat
 def test_artist_ids_generate_command_preserves_existing_without_overwrite(tmp_path: Path) -> None:
     """Normal CLI generation keeps manual edits unless overwrite is requested."""
     config_path = tmp_path / "config.toml"
-    TomlConfigStore(config_path).save(AppConfig(artist_ids=ArtistIdConfig(entries={ENGLISH_ARTIST: "MANUAL"})))
+    store = TomlConfigStore(config_path)
+    _ = store.save(
+        AppConfig(artist_ids=ArtistIdConfig(entries={ENGLISH_ARTIST: "MANUAL"})),
+        expected_config_revision=store.read_snapshot().config_revision,
+    )
     stdout = StringIO()
     stderr = StringIO()
 

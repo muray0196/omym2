@@ -10,10 +10,10 @@ rules. Focused docs own detailed implementation contracts.
 
 OMYM2 adopts Feature-oriented Hexagonal Architecture.
 
-Core concepts such as Library, Track, Plan, Run, FileEvent, CheckRun, and
-PathPolicy are shared as a domain kernel. Features are divided by user goal.
-CLI and Web are inbound adapters. DB, filesystem, metadata reader, and config
-loader are outbound adapters.
+Core concepts such as Library, Track, Plan, Run, FileEvent, Operation, CheckRun,
+and PathPolicy are shared as a domain kernel. Features are divided by user
+goal. CLI and Web are inbound adapters. DB, filesystem, metadata reader, and
+config loader are outbound adapters.
 
 The package uses the Python `src/` layout:
 
@@ -38,6 +38,11 @@ src/
 * Library music file mutations must go through a Plan.
 * Apply must use recorded PlanActions and must not recalculate target paths from the latest AppConfig.
 * FileEvents record Library music file mutations before those mutations execute.
+* Web and CLI use one shared cross-process exclusive-operation lock; only one state-changing operation may hold it, while read-only snapshots remain available.
+* A durable Operation records background-request lifecycle, progress, and interruption; it never substitutes for a FileEvent recording an attempted Library music file mutation.
+* Apply acceptance holds the exclusive lock, verifies the Library root, and atomically compare-and-sets `ready` to `applying` while inserting a `running` Run and `queued` Operation in one transaction.
+* Apply work is not dispatched before that acceptance transaction commits, and the exclusive lock remains held throughout the background worker.
+* Config saves from Web and CLI use the same opaque raw-storage revision compare-and-set and atomic-replace protocol under the exclusive lock; last-write-wins is prohibited.
 * Library identity is stable by `library_id`, not root path.
 * Stored Library-managed paths are Library-root-relative.
 * Source file names under `src/` must follow the documented naming rules.
@@ -66,15 +71,22 @@ and [docs/codebase/web-frontend.md](docs/codebase/web-frontend.md).
 
 ## Ports And UnitOfWork Summary
 
-External I/O is expressed as ports. Representative ports include UnitOfWork, FileScanner, FileSnapshotReader, MetadataReader, FileMover, ConfigStore, Clock, and IdGenerator.
+External I/O is expressed as ports. Representative ports include UnitOfWork,
+FileScanner, FileSnapshotReader, MetadataReader, FileMover, ConfigStore,
+ExclusiveOperationLock, OperationProgressReporter, Clock, and IdGenerator.
 
 The baseline policy is `1 usecase = 1 UnitOfWork`. Concrete repositories and transaction mechanics stay behind the UnitOfWork adapter.
 
 `Clock` and `IdGenerator` are ports so tests can fix time and IDs. IdGenerator
 creates typed IDs for Library, CheckRun, Track, Plan, PlanAction, Run, and
-FileEvent.
+FileEvent, and Operation.
 
-`apply` and `undo` are practical exceptions to the simple `1 usecase = 1 UnitOfWork` shape because Library music file operations and DB transactions cannot be made fully atomic. They use FileEvents as a durable operation log.
+UnitOfWork exposes Operation persistence and one atomic Apply-claim capability
+that commits the Plan transition, Run, and queued Operation together before
+dispatch. `apply` and `undo` remain practical exceptions to the simple
+`1 usecase = 1 UnitOfWork` shape because Library music file operations and DB
+transactions cannot be made fully atomic. They preserve independently
+committed pending FileEvents before each Library music file mutation.
 
 ## Naming Summary
 

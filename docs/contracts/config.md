@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Config Contract
-description: Defines the authoritative contract for OMYM2's TOML-based application config, including its file location, AppConfig shape, path-policy templates, artist ID rules, and metadata/collision policy.
-tags: [config, toml, path-policy, artist-ids]
-timestamp: 2026-07-11T21:34:03+09:00
+description: Defines OMYM2's TOML config schema, raw-storage revision and atomic-save protocol, path policy, artist IDs, and metadata/collision policy.
+tags: [config, toml, concurrency, atomic-save, path-policy, artist-ids]
+timestamp: 2026-07-13T00:31:39+09:00
 ---
 
 # Config Contract
@@ -23,6 +23,80 @@ Domain and usecases do not read TOML directly. Config loading, validation, savin
 Missing config is not an error by itself. Config is created lazily when a command needs persisted settings.
 
 Config files must stay under the application root so OMYM2 remains portable, excluding user-selected Library and Incoming paths.
+
+## Raw Storage Revision And Atomic Save
+
+`config_revision` is an opaque compare-and-set token for the raw Config storage
+state. It is not a TOML key, an `AppConfig` field, a Config version, or the
+`config_hash` stored for Plan audit. A Config change does not invalidate or
+recalculate an already-reviewed PlanAction.
+
+The Config adapter captures the raw bytes and file identity before parsing,
+then finalizes and returns the revision with the parse-state tag even when TOML
+or AppConfig validation fails. Recovery therefore remains possible for invalid
+raw state. The versioned digest input contains:
+
+* one state tag: `missing`, `invalid`, or `valid`;
+* the exact raw bytes when a file exists;
+* the opened file's device/file identity, byte size, nanosecond modification
+  time, and nanosecond change time when the platform exposes those values.
+
+The adapter reads and stats the same opened file and verifies that the pathname
+still identifies that file before returning. It retries a concurrent
+replacement rather than combining bytes and metadata from different files.
+Including file identity and change metadata means an external rewrite with
+identical bytes still produces a different revision under ordinary filesystem
+semantics. Clients treat the encoded digest as an opaque string and compare it
+only for exact equality.
+
+Every read used to start a Settings edit returns both the AppConfig or recovery
+errors and `config_revision`. Settings validation and save requests carry
+`expected_config_revision`. Previewing one self-contained PathPolicy draft does
+not require a revision because it neither compares with nor writes current
+storage.
+
+All Web and CLI Config writes follow this protocol:
+
+1. Acquire the shared exclusive-operation lock.
+2. Re-read the raw storage revision while holding the lock.
+3. If it differs from `expected_config_revision`, perform no write and return
+   `config_changed` (HTTP 409 on the Web boundary).
+4. Validate the proposed complete AppConfig without requiring the currently
+   stored TOML to be valid.
+5. Write deterministic TOML to a uniquely created temporary file in the Config
+   directory, flush it, and sync its file descriptor.
+6. Re-read `config_revision` immediately before replacement. On mismatch,
+   delete the temporary file, perform no destination write, and return
+   `config_changed`.
+7. Atomically replace the Config path with that same-filesystem temporary file.
+   Sync the containing directory where the platform supports directory sync.
+8. Clear parsed-config caches and return the revision of the installed file.
+9. Release the exclusive-operation lock.
+
+A missing file has a real revision and therefore participates in compare-and-set
+creation. Invalid raw TOML may be intentionally replaced only by a client that
+supplies the revision it actually read. Last-write-wins, direct truncation of
+the destination, and a Web-only or CLI-only locking path are prohibited.
+
+The no-lost-update guarantee is linearizable for cooperating OMYM2 Web and CLI
+writers because all of them honor the shared lock and revision protocol. The
+raw revision plus the second check detects ordinary non-cooperating editor
+changes, including identical-content replacement, when they occur before that
+check. Portable `os.replace` does not provide a conditional pathname CAS, so an
+external tool that writes in the final interval between the second check and
+replace can still race; detection there is best-effort, not a false guarantee.
+Users must not edit Config concurrently with an OMYM2 save.
+
+Config replacement and SQLite cannot commit atomically. A save therefore does
+not attempt to rewrite `Library.status` in the same operation. Library
+readiness is derived by comparing each stored `path_policy_hash` with the
+fingerprint of the newly loaded Config; Add, Bootstrap capabilities, and Check
+must report the Library effectively stale on mismatch. This keeps Config
+recovery available even when SQLite is degraded and avoids a false atomicity
+claim across TOML and DB.
+
+The exclusive lock mechanism is recorded in
+[../decisions/0003-cross-process-exclusive-operation-lock.md](../decisions/0003-cross-process-exclusive-operation-lock.md).
 
 ## Location
 
@@ -207,5 +281,10 @@ The current policy blocks target conflicts, skips duplicate hashes, and blocks m
 UI settings are application config. They are stored in TOML, not SQLite.
 
 `theme` accepts one of `system`, `light`, `dark`, or `oled`; default `system`.
+
+The renewed Web UI is dark-only and does not expose or interpret `ui.theme`.
+This renewal does not alter the persisted TOML schema, migrate values, or add a
+fallback/translation layer. Removing or redefining the existing key would be a
+separate Config-schema change.
 
 The local Web UI may edit settings, validate settings, and preview PathPolicy output. It must use config usecases and config adapters rather than reading or writing TOML directly from route logic.

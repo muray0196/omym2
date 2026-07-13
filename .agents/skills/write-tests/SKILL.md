@@ -5,7 +5,7 @@ description: Add or update OMYM2 tests. Use when writing tests for a change, dec
 
 # Write Tests
 
-Test policy is authoritative in `docs/TESTING.md`. This skill is the operational shortcut.
+Test policy is authoritative in `docs/development/testing.md`. This skill is the operational shortcut.
 
 ## Placement
 
@@ -23,18 +23,26 @@ Test policy is authoritative in `docs/TESTING.md`. This skill is the operational
 
 Shared fakes live in `tests/fakes/`. Look there before writing a new fake.
 
+Frontend unit/component tests live beside their feature or under
+`web/src/test/`; Playwright tests live under `web/e2e/`.
+
 ## Fixture rules
 
 - Usecase tests use in-memory repositories and fakes, never real SQLite or the filesystem.
 - Always use fixed `Clock` and `IdGenerator` ports so time and IDs are deterministic.
 - Filesystem fixtures: minimal and read-only, except when testing apply/undo (the only flows that move files).
-- Allowed libraries: `pytest` and `pytest-mock` only. No Playwright, no new test dependencies.
+- Python tests use `pytest` and `pytest-mock` only.
+- Frontend unit/component tests use the contract-approved Vitest, React Testing
+  Library, `user-event`, and MSW stack. Browser tests use Playwright Chromium
+  and axe. Exact versions come from the frontend lockfile.
+- Use only the canonical fixtures in `docs/development/testing.md`.
 
 ## What must be tested (by contract touched)
 
-Open `docs/TESTING.md`'s Contract Change Test Requirements table and match
+Open `docs/development/testing.md`'s Contract Change Test Requirements table and match
 the row for the contract you changed (Config, DB schema, Path identity,
-Status catalog, Execution, or Architecture).
+Status catalog, Execution, Architecture, Web API, durable Operation, exclusive
+operation, or generated API).
 
 ## Anti-patterns (reject these in your own work)
 
@@ -46,7 +54,9 @@ Status catalog, Execution, or Architecture).
 ## Procedure
 
 1. Find the existing test file for the module (mirror path). Extend it; create a new file only if none exists.
-2. Copy the naming and fixture style of a neighboring test. Test functions: `test_<behavior>` stating the expected outcome.
+2. For Python, copy the naming and fixture style of a neighboring test. Test
+   functions use `test_<behavior>`. For frontend work, use the patterns defined
+   inside `web/` itself.
 3. Cover the normal case, one error case, and the boundary the change introduces. Do not pad with redundant cases.
 
 ## Done means

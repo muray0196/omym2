@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import nullcontext
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 from uuid import UUID
@@ -51,6 +52,8 @@ EVENT_SEQUENCE_LATE = 2
 EVENT_SEQUENCE_THIRD = 3
 EXPECTED_REENTER_CONNECTION_COUNT = 2
 FINISHED_TIME = BASE_TIME + timedelta(minutes=5)
+UNDO_CREATED_TIME = FINISHED_TIME + timedelta(minutes=1)
+POST_UNDO_TIME = UNDO_CREATED_TIME + timedelta(minutes=1)
 LATE_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 LATE_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567f"))
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
@@ -61,6 +64,7 @@ PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 PLAN_SUMMARY = {"moves": "1"}
 PERFORMANCE_INDEX_MIGRATION_NAME = "202607110001_performance_indexes.sql"
 STAT_BASELINE_MIGRATION_NAME = "202607110002_track_stat_baseline.sql"
+UNDO_PROVENANCE_MIGRATION_NAME = "202607130002_undo_provenance_and_apply_claim.sql"
 REUSED_BEGIN_COUNT = 3
 REUSED_COMMIT_COUNT = 2
 REUSED_CONNECTION_COUNT = 1
@@ -69,6 +73,10 @@ ROLLBACK_ERROR = "force rollback"
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
 SECOND_RUN_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 SECOND_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
+SECOND_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345685"))
+SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345686"))
+UNDO_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345687"))
+UNDO_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345688"))
 SORT_ORDER_EARLY = 1
 SORT_ORDER_LATE = 2
 SOURCE_PATH = "/incoming/song.flac"
@@ -82,6 +90,7 @@ TRACK_TITLE = "Title"
 REQUIRED_TABLES = {
     "file_events",
     "libraries",
+    "operations",
     "plan_actions",
     "plans",
     "runs",
@@ -107,6 +116,22 @@ PERFORMANCE_INDEX_COLUMNS = {
 REMOVED_REDUNDANT_INDEXES = {
     "idx_plans_library_id",
     "idx_tracks_library_id",
+}
+
+UNDO_PROVENANCE_INDEXES = {
+    "idx_plan_actions_reverse_event_status": ("reverses_event_id", "status", "action_id"),
+    "idx_plans_source_run_status": ("source_run_id", "status", "created_at", "plan_id"),
+    "uq_plan_actions_plan_reverse_event": ("plan_id", "reverses_event_id"),
+    "uq_plans_active_undo_source_run": ("source_run_id",),
+    "uq_runs_plan_id": ("plan_id",),
+}
+
+UNDO_PROVENANCE_INDEX_FLAGS = {
+    "idx_plan_actions_reverse_event_status": (False, False),
+    "idx_plans_source_run_status": (False, False),
+    "uq_plan_actions_plan_reverse_event": (True, True),
+    "uq_plans_active_undo_source_run": (True, True),
+    "uq_runs_plan_id": (True, False),
 }
 
 
@@ -224,6 +249,146 @@ def test_track_stat_baseline_migration_rejects_negative_size(tmp_path: Path) -> 
             "UPDATE tracks SET size = -1 WHERE track_id = ?",
             (str(TRACK_ID),),
         )
+
+
+def test_undo_provenance_migration_creates_columns_foreign_keys_and_indexes(tmp_path: Path) -> None:
+    """Fresh databases expose the implemented Undo provenance and single-use indexes."""
+    database_file = default_application_paths(tmp_path).database_file
+
+    migrate_database(database_file)
+
+    assert _table_columns_for(database_file, "plans")["source_run_id"] == "TEXT"
+    assert _table_columns_for(database_file, "plan_actions")["reverses_event_id"] == "TEXT"
+    assert ("source_run_id", "runs", "run_id", "RESTRICT") in _foreign_keys(database_file, "plans")
+    assert (
+        "reverses_event_id",
+        "file_events",
+        "event_id",
+        "RESTRICT",
+    ) in _foreign_keys(database_file, "plan_actions")
+    assert _index_names(database_file) >= set(UNDO_PROVENANCE_INDEXES)
+    for index_name, columns in UNDO_PROVENANCE_INDEXES.items():
+        assert _index_columns(database_file, index_name) == columns
+
+    index_flags = {
+        **_index_flags(database_file, "plan_actions"),
+        **_index_flags(database_file, "plans"),
+        **_index_flags(database_file, "runs"),
+    }
+    assert {name: index_flags[name] for name in UNDO_PROVENANCE_INDEX_FLAGS} == UNDO_PROVENANCE_INDEX_FLAGS
+
+
+def test_undo_provenance_migration_backfills_provable_legacy_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One proven legacy source Run and FileEvent become durable Undo provenance."""
+    database_file = default_application_paths(tmp_path).database_file
+    _migrate_before_undo_provenance(database_file, monkeypatch)
+    _insert_legacy_undo_history(database_file, source_candidate_count=1)
+
+    migrate_database(database_file)
+
+    assert UNDO_PROVENANCE_MIGRATION_NAME in _applied_migrations(database_file)
+    with sqlite3.connect(database_file) as connection:
+        plan_row = cast(
+            "tuple[str] | None",
+            connection.execute(
+                "SELECT source_run_id FROM plans WHERE plan_id = ?",
+                (str(UNDO_PLAN_ID),),
+            ).fetchone(),
+        )
+        action_row = cast(
+            "tuple[str] | None",
+            connection.execute(
+                "SELECT reverses_event_id FROM plan_actions WHERE action_id = ?",
+                (str(UNDO_ACTION_ID),),
+            ).fetchone(),
+        )
+    assert plan_row == (str(RUN_ID),)
+    assert action_row == (str(EVENT_ID),)
+
+
+@pytest.mark.parametrize("source_candidate_count", [0, 2], ids=["absent", "ambiguous"])
+def test_undo_provenance_migration_rolls_back_unprovable_legacy_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_candidate_count: int,
+) -> None:
+    """Absent or ambiguous legacy provenance fails without changing schema or managed rows."""
+    database_file = default_application_paths(tmp_path).database_file
+    _migrate_before_undo_provenance(database_file, monkeypatch)
+    _insert_legacy_undo_history(database_file, source_candidate_count=source_candidate_count)
+
+    with pytest.raises(sqlite3.IntegrityError, match="invalid = 0"):
+        migrate_database(database_file)
+
+    assert UNDO_PROVENANCE_MIGRATION_NAME not in _applied_migrations(database_file)
+    assert "source_run_id" not in _table_columns_for(database_file, "plans")
+    assert "reverses_event_id" not in _table_columns_for(database_file, "plan_actions")
+    assert _index_names(database_file).isdisjoint(UNDO_PROVENANCE_INDEXES)
+    with sqlite3.connect(database_file) as connection:
+        undo_plan_count = cast(
+            "tuple[int] | None",
+            connection.execute(
+                "SELECT COUNT(*) FROM plans WHERE plan_id = ?",
+                (str(UNDO_PLAN_ID),),
+            ).fetchone(),
+        )
+        undo_action_count = cast(
+            "tuple[int] | None",
+            connection.execute(
+                "SELECT COUNT(*) FROM plan_actions WHERE action_id = ?",
+                (str(UNDO_ACTION_ID),),
+            ).fetchone(),
+        )
+    assert undo_plan_count == (1,)
+    assert undo_action_count == (1,)
+
+
+@pytest.mark.parametrize(
+    "tamper_kind",
+    [
+        "event_completed_after_undo",
+        "run_completed_after_undo",
+        "source_action_path_mismatch",
+        "source_action_not_applied",
+        "source_plan_not_terminal",
+    ],
+)
+def test_undo_provenance_migration_rejects_inconsistent_legacy_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tamper_kind: str,
+) -> None:
+    """Backfill refuses history that cannot prove the exact completed source mutation."""
+    database_file = default_application_paths(tmp_path).database_file
+    _migrate_before_undo_provenance(database_file, monkeypatch)
+    _insert_legacy_undo_history(database_file, source_candidate_count=1)
+    _tamper_legacy_undo_source(database_file, tamper_kind)
+
+    with pytest.raises(sqlite3.IntegrityError, match="invalid = 0"):
+        migrate_database(database_file)
+
+    assert UNDO_PROVENANCE_MIGRATION_NAME not in _applied_migrations(database_file)
+    assert "source_run_id" not in _table_columns_for(database_file, "plans")
+    assert "reverses_event_id" not in _table_columns_for(database_file, "plan_actions")
+
+
+def test_runs_reject_a_second_execution_attempt_for_one_plan(tmp_path: Path) -> None:
+    """The single-use Plan constraint permits at most one Run."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.plans.save(_plan())
+        uow.runs.save(_run())
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow, pytest.raises(sqlite3.IntegrityError):
+        uow.runs.save(_run(run_id=SECOND_RUN_ID))
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.runs.list_by_plan(PLAN_ID) == (_run(),)
 
 
 def test_sqlite_migration_script_rolls_back_with_marker_on_failure(
@@ -458,22 +623,64 @@ def test_sqlite_repositories_round_trip_domain_models(tmp_path: Path) -> None:
         assert uow.file_events.list_by_library(LIBRARY_ID) == (event_early, event_late)
 
 
+def test_sqlite_repositories_round_trip_undo_provenance(tmp_path: Path) -> None:
+    """Plan and PlanAction repositories preserve Run and FileEvent provenance verbatim."""
+    database_file = default_application_paths(tmp_path).database_file
+    source_plan = _plan().mark_applied()
+    source_action = _plan_action(ACTION_ID, SORT_ORDER_EARLY).mark_applied()
+    source_run = _run().mark_succeeded(FINISHED_TIME)
+    source_event = _file_event(EVENT_ID, ACTION_ID, EVENT_SEQUENCE_EARLY).mark_succeeded(FINISHED_TIME)
+    undo_plan = _plan(
+        plan_id=UNDO_PLAN_ID,
+        plan_type=PlanType.UNDO,
+        source_run_id=RUN_ID,
+    )
+    undo_action = replace(
+        _plan_action(UNDO_ACTION_ID, SORT_ORDER_EARLY, plan_id=UNDO_PLAN_ID),
+        source_path=TARGET_PATH,
+        target_path=SOURCE_PATH,
+        reverses_event_id=EVENT_ID,
+    )
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.plans.save(source_plan)
+        uow.plan_actions.save(source_action)
+        uow.runs.save(source_run)
+        uow.file_events.save(source_event)
+        uow.plans.save(undo_plan)
+        uow.plan_actions.save(undo_action)
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.plans.get(UNDO_PLAN_ID) == undo_plan
+        assert uow.plan_actions.get(UNDO_ACTION_ID) == undo_action
+
+
 def test_sqlite_file_events_list_pending_by_library_filters_status_and_orders_by_sequence(tmp_path: Path) -> None:
     """list_pending_by_library returns PENDING events in (sequence_no, event_id) order for one Library."""
     database_file = default_application_paths(tmp_path).database_file
     event_late = _file_event(LATE_EVENT_ID, LATE_ACTION_ID, EVENT_SEQUENCE_LATE)
     event_early = _file_event(EVENT_ID, ACTION_ID, EVENT_SEQUENCE_EARLY)
-    event_second_run = _file_event(SECOND_RUN_EVENT_ID, ACTION_ID, EVENT_SEQUENCE_EARLY, run_id=SECOND_RUN_ID)
+    event_second_run = _file_event(
+        SECOND_RUN_EVENT_ID,
+        SECOND_ACTION_ID,
+        EVENT_SEQUENCE_EARLY,
+        run_id=SECOND_RUN_ID,
+    )
     event_succeeded = _file_event(SUCCEEDED_EVENT_ID, ACTION_ID, EVENT_SEQUENCE_THIRD).mark_succeeded(FINISHED_TIME)
 
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library())
         uow.tracks.save(_track())
         uow.plans.save(_plan())
+        uow.plans.save(_plan(plan_id=SECOND_PLAN_ID))
         uow.plan_actions.save(_plan_action(ACTION_ID, SORT_ORDER_EARLY))
         uow.plan_actions.save(_plan_action(LATE_ACTION_ID, SORT_ORDER_LATE))
+        uow.plan_actions.save(_plan_action(SECOND_ACTION_ID, SORT_ORDER_EARLY, plan_id=SECOND_PLAN_ID))
         uow.runs.save(_run())
-        uow.runs.save(_run(run_id=SECOND_RUN_ID))
+        uow.runs.save(_run(run_id=SECOND_RUN_ID, plan_id=SECOND_PLAN_ID))
         uow.file_events.save(event_late)
         uow.file_events.save(event_early)
         uow.file_events.save(event_second_run)
@@ -532,8 +739,15 @@ def _index_names(database_file: Path) -> set[str]:
 
 
 def _table_columns(database_file: Path) -> dict[str, str]:
+    return _table_columns_for(database_file, "tracks")
+
+
+def _table_columns_for(database_file: Path, table_name: str) -> dict[str, str]:
     with sqlite3.connect(database_file) as connection:
-        rows = connection.execute("SELECT name, type FROM pragma_table_info('tracks')").fetchall()
+        rows = connection.execute(
+            "SELECT name, type FROM pragma_table_info(?)",
+            (table_name,),
+        ).fetchall()
     return {str(row[0]): str(row[1]) for row in cast("list[tuple[object, ...]]", rows)}
 
 
@@ -544,6 +758,24 @@ def _index_columns(database_file: Path, index_name: str) -> tuple[str, ...]:
             (index_name,),
         ).fetchall()
     return tuple(str(row[0]) for row in cast("list[tuple[object, ...]]", rows))
+
+
+def _index_flags(database_file: Path, table_name: str) -> dict[str, tuple[bool, bool]]:
+    with sqlite3.connect(database_file) as connection:
+        rows = connection.execute(
+            'SELECT name, "unique", partial FROM pragma_index_list(?)',
+            (table_name,),
+        ).fetchall()
+    return {str(row[0]): (bool(row[1]), bool(row[2])) for row in cast("list[tuple[object, ...]]", rows)}
+
+
+def _foreign_keys(database_file: Path, table_name: str) -> set[tuple[str, str, str, str]]:
+    with sqlite3.connect(database_file) as connection:
+        rows = connection.execute(
+            'SELECT "from", "table", "to", on_delete FROM pragma_foreign_key_list(?)',
+            (table_name,),
+        ).fetchall()
+    return {(str(row[0]), str(row[1]), str(row[2]), str(row[3])) for row in cast("list[tuple[object, ...]]", rows)}
 
 
 def _applied_migrations(database_file: Path) -> set[str]:
@@ -673,6 +905,277 @@ def _insert_track_before_stat_baseline_migration(database_file: Path) -> None:
         )
 
 
+def _migrate_before_undo_provenance(database_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    packaged_migrations = migration_runner.load_packaged_migrations()
+    prior_migrations = tuple(
+        migration for migration in packaged_migrations if migration.name < UNDO_PROVENANCE_MIGRATION_NAME
+    )
+    with monkeypatch.context() as patched:
+        patched.setattr(migration_runner, "load_packaged_migrations", lambda: prior_migrations)
+        migrate_database(database_file)
+
+
+def _insert_legacy_undo_history(database_file: Path, *, source_candidate_count: int) -> None:
+    source_candidates = (
+        (PLAN_ID, ACTION_ID, RUN_ID, EVENT_ID),
+        (SECOND_PLAN_ID, SECOND_ACTION_ID, SECOND_RUN_ID, SECOND_RUN_EVENT_ID),
+    )
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute("PRAGMA foreign_keys = ON")
+        _ = connection.execute(
+            """
+            INSERT INTO libraries (
+                library_id, root_path, path_policy_hash, registered_at, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(LIBRARY_ID),
+                LIBRARY_ROOT,
+                CONFIG_HASH,
+                BASE_TIME.isoformat(),
+                LibraryStatus.REGISTERED.value,
+                BASE_TIME.isoformat(),
+                BASE_TIME.isoformat(),
+            ),
+        )
+        _ = connection.execute(
+            """
+            INSERT INTO tracks (
+                track_id,
+                library_id,
+                current_path,
+                canonical_path,
+                content_hash,
+                metadata_hash,
+                metadata_json,
+                status,
+                first_seen_at,
+                last_seen_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(TRACK_ID),
+                str(LIBRARY_ID),
+                TARGET_PATH,
+                TARGET_PATH,
+                CONTENT_HASH,
+                METADATA_HASH,
+                '{"artist":"Artist","title":"Title"}',
+                TrackStatus.ACTIVE.value,
+                BASE_TIME.isoformat(),
+                BASE_TIME.isoformat(),
+                BASE_TIME.isoformat(),
+            ),
+        )
+
+        for source_plan_id, source_action_id, source_run_id, source_event_id in source_candidates[
+            :source_candidate_count
+        ]:
+            _ = connection.execute(
+                """
+                INSERT INTO plans (
+                    plan_id,
+                    library_id,
+                    plan_type,
+                    status,
+                    created_at,
+                    config_hash,
+                    library_root_at_plan,
+                    summary_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(source_plan_id),
+                    str(LIBRARY_ID),
+                    PlanType.ADD.value,
+                    PlanStatus.APPLIED.value,
+                    BASE_TIME.isoformat(),
+                    CONFIG_HASH,
+                    LIBRARY_ROOT,
+                    "{}",
+                ),
+            )
+            _ = connection.execute(
+                """
+                INSERT INTO plan_actions (
+                    action_id,
+                    plan_id,
+                    library_id,
+                    track_id,
+                    action_type,
+                    source_path,
+                    target_path,
+                    content_hash_at_plan,
+                    metadata_hash_at_plan,
+                    status,
+                    reason,
+                    sort_order
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(source_action_id),
+                    str(source_plan_id),
+                    str(LIBRARY_ID),
+                    str(TRACK_ID),
+                    ActionType.MOVE.value,
+                    SOURCE_PATH,
+                    TARGET_PATH,
+                    CONTENT_HASH,
+                    METADATA_HASH,
+                    ActionStatus.APPLIED.value,
+                    None,
+                    SORT_ORDER_EARLY,
+                ),
+            )
+            _ = connection.execute(
+                """
+                INSERT INTO runs (
+                    run_id, plan_id, library_id, status, started_at, completed_at, error_summary
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(source_run_id),
+                    str(source_plan_id),
+                    str(LIBRARY_ID),
+                    RunStatus.SUCCEEDED.value,
+                    BASE_TIME.isoformat(),
+                    FINISHED_TIME.isoformat(),
+                    None,
+                ),
+            )
+            _ = connection.execute(
+                """
+                INSERT INTO file_events (
+                    event_id,
+                    library_id,
+                    run_id,
+                    plan_action_id,
+                    event_type,
+                    source_path,
+                    target_path,
+                    status,
+                    started_at,
+                    completed_at,
+                    error_code,
+                    error_message,
+                    sequence_no
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(source_event_id),
+                    str(LIBRARY_ID),
+                    str(source_run_id),
+                    str(source_action_id),
+                    FileEventType.MOVE_FILE.value,
+                    SOURCE_PATH,
+                    TARGET_PATH,
+                    FileEventStatus.SUCCEEDED.value,
+                    BASE_TIME.isoformat(),
+                    FINISHED_TIME.isoformat(),
+                    None,
+                    None,
+                    EVENT_SEQUENCE_EARLY,
+                ),
+            )
+
+        _ = connection.execute(
+            """
+            INSERT INTO plans (
+                plan_id,
+                library_id,
+                plan_type,
+                status,
+                created_at,
+                config_hash,
+                library_root_at_plan,
+                summary_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(UNDO_PLAN_ID),
+                str(LIBRARY_ID),
+                PlanType.UNDO.value,
+                PlanStatus.READY.value,
+                UNDO_CREATED_TIME.isoformat(),
+                CONFIG_HASH,
+                LIBRARY_ROOT,
+                "{}",
+            ),
+        )
+        _ = connection.execute(
+            """
+            INSERT INTO plan_actions (
+                action_id,
+                plan_id,
+                library_id,
+                track_id,
+                action_type,
+                source_path,
+                target_path,
+                content_hash_at_plan,
+                metadata_hash_at_plan,
+                status,
+                reason,
+                sort_order
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(UNDO_ACTION_ID),
+                str(UNDO_PLAN_ID),
+                str(LIBRARY_ID),
+                str(TRACK_ID),
+                ActionType.MOVE.value,
+                TARGET_PATH,
+                SOURCE_PATH,
+                CONTENT_HASH,
+                METADATA_HASH,
+                ActionStatus.PLANNED.value,
+                None,
+                SORT_ORDER_EARLY,
+            ),
+        )
+
+
+def _tamper_legacy_undo_source(database_file: Path, tamper_kind: str) -> None:
+    with sqlite3.connect(database_file) as connection:
+        if tamper_kind == "event_completed_after_undo":
+            _ = connection.execute(
+                "UPDATE file_events SET completed_at = ? WHERE event_id = ?",
+                (POST_UNDO_TIME.isoformat(), str(EVENT_ID)),
+            )
+        elif tamper_kind == "run_completed_after_undo":
+            _ = connection.execute(
+                "UPDATE runs SET completed_at = ? WHERE run_id = ?",
+                (POST_UNDO_TIME.isoformat(), str(RUN_ID)),
+            )
+        elif tamper_kind == "source_action_path_mismatch":
+            _ = connection.execute(
+                "UPDATE plan_actions SET target_path = ? WHERE action_id = ?",
+                ("Artist/Album/02_Other.flac", str(ACTION_ID)),
+            )
+        elif tamper_kind == "source_action_not_applied":
+            _ = connection.execute(
+                "UPDATE plan_actions SET status = ? WHERE action_id = ?",
+                (ActionStatus.FAILED.value, str(ACTION_ID)),
+            )
+        elif tamper_kind == "source_plan_not_terminal":
+            _ = connection.execute(
+                "UPDATE plans SET status = ? WHERE plan_id = ?",
+                (PlanStatus.READY.value, str(PLAN_ID)),
+            )
+        else:
+            raise AssertionError(tamper_kind)
+
+
 def _library() -> Library:
     return Library(
         library_id=LIBRARY_ID,
@@ -722,23 +1225,34 @@ def _check_issue() -> CheckIssue:
     )
 
 
-def _plan() -> Plan:
+def _plan(
+    *,
+    plan_id: PlanId = PLAN_ID,
+    plan_type: PlanType = PlanType.ADD,
+    source_run_id: RunId | None = None,
+) -> Plan:
     return Plan(
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         library_id=LIBRARY_ID,
-        plan_type=PlanType.ADD,
+        plan_type=plan_type,
         status=PlanStatus.READY,
         created_at=BASE_TIME,
         config_hash=CONFIG_HASH,
         library_root_at_plan=LIBRARY_ROOT,
+        source_run_id=source_run_id,
         summary=PLAN_SUMMARY,
     )
 
 
-def _plan_action(action_id: ActionId, sort_order: int) -> PlanAction:
+def _plan_action(
+    action_id: ActionId,
+    sort_order: int,
+    *,
+    plan_id: PlanId = PLAN_ID,
+) -> PlanAction:
     return PlanAction(
         action_id=action_id,
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         library_id=LIBRARY_ID,
         track_id=TRACK_ID,
         action_type=ActionType.MOVE,
@@ -752,10 +1266,10 @@ def _plan_action(action_id: ActionId, sort_order: int) -> PlanAction:
     )
 
 
-def _run(*, run_id: RunId = RUN_ID) -> Run:
+def _run(*, run_id: RunId = RUN_ID, plan_id: PlanId = PLAN_ID) -> Run:
     return Run(
         run_id=run_id,
-        plan_id=PLAN_ID,
+        plan_id=plan_id,
         library_id=LIBRARY_ID,
         status=RunStatus.RUNNING,
         started_at=BASE_TIME,

@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Summary: One-command wrapper for the OMYM2 quality gates defined in docs/DEVELOPMENT.md.
+# Summary: One-command wrapper for the OMYM2 quality gates defined in docs/development/harness.md.
 # Why: Gives agents a single reliable entry point instead of re-deriving command groups.
 #
 # Usage:
-#   scripts/checks.sh <changed|py|web|all|docs|arch>
+#   scripts/checks.sh <changed|py|api|web|e2e|package|performance|all|docs|arch>
 #   scripts/checks.sh test <pytest-target>
 #
-# See docs/DEVELOPMENT.md for canonical mode descriptions and gate policy.
+# See docs/development/harness.md for canonical mode descriptions and gate policy.
 
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
 usage() {
-    echo "usage: scripts/checks.sh <changed|py|web|all|docs|arch> | scripts/checks.sh test <pytest-target>" >&2
+    echo "usage: scripts/checks.sh <changed|py|api|web|e2e|package|performance|all|docs|arch> | scripts/checks.sh test <pytest-target>" >&2
 }
 
 if [[ $# -eq 0 ]]; then
@@ -51,12 +51,52 @@ run_py() {
     uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
 }
 
-run_web() (
+run_api() (
+    cd web
+    npm run api:check
+)
+
+run_web() {
+    run_api
+    (
     cd web
     npm run format:check
     npm run lint
+    npm run typecheck
+    npm run test:unit
     npm run build
-)
+    )
+    uv run python scripts/sync_web_static.py
+    uv run python scripts/audit_web_static.py
+}
+
+run_e2e_profile() {
+    local fixture_profile="$1"
+    shift
+    uv run python scripts/run_web_test_server.py \
+        --environment-variable OMYM2_E2E_BASE_URL \
+        --working-directory web \
+        --fixture-profile "$fixture_profile" \
+        -- npm run test:e2e -- "$@"
+}
+
+run_e2e_only() {
+    run_e2e_profile registered --grep-invert "@first-run"
+    run_e2e_profile first-run --grep "@first-run"
+}
+
+run_e2e() {
+    run_web
+    run_e2e_only
+}
+
+run_package() {
+    uv run python scripts/build_web_evidence.py
+}
+
+run_performance() {
+    uv run python scripts/build_web_evidence.py --run-performance
+}
 
 case "$mode" in
 changed)
@@ -65,12 +105,26 @@ changed)
 py)
     run_py
     ;;
+api)
+    run_api
+    ;;
 web)
     run_web
+    ;;
+e2e)
+    run_e2e
+    ;;
+package)
+    run_package
+    ;;
+performance)
+    run_performance
     ;;
 all)
     run_web
     run_py
+    run_e2e_only
+    run_performance
     ;;
 docs)
     uv run pytest tests/docs -q

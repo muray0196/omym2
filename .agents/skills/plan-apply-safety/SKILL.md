@@ -5,14 +5,18 @@ description: Safety checklist for any change that can affect Plan, PlanAction, R
 
 # Plan / Apply Safety
 
-Highest-risk area of OMYM2: mistakes here move or lose user music files. Authoritative docs: `docs/execution/model.md`, `docs/execution/apply.md`, `docs/execution/failure-policy.md`, `docs/contracts/status-reason-catalog.md`.
+Highest-risk area of OMYM2: mistakes here move or lose user music files.
+Authoritative docs: `docs/execution/model.md`, `docs/execution/apply.md`,
+`docs/execution/failure-policy.md`, `docs/contracts/operations.md`,
+`docs/contracts/status-reason-catalog.md`.
 
 ## Read first (in this order)
 
 1. `docs/execution/model.md`
 2. The doc for the command you touch: `docs/execution/{apply,undo,refresh,organize,add,check}.md`
 3. `docs/execution/failure-policy.md`
-4. `docs/contracts/status-reason-catalog.md` — only the statuses/reasons listed there may be persisted
+4. `docs/contracts/operations.md`
+5. `docs/contracts/status-reason-catalog.md` — only the statuses/reasons listed there may be persisted
 
 ## Non-negotiable invariants
 
@@ -30,6 +34,12 @@ Highest-risk area of OMYM2: mistakes here move or lose user music files. Authori
    - failed after the mutation attempt
 5. Blocked actions stay blocked; nothing "retries" a blocked action implicitly.
 6. Refresh updates Track / FileEvent / Plan state only through the documented contracts, never by ad-hoc reconciliation.
+7. Apply acceptance holds the shared exclusive lock and atomically commits the
+   `ready -> applying` compare-and-set, running Run, and queued Operation before
+   worker dispatch. No read-then-upsert start path is permitted.
+8. A crash or unobserved mutation outcome leaves its FileEvent `pending`.
+   Reconciliation must not infer success/failure from filesystem state or
+   rewrite the Plan to `ready`.
 
 ## Procedure
 
@@ -45,7 +55,11 @@ Highest-risk area of OMYM2: mistakes here move or lose user music files. Authori
 - [ ] Is the FileEvent written as pending before any mutation code runs?
 - [ ] Are the three failure classes handled and persisted differently?
 - [ ] Does apply read only recorded PlanActions (grep for AppConfig / PathPolicy usage inside apply)?
-- [ ] Every changed contract edge has a test per `docs/TESTING.md`'s Contract Change Test Requirements table, Execution contract row.
+- [ ] Does one transaction claim the Plan, create the Run, and reserve the
+  Operation before dispatch, while the shared lock remains held?
+- [ ] Can restart/dispatch reconciliation leave pending FileEvents pending and
+  derive Plan/Run state only from durable evidence?
+- [ ] Every changed contract edge has a test per `docs/development/testing.md`'s Contract Change Test Requirements table, Execution contract row.
 
 ## Stop and report when
 

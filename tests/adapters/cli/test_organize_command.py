@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Never
 from uuid import UUID
 
 from omym2.adapters.cli.commands.organize import OrganizeCommandDependencies, run_organize_command
@@ -29,9 +29,7 @@ if TYPE_CHECKING:
 
     import pytest
 
-    from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath
-    from omym2.features.organize.ports import CreateOrganizePlanPorts
 
 AUDIO_CONTENT = b"fake audio bytes"
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
@@ -48,9 +46,7 @@ USAGE_EXIT_CODE = 2
 YEAR = 2026
 
 
-def test_organize_command_passes_normalized_library_root_and_trust_stat_to_request(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_organize_command_passes_normalized_library_root_and_trust_stat_to_request() -> None:
     """organize forwards normalized Library-root and trust-stat values."""
     captured_requests: list[CreateOrganizePlanRequest] = []
 
@@ -71,10 +67,6 @@ def test_organize_command_passes_normalized_library_root_and_trust_stat_to_reque
                 track_count=0,
             )
 
-    monkeypatch.setattr(
-        "omym2.adapters.cli.commands.organize.CreateOrganizePlanUseCase",
-        CapturingCreateOrganizePlanUseCase,
-    )
     stdout = StringIO()
     stderr = StringIO()
 
@@ -83,8 +75,8 @@ def test_organize_command_passes_normalized_library_root_and_trust_stat_to_reque
         stdout,
         stderr,
         OrganizeCommandDependencies(
-            create_organize_plan_ports_factory=_stub_create_organize_plan_ports,
-            apply_plan_ports_factory=_stub_apply_plan_ports,
+            create_organize_plan=CapturingCreateOrganizePlanUseCase(object()).execute,
+            apply_plan=_unexpected_apply,
             normalize_library_root=lambda path: f"normalized:{path}",
         ),
     )
@@ -93,8 +85,8 @@ def test_organize_command_passes_normalized_library_root_and_trust_stat_to_reque
         stdout,
         stderr,
         OrganizeCommandDependencies(
-            create_organize_plan_ports_factory=_stub_create_organize_plan_ports,
-            apply_plan_ports_factory=_stub_apply_plan_ports,
+            create_organize_plan=CapturingCreateOrganizePlanUseCase(object()).execute,
+            apply_plan=_unexpected_apply,
             normalize_library_root=lambda path: f"normalized:{path}",
         ),
     )
@@ -265,9 +257,6 @@ def _library(root_path: str) -> Library:
     )
 
 
-def _stub_create_organize_plan_ports() -> CreateOrganizePlanPorts:
-    return cast("CreateOrganizePlanPorts", object())
-
-
-def _stub_apply_plan_ports() -> ApplyPlanPorts:
-    return cast("ApplyPlanPorts", object())
+def _unexpected_apply(*_args: object) -> Never:
+    """Fail if a Plan-only command test unexpectedly enters Apply."""
+    raise AssertionError

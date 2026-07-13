@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
-    from omym2.shared.ids import LibraryId
+    from omym2.shared.ids import CheckRunId, LibraryId, OperationId
     from omym2.shared.pagination import FacetValue, Page
 
 
@@ -25,6 +25,7 @@ class CheckLibraryRequest:
 
     trust_stat: bool
     library_id: LibraryId | None = None
+    operation_id: OperationId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,7 @@ class CheckLibraryResult:
 
     issues: tuple[CheckIssue, ...]
     checked_at: datetime
+    check_run_ids: tuple[CheckRunId, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -9,11 +9,14 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from omym2.domain.models.plan_action import ActionStatus, ActionType
 from omym2.shared.pagination import PageRequest
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-    from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+    from omym2.domain.models.plan_action import PlanAction, PlanActionReason
     from omym2.shared.ids import LibraryId, PlanId
     from omym2.shared.pagination import FacetValue
 
@@ -48,6 +51,26 @@ class PlanActionGroup:
 
 
 @dataclass(frozen=True, slots=True)
+class PlanActionTypeCounts:
+    """Counts of each action type within one recorded action status."""
+
+    move: int
+    skip: int
+    refresh_metadata: int
+
+
+@dataclass(frozen=True, slots=True)
+class PlanActionSummary:
+    """The complete current PlanAction status/action-type matrix for one Plan."""
+
+    total: int
+    planned: PlanActionTypeCounts
+    blocked: PlanActionTypeCounts
+    applied: PlanActionTypeCounts
+    failed: PlanActionTypeCounts
+
+
+@dataclass(frozen=True, slots=True)
 class ListPlansRequest:
     """Request one keyset page of Plans for a Library or every known Library."""
 
@@ -60,8 +83,22 @@ class ListPlansRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class GetPlanActionSummariesRequest:
+    """Request current action summaries for a bounded set of listed Plans."""
+
+    plan_ids: tuple[PlanId, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class GetPlanHeaderRequest:
     """Request to load one Plan header by ID, without its recorded actions."""
+
+    plan_id: PlanId
+
+
+@dataclass(frozen=True, slots=True)
+class CancelPlanRequest:
+    """Request a compare-and-set cancellation of one ready Plan."""
 
     plan_id: PlanId
 
@@ -146,3 +183,32 @@ class PlanDetail:
     plan: Plan
     actions: tuple[PlanAction, ...]
     total_action_count: int
+
+
+def plan_action_summary_from_counts(
+    counts: Mapping[tuple[ActionStatus, ActionType], int],
+) -> PlanActionSummary:
+    """Build one complete typed summary from persisted status/action-type counts."""
+    planned = _action_type_counts_for_status(counts, ActionStatus.PLANNED)
+    blocked = _action_type_counts_for_status(counts, ActionStatus.BLOCKED)
+    applied = _action_type_counts_for_status(counts, ActionStatus.APPLIED)
+    failed = _action_type_counts_for_status(counts, ActionStatus.FAILED)
+    return PlanActionSummary(
+        total=sum(counts.values()),
+        planned=planned,
+        blocked=blocked,
+        applied=applied,
+        failed=failed,
+    )
+
+
+def _action_type_counts_for_status(
+    counts: Mapping[tuple[ActionStatus, ActionType], int],
+    status: ActionStatus,
+) -> PlanActionTypeCounts:
+    """Return the fixed action-type counts for one status row."""
+    return PlanActionTypeCounts(
+        move=counts.get((status, ActionType.MOVE), 0),
+        skip=counts.get((status, ActionType.SKIP), 0),
+        refresh_metadata=counts.get((status, ActionType.REFRESH_METADATA), 0),
+    )

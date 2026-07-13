@@ -1,0 +1,17 @@
+/**
+ * Summary: Styles bounded cursor-page controls and their live position label.
+ * Why: Keeps page navigation readable, responsive, and free of CSP-hostile inline styles.
+ */
+.controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  justify-content: flex-end;
+}
+
+.position {
+  color: var(--color-mute);
+  margin: 0;
+  text-align: center;
+}

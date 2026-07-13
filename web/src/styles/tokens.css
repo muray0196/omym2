@@ -1,0 +1,46 @@
+/**
+ * Summary: Defines the complete clean-room visual token vocabulary.
+ * Why: Keeps dark-only color, spacing, radius, typography, and focus decisions centralized.
+ */
+:root {
+  color-scheme: dark;
+
+  --color-canvas: #07080a;
+  --color-surface: #0d0d0d;
+  --color-surface-elevated: #101111;
+  --color-surface-card: #121212;
+  --color-hairline: #242728;
+  --color-ink: #f4f4f6;
+  --color-body: #cdcdcd;
+  --color-mute: #9c9c9d;
+  --color-ash: #6a6b6c;
+  --color-primary: #ffffff;
+  --color-blue: #57c1ff;
+  --color-green: #59d499;
+  --color-yellow: #ffc533;
+  --color-red: #ff6161;
+  --color-overlay: rgb(7 8 10 / 82%);
+
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-10: 10px;
+  --radius-16: 16px;
+
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+
+  --target-default: 44px;
+  --target-dense: 36px;
+  --motion-control: 120ms;
+  --motion-reduced: 0.01ms;
+  --font-body: "Inter Variable", sans-serif;
+  --font-mono: "JetBrains Mono Variable", monospace;
+  --focus-ring: 0 0 0 3px var(--color-canvas), 0 0 0 5px var(--color-blue);
+}

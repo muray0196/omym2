@@ -16,7 +16,7 @@ description: Default end-to-end procedure for any OMYM2 Python code change. Use 
    | DB tables, columns, indexes, migration files, or repository persistence | `db-schema-change` |
    | AppConfig shape, TOML config keys, defaults, allowed values, validation rules, or config serialization | `config-schema-change` |
    | A new module or package, or a new import between layers | `architecture-boundaries` |
-   | Anything under `web/` | `web-frontend-change` |
+   | Anything under `web/` or Web adapter routes | `web-frontend-change` |
    | Anything under `docs/` | `update-docs` |
 
 2. **Place the code** — put new files where they belong and name them per convention:

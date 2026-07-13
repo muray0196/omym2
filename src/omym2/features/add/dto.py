@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omym2.shared.ids import LibraryId
+    from omym2.shared.ids import LibraryId, OperationId
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,3 +18,4 @@ class CreateAddPlanRequest:
 
     source_path: str | None = None
     library_id: LibraryId | None = None
+    operation_id: OperationId | None = None

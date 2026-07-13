@@ -6,12 +6,26 @@ Why: Mutates Library files only after recorded PlanActions and FileEvents exist.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import timedelta
 from pathlib import PurePath
 from typing import TYPE_CHECKING
 
-from omym2.config import FILE_EVENT_SEQUENCE_START, FILE_EVENT_SEQUENCE_STEP
+from omym2.config import (
+    FILE_EVENT_SEQUENCE_START,
+    FILE_EVENT_SEQUENCE_STEP,
+    OPERATION_RESULT_RETENTION_HOURS,
+    OPERATION_TOMBSTONE_RETENTION_DAYS,
+)
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.models.operation import (
+    Operation,
+    OperationError,
+    OperationErrorCode,
+    OperationKind,
+    OperationStatus,
+    RunCompletedResult,
+)
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.run import Run, RunStatus
@@ -24,20 +38,25 @@ if TYPE_CHECKING:
     from omym2.features.apply.dto import ApplyPlanRequest
     from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath, UnitOfWork
-    from omym2.shared.ids import PlanId
+    from omym2.shared.ids import OperationId
 
 APPLY_FAILED_SUMMARY = "Apply failed."
 APPLY_NOT_CONFIRMED_MESSAGE = "Apply was not confirmed."
+CLAIMED_APPLY_STATE_INVALID_MESSAGE = "Claimed Apply state is no longer executable."
 INCOMPLETE_MOVE_ACTION_SUMMARY = "Planned move action is missing source or target path."
 EXTERNAL_RESTORE_WITHOUT_TRACK_SUMMARY = "External restore action is missing a managed Track ID."
 INVALID_EXTERNAL_RESTORE_SUMMARY = "External restore action is not backed by durable undo history."
+INVALID_PATH_MOVE_FAILURE_MESSAGE = "The file move failed because its path was rejected."
 LIBRARY_NOT_FOUND_MESSAGE = "Plan Library was not found."
 LIBRARY_ROOT_CHANGED_SUMMARY = "Library root changed during apply."
 MOVE_FAILED_ERROR_CODE = "move_failed"
+MOVE_FAILED_MESSAGE = "The file move failed."
 PLAN_NOT_FOUND_MESSAGE = "Plan was not found."
 PLAN_NOT_READY_MESSAGE = "Plan is not ready and cannot be applied."
+SOURCE_MISSING_MOVE_FAILURE_MESSAGE = "The file move failed because its source was unavailable."
 SUMMARY_SEPARATOR = "; "
 SOURCE_PRECONDITION_SNAPSHOT_MISSING_MESSAGE = "Successful source precondition did not return a snapshot."
+TARGET_EXISTS_MOVE_FAILURE_MESSAGE = "The file move failed because its target already exists."
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,24 +65,35 @@ class ApplyPlanUseCase:
 
     ports: ApplyPlanPorts
 
-    def execute(self, request: ApplyPlanRequest) -> Run | None:
-        """Apply a reviewed Plan and return its Run when one is created."""
+    def execute(self, request: ApplyPlanRequest) -> Run:
+        """Execute one already-claimed Apply and return its terminal Run."""
         _require_confirmed(request)
 
         with self.ports.uow.usecase_scope():
             return self._execute_confirmed(request)
 
-    def _execute_confirmed(self, request: ApplyPlanRequest) -> Run | None:
+    def _execute_confirmed(self, request: ApplyPlanRequest) -> Run:
         """Apply one confirmed request inside a shared UnitOfWork resource scope."""
 
-        started_apply = self._start_apply(request.plan_id)
-        if started_apply is None:
-            return None
+        started_apply = self._load_claimed_apply(request)
+        if not self._library_root_still_matches(started_apply.plan):
+            return self._finish_apply(
+                started_apply.plan,
+                started_apply.run,
+                _ApplyCompletion(
+                    success_count=0,
+                    failure_count=1,
+                    failure_summaries=(LIBRARY_ROOT_CHANGED_SUMMARY,),
+                    operation_failed=True,
+                ),
+                request.operation_id,
+            )
 
         move_success_count = 0
         move_failure_count = 0
         failure_summaries: list[str] = []
         sequence_no = FILE_EVENT_SEQUENCE_START
+        operation_failed = False
 
         for action in started_apply.actions:
             if action.status == ActionStatus.BLOCKED:
@@ -88,14 +118,19 @@ class ApplyPlanUseCase:
                 move_failure_count += 1
                 failure_summaries.append(result.failure_summary)
                 if result.should_stop:
+                    operation_failed = True
                     break
 
         return self._finish_apply(
             started_apply.plan,
             started_apply.run,
-            move_success_count,
-            move_failure_count,
-            tuple(failure_summaries),
+            _ApplyCompletion(
+                success_count=move_success_count,
+                failure_count=move_failure_count,
+                failure_summaries=tuple(failure_summaries),
+                operation_failed=operation_failed,
+            ),
+            request.operation_id,
         )
 
     def _process_filesystem_observing_action(
@@ -107,7 +142,7 @@ class ApplyPlanUseCase:
         if action.action_type not in {ActionType.MOVE, ActionType.REFRESH_METADATA}:
             return None
 
-        if not self._library_root_still_matches(started_apply.library):
+        if not self._library_root_still_matches(started_apply.plan):
             return _ActionApplyResult.root_changed()
 
         if action.action_type == ActionType.REFRESH_METADATA:
@@ -121,38 +156,31 @@ class ApplyPlanUseCase:
             sequence_no,
         )
 
-    def _start_apply(self, plan_id: PlanId) -> _StartedApply | None:
+    def _load_claimed_apply(self, request: ApplyPlanRequest) -> _StartedApply:
         with self.ports.uow as uow:
-            plan = uow.plans.get(plan_id)
-            if plan is None:
-                raise PlanNotFoundError(PLAN_NOT_FOUND_MESSAGE)
-            if plan.status != PlanStatus.READY:
-                raise PlanCannotBeAppliedError(PLAN_NOT_READY_MESSAGE)
-
+            plan = uow.plans.get(request.plan_id)
+            run = uow.runs.get(request.run_id)
+            operation = uow.operations.lookup(request.operation_id)
+            if (
+                plan is None
+                or plan.status is not PlanStatus.APPLYING
+                or run is None
+                or run.status is not RunStatus.RUNNING
+                or run.plan_id != plan.plan_id
+                or run.library_id != plan.library_id
+                or not isinstance(operation, Operation)
+                or operation.kind is not OperationKind.APPLY_PLAN
+                or operation.status is not OperationStatus.RUNNING
+                or operation.library_id != plan.library_id
+                or operation.plan_id != plan.plan_id
+                or operation.run_id != run.run_id
+            ):
+                raise ApplyPlanError(CLAIMED_APPLY_STATE_INVALID_MESSAGE)
             library = uow.libraries.get(plan.library_id)
             if library is None:
                 raise ApplyPlanError(LIBRARY_NOT_FOUND_MESSAGE)
-
-            if library.root_path != plan.library_root_at_plan:
-                uow.plans.save(plan.mark_expired())
-                uow.commit()
-                return None
-
-            run = Run(
-                run_id=self.ports.id_generator.new_run_id(),
-                plan_id=plan.plan_id,
-                library_id=plan.library_id,
-                status=RunStatus.RUNNING,
-                started_at=self.ports.clock.now(),
-            )
-            applying_plan = plan.mark_applying()
             actions = tuple(uow.plan_actions.list_by_plan(plan.plan_id))
-
-            uow.runs.save(run)
-            uow.plans.save(applying_plan)
-            uow.commit()
-
-            return _StartedApply(plan=applying_plan, library=library, run=run, actions=actions)
+        return _StartedApply(plan=plan, library=library, run=run, actions=actions)
 
     def _process_move_action(
         self,
@@ -200,23 +228,26 @@ class ApplyPlanUseCase:
         )
 
         try:
+            snapshot = precondition.snapshot
+            if snapshot is None:
+                raise AssertionError(SOURCE_PRECONDITION_SNAPSHOT_MISSING_MESSAGE)
             self.ports.file_mover.move(
                 source_filesystem_path,
                 target_filesystem_path,
+                source_root=None if PurePath(source_path).is_absolute() else library.root_path,
                 target_root=None if PurePath(target_path).is_absolute() else library.root_path,
+                expected_source_identity=snapshot.filesystem_identity,
+                expected_source_content_hash=snapshot.content_hash,
             )
         except (OSError, ValueError) as exc:
             reason = _move_failure_reason(exc)
-            self._record_failed_file_event(event, action, reason, exc)
+            failure_message = _move_failure_message(reason)
+            self._record_failed_file_event(event, action, reason, failure_message)
             return _ActionApplyResult(
                 succeeded=False,
                 event_created=True,
-                failure_summary=_failure_summary(exc),
+                failure_summary=failure_message,
             )
-
-        snapshot = precondition.snapshot
-        if snapshot is None:
-            raise AssertionError(SOURCE_PRECONDITION_SNAPSHOT_MISSING_MESSAGE)
 
         self._record_successful_move(event, action, snapshot, target_path)
         return _ActionApplyResult(succeeded=True, event_created=True, failure_summary="")
@@ -254,7 +285,12 @@ class ApplyPlanUseCase:
         return _ActionApplyResult(succeeded=True, event_created=False, failure_summary="")
 
     def _absolute_target_is_verified_undo(self, plan: Plan, action: PlanAction) -> bool:
-        if plan.plan_type != PlanType.UNDO or action.track_id is None:
+        if (
+            plan.plan_type != PlanType.UNDO
+            or plan.source_run_id is None
+            or action.track_id is None
+            or action.reverses_event_id is None
+        ):
             return False
         if action.source_path is None or action.target_path is None:
             return False
@@ -264,28 +300,60 @@ class ApplyPlanUseCase:
             # differ from the original import target after later in-Library
             # moves, so it is verified against the Track instead of the event.
             track = uow.tracks.get(action.track_id)
-            if track is None or track.status != TrackStatus.ACTIVE or track.current_path != action.source_path:
+            event = uow.file_events.get(action.reverses_event_id)
+            source_run = uow.runs.get(plan.source_run_id)
+            if track is None or event is None or source_run is None:
                 return False
-            for event in uow.file_events.list_by_library(action.library_id):
-                if event.status != FileEventStatus.SUCCEEDED:
-                    continue
-                if event.source_path != action.target_path:
-                    continue
-                source_action = uow.plan_actions.get(event.plan_action_id)
-                if source_action is None:
-                    continue
-                source_plan = uow.plans.get(source_action.plan_id)
-                if (
-                    source_plan is not None
-                    and source_plan.plan_type == PlanType.ADD
-                    and source_action.track_id == action.track_id
-                    and source_action.source_path == event.source_path
-                    and source_action.target_path == event.target_path
-                    and PurePath(source_action.source_path or "").is_absolute()
-                    and not PurePath(source_action.target_path or "").is_absolute()
-                ):
-                    return True
-        return False
+            source_action = uow.plan_actions.get(event.plan_action_id)
+            if source_action is None:
+                return False
+            source_plan = uow.plans.get(source_action.plan_id)
+            if source_plan is None:
+                return False
+
+        source_plan_status_is_terminal = source_plan.status in {
+            PlanStatus.APPLIED,
+            PlanStatus.PARTIAL_FAILED,
+            PlanStatus.FAILED,
+        }
+        source_run_status_is_terminal = source_run.status in {
+            RunStatus.SUCCEEDED,
+            RunStatus.PARTIAL_FAILED,
+            RunStatus.FAILED,
+        }
+        return (
+            action.plan_id == plan.plan_id
+            and action.library_id == plan.library_id
+            and action.action_type is ActionType.MOVE
+            and action.status is ActionStatus.PLANNED
+            and track.library_id == plan.library_id
+            and track.status is TrackStatus.ACTIVE
+            and track.current_path == action.source_path
+            and event.event_type is FileEventType.MOVE_FILE
+            and event.status is FileEventStatus.SUCCEEDED
+            and event.completed_at is not None
+            and event.completed_at <= plan.created_at
+            and event.run_id == source_run.run_id == plan.source_run_id
+            and event.library_id == plan.library_id
+            and event.plan_action_id == source_action.action_id
+            and event.source_path == source_action.source_path == action.target_path
+            and event.target_path == source_action.target_path
+            and source_action.plan_id == source_run.plan_id == source_plan.plan_id
+            and source_action.library_id == plan.library_id
+            and source_action.track_id == action.track_id
+            and source_action.action_type is ActionType.MOVE
+            and source_action.status is ActionStatus.APPLIED
+            and source_run.library_id == plan.library_id
+            and source_run_status_is_terminal
+            and source_run.completed_at is not None
+            and source_run.completed_at <= plan.created_at
+            and source_plan.library_id == plan.library_id
+            and source_plan.plan_type is PlanType.ADD
+            and source_plan_status_is_terminal
+            and source_plan.config_hash == plan.config_hash
+            and PurePath(source_action.source_path or "").is_absolute()
+            and not PurePath(source_action.target_path or "").is_absolute()
+        )
 
     def _verify_source_preconditions(
         self,
@@ -299,9 +367,11 @@ class ApplyPlanUseCase:
         except OSError, ValueError:
             return _SourcePreconditionResult.failed(PlanActionReason.SOURCE_CHANGED)
 
-        if action.content_hash_at_plan is not None and snapshot.content_hash != action.content_hash_at_plan:
+        if action.content_hash_at_plan is None or snapshot.content_hash != action.content_hash_at_plan:
             return _SourcePreconditionResult.failed(PlanActionReason.SOURCE_CHANGED)
-        if action.metadata_hash_at_plan is not None and snapshot.metadata_hash != action.metadata_hash_at_plan:
+        if action.metadata_hash_at_plan is None or snapshot.metadata_hash != action.metadata_hash_at_plan:
+            return _SourcePreconditionResult.failed(PlanActionReason.SOURCE_CHANGED)
+        if snapshot.filesystem_identity is None:
             return _SourcePreconditionResult.failed(PlanActionReason.SOURCE_CHANGED)
 
         return _SourcePreconditionResult.passed_with(snapshot)
@@ -370,12 +440,12 @@ class ApplyPlanUseCase:
         event: FileEvent,
         action: PlanAction,
         reason: PlanActionReason | None,
-        exc: OSError | ValueError,
+        error_message: str,
     ) -> None:
         timestamp = self.ports.clock.now()
         error_code = MOVE_FAILED_ERROR_CODE if reason is None else reason.value
         with self.ports.uow as uow:
-            uow.file_events.save(event.mark_failed(timestamp, error_code, _failure_summary(exc)))
+            uow.file_events.save(event.mark_failed(timestamp, error_code, error_message))
             uow.plan_actions.save(action.mark_failed(reason))
             uow.commit()
 
@@ -438,17 +508,16 @@ class ApplyPlanUseCase:
         self,
         plan: Plan,
         run: Run,
-        move_success_count: int,
-        move_failure_count: int,
-        failure_summaries: tuple[str, ...],
+        completion: _ApplyCompletion,
+        operation_id: OperationId,
     ) -> Run:
         timestamp = self.ports.clock.now()
-        error_summary = _combined_failure_summary(failure_summaries)
+        error_summary = _combined_failure_summary(completion.failure_summaries)
 
-        if move_failure_count == 0:
+        if completion.failure_count == 0:
             final_run = run.mark_succeeded(timestamp)
             final_plan = plan.mark_applied()
-        elif move_success_count > 0:
+        elif completion.success_count > 0:
             final_run = run.mark_partial_failed(timestamp, error_summary)
             final_plan = plan.mark_partial_failed()
         else:
@@ -460,6 +529,31 @@ class ApplyPlanUseCase:
             uow.plans.save(final_plan)
             if final_plan.status == PlanStatus.APPLIED:
                 self._register_successful_organize_plan(uow, final_plan, timestamp)
+            operation = uow.operations.lookup(operation_id)
+            if not isinstance(operation, Operation) or operation.status is not OperationStatus.RUNNING:
+                raise ApplyPlanError(CLAIMED_APPLY_STATE_INVALID_MESSAGE)
+            if completion.operation_failed:
+                uow.operations.save(
+                    operation.mark_failed(
+                        error=OperationError(
+                            code=OperationErrorCode.OPERATION_FAILED,
+                            message=LIBRARY_ROOT_CHANGED_SUMMARY,
+                            retryable=False,
+                        ),
+                        completed_at=timestamp,
+                        result_expires_at=timestamp + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS),
+                        tombstone_expires_at=timestamp + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS),
+                    )
+                )
+            else:
+                uow.operations.save(
+                    operation.mark_succeeded(
+                        result=RunCompletedResult(final_run.run_id),
+                        completed_at=timestamp,
+                        result_expires_at=timestamp + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS),
+                        tombstone_expires_at=timestamp + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS),
+                    )
+                )
             uow.commit()
 
         return final_run
@@ -488,10 +582,10 @@ class ApplyPlanUseCase:
             )
         )
 
-    def _library_root_still_matches(self, library: Library) -> bool:
+    def _library_root_still_matches(self, plan: Plan) -> bool:
         with self.ports.uow as uow:
-            current_library = uow.libraries.get(library.library_id)
-            return current_library is not None and current_library.root_path == library.root_path
+            current_library = uow.libraries.get(plan.library_id)
+            return current_library is not None and current_library.root_path == plan.library_root_at_plan
 
     def _resolve_source_path(self, library: Library, source_path: str) -> FileSystemPath:
         if PurePath(source_path).is_absolute():
@@ -512,6 +606,16 @@ class _StartedApply:
     library: Library
     run: Run
     actions: tuple[PlanAction, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ApplyCompletion:
+    """Confirmed action evidence used for one terminal Apply transaction."""
+
+    success_count: int
+    failure_count: int
+    failure_summaries: tuple[str, ...]
+    operation_failed: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -584,9 +688,14 @@ def _require_confirmed(request: ApplyPlanRequest) -> None:
         raise ApplyNotConfirmedError(APPLY_NOT_CONFIRMED_MESSAGE)
 
 
-def _failure_summary(exc: OSError | ValueError) -> str:
-    message = str(exc)
-    return MOVE_FAILED_ERROR_CODE if message == "" else message
+def _move_failure_message(reason: PlanActionReason | None) -> str:
+    if reason is PlanActionReason.TARGET_EXISTS:
+        return TARGET_EXISTS_MOVE_FAILURE_MESSAGE
+    if reason is PlanActionReason.SOURCE_MISSING:
+        return SOURCE_MISSING_MOVE_FAILURE_MESSAGE
+    if reason is PlanActionReason.INVALID_PATH:
+        return INVALID_PATH_MOVE_FAILURE_MESSAGE
+    return MOVE_FAILED_MESSAGE
 
 
 def _combined_failure_summary(failure_summaries: tuple[str, ...]) -> str:

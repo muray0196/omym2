@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -15,6 +15,8 @@ import pytest
 
 from omym2.adapters.config.default_config import default_app_config
 from omym2.config import (
+    OPERATION_RESULT_RETENTION_HOURS,
+    OPERATION_TOMBSTONE_RETENTION_DAYS,
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
@@ -22,6 +24,7 @@ from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.models.operation import Operation, OperationKind, OperationStatus, PlanCreatedResult
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanActionReason
 from omym2.domain.models.track import Track, TrackStatus
@@ -40,7 +43,7 @@ from omym2.features.refresh.usecases.create_refresh_plan import (
     RefreshLibrarySelectionError,
     RefreshTargetSelectionError,
 )
-from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
+from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
@@ -65,6 +68,8 @@ OTHER_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 OTHER_LIBRARY_ROOT = "/music/other"
 PATH_OUTSIDE_LIBRARY_MESSAGE = "outside library"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
+OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568e"))
+IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def01234568f")
 SECOND_NEW_PATH = "Artist/2026_Album/1-03_Second-New.flac"
 SECOND_OLD_PATH = "Artist/2026_Album/1-03_Second-Old.flac"
 SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
@@ -141,6 +146,31 @@ def test_refresh_records_existing_track_id_for_relocation_after_metadata_change(
     assert uow.plans.get(PLAN_ID) == plan
     assert uow.plan_actions.get(ACTION_ID) == action
     assert uow.tracks.get(TRACK_ID) == _track()
+
+
+def test_refresh_operation_success_commits_the_created_plan_result() -> None:
+    """Orchestrated Refresh links its success to the reviewed Plan it commits."""
+    uow = _uow_with_library_and_tracks(_track())
+    uow.operations.save(_running_operation())
+    source_path = _absolute(OLD_PATH)
+    ports, _ = _ports(
+        uow,
+        {source_path: _snapshot(source_path, NEW_METADATA)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateRefreshPlanUseCase(ports).execute(
+        CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID, operation_id=OPERATION_ID)
+    )
+
+    terminal = uow.operations.lookup(OPERATION_ID)
+    assert isinstance(terminal, Operation)
+    assert terminal.status is OperationStatus.SUCCEEDED
+    assert terminal.result == PlanCreatedResult(plan.plan_id)
+    assert terminal.plan_id == plan.plan_id
+    assert terminal.result_expires_at == BASE_TIME + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS)
+    assert terminal.tombstone_expires_at == BASE_TIME + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS)
+    assert uow.plans.get(plan.plan_id) == plan
 
 
 def test_refresh_renders_disc_number_from_active_peer_context() -> None:
@@ -723,6 +753,17 @@ def _track(
     )
 
 
+def _running_operation() -> Operation:
+    return Operation.queued(
+        operation_id=OPERATION_ID,
+        kind=OperationKind.REFRESH_PLAN,
+        idempotency_key=IDEMPOTENCY_KEY,
+        request_fingerprint="refresh-request",
+        requested_at=BASE_TIME,
+        library_id=LIBRARY_ID,
+    ).mark_running(BASE_TIME)
+
+
 def _snapshot(path: str, metadata: TrackMetadata) -> FileSnapshot:
     return FileSnapshot(
         path=path,
@@ -732,6 +773,7 @@ def _snapshot(path: str, metadata: TrackMetadata) -> FileSnapshot:
         content_hash=CONTENT_HASH,
         metadata_hash=calculate_metadata_fingerprint(metadata),
         metadata=metadata,
+        filesystem_identity=None,
         captured_at=BASE_TIME,
     )
 

@@ -1,3 +1,6 @@
+# Summary: Runs the complete cross-platform quality and package evidence gates.
+# Why: Blocks regressions before M5 release assets can be published.
+
 name: CI
 
 on:
@@ -14,22 +17,95 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHONUNBUFFERED: "1"
+
 jobs:
-  quality:
-    name: Quality Gates
-    runs-on: ubuntu-latest
+  python-quality:
+    name: Python Quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install Python dependencies
+        run: uv sync --locked --dev
+
+      - name: Run Python quality gates
+        run: scripts/checks.sh py
+
+      - name: Check for generated diffs
+        run: git diff --exit-code
+
+  api-client:
+    name: API Schema And Client Drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version-file: .python-version
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install Python dependencies
+        run: uv sync --locked --dev
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Check generated API client
+        run: scripts/checks.sh api
+
+      - name: Check for generated diffs
+        run: git diff --exit-code
+
+  frontend-quality:
+    name: Frontend Quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "24"
           cache: npm
@@ -48,8 +124,194 @@ jobs:
         working-directory: web
         run: npm ci
 
-      - name: Run quality gates
-        run: scripts/checks.sh all
+      - name: Run frontend quality gates
+        run: scripts/checks.sh web
 
       - name: Check for generated diffs
         run: git diff --exit-code
+
+  browser-e2e:
+    name: Chromium Keyboard And Axe E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install pinned Chromium
+        working-directory: web
+        run: npm exec -- playwright install --with-deps chromium
+
+      - name: Run browser E2E
+        run: scripts/checks.sh e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: playwright-report-${{ github.sha }}
+          path: web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  package-evidence:
+    name: Linux Package Evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build and audit package evidence
+        run: scripts/checks.sh package
+
+      - name: Upload package evidence
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: web-package-evidence-${{ github.sha }}
+          path: build/web-package-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-package-smoke:
+    name: Windows Package And Static Smoke
+    needs: package-evidence
+    runs-on: windows-2025
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install locked test dependencies
+        run: uv sync --locked --dev
+
+      - name: Test real Windows lock contention and crash release
+        run: uv run pytest tests/adapters/fs/test_exclusive_operation_lock.py -q
+
+      - name: Download audited package evidence
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: web-package-evidence-${{ github.sha }}
+          path: build/web-package-evidence
+
+      - name: Smoke installed wheel
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem build/web-package-evidence -Filter *.whl -File | Select-Object -First 1
+          if ($null -eq $wheel) { throw "Audited wheel was not downloaded." }
+          python scripts/smoke_web_wheel.py --wheel $wheel.FullName
+
+  performance-budget:
+    name: Installed Package Performance Budgets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      OMYM2_PERFORMANCE_OUTPUT: ../build/web-package-evidence/performance.json
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install pinned Chromium
+        working-directory: web
+        run: npm exec -- playwright install --with-deps chromium
+
+      - name: Enforce installed-package performance budgets
+        run: scripts/checks.sh performance
+
+      - name: Upload performance measurement
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: web-performance-${{ github.sha }}
+          path: build/web-package-evidence/performance.json
+          if-no-files-found: error
+          retention-days: 14

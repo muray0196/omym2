@@ -10,6 +10,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
 from omym2.domain.models.file_event import FileEventStatus
+from omym2.domain.models.operation import Operation, OperationLookup, OperationStatus, OperationTombstone
+from omym2.domain.models.plan import PlanStatus, PlanType
+from omym2.domain.models.plan_action import ActionStatus
 from omym2.domain.models.track import TrackGrouping
 from omym2.features.check.usecases.group_check_issues import (
     common_path_root_for_check_issue,
@@ -31,29 +34,23 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
     from datetime import datetime
     from types import TracebackType
+    from uuid import UUID
 
     from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
     from omym2.domain.models.check_run import CheckRun
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.library import Library
-    from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-    from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+    from omym2.domain.models.plan import Plan
+    from omym2.domain.models.plan_action import ActionType, PlanAction, PlanActionReason
     from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackStatus
-    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
+    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
     from omym2.shared.pagination import PageRequest
 
 KEYSET_CURSOR_KEY_LENGTH = 2  # every Track/Track-group cursor key is a 2-tuple
 TRACK_GROUP_MEMBER_CURSOR_KEY_LENGTH = 4  # grouped Track member cursor: rank, number, title, track ID
 CHECK_ISSUE_CURSOR_KEY_LENGTH = 1  # a CheckIssue cursor key is a single issue_seq value
 TRACK_GROUP_FILTER_PAIRING_MESSAGE = "grouping and group_key must be provided together."
-
-
-def _summary_count(summary: dict[str, str], key: str) -> int:
-    try:
-        return int(summary.get(key, "0"))
-    except ValueError:
-        return 0
 
 
 @dataclass(slots=True)
@@ -381,6 +378,7 @@ class InMemoryPlanRepository:
     """In-memory PlanRepository fake."""
 
     records: dict[PlanId, Plan] = field(default_factory=dict)
+    plan_actions: InMemoryPlanActionRepository | None = field(default=None, repr=False)
 
     def get(self, plan_id: PlanId) -> Plan | None:
         """Return one Plan by ID."""
@@ -390,9 +388,37 @@ class InMemoryPlanRepository:
         """Return Plans owned by a Library."""
         return tuple(plan for plan in self.records.values() if plan.library_id == library_id)
 
+    def list_by_source_run(self, source_run_id: RunId) -> tuple[Plan, ...]:
+        """Return Undo Plans that record one source Run, in creation order."""
+        plans = (
+            plan
+            for plan in self.records.values()
+            if plan.plan_type is PlanType.UNDO and plan.source_run_id == source_run_id
+        )
+        return tuple(sorted(plans, key=lambda plan: (plan.created_at, str(plan.plan_id))))
+
     def save(self, plan: Plan) -> None:
         """Store or replace one Plan."""
         self.records[plan.plan_id] = plan
+
+    def compare_and_set_status(
+        self,
+        plan_id: PlanId,
+        expected_status: PlanStatus,
+        replacement_status: PlanStatus,
+    ) -> bool:
+        """Replace one fake Plan status only when the current state matches."""
+        plan = self.records.get(plan_id)
+        if plan is None or plan.status is not expected_status:
+            return False
+        if replacement_status is PlanStatus.APPLYING:
+            replacement = plan.mark_applying()
+        elif replacement_status is PlanStatus.CANCELLED:
+            replacement = plan.mark_cancelled()
+        else:
+            raise ValueError(replacement_status)
+        self.records[plan_id] = replacement
+        return True
 
     def query_page(  # noqa: PLR0913  # Mirrors the stable PlanRepository browse contract.
         self,
@@ -412,7 +438,7 @@ class InMemoryPlanRepository:
             and (search is None or _plan_matches_search(plan, search))
             and (status is None or plan.status == status)
             and (plan_type is None or plan.plan_type == plan_type)
-            and (not blocked_only or _summary_count(plan.summary, "blocked_actions") > 0)
+            and (not blocked_only or self._has_blocked_action(plan.plan_id))
         ]
         plans.sort(key=lambda plan: (plan.created_at, str(plan.plan_id)), reverse=True)
         total = len(plans)
@@ -431,6 +457,14 @@ class InMemoryPlanRepository:
         has_more = len(plans) > page.limit
         next_cursor_key = (page_items[-1].created_at.isoformat(), str(page_items[-1].plan_id)) if has_more else None
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
+
+    def _has_blocked_action(self, plan_id: PlanId) -> bool:
+        """Return whether this fake UnitOfWork records a currently blocked action for the Plan."""
+        repository = self.plan_actions
+        return repository is not None and any(
+            action.plan_id == plan_id and action.status is ActionStatus.BLOCKED
+            for action in repository.records.values()
+        )
 
 
 def _plan_matches_search(plan: Plan, search: str) -> bool:
@@ -603,6 +637,20 @@ class InMemoryPlanActionRepository:
                 continue
             counts[action.target_path] = counts.get(action.target_path, 0) + 1
         return sum(1 for count in counts.values() if count > 1)
+
+    def action_counts_by_plan(
+        self,
+        plan_ids: Sequence[PlanId],
+    ) -> dict[PlanId, dict[tuple[ActionStatus, ActionType], int]]:
+        """Return current status/action-type counts for every requested Plan."""
+        counts_by_plan: dict[PlanId, dict[tuple[ActionStatus, ActionType], int]] = {plan_id: {} for plan_id in plan_ids}
+        for action in self.records.values():
+            counts = counts_by_plan.get(action.plan_id)
+            if counts is None:
+                continue
+            key = (action.status, action.action_type)
+            counts[key] = counts.get(key, 0) + 1
+        return counts_by_plan
 
     def list_by_ids(self, action_ids: Sequence[ActionId]) -> tuple[PlanAction, ...]:
         """Return the PlanActions with the given IDs, ordered (sort_order, action_id)."""
@@ -829,6 +877,88 @@ class InMemoryFileEventRepository:
 
 
 @dataclass(slots=True)
+class InMemoryOperationRepository:
+    """In-memory OperationRepository fake."""
+
+    records: dict[OperationId, OperationLookup] = field(default_factory=dict)
+
+    def lookup(self, operation_id: OperationId) -> OperationLookup | None:
+        """Return a full Operation or retained tombstone by stable ID."""
+        return self.records.get(operation_id)
+
+    def find_by_idempotency_key(self, idempotency_key: UUID) -> OperationLookup | None:
+        """Return retained request identity for idempotent replay classification."""
+        return next(
+            (record for record in self.records.values() if record.idempotency_key == idempotency_key),
+            None,
+        )
+
+    def list_reconciliation_candidates(self) -> tuple[Operation, ...]:
+        """Return full unfinished/interrupted Operations in deterministic request order."""
+        candidates = (
+            record
+            for record in self.records.values()
+            if isinstance(record, Operation)
+            and record.status in {OperationStatus.QUEUED, OperationStatus.RUNNING, OperationStatus.INTERRUPTED}
+        )
+        return tuple(sorted(candidates, key=lambda record: (record.requested_at, str(record.operation_id))))
+
+    def find_active(self) -> Operation | None:
+        """Return the single queued or running Operation, if one exists."""
+        return next(
+            (
+                record
+                for record in self.list_reconciliation_candidates()
+                if record.status in {OperationStatus.QUEUED, OperationStatus.RUNNING}
+            ),
+            None,
+        )
+
+    def save(self, operation: Operation) -> None:
+        """Store or replace one full Operation."""
+        self.records[operation.operation_id] = operation
+
+    def expire_terminal_payloads(self, now: datetime) -> int:
+        """Replace expired full Operations with minimal retained tombstones."""
+        expired = tuple(
+            operation
+            for operation in self.records.values()
+            if isinstance(operation, Operation)
+            and operation.is_terminal
+            and operation.result_expires_at is not None
+            and operation.result_expires_at <= now
+        )
+        for operation in expired:
+            if operation.tombstone_expires_at is None:
+                continue
+            self.records[operation.operation_id] = OperationTombstone(
+                operation_id=operation.operation_id,
+                idempotency_key=operation.idempotency_key,
+                kind=operation.kind,
+                request_fingerprint=operation.request_fingerprint,
+                tombstone_expires_at=operation.tombstone_expires_at,
+            )
+        return len(expired)
+
+    def purge_expired_tombstones(self, now: datetime) -> int:
+        """Delete terminal records whose tombstone retention elapsed."""
+        expired_ids = tuple(
+            operation_id
+            for operation_id, record in self.records.items()
+            if (isinstance(record, OperationTombstone) and record.tombstone_expires_at <= now)
+            or (
+                isinstance(record, Operation)
+                and record.is_terminal
+                and record.tombstone_expires_at is not None
+                and record.tombstone_expires_at <= now
+            )
+        )
+        for operation_id in expired_ids:
+            del self.records[operation_id]
+        return len(expired_ids)
+
+
+@dataclass(slots=True)
 class InMemoryUnitOfWork:
     """In-memory UnitOfWork fake with observable transaction calls."""
 
@@ -840,10 +970,15 @@ class InMemoryUnitOfWork:
     plan_actions: InMemoryPlanActionRepository = field(default_factory=InMemoryPlanActionRepository)
     runs: InMemoryRunRepository = field(default_factory=InMemoryRunRepository)
     file_events: InMemoryFileEventRepository = field(default_factory=InMemoryFileEventRepository)
+    operations: InMemoryOperationRepository = field(default_factory=InMemoryOperationRepository)
     commit_count: int = 0
     rollback_count: int = 0
     usecase_scope_enter_count: int = 0
     usecase_scope_exit_count: int = 0
+
+    def __post_init__(self) -> None:
+        """Wire the Plan query fake to the current PlanAction fake for blocked filtering."""
+        self.plans.plan_actions = self.plan_actions
 
     @contextmanager
     def usecase_scope(self) -> Generator[None]:
@@ -877,3 +1012,12 @@ class InMemoryUnitOfWork:
     def rollback(self) -> None:
         """Record a rollback call."""
         self.rollback_count += 1
+
+    def claim_apply(self, plan_id: PlanId, run: Run, operation: Operation) -> bool:
+        """Stage one fake atomic Apply claim for feature tests."""
+        claimed = self.plans.compare_and_set_status(plan_id, PlanStatus.READY, PlanStatus.APPLYING)
+        if not claimed:
+            return False
+        self.runs.save(run)
+        self.operations.save(operation)
+        return True

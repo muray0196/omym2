@@ -12,15 +12,22 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 | After editing Python files (edit loop) | `scripts/checks.sh changed` |
 | Before declaring any implementation complete | `scripts/checks.sh all` |
 | Python-only full gates | `scripts/checks.sh py` |
+| OpenAPI/generated-client drift only | `scripts/checks.sh api` |
 | Frontend gates only | `scripts/checks.sh web` |
+| Browser keyboard/axe E2E | `scripts/checks.sh e2e` |
+| Wheel/sdist and installed-package gates | `scripts/checks.sh package` |
+| Installed-package performance record | `scripts/checks.sh performance` |
 | Docs bundle conformance | `scripts/checks.sh docs` |
 | Architecture boundary / naming rules | `scripts/checks.sh arch` |
 | Inspect one failing test | `scripts/checks.sh test <pytest-node-id>` |
 | Deep-debug one failing test | `uv run pytest <pytest-node-id> -q --tb=long -s --show-capture=all` |
 
-`scripts/checks.sh` wraps the authoritative commands in `docs/DEVELOPMENT.md`. If the script is missing or itself broken, run those commands directly.
+`scripts/checks.sh` wraps the authoritative commands in `docs/development/harness.md`. If the script is missing or itself broken, run those commands directly.
 
-The wrapper requires an explicit mode and assumes dependencies are already installed. Run `uv sync --locked --dev` and `cd web && npm ci` after checkout, after dependency manifests or lockfiles change, or when the environment is missing. Do not reinstall dependencies during ordinary edit loops or validation reruns.
+The wrapper requires an explicit mode and assumes dependencies are already
+installed. Run `uv sync --locked --dev` after checkout or Python dependency
+changes. Install frontend dependencies in `web/`. Do not reinstall dependencies
+during ordinary edit loops or validation reruns.
 
 ## Triage table
 
@@ -31,6 +38,9 @@ Fix the first failing gate before looking at later ones.
 | `uv` / `npm` / command not found | environment | Install per README; do not edit product code |
 | `npm ci` fails | lockfile out of sync | Report it; do not hand-edit `package-lock.json` |
 | `ModuleNotFoundError` for a dependency | env not synced | `uv sync` (Python) or `cd web && npm ci` (frontend) |
+| generated API check fails | Pydantic/OpenAPI or client drift | Run `cd web && npm run api:generate`, review, and commit the coordinated schema/client change |
+| static audit fails | stale or unsafe ignored output | Re-run `npm run build`, then `scripts/sync_web_static.py`; do not hand-edit `static_dist/` |
+| package smoke imports `src/` | wrong interpreter or `PYTHONPATH` | Use the clean-install virtual-environment Python outside the checkout and clear `PYTHONPATH` |
 | `ruff check` errors | lint issue in changed code | Fix the code; suppress only per policy below |
 | `ruff format --check` fails | formatting | `uv run ruff format <files> -q` |
 | `basedpyright` errors | typing issue | Fix types; narrow with `isinstance`, avoid `Any` |

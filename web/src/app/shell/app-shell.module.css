@@ -1,0 +1,194 @@
+/**
+ * Summary: Defines the responsive navigation rail, header, and route canvas.
+ * Why: Keeps primary operations reachable from mobile through three-region desktop layouts.
+ */
+.skipLink {
+  background: var(--color-primary);
+  border-radius: var(--radius-6);
+  color: var(--color-canvas);
+  font-weight: 700;
+  left: var(--space-16);
+  padding: var(--space-8) var(--space-12);
+  position: fixed;
+  top: var(--space-16);
+  transform: translateY(-200%);
+  z-index: 20;
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
+.shell {
+  min-height: 100vh;
+}
+
+.rail {
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-hairline);
+  display: none;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: var(--space-24) var(--space-16);
+  position: fixed;
+  width: 240px;
+}
+
+.brand {
+  margin-bottom: var(--space-32);
+  padding: 0 var(--space-8);
+}
+
+.brandName {
+  color: var(--color-ink);
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  margin: 0;
+}
+
+.brandDescription {
+  color: var(--color-mute);
+  font-size: 13px;
+  margin: var(--space-4) 0 0;
+}
+
+.navigation {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.navigationLink {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-8);
+  color: var(--color-body);
+  display: flex;
+  min-height: var(--target-default);
+  padding: var(--space-8) var(--space-12);
+  text-decoration: none;
+}
+
+.navigationLink:hover {
+  background: var(--color-surface-elevated);
+  border-color: var(--color-hairline);
+  color: var(--color-ink);
+}
+
+.navigationLink[aria-current="page"] {
+  background: var(--color-surface-card);
+  border-color: var(--color-hairline);
+  color: var(--color-primary);
+}
+
+.railFooter {
+  color: var(--color-mute);
+  font-size: 12px;
+  margin: var(--space-24) var(--space-8) 0;
+}
+
+.mobileHeader {
+  align-items: center;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-hairline);
+  display: flex;
+  gap: var(--space-12);
+  justify-content: space-between;
+  min-height: 72px;
+  padding: var(--space-12) var(--space-16);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.mobileActions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-8);
+}
+
+.mobileHeader .brand {
+  margin: 0;
+  padding: 0;
+}
+
+.commandLabel {
+  display: none;
+}
+
+.main {
+  min-width: 0;
+  padding: var(--space-24) var(--space-16) var(--space-40);
+}
+
+.routeFrame {
+  margin: 0 auto;
+  max-width: 1180px;
+  width: 100%;
+}
+
+.mobileNavigation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.shortcutList {
+  display: grid;
+  gap: var(--space-12);
+  list-style: none;
+  margin: var(--space-20) 0 0;
+  padding: 0;
+}
+
+.shortcutRow {
+  align-items: center;
+  border-bottom: 1px solid var(--color-hairline);
+  display: flex;
+  gap: var(--space-16);
+  justify-content: space-between;
+  padding-bottom: var(--space-12);
+}
+
+.keycap {
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-6);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: var(--space-4) var(--space-8);
+}
+
+@media (min-width: 768px) {
+  .main {
+    padding: var(--space-32);
+  }
+
+  .commandLabel {
+    display: inline;
+  }
+}
+
+@media (max-width: 479px) {
+  .mobileHeader .brandDescription {
+    display: none;
+  }
+}
+
+@media (min-width: 1280px) {
+  .rail {
+    display: flex;
+  }
+
+  .mobileHeader {
+    display: none;
+  }
+
+  .main {
+    margin-left: 240px;
+    padding: var(--space-40);
+  }
+}

@@ -1,0 +1,116 @@
+/**
+ * Summary: Styles Bootstrap connection and recovery banners through local tokens.
+ * Why: Makes degraded and disconnected states visible without blocking navigation.
+ */
+.banner {
+  align-items: flex-start;
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-10);
+  display: flex;
+  gap: var(--space-12);
+  margin-bottom: var(--space-24);
+  padding: var(--space-12) var(--space-16);
+}
+
+.banner svg {
+  flex: 0 0 auto;
+  height: 20px;
+  margin-top: 2px;
+  width: 20px;
+}
+
+.normal svg {
+  color: var(--color-green);
+}
+
+.activeOperation {
+  border-color: var(--color-blue);
+}
+
+.activeOperation svg {
+  color: var(--color-blue);
+}
+
+.loading svg {
+  color: var(--color-blue);
+}
+
+.degraded svg {
+  color: var(--color-yellow);
+}
+
+.disconnected svg {
+  color: var(--color-red);
+}
+
+.unexpected svg {
+  color: var(--color-red);
+}
+
+.content {
+  min-width: 0;
+}
+
+.summary {
+  color: var(--color-ink);
+  font-weight: 700;
+  margin: 0;
+}
+
+.detail {
+  color: var(--color-mute);
+  font-size: 14px;
+  margin: var(--space-4) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.path {
+  font-family: var(--font-mono);
+}
+
+.diagnostics {
+  margin: var(--space-8) 0 0;
+  padding-left: var(--space-20);
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  margin-top: var(--space-12);
+}
+
+.remediations {
+  display: grid;
+  gap: var(--space-8);
+  list-style: none;
+  margin: var(--space-12) 0 0;
+  padding: 0;
+}
+
+.remediation {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.recoveryLink,
+.remediationLabel {
+  color: var(--color-ink);
+  font-weight: 700;
+}
+
+.recoveryLink {
+  align-items: center;
+  display: inline-flex;
+  min-height: var(--target-dense);
+}
+
+.command {
+  color: var(--color-body);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}

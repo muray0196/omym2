@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from typing import TYPE_CHECKING, cast
+from uuid import UUID
 
 from omym2.config import PERSISTED_JSON_ITEM_SEPARATOR, PERSISTED_JSON_KEY_SEPARATOR
 from omym2.domain.models.check_issue import (
@@ -23,6 +24,23 @@ from omym2.domain.models.check_issue import (
 from omym2.domain.models.check_run import CheckRun
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.models.operation import (
+    CheckCompletedResult,
+    Operation,
+    OperationError,
+    OperationErrorCode,
+    OperationKind,
+    OperationLookup,
+    OperationProgress,
+    OperationRemediation,
+    OperationResult,
+    OperationResultKind,
+    OperationStatus,
+    OperationTombstone,
+    PlanCreatedResult,
+    RegisteredWithoutPlanResult,
+    RunCompletedResult,
+)
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.run import Run, RunStatus
@@ -38,7 +56,17 @@ from omym2.domain.models.track import (
 )
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.features.common_ports import CheckIssueGroup, PlanActionGroupRow
-from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId, parse_uuid
+from omym2.shared.ids import (
+    ActionId,
+    CheckRunId,
+    EventId,
+    LibraryId,
+    OperationId,
+    PlanId,
+    RunId,
+    TrackId,
+    parse_uuid,
+)
 from omym2.shared.pagination import INVALID_CURSOR_MESSAGE, CursorDecodeError, FacetValue, GroupCount, Page
 from omym2.shared.time import as_utc
 
@@ -53,6 +81,7 @@ INVALID_METADATA_VALUE_MESSAGE = "Persisted metadata JSON contains an unsupporte
 INVALID_ROW_TEXT_MESSAGE = "Expected SQLite text value."
 INVALID_ROW_INTEGER_MESSAGE = "Expected SQLite integer value."
 INVALID_SUMMARY_VALUE_MESSAGE = "Persisted summary JSON must contain string values."
+INVALID_OPERATION_PAYLOAD_MESSAGE = "Persisted Operation JSON does not match its typed discriminant."
 LIKE_ESCAPE_CHAR = "\\"  # escape character used for LIKE search patterns
 UNSUPPORTED_TRACK_GROUPING_MESSAGE = "Unsupported Track grouping"
 TRACK_GROUP_FILTER_PAIRING_MESSAGE = "grouping and group_key must be provided together."
@@ -181,7 +210,8 @@ RUN_SELECT_FROM = """
             FROM runs
 """
 PLAN_SELECT_FROM = """
-            SELECT plan_id, library_id, plan_type, status, created_at, config_hash, library_root_at_plan, summary_json
+            SELECT plan_id, library_id, source_run_id, plan_type, status, created_at, config_hash,
+                   library_root_at_plan, summary_json
             FROM plans
 """
 PLAN_ACTION_SELECT_FROM = """
@@ -193,6 +223,7 @@ PLAN_ACTION_SELECT_FROM = """
                 action_type,
                 source_path,
                 target_path,
+                reverses_event_id,
                 content_hash_at_plan,
                 metadata_hash_at_plan,
                 status,
@@ -224,6 +255,32 @@ FILE_EVENT_SELECT_FROM = """
                 error_message,
                 sequence_no
             FROM file_events
+"""
+OPERATION_SELECT_FROM = """
+            SELECT
+                operation_id,
+                library_id,
+                plan_id,
+                run_id,
+                kind,
+                status,
+                idempotency_key,
+                request_fingerprint,
+                stage_code,
+                completed_units,
+                total_units,
+                progress_message,
+                result_kind,
+                result_json,
+                error_code,
+                error_json,
+                requested_at,
+                started_at,
+                updated_at,
+                completed_at,
+                result_expires_at,
+                tombstone_expires_at
+            FROM operations
 """
 
 
@@ -938,6 +995,19 @@ class SQLitePlanRepository(_SQLiteRepository):
         )
         return tuple(_plan_from_row(row) for row in rows)
 
+    def list_by_source_run(self, source_run_id: RunId) -> tuple[Plan, ...]:
+        """Return Undo Plans that record one source Run, in creation order."""
+        rows = _fetch_all(
+            self._connection,
+            PLAN_SELECT_FROM
+            + """
+            WHERE source_run_id = ? AND plan_type = 'undo'
+            ORDER BY created_at, plan_id
+            """,
+            (str(source_run_id),),
+        )
+        return tuple(_plan_from_row(row) for row in rows)
+
     def query_page(  # noqa: PLR0913  # Mirrors the stable PlanRepository browse contract.
         self,
         library_id: LibraryId | None,
@@ -987,6 +1057,7 @@ class SQLitePlanRepository(_SQLiteRepository):
             INSERT INTO plans (
                 plan_id,
                 library_id,
+                source_run_id,
                 plan_type,
                 status,
                 created_at,
@@ -994,9 +1065,10 @@ class SQLitePlanRepository(_SQLiteRepository):
                 library_root_at_plan,
                 summary_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(plan_id) DO UPDATE SET
                 library_id = excluded.library_id,
+                source_run_id = excluded.source_run_id,
                 plan_type = excluded.plan_type,
                 status = excluded.status,
                 created_at = excluded.created_at,
@@ -1007,6 +1079,7 @@ class SQLitePlanRepository(_SQLiteRepository):
             (
                 str(plan.plan_id),
                 str(plan.library_id),
+                None if plan.source_run_id is None else str(plan.source_run_id),
                 plan.plan_type.value,
                 plan.status.value,
                 _timestamp_to_text(plan.created_at),
@@ -1015,6 +1088,23 @@ class SQLitePlanRepository(_SQLiteRepository):
                 _summary_to_json(plan.summary),
             ),
         )
+
+    def compare_and_set_status(
+        self,
+        plan_id: PlanId,
+        expected_status: PlanStatus,
+        replacement_status: PlanStatus,
+    ) -> bool:
+        """Replace one Plan status only when the persisted state still matches."""
+        cursor = self._connection.execute(
+            """
+            UPDATE plans
+            SET status = ?
+            WHERE plan_id = ? AND status = ?
+            """,
+            (replacement_status.value, str(plan_id), expected_status.value),
+        )
+        return cursor.rowcount == 1
 
 
 class SQLitePlanActionRepository(_SQLiteRepository):
@@ -1183,6 +1273,32 @@ class SQLitePlanActionRepository(_SQLiteRepository):
             (str(plan_id),),
         )
 
+    def action_counts_by_plan(
+        self,
+        plan_ids: Sequence[PlanId],
+    ) -> dict[PlanId, dict[tuple[ActionStatus, ActionType], int]]:
+        """Return current status/action-type counts for a bounded Plan page in one query."""
+        counts_by_plan: dict[PlanId, dict[tuple[ActionStatus, ActionType], int]] = {plan_id: {} for plan_id in plan_ids}
+        if not counts_by_plan:
+            return {}
+        placeholders = ", ".join("?" for _ in counts_by_plan)
+        rows = _fetch_all(
+            self._connection,
+            f"""
+            SELECT plan_id, status, action_type, COUNT(*) AS count
+            FROM plan_actions
+            WHERE plan_id IN ({placeholders})
+            GROUP BY plan_id, status, action_type
+            """,  # noqa: S608  # Placeholder text is generated solely from bound IDs.
+            tuple(str(plan_id) for plan_id in counts_by_plan),
+        )
+        for row in rows:
+            plan_id = PlanId(parse_uuid(_row_text(row, "plan_id")))
+            counts = counts_by_plan[plan_id]
+            key = (ActionStatus(_row_text(row, "status")), ActionType(_row_text(row, "action_type")))
+            counts[key] = _row_int(row, "count")
+        return counts_by_plan
+
     def list_by_ids(self, action_ids: Sequence[ActionId]) -> tuple[PlanAction, ...]:
         """Return the PlanActions with the given IDs, ordered (sort_order, action_id)."""
         if not action_ids:
@@ -1227,13 +1343,14 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 action_type,
                 source_path,
                 target_path,
+                reverses_event_id,
                 content_hash_at_plan,
                 metadata_hash_at_plan,
                 status,
                 reason,
                 sort_order
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(action_id) DO UPDATE SET
                 plan_id = excluded.plan_id,
                 library_id = excluded.library_id,
@@ -1241,6 +1358,7 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 action_type = excluded.action_type,
                 source_path = excluded.source_path,
                 target_path = excluded.target_path,
+                reverses_event_id = excluded.reverses_event_id,
                 content_hash_at_plan = excluded.content_hash_at_plan,
                 metadata_hash_at_plan = excluded.metadata_hash_at_plan,
                 status = excluded.status,
@@ -1255,6 +1373,7 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 action.action_type.value,
                 action.source_path,
                 action.target_path,
+                None if action.reverses_event_id is None else str(action.reverses_event_id),
                 action.content_hash_at_plan,
                 action.metadata_hash_at_plan,
                 action.status.value,
@@ -1262,6 +1381,185 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 action.sort_order,
             ),
         )
+
+
+class SQLiteOperationRepository(_SQLiteRepository):
+    """SQLite implementation of OperationRepository."""
+
+    def lookup(self, operation_id: OperationId) -> OperationLookup | None:
+        """Return a full Operation or retained tombstone by stable ID."""
+        row = _fetch_one(
+            self._connection,
+            OPERATION_SELECT_FROM
+            + """
+            WHERE operation_id = ?
+            """,
+            (str(operation_id),),
+        )
+        return None if row is None else _operation_lookup_from_row(row)
+
+    def find_by_idempotency_key(self, idempotency_key: UUID) -> OperationLookup | None:
+        """Return retained request identity for idempotent replay classification."""
+        row = _fetch_one(
+            self._connection,
+            OPERATION_SELECT_FROM
+            + """
+            WHERE idempotency_key = ?
+            """,
+            (str(idempotency_key),),
+        )
+        return None if row is None else _operation_lookup_from_row(row)
+
+    def list_reconciliation_candidates(self) -> tuple[Operation, ...]:
+        """Return unfinished Operations in deterministic request order."""
+        rows = _fetch_all(
+            self._connection,
+            OPERATION_SELECT_FROM  # noqa: S608  # Concatenates only static repository SQL fragments.
+            + """
+            WHERE operations.status IN ('queued', 'running')
+               OR (
+                    operations.status = 'interrupted'
+                    AND operations.kind = 'apply_plan'
+                    AND (
+                        EXISTS (
+                            SELECT 1
+                            FROM plans
+                            WHERE plans.plan_id = operations.plan_id
+                              AND plans.status = 'applying'
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM runs
+                            WHERE runs.run_id = operations.run_id
+                              AND runs.status = 'running'
+                        )
+                    )
+               )
+            ORDER BY operations.requested_at, operations.operation_id
+            """,
+        )
+        return tuple(_operation_from_row(row) for row in rows)
+
+    def find_active(self) -> Operation | None:
+        """Return the single queued or running Operation, if one exists."""
+        row = _fetch_one(
+            self._connection,
+            OPERATION_SELECT_FROM
+            + """
+            WHERE status IN ('queued', 'running')
+            ORDER BY requested_at, operation_id
+            LIMIT 1
+            """,
+        )
+        return None if row is None else _operation_from_row(row)
+
+    def save(self, operation: Operation) -> None:
+        """Persist one full Operation without deciding lifecycle policy."""
+        result_kind = None if operation.result is None else operation.result.kind.value
+        result_json = None if operation.result is None else _operation_result_to_json(operation.result)
+        error_code = None if operation.error is None else operation.error.code.value
+        error_json = None if operation.error is None else _operation_error_to_json(operation.error)
+        _ = self._connection.execute(
+            """
+            INSERT INTO operations (
+                operation_id,
+                library_id,
+                plan_id,
+                run_id,
+                kind,
+                status,
+                idempotency_key,
+                request_fingerprint,
+                stage_code,
+                completed_units,
+                total_units,
+                progress_message,
+                result_kind,
+                result_json,
+                error_code,
+                error_json,
+                requested_at,
+                started_at,
+                updated_at,
+                completed_at,
+                result_expires_at,
+                tombstone_expires_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(operation_id) DO UPDATE SET
+                library_id = excluded.library_id,
+                plan_id = excluded.plan_id,
+                run_id = excluded.run_id,
+                kind = excluded.kind,
+                status = excluded.status,
+                idempotency_key = excluded.idempotency_key,
+                request_fingerprint = excluded.request_fingerprint,
+                stage_code = excluded.stage_code,
+                completed_units = excluded.completed_units,
+                total_units = excluded.total_units,
+                progress_message = excluded.progress_message,
+                result_kind = excluded.result_kind,
+                result_json = excluded.result_json,
+                error_code = excluded.error_code,
+                error_json = excluded.error_json,
+                requested_at = excluded.requested_at,
+                started_at = excluded.started_at,
+                updated_at = excluded.updated_at,
+                completed_at = excluded.completed_at,
+                result_expires_at = excluded.result_expires_at,
+                tombstone_expires_at = excluded.tombstone_expires_at
+            """,
+            (
+                str(operation.operation_id),
+                None if operation.library_id is None else str(operation.library_id),
+                None if operation.plan_id is None else str(operation.plan_id),
+                None if operation.run_id is None else str(operation.run_id),
+                operation.kind.value,
+                operation.status.value,
+                str(operation.idempotency_key),
+                operation.request_fingerprint,
+                operation.progress.stage_code,
+                operation.progress.completed_units,
+                operation.progress.total_units,
+                operation.progress.message,
+                result_kind,
+                result_json,
+                error_code,
+                error_json,
+                _timestamp_to_text(operation.requested_at),
+                _optional_timestamp_to_text(operation.started_at),
+                _timestamp_to_text(operation.updated_at),
+                _optional_timestamp_to_text(operation.completed_at),
+                _optional_timestamp_to_text(operation.result_expires_at),
+                _optional_timestamp_to_text(operation.tombstone_expires_at),
+            ),
+        )
+
+    def expire_terminal_payloads(self, now: datetime) -> int:
+        """Clear expired result/error payloads and return the affected row count."""
+        cursor = self._connection.execute(
+            """
+            UPDATE operations
+            SET result_kind = NULL, result_json = NULL, error_code = NULL, error_json = NULL
+            WHERE status IN ('succeeded', 'failed', 'interrupted')
+              AND result_expires_at <= ?
+              AND (result_json IS NOT NULL OR error_json IS NOT NULL)
+            """,
+            (_timestamp_to_text(now),),
+        )
+        return cursor.rowcount
+
+    def purge_expired_tombstones(self, now: datetime) -> int:
+        """Delete expired terminal tombstones and return the affected row count."""
+        cursor = self._connection.execute(
+            """
+            DELETE FROM operations
+            WHERE status IN ('succeeded', 'failed', 'interrupted')
+              AND tombstone_expires_at <= ?
+            """,
+            (_timestamp_to_text(now),),
+        )
+        return cursor.rowcount
 
 
 class SQLiteRunRepository(_SQLiteRepository):
@@ -1610,6 +1908,7 @@ def _check_issue_from_row(row: sqlite3.Row) -> CheckIssue:
 
 
 def _plan_from_row(row: sqlite3.Row) -> Plan:
+    source_run_id = _row_optional_text(row, "source_run_id")
     return Plan(
         plan_id=PlanId(parse_uuid(_row_text(row, "plan_id"))),
         library_id=LibraryId(parse_uuid(_row_text(row, "library_id"))),
@@ -1618,12 +1917,14 @@ def _plan_from_row(row: sqlite3.Row) -> Plan:
         created_at=_timestamp_from_text(_row_text(row, "created_at")),
         config_hash=_row_text(row, "config_hash"),
         library_root_at_plan=_row_text(row, "library_root_at_plan"),
+        source_run_id=None if source_run_id is None else RunId(parse_uuid(source_run_id)),
         summary=_summary_from_json(_row_text(row, "summary_json")),
     )
 
 
 def _plan_action_from_row(row: sqlite3.Row) -> PlanAction:
     track_id = _row_optional_text(row, "track_id")
+    reverses_event_id = _row_optional_text(row, "reverses_event_id")
     reason = _row_optional_text(row, "reason")
     return PlanAction(
         action_id=ActionId(parse_uuid(_row_text(row, "action_id"))),
@@ -1638,6 +1939,7 @@ def _plan_action_from_row(row: sqlite3.Row) -> PlanAction:
         status=ActionStatus(_row_text(row, "status")),
         reason=None if reason is None else PlanActionReason(reason),
         sort_order=_row_int(row, "sort_order"),
+        reverses_event_id=None if reverses_event_id is None else EventId(parse_uuid(reverses_event_id)),
     )
 
 
@@ -1685,6 +1987,101 @@ def _file_event_from_row(row: sqlite3.Row) -> FileEvent:
         error_code=_row_optional_text(row, "error_code"),
         error_message=_row_optional_text(row, "error_message"),
         sequence_no=_row_int(row, "sequence_no"),
+    )
+
+
+def _operation_lookup_from_row(row: sqlite3.Row) -> OperationLookup:
+    status = OperationStatus(_row_text(row, "status"))
+    payload_is_expired = (status is OperationStatus.SUCCEEDED and _row_optional_text(row, "result_json") is None) or (
+        status in {OperationStatus.FAILED, OperationStatus.INTERRUPTED}
+        and _row_optional_text(row, "error_json") is None
+    )
+    if payload_is_expired:
+        return OperationTombstone(
+            operation_id=OperationId(parse_uuid(_row_text(row, "operation_id"))),
+            idempotency_key=UUID(_row_text(row, "idempotency_key")),
+            kind=OperationKind(_row_text(row, "kind")),
+            request_fingerprint=_row_text(row, "request_fingerprint"),
+            tombstone_expires_at=_timestamp_from_text(_row_text(row, "tombstone_expires_at")),
+        )
+    return _operation_from_row(row)
+
+
+def _operation_from_row(row: sqlite3.Row) -> Operation:
+    library_id = _row_optional_text(row, "library_id")
+    plan_id = _row_optional_text(row, "plan_id")
+    run_id = _row_optional_text(row, "run_id")
+    return Operation(
+        operation_id=OperationId(parse_uuid(_row_text(row, "operation_id"))),
+        library_id=None if library_id is None else LibraryId(parse_uuid(library_id)),
+        plan_id=None if plan_id is None else PlanId(parse_uuid(plan_id)),
+        run_id=None if run_id is None else RunId(parse_uuid(run_id)),
+        kind=OperationKind(_row_text(row, "kind")),
+        status=OperationStatus(_row_text(row, "status")),
+        idempotency_key=UUID(_row_text(row, "idempotency_key")),
+        request_fingerprint=_row_text(row, "request_fingerprint"),
+        progress=OperationProgress(
+            stage_code=_row_optional_text(row, "stage_code"),
+            completed_units=_row_optional_int(row, "completed_units"),
+            total_units=_row_optional_int(row, "total_units"),
+            message=_row_optional_text(row, "progress_message"),
+        ),
+        result=_operation_result_from_row(row),
+        error=_operation_error_from_row(row),
+        requested_at=_timestamp_from_text(_row_text(row, "requested_at")),
+        started_at=_optional_timestamp_from_text(_row_optional_text(row, "started_at")),
+        updated_at=_timestamp_from_text(_row_text(row, "updated_at")),
+        completed_at=_optional_timestamp_from_text(_row_optional_text(row, "completed_at")),
+        result_expires_at=_optional_timestamp_from_text(_row_optional_text(row, "result_expires_at")),
+        tombstone_expires_at=_optional_timestamp_from_text(_row_optional_text(row, "tombstone_expires_at")),
+    )
+
+
+def _operation_result_from_row(row: sqlite3.Row) -> OperationResult | None:
+    raw_kind = _row_optional_text(row, "result_kind")
+    if raw_kind is None:
+        return None
+    payload = _json_object(_row_text(row, "result_json"))
+    kind = OperationResultKind(raw_kind)
+    if kind is OperationResultKind.PLAN_CREATED:
+        return PlanCreatedResult(plan_id=PlanId(parse_uuid(_operation_text(payload, "plan_id"))))
+    if kind is OperationResultKind.REGISTERED_WITHOUT_PLAN:
+        return RegisteredWithoutPlanResult(
+            library_id=LibraryId(parse_uuid(_operation_text(payload, "library_id"))),
+            track_count=_operation_integer(payload, "track_count"),
+        )
+    if kind is OperationResultKind.CHECK_COMPLETED:
+        return CheckCompletedResult(
+            check_run_ids=tuple(
+                CheckRunId(parse_uuid(raw_id)) for raw_id in _operation_text_list(payload, "check_run_ids")
+            ),
+            issue_count=_operation_integer(payload, "issue_count"),
+        )
+    return RunCompletedResult(run_id=RunId(parse_uuid(_operation_text(payload, "run_id"))))
+
+
+def _operation_error_from_row(row: sqlite3.Row) -> OperationError | None:
+    raw_code = _row_optional_text(row, "error_code")
+    if raw_code is None:
+        return None
+    payload = _json_object(_row_text(row, "error_json"))
+    remediation_payload = payload.get("remediation")
+    remediation: OperationRemediation | None = None
+    if remediation_payload is not None:
+        if not isinstance(remediation_payload, dict):
+            raise TypeError(INVALID_OPERATION_PAYLOAD_MESSAGE)
+        remediation_mapping = cast("dict[str, object]", remediation_payload)
+        remediation = OperationRemediation(
+            label=_operation_text(remediation_mapping, "label"),
+            route=_operation_optional_text(remediation_mapping, "route"),
+            command=_operation_optional_text(remediation_mapping, "command"),
+        )
+    return OperationError(
+        code=OperationErrorCode(raw_code),
+        message=_operation_text(payload, "message"),
+        retryable=_operation_boolean(payload, "retryable"),
+        field=_operation_optional_text(payload, "field"),
+        remediation=remediation,
     )
 
 
@@ -2144,7 +2541,8 @@ def _plan_filter_where(
         clauses.append("plan_type = ?")
         params.append(plan_type.value)
     if blocked_only:
-        clauses.append("CAST(json_extract(summary_json, '$.blocked_actions') AS INTEGER) > 0")
+        clauses.append("EXISTS (SELECT 1 FROM plan_actions WHERE plan_actions.plan_id = plans.plan_id AND status = ?)")
+        params.append(ActionStatus.BLOCKED.value)
     if not clauses:
         return "", params
     return " WHERE " + " AND ".join(clauses), params
@@ -2347,6 +2745,38 @@ def _summary_from_json(raw_value: str) -> dict[str, str]:
     return summary
 
 
+def _operation_result_to_json(result: OperationResult) -> str:
+    if isinstance(result, PlanCreatedResult):
+        payload: dict[str, object] = {"plan_id": str(result.plan_id)}
+    elif isinstance(result, RegisteredWithoutPlanResult):
+        payload = {"library_id": str(result.library_id), "track_count": result.track_count}
+    elif isinstance(result, CheckCompletedResult):
+        payload = {
+            "check_run_ids": [str(check_run_id) for check_run_id in result.check_run_ids],
+            "issue_count": result.issue_count,
+        }
+    else:
+        payload = {"run_id": str(result.run_id)}
+    return _json_to_text(payload)
+
+
+def _operation_error_to_json(error: OperationError) -> str:
+    payload: dict[str, object] = {
+        "message": error.message,
+        "retryable": error.retryable,
+    }
+    if error.field is not None:
+        payload["field"] = error.field
+    if error.remediation is not None:
+        remediation: dict[str, object] = {"label": error.remediation.label}
+        if error.remediation.route is not None:
+            remediation["route"] = error.remediation.route
+        if error.remediation.command is not None:
+            remediation["command"] = error.remediation.command
+        payload["remediation"] = remediation
+    return _json_to_text(payload)
+
+
 def _json_to_text(payload: Mapping[str, object]) -> str:
     return json.dumps(
         payload,
@@ -2376,3 +2806,41 @@ def _optional_int(payload: Mapping[str, object], key: str) -> int | None:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     raise TypeError(INVALID_METADATA_VALUE_MESSAGE)
+
+
+def _operation_text(payload: Mapping[str, object], key: str) -> str:
+    value = payload.get(key)
+    if isinstance(value, str):
+        return value
+    raise TypeError(INVALID_OPERATION_PAYLOAD_MESSAGE)
+
+
+def _operation_optional_text(payload: Mapping[str, object], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None or isinstance(value, str):
+        return value
+    raise TypeError(INVALID_OPERATION_PAYLOAD_MESSAGE)
+
+
+def _operation_integer(payload: Mapping[str, object], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise TypeError(INVALID_OPERATION_PAYLOAD_MESSAGE)
+
+
+def _operation_boolean(payload: Mapping[str, object], key: str) -> bool:
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return value
+    raise TypeError(INVALID_OPERATION_PAYLOAD_MESSAGE)
+
+
+def _operation_text_list(payload: Mapping[str, object], key: str) -> tuple[str, ...]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        raise TypeError(INVALID_OPERATION_PAYLOAD_MESSAGE)
+    items = cast("list[object]", value)
+    if not all(isinstance(item, str) for item in items):
+        raise TypeError(INVALID_OPERATION_PAYLOAD_MESSAGE)
+    return tuple(cast("list[str]", items))

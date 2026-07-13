@@ -5,9 +5,13 @@ Why: Stores editable user settings outside SQLite in the documented location.
 
 from __future__ import annotations
 
+import errno
 import json
+import os
+import tempfile
 import tomllib
 from dataclasses import dataclass, field
+from hashlib import new as new_hash
 from typing import TYPE_CHECKING
 
 from omym2.adapters.config.config_validator import (
@@ -48,8 +52,19 @@ from omym2.adapters.config.config_validator import (
     validate_config_data,
 )
 from omym2.adapters.config.default_config import default_app_config
-from omym2.config import CONFIG_FILE_ENCODING
-from omym2.features.common_ports import ConfigStoreValidationError
+from omym2.config import (
+    CONFIG_FILE_ENCODING,
+    CONFIG_REVISION_ALGORITHM,
+    CONFIG_REVISION_PREFIX,
+    CONFIG_SNAPSHOT_READ_MAX_ATTEMPTS,
+)
+from omym2.features.common_ports import (
+    ConfigRevisionMismatchError,
+    ConfigSnapshot,
+    ConfigSnapshotState,
+    ConfigStoreIoError,
+    ConfigStoreValidationError,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -57,7 +72,10 @@ if TYPE_CHECKING:
     from omym2.domain.models.app_config import AppConfig
 
 INVALID_TOML_MESSAGE_PREFIX = "Invalid TOML"
+INVALID_CONFIG_ENCODING_MESSAGE = "Config file must be valid UTF-8."
+CONFIG_CHANGED_DURING_READ_MESSAGE = "Config file changed during snapshot read."
 UNSUPPORTED_TOML_VALUE_MESSAGE = "Unsupported TOML value type."
+CONFIG_TEMP_FILE_SUFFIX = ".tmp"
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,23 +89,144 @@ class TomlConfigStore:
 
     def load(self) -> AppConfig:
         """Load settings, returning defaults when the file is not created yet."""
-        if not self.config_path.exists():
-            return default_app_config()
-        config_text = self.config_path.read_text(encoding=CONFIG_FILE_ENCODING)
+        snapshot = self.read_snapshot()
+        if snapshot.state is ConfigSnapshotState.INVALID:
+            raise ConfigStoreValidationError(snapshot.errors)
+        return snapshot.config
+
+    def read_snapshot(self) -> ConfigSnapshot:
+        """Read Config and revision from one stable raw storage observation."""
+        try:
+            return self._read_snapshot()
+        except ConfigStoreIoError:
+            raise
+        except OSError as exc:
+            raise ConfigStoreIoError(exc) from exc
+
+    def _read_snapshot(self) -> ConfigSnapshot:
+        raw_config, identity = self._read_stable_raw_config()
+        if raw_config is None:
+            return _config_snapshot(ConfigSnapshotState.MISSING, default_app_config(), b"", None)
+
+        try:
+            config_text = raw_config.decode(CONFIG_FILE_ENCODING)
+        except UnicodeDecodeError:
+            return _config_snapshot(
+                ConfigSnapshotState.INVALID,
+                default_app_config(),
+                raw_config,
+                identity,
+                errors=(INVALID_CONFIG_ENCODING_MESSAGE,),
+            )
+
         cached_config = self._load_cache.get(config_text)
         if cached_config is not None:
-            return cached_config
-        config = load_config_text(config_text)
+            return _config_snapshot(ConfigSnapshotState.VALID, cached_config, raw_config, identity)
+        try:
+            config = load_config_text(config_text)
+        except ConfigStoreValidationError as exc:
+            return _config_snapshot(
+                ConfigSnapshotState.INVALID,
+                default_app_config(),
+                raw_config,
+                identity,
+                errors=exc.errors,
+            )
         self._load_cache.clear()
         self._load_cache[config_text] = config
-        return config
+        return _config_snapshot(ConfigSnapshotState.VALID, config, raw_config, identity)
 
-    def save(self, config: AppConfig) -> None:
-        """Persist settings, creating the config directory lazily."""
+    def _read_stable_raw_config(self) -> tuple[bytes | None, tuple[int, ...] | None]:
+        for _attempt in range(CONFIG_SNAPSHOT_READ_MAX_ATTEMPTS):
+            try:
+                with self.config_path.open("rb") as config_file:
+                    before = _stat_identity(config_file.fileno())
+                    raw_config = config_file.read()
+                    after = _stat_identity(config_file.fileno())
+            except FileNotFoundError:
+                try:
+                    _ = self.config_path.stat()
+                except FileNotFoundError:
+                    return None, None
+                continue
+
+            try:
+                path_identity = _path_file_identity(self.config_path)
+            except FileNotFoundError:
+                continue
+            if before == after == path_identity:
+                return raw_config, after
+        raise OSError(CONFIG_CHANGED_DURING_READ_MESSAGE)
+
+    def save(self, config: AppConfig, *, expected_config_revision: str) -> ConfigSnapshot:
+        """Atomically persist settings when raw Config still has the expected revision."""
+        try:
+            return self._save(config, expected_config_revision=expected_config_revision)
+        except ConfigRevisionMismatchError, ConfigStoreIoError:
+            raise
+        except OSError as exc:
+            raise ConfigStoreIoError(exc) from exc
+
+    def _save(self, config: AppConfig, *, expected_config_revision: str) -> ConfigSnapshot:
+        initial_snapshot = self.read_snapshot()
+        _require_expected_revision(expected_config_revision, initial_snapshot)
+
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        _ = self.config_path.write_text(dump_config_toml(config), encoding=CONFIG_FILE_ENCODING)
-        # A successful save changes the source text behind any cached parse.
-        self._load_cache.clear()
+        config_bytes = dump_config_toml(config).encode(CONFIG_FILE_ENCODING)
+        temp_path = _write_synced_temp_file(self.config_path, config_bytes)
+        try:
+            pre_replace_snapshot = self.read_snapshot()
+            _require_expected_revision(expected_config_revision, pre_replace_snapshot)
+            os.replace(temp_path, self.config_path)  # noqa: PTH105  # Contract requires explicit atomic replace.
+            # Replacement changes the source identity even when the serialized
+            # bytes match, so no cached parsed value remains authoritative.
+            self._load_cache.clear()
+            _sync_directory(self.config_path.parent)
+            installed_snapshot = self.read_snapshot()
+            self._load_cache.clear()
+            return installed_snapshot
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+
+def _require_expected_revision(expected_config_revision: str, snapshot: ConfigSnapshot) -> None:
+    if snapshot.config_revision != expected_config_revision:
+        raise ConfigRevisionMismatchError(expected_config_revision, snapshot.config_revision)
+
+
+def _write_synced_temp_file(config_path: Path, config_bytes: bytes) -> Path:
+    file_descriptor, temp_name = tempfile.mkstemp(
+        prefix=f".{config_path.name}.",
+        suffix=CONFIG_TEMP_FILE_SUFFIX,
+        dir=config_path.parent,
+    )
+    temp_path = config_path.parent / temp_name
+    completed = False
+    try:
+        with os.fdopen(file_descriptor, "wb") as temp_file:
+            _ = temp_file.write(config_bytes)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        completed = True
+    finally:
+        if not completed:
+            temp_path.unlink(missing_ok=True)
+    return temp_path
+
+
+def _sync_directory(directory: Path) -> None:
+    if os.name == "nt":
+        return
+    open_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    directory_descriptor = os.open(directory, open_flags)
+    try:
+        try:
+            os.fsync(directory_descriptor)
+        except OSError as exc:
+            if exc.errno not in {errno.EBADF, errno.EINVAL, errno.ENOTSUP}:
+                raise
+    finally:
+        os.close(directory_descriptor)
 
 
 def load_config_text(config_text: str) -> AppConfig:
@@ -97,6 +236,50 @@ def load_config_text(config_text: str) -> AppConfig:
     except tomllib.TOMLDecodeError as exc:
         raise ConfigStoreValidationError((f"{INVALID_TOML_MESSAGE_PREFIX}: {exc}",)) from exc
     return validate_config_data(raw_config)
+
+
+def _config_snapshot(
+    state: ConfigSnapshotState,
+    config: AppConfig,
+    raw_config: bytes,
+    identity: tuple[int, ...] | None,
+    *,
+    errors: tuple[str, ...] = (),
+) -> ConfigSnapshot:
+    digest = new_hash(CONFIG_REVISION_ALGORITHM)
+    digest.update(CONFIG_REVISION_PREFIX.encode("ascii"))
+    digest.update(b"\0")
+    digest.update(state.value.encode("ascii"))
+    digest.update(b"\0")
+    digest.update(raw_config)
+    if identity is not None:
+        for value in identity:
+            digest.update(b"\0")
+            digest.update(str(value).encode("ascii"))
+    return ConfigSnapshot(
+        state=state,
+        config=config,
+        config_revision=f"{CONFIG_REVISION_PREFIX}:{digest.hexdigest()}",
+        errors=errors,
+    )
+
+
+def _stat_identity(file_descriptor: int) -> tuple[int, ...]:
+    from os import fstat  # noqa: PLC0415  # Keeps the raw-read helper local to the Config adapter.
+
+    return _identity_values(fstat(file_descriptor))
+
+
+def _path_file_identity(config_path: Path) -> tuple[int, ...]:
+    with config_path.open("rb") as config_file:
+        return _stat_identity(config_file.fileno())
+
+
+def _identity_values(stat_result: object) -> tuple[int, ...]:
+    return tuple(
+        int(getattr(stat_result, field_name, 0))
+        for field_name in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+    )
 
 
 def dump_config_toml(config: AppConfig) -> str:

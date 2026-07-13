@@ -1,11 +1,11 @@
 ---
 name: config-schema-change
-description: Safety checklist for changes to the persisted TOML application-config contract — the AppConfig dataclass shape, TOML keys, defaults, allowed values or enums, validation rules, and config serialization such as the TOML store and web settings serializers or choices lists. Use before designing or reviewing any change to settings save or load paths. Do not use it for code that merely reads an existing config value inside a feature, and do not use it for runtime environment-variable configuration, which is docs/DEVELOPMENT.md's domain.
+description: Safety checklist for changes to the persisted TOML application-config contract — the AppConfig dataclass shape, TOML keys, defaults, allowed values or enums, validation rules, and config serialization such as the TOML store and web settings serializers or choices lists. Use before designing or reviewing any change to settings save or load paths. Do not use it for code that merely reads an existing config value inside a feature, and do not use it for runtime environment-variable configuration, which is docs/development/harness.md's domain.
 ---
 
 # Config Schema Change
 
-Authoritative doc: `docs/contracts/config.md`. Test policy: `docs/TESTING.md`'s
+Authoritative doc: `docs/contracts/config.md`. Test policy: `docs/development/testing.md`'s
 Contract Change Test Requirements table, "Config contract" row.
 
 ## Non-negotiable invariants
@@ -27,6 +27,11 @@ Contract Change Test Requirements table, "Config contract" row.
    `src/omym2/config.py` (e.g. `ALLOWED_UI_THEMES`) rather than assuming
    `docs/contracts/config.md` is exhaustive; when the doc lags the source,
    update the doc in the same change (open `update-docs`).
+5. `config_revision` is opaque raw-storage concurrency state, not an AppConfig
+   field or TOML key. Web and CLI saves acquire the shared exclusive lock,
+   recheck the expected revision, and use the Config adapter's atomic replace.
+   Never add last-write-wins or update SQLite Library status as part of the
+   Config file write; effective staleness is derived from fingerprints.
 
 ## Every changed or added key touches these surfaces
 
@@ -35,7 +40,8 @@ Contract Change Test Requirements table, "Config contract" row.
 | Section dataclass, defaults, `__post_init__` validation | `src/omym2/domain/models/app_config.py` |
 | TOML key allow-list, type/choice rule | `src/omym2/adapters/config/config_validator.py` |
 | TOML writer | `src/omym2/adapters/config/toml_config_store.py` |
-| Web settings JSON payload and choices list | `src/omym2/adapters/web/routes/api_serializers.py` |
+| Future typed Web settings boundary | Pydantic schemas under `src/omym2/adapters/web/schemas/` and routes under `src/omym2/adapters/web/routes/`; routes call Settings usecases and never import TOML validators or serializers |
+| Raw revision read/CAS DTO and ConfigStore port | `src/omym2/features/common_ports.py`, `src/omym2/features/settings/` |
 | Contract doc | `docs/contracts/config.md` (open `update-docs`) |
 | Plan/Library staleness fingerprint, only if the field can change generated paths | `src/omym2/domain/services/config_fingerprint.py` |
 
@@ -57,8 +63,10 @@ Libraries would not detect the settings change as stale.
 1. Confirm scope: AppConfig shape, TOML keys, defaults, allowed values,
    validation, or serialization. Reading an already-defined value, or
    changing an environment variable, is out of scope — see
-   `docs/DEVELOPMENT.md`.
+   `docs/development/harness.md`.
 2. Edit every surface in the table above in the same change.
+   If the change touches save/load concurrency rather than the TOML schema,
+   edit only the raw-revision/CAS surfaces and do not invent a TOML key.
 3. Decide and implement the backward-compatibility behavior from invariant 3
    for the specific key(s) touched.
 4. If the field affects generated paths or fingerprints, update
@@ -70,9 +78,10 @@ Libraries would not detect the settings change as stale.
 ## Done means
 
 - Tests cover load, save, validation, defaults, and migration/
-  backward-compatibility behavior per `docs/TESTING.md`'s Contract Change Test
-  Requirements table. Anchors: `tests/adapters/config/test_toml_config_store.py`,
-  `tests/domain/test_app_config.py`, `tests/adapters/web/test_api_settings.py`.
+  backward-compatibility behavior per `docs/development/testing.md`'s Contract Change Test
+  Requirements table. Anchors: `tests/adapters/config/test_toml_config_store.py`
+  and `tests/domain/test_app_config.py`; when the typed Web Settings slice
+  exists, its route-level Pydantic contract tests are required too.
 - `docs/contracts/config.md` reflects the new shape in the same change.
 
 ## Stop and report when

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -15,6 +15,8 @@ import pytest
 
 from omym2.adapters.config.default_config import default_app_config
 from omym2.config import (
+    OPERATION_RESULT_RETENTION_HOURS,
+    OPERATION_TOMBSTONE_RETENTION_DAYS,
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
@@ -22,6 +24,7 @@ from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicy
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.models.operation import Operation, OperationKind, OperationStatus, PlanCreatedResult
 from omym2.domain.models.plan import PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanActionReason
 from omym2.domain.models.track import Track, TrackStatus
@@ -34,6 +37,7 @@ from omym2.features.add.ports import CreateAddPlanPorts
 from omym2.features.add.usecases.create_add_plan import (
     AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE,
     NO_REGISTERED_LIBRARY_MESSAGE,
+    SELECTED_LIBRARY_NOT_FOUND_MESSAGE,
     STALE_LIBRARY_MESSAGE,
     AddLibrarySelectionError,
     CreateAddPlanUseCase,
@@ -43,7 +47,7 @@ from omym2.features.plans.ports import PlanQueryPorts
 from omym2.features.plans.usecases.get_plan_header import GetPlanHeaderUseCase
 from omym2.features.plans.usecases.list_plan_actions import ListPlanActionsUseCase
 from omym2.features.plans.usecases.list_plans import ListPlansUseCase
-from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
+from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
@@ -99,6 +103,8 @@ PEER_METADATA = TrackMetadata(
     disc_number=2,
 )
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
+OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568e"))
+IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def01234568f")
 SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 SECOND_DUPLICATE_TRACK_PATH = "Artist/2026_Album/1-05_Title-Copy.flac"
 SECOND_INCOMING_FILE = "/music/incoming/Title2.flac"
@@ -125,6 +131,59 @@ def test_add_refuses_when_no_registered_library_can_be_selected() -> None:
     assert uow.rollback_count == 1
 
 
+def test_add_operation_success_commits_the_created_plan_result() -> None:
+    """Orchestrated Add succeeds with the exact Plan created in its transaction."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.operations.save(_running_operation(OperationKind.ADD_PLAN))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(
+        CreateAddPlanRequest(source_path=INCOMING_ROOT, operation_id=OPERATION_ID)
+    )
+
+    terminal = uow.operations.lookup(OPERATION_ID)
+    assert isinstance(terminal, Operation)
+    assert terminal.status is OperationStatus.SUCCEEDED
+    assert terminal.result == PlanCreatedResult(plan.plan_id)
+    assert terminal.plan_id == plan.plan_id
+    assert terminal.completed_at == BASE_TIME
+    assert terminal.result_expires_at == BASE_TIME + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS)
+    assert terminal.tombstone_expires_at == BASE_TIME + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS)
+    assert uow.plans.get(plan.plan_id) == plan
+
+
+def test_add_rejects_nonrunning_operation_without_creating_plan() -> None:
+    """An invalid orchestration lifecycle rolls back before Plan persistence."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    queued = Operation.queued(
+        operation_id=OPERATION_ID,
+        kind=OperationKind.ADD_PLAN,
+        idempotency_key=IDEMPOTENCY_KEY,
+        request_fingerprint="add-request",
+        requested_at=BASE_TIME,
+        library_id=LIBRARY_ID,
+    )
+    uow.operations.save(queued)
+    ports, scanner, _ = _ports(uow, (), {}, SequenceIdGenerator())
+
+    with pytest.raises(RuntimeError):
+        _ = CreateAddPlanUseCase(ports).execute(
+            CreateAddPlanRequest(source_path=INCOMING_ROOT, operation_id=OPERATION_ID)
+        )
+
+    assert scanner.scanned_roots == []
+    assert uow.plans.records == {}
+    assert uow.operations.lookup(OPERATION_ID) == queued
+    assert uow.rollback_count == 1
+
+
 def test_add_refuses_ambiguous_registered_library_selection() -> None:
     """Add requires exactly one registered Library in the MVP."""
     uow = InMemoryUnitOfWork()
@@ -135,6 +194,41 @@ def test_add_refuses_ambiguous_registered_library_selection() -> None:
     with pytest.raises(AddLibrarySelectionError, match=AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE):
         _ = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
 
+    assert uow.plans.records == {}
+
+
+def test_add_uses_explicit_library_selection_when_multiple_libraries_exist() -> None:
+    """Web callers can select one stable Library ID without relying on list order."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.libraries.save(_library(SECOND_LIBRARY_ID, SECOND_LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(
+        CreateAddPlanRequest(source_path=INCOMING_ROOT, library_id=SECOND_LIBRARY_ID)
+    )
+
+    assert plan.library_id == SECOND_LIBRARY_ID
+    assert plan.library_root_at_plan == SECOND_LIBRARY_ROOT
+
+
+def test_add_rejects_unknown_explicit_library_selection() -> None:
+    """An opaque Library ID must resolve before scanning or Plan persistence."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, scanner, _ = _ports(uow, (), {}, SequenceIdGenerator())
+
+    with pytest.raises(AddLibrarySelectionError, match=SELECTED_LIBRARY_NOT_FOUND_MESSAGE):
+        _ = CreateAddPlanUseCase(ports).execute(
+            CreateAddPlanRequest(source_path=INCOMING_ROOT, library_id=SECOND_LIBRARY_ID)
+        )
+
+    assert scanner.scanned_roots == []
     assert uow.plans.records == {}
 
 
@@ -540,6 +634,7 @@ def test_add_plan_blocks_source_changed_after_scan() -> None:
         content_hash=CONTENT_HASH,
         metadata_hash=calculate_metadata_fingerprint(METADATA),
         metadata=METADATA,
+        filesystem_identity=None,
         captured_at=BASE_TIME,
     )
     uow = InMemoryUnitOfWork()
@@ -745,6 +840,7 @@ def _snapshot(path: str, metadata: TrackMetadata, content_hash: str) -> FileSnap
         content_hash=content_hash,
         metadata_hash=calculate_metadata_fingerprint(metadata),
         metadata=metadata,
+        filesystem_identity=None,
         captured_at=BASE_TIME,
     )
 
@@ -788,6 +884,17 @@ def _track(
         last_seen_at=BASE_TIME,
         updated_at=BASE_TIME,
     )
+
+
+def _running_operation(kind: OperationKind) -> Operation:
+    return Operation.queued(
+        operation_id=OPERATION_ID,
+        kind=kind,
+        idempotency_key=IDEMPOTENCY_KEY,
+        request_fingerprint="add-request",
+        requested_at=BASE_TIME,
+        library_id=LIBRARY_ID,
+    ).mark_running(BASE_TIME)
 
 
 def _album_track_metadata(title: str, year: int | None, track_number: int) -> TrackMetadata:

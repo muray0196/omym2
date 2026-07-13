@@ -1,0 +1,249 @@
+# Summary: Builds and publishes audited final and pinned rollback package assets.
+# Why: Keeps same-version rollback distributions durable without renaming them.
+
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: omym2-release
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+  RELEASE_TAG: v0.1.0
+  ROLLBACK_COMMIT: 3d8b70a0c003bee06efbeda76819a9d1a9753692
+
+jobs:
+  build:
+    name: Build Audited Release Assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Check out final source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require main and the pinned rollback ancestor
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Release dispatch must target main." >&2
+            exit 1
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo "Checked-out final commit differs from the workflow commit." >&2
+            exit 1
+          fi
+          git cat-file -e "${ROLLBACK_COMMIT}^{commit}"
+          git merge-base --is-ancestor "$ROLLBACK_COMMIT" "$GITHUB_SHA"
+
+      - name: Require successful CI for the final commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          successful_count="$(
+            gh run list \
+              --workflow ci.yml \
+              --branch main \
+              --commit "$GITHUB_SHA" \
+              --event push \
+              --status completed \
+              --limit 20 \
+              --json conclusion \
+              --jq '[.[] | select(.conclusion == "success")] | length'
+          )"
+          if [[ ! "$successful_count" =~ ^[1-9][0-9]*$ ]]; then
+            echo "The final commit needs a successful completed push CI run." >&2
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install final Python dependencies
+        run: uv sync --locked --dev
+
+      - name: Install final frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build and audit final package evidence
+        run: >-
+          uv run python scripts/build_web_evidence.py
+          --output-directory "${{ runner.temp }}/final-evidence"
+
+      - name: Check out pinned rollback source
+        run: git worktree add --detach "${{ runner.temp }}/rollback-source" "$ROLLBACK_COMMIT"
+
+      - name: Install rollback Python dependencies
+        working-directory: ${{ runner.temp }}/rollback-source
+        run: uv sync --locked --dev
+
+      - name: Install rollback frontend dependencies
+        working-directory: ${{ runner.temp }}/rollback-source/web
+        run: npm ci
+
+      - name: Run the rollback commit's quality gates
+        working-directory: ${{ runner.temp }}/rollback-source
+        run: |
+          scripts/checks.sh all
+          git diff --exit-code
+
+      - name: Build rollback wheel and source distribution
+        working-directory: ${{ runner.temp }}/rollback-source
+        run: >-
+          uv build --clear --wheel --sdist
+          --out-dir "${{ runner.temp }}/rollback-evidence"
+
+      - name: Audit, rebuild, and clean-install rollback packages
+        run: |
+          uv run python scripts/prepare_release_artifacts.py audit-package-set \
+            --wheel "${{ runner.temp }}/rollback-evidence/omym2-0.1.0-py3-none-any.whl" \
+            --sdist "${{ runner.temp }}/rollback-evidence/omym2-0.1.0.tar.gz" \
+            --expected-static "${{ runner.temp }}/rollback-source/src/omym2/adapters/web/static_dist"
+
+      - name: Prepare and verify release assets
+        run: |
+          uv run python scripts/prepare_release_artifacts.py prepare \
+            --final-wheel "${{ runner.temp }}/final-evidence/omym2-0.1.0-py3-none-any.whl" \
+            --final-sdist "${{ runner.temp }}/final-evidence/omym2-0.1.0.tar.gz" \
+            --rollback-wheel "${{ runner.temp }}/rollback-evidence/omym2-0.1.0-py3-none-any.whl" \
+            --rollback-sdist "${{ runner.temp }}/rollback-evidence/omym2-0.1.0.tar.gz" \
+            --final-commit "$GITHUB_SHA" \
+            --rollback-commit "$ROLLBACK_COMMIT" \
+            --output-directory "${{ runner.temp }}/release-assets"
+          uv run python scripts/prepare_release_artifacts.py verify \
+            --input-directory "${{ runner.temp }}/release-assets" \
+            --final-commit "$GITHUB_SHA" \
+            --rollback-commit "$ROLLBACK_COMMIT"
+
+      - name: Stage verified assets for protected publication
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: omym2-release-${{ github.sha }}
+          path: ${{ runner.temp }}/release-assets/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  publish:
+    name: Publish Verified Release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out release verifier
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Download staged release assets
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: omym2-release-${{ github.sha }}
+          path: ${{ runner.temp }}/release-assets
+
+      - name: Verify staged assets before granting them a tag
+        run: |
+          python scripts/prepare_release_artifacts.py verify \
+            --input-directory "${{ runner.temp }}/release-assets" \
+            --final-commit "$GITHUB_SHA" \
+            --rollback-commit "$ROLLBACK_COMMIT"
+
+      - name: Create tag and draft release without overwrite
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$RELEASE_TAG" \
+            -f sha="$GITHUB_SHA"
+          gh release create "$RELEASE_TAG" \
+            "${{ runner.temp }}/release-assets"/* \
+            --verify-tag \
+            --draft \
+            --title "OMYM2 0.1.0" \
+            --notes-file - <<'EOF'
+          The wheel and source distribution are the audited final package set.
+
+          The rollback ZIP contains the untouched, same-version wheel and source
+          distribution built from the pinned last supported pre-renewal commit.
+          Extract it before installation; use a fresh environment or force a
+          reinstall because both package sets identify themselves as version 0.1.0.
+          This changes application code only: restore a pre-cutover persisted-state
+          backup first because backward state compatibility is not guaranteed.
+          EOF
+
+      - name: Redownload and verify every draft release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir "${{ runner.temp }}/downloaded-release"
+          gh release download "$RELEASE_TAG" --dir "${{ runner.temp }}/downloaded-release"
+          python scripts/prepare_release_artifacts.py verify \
+            --input-directory "${{ runner.temp }}/downloaded-release" \
+            --final-commit "$GITHUB_SHA" \
+            --rollback-commit "$ROLLBACK_COMMIT"
+          diff --no-dereference --recursive --brief \
+            "${{ runner.temp }}/release-assets" \
+            "${{ runner.temp }}/downloaded-release"
+
+      - name: Recheck tag and publish verified draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          assert_release_tag() {
+            read -r tag_type tag_sha < <(
+              gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+                --jq '[.object.type, .object.sha] | @tsv'
+            )
+            if [[ "$tag_type" != "commit" || "$tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "Release tag no longer targets the final commit." >&2
+              exit 1
+            fi
+          }
+
+          assert_release_tag
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          assert_release_tag
+          if [[ "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .draft)" != "false" ]]; then
+            echo "Release remained a draft after publication." >&2
+            exit 1
+          fi

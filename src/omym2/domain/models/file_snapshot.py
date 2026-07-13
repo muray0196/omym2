@@ -19,6 +19,17 @@ NEGATIVE_FILE_SIZE_MESSAGE = "File size must not be negative."
 
 
 @dataclass(frozen=True, slots=True)
+class FilesystemIdentity:
+    """Ephemeral operating-system identity for one observed filesystem entry."""
+
+    device_id: int
+    inode: int
+    size: int
+    mtime_ns: int
+    ctime_ns: int
+
+
+@dataclass(frozen=True, slots=True)
 class FileSnapshot:
     """Complete observed state of one file at a point in time."""
 
@@ -29,6 +40,7 @@ class FileSnapshot:
     content_hash: str
     metadata_hash: str
     metadata: TrackMetadata
+    filesystem_identity: FilesystemIdentity | None
     captured_at: datetime
 
     def __post_init__(self) -> None:

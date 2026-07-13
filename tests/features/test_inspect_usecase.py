@@ -156,5 +156,6 @@ def _snapshot(metadata: TrackMetadata) -> FileSnapshot:
         content_hash=CONTENT_HASH,
         metadata_hash=calculate_metadata_fingerprint(metadata),
         metadata=metadata,
+        filesystem_identity=None,
         captured_at=CAPTURED_AT,
     )

@@ -12,9 +12,8 @@ from omym2.adapters.cli.commands.apply_execution import confirm_and_apply_plan
 from omym2.adapters.cli.commands.confirmation import ConfirmationOptions
 from omym2.adapters.cli.commands.output import write_line, write_usage
 from omym2.domain.models.plan_action import ActionStatus
-from omym2.features.common_ports import MetadataReadError
-from omym2.features.undo.dto import CreateUndoPlanRequest
-from omym2.features.undo.usecases.create_undo_plan import CreateUndoPlanUseCase, UndoPlanError
+from omym2.features.common_ports import ExclusiveOperationBusyError, MetadataReadError
+from omym2.features.undo.usecases.create_undo_plan import UndoPlanError
 from omym2.shared.ids import RunId, parse_uuid
 
 if TYPE_CHECKING:
@@ -22,8 +21,8 @@ if TYPE_CHECKING:
     from typing import TextIO
 
     from omym2.domain.models.plan import Plan
-    from omym2.features.apply.ports import ApplyPlanPorts
-    from omym2.features.undo.ports import CreateUndoPlanPorts
+    from omym2.domain.models.run import Run
+    from omym2.shared.ids import PlanId
 
 APPLY_FLAG = "--apply"
 ERROR_EXIT_CODE = 1
@@ -37,8 +36,8 @@ USAGE_EXIT_CODE = 2
 class UndoCommandDependencies:
     """Factories for the ports needed by undo plan creation and optional apply."""
 
-    create_undo_plan_ports_factory: Callable[[], CreateUndoPlanPorts]
-    apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
+    create_undo_plan: Callable[[RunId], Plan]
+    apply_plan: Callable[[PlanId], Run]
 
 
 def run_undo_command(
@@ -54,11 +53,9 @@ def run_undo_command(
         write_usage(stderr, UNDO_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
 
-    ports = dependencies.create_undo_plan_ports_factory()
-
     try:
-        plan = CreateUndoPlanUseCase(ports).execute(CreateUndoPlanRequest(options.run_id))
-    except UndoPlanError as exc:
+        plan = dependencies.create_undo_plan(options.run_id)
+    except (UndoPlanError, ExclusiveOperationBusyError) as exc:
         write_line(stderr, str(exc))
         return ERROR_EXIT_CODE
     except MetadataReadError as exc:
@@ -74,7 +71,7 @@ def run_undo_command(
             plan.plan_id,
             stdout,
             stderr,
-            dependencies.apply_plan_ports_factory,
+            dependencies.apply_plan,
             confirmation=ConfirmationOptions(),
         )
 

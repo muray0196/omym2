@@ -36,7 +36,7 @@ Authoritative docs: `docs/contracts/path-identity-storage.md`, `docs/contracts/d
 
 ## Done means
 
-- Tests are added per `docs/TESTING.md`'s Contract Change Test Requirements
+- Tests are added per `docs/development/testing.md`'s Contract Change Test Requirements
   table, Path identity contract row. Anchor: `tests/shared/test_paths.py`
   and mirror locations.
 

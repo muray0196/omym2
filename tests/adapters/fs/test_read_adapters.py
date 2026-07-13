@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import errno
 import os
+import shutil
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Barrier, Lock
@@ -15,20 +17,24 @@ from typing import TYPE_CHECKING
 import pytest
 
 from omym2.adapters.fs.file_mover import (
+    SOURCE_BELOW_ROOT_MESSAGE,
     SOURCE_REPLACED_MESSAGE,
     SOURCE_SYMLINK_MESSAGE,
     TARGET_BELOW_ROOT_MESSAGE,
+    TARGET_REPLACED_MESSAGE,
     FilesystemFileMover,
 )
 from omym2.adapters.fs.file_presence import FilesystemFilePresence
 from omym2.adapters.fs.file_scanner import FilesystemFileScanner
 from omym2.adapters.fs.file_snapshot_reader import (
     INVALID_SNAPSHOT_CAPTURE_WORKER_COUNT_MESSAGE,
+    SOURCE_CHANGED_DURING_SNAPSHOT_MESSAGE,
     FilesystemFileSnapshotReader,
 )
 from omym2.adapters.fs.hash_calculator import INVALID_CHUNK_SIZE_MESSAGE, FileContentHasher
 from omym2.adapters.fs.path_resolver import PATH_OUTSIDE_LIBRARY_MESSAGE, FilesystemPathResolver
 from omym2.config import FILE_SNAPSHOT_CAPTURE_MIN_WORKER_COUNT
+from omym2.domain.models.file_snapshot import FilesystemIdentity
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
@@ -36,9 +42,12 @@ from omym2.features.common_ports import FileSnapshotCaptureRequest, MetadataRead
 from tests.fakes.runtime import FixedClock
 
 if TYPE_CHECKING:
+    from typing import BinaryIO
+
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
+CHANGED_AUDIO_CONTENT = b"changed source!!"
 AUDIO_FILE_NAME = "Track.FLAC"
 AUDIO_FILE_EXTENSION = ".flac"
 BATCH_FILE_COUNT = 4
@@ -60,6 +69,7 @@ TRACK_ALBUM = "Album"
 TRACK_ARTIST = "Artist"
 TRACK_TITLE = "Track"
 TARGET_FILE_NAME = "Moved.flac"
+TARGET_VERIFICATION_STAT_CALL_COUNT = 2
 SECOND_TARGET_FILE_NAME = "Second-Moved.flac"
 
 
@@ -148,6 +158,7 @@ def test_file_snapshot_reader_captures_metadata_and_hash(tmp_path: Path) -> None
     )
 
     snapshot = reader.capture(audio_path)
+    source_stat = audio_path.stat()
 
     assert snapshot.path == str(audio_path)
     assert snapshot.size == len(AUDIO_CONTENT)
@@ -155,7 +166,33 @@ def test_file_snapshot_reader_captures_metadata_and_hash(tmp_path: Path) -> None
     assert snapshot.content_hash == calculate_content_fingerprint(AUDIO_CONTENT)
     assert snapshot.metadata_hash == calculate_metadata_fingerprint(metadata)
     assert snapshot.metadata == metadata
+    assert snapshot.filesystem_identity == FilesystemIdentity(
+        device_id=source_stat.st_dev,
+        inode=source_stat.st_ino,
+        size=source_stat.st_size,
+        mtime_ns=source_stat.st_mtime_ns,
+        ctime_ns=source_stat.st_ctime_ns,
+    )
     assert snapshot.captured_at == FIXED_TIME
+
+
+def test_file_snapshot_reader_rejects_source_replaced_during_capture(tmp_path: Path) -> None:
+    """A same-content replacement cannot reuse the initial filesystem token."""
+    audio_path = tmp_path / AUDIO_FILE_NAME
+    backup_path = tmp_path / SECOND_AUDIO_FILE_NAME
+    _ = audio_path.write_bytes(AUDIO_CONTENT)
+    original_stat = audio_path.stat()
+    reader = FilesystemFileSnapshotReader(
+        metadata_reader=ReplacingMetadataReader(backup_path),
+        clock=FixedClock(FIXED_TIME),
+    )
+
+    with pytest.raises(ValueError, match=SOURCE_CHANGED_DURING_SNAPSHOT_MESSAGE):
+        _ = reader.capture(audio_path)
+
+    assert audio_path.read_bytes() == AUDIO_CONTENT
+    assert backup_path.read_bytes() == AUDIO_CONTENT
+    assert audio_path.stat().st_mtime_ns == original_stat.st_mtime_ns
 
 
 def test_file_snapshot_reader_batch_preserves_request_order_and_missing_results(tmp_path: Path) -> None:
@@ -342,6 +379,82 @@ def test_file_mover_moves_file_across_filesystems(tmp_path: Path, monkeypatch: p
     assert target_path.read_bytes() == AUDIO_CONTENT
 
 
+def test_file_mover_moves_managed_source_through_forced_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A managed source remains anchored when hardlink claim falls back to copy."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    expected_identity = _filesystem_identity(source_path)
+
+    def force_cross_device_copy(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        **kwargs: object,
+    ) -> None:
+        del source, target, kwargs
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    monkeypatch.setattr(os, "link", force_cross_device_copy)
+
+    FilesystemFileMover().move(
+        source_path,
+        target_path,
+        source_root=library_root,
+        target_root=library_root,
+        expected_source_identity=expected_identity,
+    )
+
+    assert not source_path.exists()
+    assert target_path.read_bytes() == AUDIO_CONTENT
+
+
+def test_file_mover_removes_never_claimed_copy_when_content_hash_differs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A copied target with unexpected bytes cannot cause the source to be removed."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    expected_identity = _filesystem_identity(source_path)
+    expected_content_hash = calculate_content_fingerprint(AUDIO_CONTENT)
+
+    def force_cross_device_copy(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        **kwargs: object,
+    ) -> None:
+        del source, target, kwargs
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    def write_wrong_content(source_file: BinaryIO, target_file: BinaryIO, length: int = -1) -> None:
+        del source_file, length
+        _ = target_file.write(CHANGED_AUDIO_CONTENT)
+
+    monkeypatch.setattr(os, "link", force_cross_device_copy)
+    monkeypatch.setattr(shutil, "copyfileobj", write_wrong_content)
+
+    with pytest.raises(ValueError, match=SOURCE_REPLACED_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=expected_identity,
+            expected_source_content_hash=expected_content_hash,
+        )
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert not target_path.exists()
+
+
 def test_file_mover_moves_file_when_filesystem_refuses_hardlinks(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -378,14 +491,18 @@ def test_file_mover_removes_claimed_target_when_source_removal_fails(
     source_path = tmp_path / AUDIO_FILE_NAME
     target_path = tmp_path / TARGET_FILE_NAME
     _ = source_path.write_bytes(AUDIO_CONTENT)
-    real_unlink = Path.unlink
+    real_unlink = os.unlink
 
-    def fail_source_unlink(path: Path, *, missing_ok: bool = False) -> None:
-        if path == source_path:
+    def fail_source_unlink(
+        path: os.PathLike[str] | str,
+        *,
+        dir_fd: int | None = None,
+    ) -> None:
+        if path == source_path.name and dir_fd is not None:
             raise PermissionError(errno.EACCES, "Permission denied", path)
-        real_unlink(path, missing_ok=missing_ok)
+        real_unlink(path, dir_fd=dir_fd)
 
-    monkeypatch.setattr(Path, "unlink", fail_source_unlink)
+    monkeypatch.setattr(os, "unlink", fail_source_unlink)
 
     with pytest.raises(PermissionError):
         FilesystemFileMover().move(source_path, target_path)
@@ -410,18 +527,24 @@ def test_file_mover_refuses_to_overwrite_existing_target(tmp_path: Path) -> None
 
 def test_file_mover_refuses_symlinked_parent_below_target_root(tmp_path: Path) -> None:
     """Library-target traversal never follows a symlinked descendant."""
-    source_path = tmp_path / AUDIO_FILE_NAME
     library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
     outside_root = tmp_path / "outside"
     target_parent = library_root / NESTED_DIRECTORY_NAME
     target_path = target_parent / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
     _ = source_path.write_bytes(AUDIO_CONTENT)
-    library_root.mkdir()
     outside_root.mkdir()
     target_parent.symlink_to(outside_root, target_is_directory=True)
 
-    with pytest.raises(NotADirectoryError):
-        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+    with pytest.raises(ValueError, match=TARGET_BELOW_ROOT_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=_filesystem_identity(source_path),
+        )
 
     assert source_path.read_bytes() == AUDIO_CONTENT
     assert not (outside_root / TARGET_FILE_NAME).exists()
@@ -429,16 +552,22 @@ def test_file_mover_refuses_symlinked_parent_below_target_root(tmp_path: Path) -
 
 def test_file_mover_rejects_parent_segments_below_target_root(tmp_path: Path) -> None:
     """Library-target traversal never walks dot-dot segments out of its root."""
-    source_path = tmp_path / AUDIO_FILE_NAME
     library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
     outside_root = tmp_path / "outside"
     target_path = library_root / NESTED_DIRECTORY_NAME / ".." / ".." / "outside" / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
     _ = source_path.write_bytes(AUDIO_CONTENT)
-    library_root.mkdir()
     outside_root.mkdir()
 
     with pytest.raises(ValueError, match=TARGET_BELOW_ROOT_MESSAGE):
-        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=_filesystem_identity(source_path),
+        )
 
     assert source_path.read_bytes() == AUDIO_CONTENT
     assert not (outside_root / TARGET_FILE_NAME).exists()
@@ -449,13 +578,13 @@ def test_file_mover_removes_target_if_parent_directory_escapes_root_during_claim
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A renamed target directory cannot receive a successful Library move outside the root."""
-    source_path = tmp_path / AUDIO_FILE_NAME
     library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
     escaped_root = tmp_path / "escaped"
     target_parent = library_root / NESTED_DIRECTORY_NAME
     target_path = target_parent / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
     _ = source_path.write_bytes(AUDIO_CONTENT)
-    library_root.mkdir()
     escaped_root.mkdir()
     real_link = os.link
 
@@ -480,7 +609,13 @@ def test_file_mover_removes_target_if_parent_directory_escapes_root_during_claim
     monkeypatch.setattr(os, "link", escape_target_parent_then_link)
 
     with pytest.raises(ValueError, match=TARGET_BELOW_ROOT_MESSAGE):
-        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=_filesystem_identity(source_path),
+        )
 
     assert source_path.read_bytes() == AUDIO_CONTENT
     assert not target_path.exists()
@@ -492,14 +627,14 @@ def test_file_mover_rejects_escaped_parent_when_root_path_is_also_replaced(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A replacement root path cannot validate a target claimed through the opened root."""
-    source_path = tmp_path / AUDIO_FILE_NAME
     library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
     moved_library_root = tmp_path / "moved-library"
     escaped_root = tmp_path / "escaped"
     target_parent = library_root / NESTED_DIRECTORY_NAME
     target_path = target_parent / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
     _ = source_path.write_bytes(AUDIO_CONTENT)
-    library_root.mkdir()
     escaped_root.mkdir()
     real_link = os.link
 
@@ -525,10 +660,104 @@ def test_file_mover_rejects_escaped_parent_when_root_path_is_also_replaced(
     monkeypatch.setattr(os, "link", escape_target_parent_replace_root_then_link)
 
     with pytest.raises(ValueError, match=TARGET_BELOW_ROOT_MESSAGE):
-        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=_filesystem_identity(source_path),
+        )
+
+    assert (moved_library_root / "source" / AUDIO_FILE_NAME).read_bytes() == AUDIO_CONTENT
+    assert not (escaped_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME).exists()
+
+
+def test_file_mover_normalizes_target_removed_after_hardlink_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A vanished claimed target is invalid_path rather than source_missing."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    expected_identity = _filesystem_identity(source_path)
+    real_stat = os.stat
+    target_was_removed = False
+
+    def remove_target_before_claim_verification(
+        path: os.PathLike[str] | str,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        nonlocal target_was_removed
+        if path == TARGET_FILE_NAME and dir_fd is not None and not target_was_removed:
+            target_was_removed = True
+            os.unlink(path, dir_fd=dir_fd)
+        return real_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(os, "stat", remove_target_before_claim_verification)
+
+    with pytest.raises(ValueError, match=TARGET_BELOW_ROOT_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=expected_identity,
+        )
 
     assert source_path.read_bytes() == AUDIO_CONTENT
-    assert not (escaped_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME).exists()
+    assert not target_path.exists()
+
+
+def test_file_mover_preserves_managed_source_and_attacker_target_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rooted-target cleanup never removes an attacker replacement inode."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    claimed_backup = target_path.with_name("claimed.flac")
+    source_path.parent.mkdir(parents=True)
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    expected_identity = _filesystem_identity(source_path)
+    real_stat = os.stat
+    target_stat_call_count = 0
+    target_was_replaced = False
+
+    def replace_managed_target_before_containment_verification(
+        path: os.PathLike[str] | str,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        nonlocal target_stat_call_count, target_was_replaced
+        if path == TARGET_FILE_NAME and dir_fd is not None:
+            target_stat_call_count += 1
+        if target_stat_call_count == TARGET_VERIFICATION_STAT_CALL_COUNT and not target_was_replaced:
+            target_was_replaced = True
+            _ = target_path.rename(claimed_backup)
+            _ = target_path.write_bytes(b"attacker")
+        return real_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(os, "stat", replace_managed_target_before_containment_verification)
+
+    with pytest.raises(ValueError, match=TARGET_BELOW_ROOT_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=expected_identity,
+        )
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert target_path.read_bytes() == b"attacker"
+    assert claimed_backup.read_bytes() == AUDIO_CONTENT
 
 
 def test_file_mover_refuses_symlink_source(tmp_path: Path) -> None:
@@ -549,6 +778,318 @@ def test_file_mover_refuses_symlink_source(tmp_path: Path) -> None:
     assert not target_path.exists()
 
 
+def test_file_mover_refuses_symlinked_parent_below_source_root_even_for_matching_inode(
+    tmp_path: Path,
+) -> None:
+    """A matching source inode cannot bypass Library-root containment."""
+    library_root = tmp_path / "library"
+    outside_root = tmp_path / "outside"
+    genuine_parent = library_root / "genuine"
+    linked_parent = library_root / "linked"
+    genuine_source = genuine_parent / AUDIO_FILE_NAME
+    outside_source = outside_root / AUDIO_FILE_NAME
+    source_path = linked_parent / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    genuine_parent.mkdir(parents=True)
+    outside_root.mkdir()
+    _ = genuine_source.write_bytes(AUDIO_CONTENT)
+    os.link(genuine_source, outside_source)
+    linked_parent.symlink_to(outside_root, target_is_directory=True)
+
+    with pytest.raises(ValueError, match=SOURCE_BELOW_ROOT_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=_filesystem_identity(genuine_source),
+        )
+
+    assert genuine_source.read_bytes() == AUDIO_CONTENT
+    assert outside_source.read_bytes() == AUDIO_CONTENT
+    assert not target_path.exists()
+
+
+def test_file_mover_rejects_each_expected_source_identity_mismatch(tmp_path: Path) -> None:
+    """Every ephemeral identity field is required before a target claim."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    expected_identity = _filesystem_identity(source_path)
+    mismatches = (
+        replace(expected_identity, device_id=expected_identity.device_id + 1),
+        replace(expected_identity, inode=expected_identity.inode + 1),
+        replace(expected_identity, size=expected_identity.size + 1),
+        replace(expected_identity, mtime_ns=expected_identity.mtime_ns + 1),
+        replace(expected_identity, ctime_ns=expected_identity.ctime_ns + 1),
+    )
+
+    for mismatched_identity in mismatches:
+        with pytest.raises(ValueError, match=SOURCE_REPLACED_MESSAGE):
+            FilesystemFileMover().move(
+                source_path,
+                target_path,
+                source_root=library_root,
+                target_root=library_root,
+                expected_source_identity=mismatched_identity,
+            )
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert not target_path.exists()
+
+
+def test_file_mover_rejects_source_parent_escape_during_hardlink_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A retained parent descriptor cannot be renamed outside before source removal."""
+    library_root = tmp_path / "library"
+    outside_root = tmp_path / "outside"
+    attacker_root = tmp_path / "attacker"
+    source_parent = library_root / "source"
+    source_path = source_parent / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    escaped_parent = outside_root / source_parent.name
+    source_parent.mkdir(parents=True)
+    outside_root.mkdir()
+    attacker_root.mkdir()
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    _ = (attacker_root / AUDIO_FILE_NAME).write_bytes(b"attacker")
+    expected_identity = _filesystem_identity(source_path)
+    real_link = os.link
+
+    def escape_source_parent_then_link(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
+        _ = source_parent.rename(escaped_parent)
+        source_parent.symlink_to(attacker_root, target_is_directory=True)
+        real_link(
+            source,
+            target,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+
+    monkeypatch.setattr(os, "link", escape_source_parent_then_link)
+
+    with pytest.raises(ValueError, match=SOURCE_BELOW_ROOT_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=expected_identity,
+        )
+
+    assert (escaped_parent / AUDIO_FILE_NAME).read_bytes() == AUDIO_CONTENT
+    assert (attacker_root / AUDIO_FILE_NAME).read_bytes() == b"attacker"
+    assert not target_path.exists()
+
+
+def test_file_mover_rejects_source_parent_escape_during_forced_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Forced-copy fallback retains containment when the source parent escapes."""
+    library_root = tmp_path / "library"
+    outside_root = tmp_path / "outside"
+    attacker_root = tmp_path / "attacker"
+    source_parent = library_root / "source"
+    source_path = source_parent / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    escaped_parent = outside_root / source_parent.name
+    source_parent.mkdir(parents=True)
+    outside_root.mkdir()
+    attacker_root.mkdir()
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    _ = (attacker_root / AUDIO_FILE_NAME).write_bytes(b"attacker")
+    expected_identity = _filesystem_identity(source_path)
+
+    def escape_source_parent_then_force_copy(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        **kwargs: object,
+    ) -> None:
+        del source, target, kwargs
+        _ = source_parent.rename(escaped_parent)
+        source_parent.symlink_to(attacker_root, target_is_directory=True)
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    monkeypatch.setattr(os, "link", escape_source_parent_then_force_copy)
+
+    with pytest.raises(ValueError, match=SOURCE_BELOW_ROOT_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=expected_identity,
+        )
+
+    assert (escaped_parent / AUDIO_FILE_NAME).read_bytes() == AUDIO_CONTENT
+    assert (attacker_root / AUDIO_FILE_NAME).read_bytes() == b"attacker"
+    assert not target_path.exists()
+
+
+def test_file_mover_cleans_forced_copy_target_when_source_state_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Forced-copy fallback never commits a source changed after its retained open."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    expected_identity = _filesystem_identity(source_path)
+
+    def change_source_then_force_copy(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        **kwargs: object,
+    ) -> None:
+        del source, target, kwargs
+        _ = source_path.write_bytes(CHANGED_AUDIO_CONTENT)
+        os.utime(source_path, ns=(expected_identity.mtime_ns, expected_identity.mtime_ns))
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    monkeypatch.setattr(os, "link", change_source_then_force_copy)
+
+    with pytest.raises(ValueError, match=SOURCE_REPLACED_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=expected_identity,
+        )
+
+    assert source_path.read_bytes() == CHANGED_AUDIO_CONTENT
+    assert not target_path.exists()
+
+
+def test_file_mover_rechecks_source_after_forced_copy_target_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A source changed after copy bytes complete is preserved and the target is removed."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    expected_identity = _filesystem_identity(source_path)
+    real_utime = os.utime
+
+    def force_copy(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        **kwargs: object,
+    ) -> None:
+        del source, target, kwargs
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    def change_source_after_target_metadata(
+        path: int,
+        *,
+        ns: tuple[int, int],
+    ) -> None:
+        real_utime(path, ns=ns)
+        _ = source_path.write_bytes(CHANGED_AUDIO_CONTENT)
+        real_utime(
+            source_path,
+            ns=(expected_identity.mtime_ns, expected_identity.mtime_ns),
+        )
+
+    monkeypatch.setattr(os, "link", force_copy)
+    monkeypatch.setattr(os, "utime", change_source_after_target_metadata)
+
+    with pytest.raises(ValueError, match=SOURCE_REPLACED_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=expected_identity,
+        )
+
+    assert source_path.read_bytes() == CHANGED_AUDIO_CONTENT
+    assert not target_path.exists()
+
+
+def test_file_mover_anchors_managed_source_for_absolute_restore_target(tmp_path: Path) -> None:
+    """An external Undo target keeps its managed source anchored to the Library."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    restore_path = tmp_path / "restored" / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+
+    FilesystemFileMover().move(
+        source_path,
+        restore_path,
+        source_root=library_root,
+        expected_source_identity=_filesystem_identity(source_path),
+    )
+
+    assert not source_path.exists()
+    assert restore_path.read_bytes() == AUDIO_CONTENT
+
+
+def test_file_mover_preserves_source_and_attacker_entry_when_absolute_target_is_replaced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An external target swap cannot delete the managed source or attacker entry."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    restore_path = tmp_path / "restored" / TARGET_FILE_NAME
+    claimed_backup = restore_path.with_name("claimed.flac")
+    source_path.parent.mkdir(parents=True)
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    expected_identity = _filesystem_identity(source_path)
+    real_stat = os.stat
+    target_was_replaced = False
+    target_stat_call_count = 0
+
+    def replace_target_before_verification(
+        path: os.PathLike[str] | str,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        nonlocal target_stat_call_count, target_was_replaced
+        if Path(path) == restore_path:
+            target_stat_call_count += 1
+        if target_stat_call_count == TARGET_VERIFICATION_STAT_CALL_COUNT and not target_was_replaced:
+            target_was_replaced = True
+            _ = restore_path.rename(claimed_backup)
+            _ = restore_path.write_bytes(b"attacker")
+        return real_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(os, "stat", replace_target_before_verification)
+
+    with pytest.raises(ValueError, match=TARGET_REPLACED_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            restore_path,
+            source_root=library_root,
+            expected_source_identity=expected_identity,
+        )
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert restore_path.read_bytes() == b"attacker"
+    assert claimed_backup.read_bytes() == AUDIO_CONTENT
+
+
 def test_file_mover_refuses_source_replaced_with_symlink_during_claim(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -563,9 +1104,47 @@ def test_file_mover_refuses_source_replaced_with_symlink_during_claim(
     library_root.mkdir()
     _ = source_path.write_bytes(AUDIO_CONTENT)
     _ = outside_file.write_bytes(b"outside")
+    real_open = os.open
+
+    def replace_source_then_open(
+        path: os.PathLike[str] | str,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if path == TARGET_FILE_NAME and flags & os.O_EXCL:
+            source_path.unlink()
+            source_path.symlink_to(outside_file)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", replace_source_then_open)
+
+    with pytest.raises(ValueError, match=SOURCE_REPLACED_MESSAGE):
+        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+
+    assert source_path.is_symlink()
+    assert source_path.resolve() == outside_file
+    assert not target_path.exists()
+
+
+def test_file_mover_links_retained_managed_source_when_leaf_is_replaced_during_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A managed leaf swap cannot make the hardlink claim retain a wrong inode."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    outside_file = tmp_path / "outside" / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
+    outside_file.parent.mkdir()
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    _ = outside_file.write_bytes(b"outside")
+    expected_identity = _filesystem_identity(source_path)
     real_link = os.link
 
-    def replace_source_then_link(
+    def replace_source_leaf_then_link_open_file(
         source: os.PathLike[str] | str,
         target: os.PathLike[str] | str,
         *,
@@ -573,8 +1152,8 @@ def test_file_mover_refuses_source_replaced_with_symlink_during_claim(
         dst_dir_fd: int | None = None,
         follow_symlinks: bool = True,
     ) -> None:
-        Path(source).unlink()
-        Path(source).symlink_to(outside_file)
+        source_path.unlink()
+        source_path.symlink_to(outside_file)
         real_link(
             source,
             target,
@@ -583,13 +1162,20 @@ def test_file_mover_refuses_source_replaced_with_symlink_during_claim(
             follow_symlinks=follow_symlinks,
         )
 
-    monkeypatch.setattr(os, "link", replace_source_then_link)
+    monkeypatch.setattr(os, "link", replace_source_leaf_then_link_open_file)
 
     with pytest.raises(ValueError, match=SOURCE_REPLACED_MESSAGE):
-        FilesystemFileMover().move(source_path, target_path, target_root=library_root)
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=expected_identity,
+        )
 
     assert source_path.is_symlink()
     assert source_path.resolve() == outside_file
+    assert outside_file.read_bytes() == b"outside"
     assert not target_path.exists()
 
 
@@ -626,6 +1212,17 @@ def _report_path_as_free(path: Path) -> bool:
     return False
 
 
+def _filesystem_identity(path: Path) -> FilesystemIdentity:
+    source_stat = path.stat()
+    return FilesystemIdentity(
+        device_id=source_stat.st_dev,
+        inode=source_stat.st_ino,
+        size=source_stat.st_size,
+        mtime_ns=source_stat.st_mtime_ns,
+        ctime_ns=source_stat.st_ctime_ns,
+    )
+
+
 def test_file_content_hasher_rejects_invalid_chunk_size() -> None:
     """Hasher validates chunk sizing before opening files."""
     with pytest.raises(ValueError, match=INVALID_CHUNK_SIZE_MESSAGE):
@@ -643,6 +1240,26 @@ class StaticMetadataReader:
         """Return metadata without reading the supplied test fixture."""
         del path
         return self._metadata
+
+
+@dataclass(frozen=True, slots=True)
+class ReplacingMetadataReader:
+    """MetadataReader fake that replaces the observed path during capture."""
+
+    backup_path: Path
+
+    def read(self, path: FileSystemPath) -> TrackMetadata:
+        """Replace the source with same bytes and mtime before returning metadata."""
+        source_path = Path(path)
+        source_stat = source_path.stat()
+        content = source_path.read_bytes()
+        _ = source_path.rename(self.backup_path)
+        _ = source_path.write_bytes(content)
+        os.utime(
+            source_path,
+            ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns),
+        )
+        return _metadata()
 
 
 class PeakConcurrencyMetadataReader:

@@ -16,18 +16,17 @@ from omym2.features.add.dto import CreateAddPlanRequest
 from omym2.features.add.usecases.create_add_plan import (
     AddLibrarySelectionError,
     AddSourceSelectionError,
-    CreateAddPlanUseCase,
 )
-from omym2.features.common_ports import ConfigStoreValidationError, MetadataReadError
+from omym2.features.common_ports import ConfigStoreValidationError, ExclusiveOperationBusyError, MetadataReadError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from typing import TextIO
 
     from omym2.domain.models.plan import Plan
-    from omym2.features.add.ports import CreateAddPlanPorts
-    from omym2.features.apply.ports import ApplyPlanPorts
+    from omym2.domain.models.run import Run
     from omym2.features.common_ports import FileSystemPath
+    from omym2.shared.ids import PlanId
 
 ADD_USAGE_MESSAGE = "Usage: omym2 add [SOURCE_DIR] [--apply] [--yes]"
 APPLY_FLAG = "--apply"
@@ -41,8 +40,8 @@ YES_FLAG = "--yes"
 class AddCommandDependencies:
     """Factories for the ports needed by add plan creation and optional apply."""
 
-    create_add_plan_ports_factory: Callable[[], CreateAddPlanPorts]
-    apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
+    create_add_plan: Callable[[CreateAddPlanRequest], Plan]
+    apply_plan: Callable[[PlanId], Run]
     normalize_source_path: Callable[[FileSystemPath], str]
 
 
@@ -69,11 +68,9 @@ def _run_add(
     dependencies: AddCommandDependencies,
 ) -> int:
     source_path = dependencies.normalize_source_path(options.source_path) if options.source_path is not None else None
-    ports = dependencies.create_add_plan_ports_factory()
-
     try:
         # Keep the normalization decision in platform wiring, not command adapters.
-        plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=source_path))
+        plan = dependencies.create_add_plan(CreateAddPlanRequest(source_path=source_path))
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
         return ERROR_EXIT_CODE
@@ -83,8 +80,9 @@ def _run_add(
     except MetadataReadError as exc:
         write_line(stderr, f"Metadata read error: {exc}")
         return ERROR_EXIT_CODE
-    except OSError as exc:
-        write_line(stderr, f"Add I/O error: {exc}")
+    except (ExclusiveOperationBusyError, OSError) as exc:
+        message = str(exc) if isinstance(exc, ExclusiveOperationBusyError) else f"Add I/O error: {exc}"
+        write_line(stderr, message)
         return ERROR_EXIT_CODE
 
     _write_result(stdout, plan)
@@ -93,7 +91,7 @@ def _run_add(
             plan.plan_id,
             stdout,
             stderr,
-            dependencies.apply_plan_ports_factory,
+            dependencies.apply_plan,
             confirmation=ConfirmationOptions(yes=options.yes),
         )
 

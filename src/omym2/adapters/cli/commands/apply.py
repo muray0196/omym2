@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from typing import TextIO
 
-    from omym2.features.apply.ports import ApplyPlanPorts
+    from omym2.domain.models.run import Run
     from omym2.features.common_ports import UnitOfWork
 
 APPLY_USAGE_MESSAGE = "Usage: omym2 apply <PLAN_ID|latest> [--yes]"
@@ -40,7 +40,7 @@ class ApplyCommandDependencies:
     """Factories for the ports needed by Plan selection and apply execution."""
 
     uow_factory: Callable[[], UnitOfWork]
-    apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
+    apply_plan: Callable[[PlanId], Run]
 
 
 def run_apply_command(
@@ -68,7 +68,7 @@ def run_apply_command(
         write_line(stderr, APPLY_CANCELLED_MESSAGE)
         return ERROR_EXIT_CODE
 
-    return execute_and_report_apply(plan_id, stdout, stderr, dependencies.apply_plan_ports_factory)
+    return execute_and_report_apply(plan_id, stdout, stderr, dependencies.apply_plan)
 
 
 class PlanSelectionError(ValueError):

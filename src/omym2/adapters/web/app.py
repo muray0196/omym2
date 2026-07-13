@@ -1,131 +1,374 @@
 """
-Summary: Builds the local Web UI application.
-Why: Wires React and JSON API routes to feature usecases without involving CLI code.
+Summary: Builds the local bundled Web application.
+Why: Serves the typed Bootstrap API and packaged Vite SPA with one secure loopback boundary.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+import logging
+import secrets
+from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING, cast
+from uuid import uuid4
 
-from fastapi import FastAPI, Request, Response
-from fastapi.exception_handlers import http_exception_handler
+from fastapi import (  # noqa: TC002  # FastAPI resolves nested route annotations at registration.
+    FastAPI,
+    Request,
+    Response,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
-from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match
 
-from omym2.adapters.web.routes.api import ApiRouteContext, create_api_router
+from omym2.adapters.web.routes.api_context import (
+    ApiRouteContext,  # noqa: TC001  # FastAPI factory annotation is public runtime API.
+)
+from omym2.adapters.web.schema_app import create_api_schema_app
+from omym2.adapters.web.schemas.api_envelopes import ApiFailureEnvelope
+from omym2.adapters.web.schemas.api_errors import ApiError, ApiErrorCode
+from omym2.adapters.web.static_assets import is_hashed_asset_name
 from omym2.config import (
+    HTTP_BAD_REQUEST_STATUS,
+    HTTP_FORBIDDEN_STATUS,
+    HTTP_INTERNAL_ERROR_STATUS,
+    HTTP_METHOD_NOT_ALLOWED_STATUS,
+    HTTP_NOT_FOUND_STATUS,
+    HTTP_SERVICE_UNAVAILABLE_STATUS,
+    HTTP_UNPROCESSABLE_CONTENT_STATUS,
+    WEB_API_ADD_PLAN_ROUTE,
+    WEB_API_APPLY_PLAN_ROUTE,
+    WEB_API_CANCEL_PLAN_ROUTE,
+    WEB_API_CHECK_RUN_ROUTE,
     WEB_API_NOT_FOUND_MESSAGE,
+    WEB_API_ORGANIZE_PLAN_ROUTE,
     WEB_API_PREFIX,
-    WEB_APP_TITLE,
-    WEB_CHECK_ROUTE,
-    WEB_HISTORY_ROUTE,
-    WEB_NEXT_STATIC_DIRECTORY_NAME,
-    WEB_NEXT_STATIC_ROUTE,
-    WEB_PATH_POLICY_ROUTE,
-    WEB_PLAN_DETAIL_ROUTE,
-    WEB_PLANS_ROUTE,
-    WEB_ROOT_ROUTE,
-    WEB_RUN_DETAIL_ROUTE,
-    WEB_SETTINGS_ROUTE,
+    WEB_API_REFRESH_PLAN_ROUTE,
+    WEB_API_SETTINGS_ROUTE,
+    WEB_API_UNDO_PLAN_ROUTE,
+    WEB_ASSET_CACHE_CONTROL,
+    WEB_CONTENT_SECURITY_POLICY,
+    WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME,
+    WEB_CONTENT_TYPE_OPTIONS_VALUE,
+    WEB_CORRELATION_HEADER_NAME,
+    WEB_CSP_HEADER_NAME,
+    WEB_CSRF_HEADER_NAME,
+    WEB_FRAME_OPTIONS,
+    WEB_FRAME_OPTIONS_HEADER_NAME,
+    WEB_HTML_ACCEPT_MEDIA_TYPE,
+    WEB_INDEX_CACHE_CONTROL,
+    WEB_METHOD_NOT_ALLOWED_MESSAGE,
+    WEB_PRODUCTION_ALLOWED_HOSTS,
+    WEB_REFERRER_POLICY,
+    WEB_REFERRER_POLICY_HEADER_NAME,
     WEB_STATIC_ASSET_NOT_FOUND_MESSAGE,
+    WEB_STATIC_ASSET_ROUTE,
     WEB_STATIC_EXPORT_DIRECTORY_NAME,
     WEB_STATIC_EXPORT_INDEX_FILE_NAME,
     WEB_STATIC_EXPORT_MISSING_MESSAGE,
-    WEB_TRACKS_ROUTE,
+    WEB_UI_NOT_FOUND_MESSAGE,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable, Sequence
+
+    from starlette.types import Scope
+
+LOGGER = logging.getLogger(__name__)
+INTERNAL_ERROR_MESSAGE = "An unexpected internal error occurred."
+INVALID_JSON_MESSAGE = "Request body must be valid JSON."
+VALIDATION_FAILED_MESSAGE = "Request validation failed."
+INVALID_HOST_MESSAGE = "Invalid host header"
+CSRF_INVALID_MESSAGE = "The Web mutation token is missing or invalid."
+STATE_CHANGING_HTTP_METHODS = frozenset({"POST", "PUT"})
+CSRF_MUTATION_ROUTES = frozenset(
+    {
+        WEB_API_ADD_PLAN_ROUTE,
+        WEB_API_APPLY_PLAN_ROUTE,
+        WEB_API_CANCEL_PLAN_ROUTE,
+        WEB_API_ORGANIZE_PLAN_ROUTE,
+        WEB_API_REFRESH_PLAN_ROUTE,
+        WEB_API_CHECK_RUN_ROUTE,
+        WEB_API_UNDO_PLAN_ROUTE,
+    }
 )
 
 
-def create_web_app(context: ApiRouteContext, static_dist_path: Path | None = None) -> FastAPI:
-    """Create the localhost Web UI application from a pre-built API route context."""
+def create_web_app(
+    context: ApiRouteContext,
+    static_dist_path: Path | None = None,
+    *,
+    allowed_hosts: Sequence[str] = WEB_PRODUCTION_ALLOWED_HOSTS,
+) -> FastAPI:
+    """Create the production API and packaged Vite SPA application."""
+    app = create_api_schema_app()
+    app.state.api_route_context = context
+    _install_allowed_hosts(app, allowed_hosts)
+    _install_csrf_protection(app, context)
+    _install_error_handlers(app)
+    _install_response_headers(app)
+    if context.start_runtime is not None:
+        app.router.add_event_handler("startup", context.start_runtime)
+    if context.close_runtime is not None:
+        app.router.add_event_handler("shutdown", context.close_runtime)
+
     package_dir = Path(__file__).resolve().parent
     web_dist = static_dist_path or package_dir / WEB_STATIC_EXPORT_DIRECTORY_NAME
 
-    app = FastAPI(title=WEB_APP_TITLE)
-    app.include_router(create_api_router(context))
+    def serve_asset(asset_path: str) -> Response:
+        return _asset_response(web_dist, asset_path)
 
-    @app.exception_handler(StarletteHTTPException)
-    async def handle_api_route_exception(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered handlers.
-        request: Request, exc: StarletteHTTPException
-    ) -> Response:
-        """Return the API 404 envelope for method misses on unknown API paths."""
-        # Starlette reports non-GET requests against the later static catch-all as
-        # 405s. Remap only unregistered API paths so known API method errors stay
-        # unchanged.
-        if exc.status_code in {404, 405} and _is_unknown_api_path(app, request.url.path):
-            return _api_not_found_response()
-        return await http_exception_handler(request, exc)
+    def serve_ui(ui_path: str, request: Request) -> Response:
+        return _ui_response(web_dist, ui_path, request)
 
-    next_static_directory = web_dist / WEB_NEXT_STATIC_DIRECTORY_NAME
-    if next_static_directory.exists():
-        app.mount(
-            WEB_NEXT_STATIC_ROUTE,
-            StaticFiles(directory=next_static_directory),
-            name="next_static",
-        )
-
-    def serve_spa() -> Response:
-        """Return the Web UI entry document for known UI routes."""
-        index_file = web_dist / WEB_STATIC_EXPORT_INDEX_FILE_NAME
-        if not index_file.is_file():
-            return PlainTextResponse(WEB_STATIC_EXPORT_MISSING_MESSAGE, status_code=503)
-        return FileResponse(index_file)
-
-    def serve_static_asset(asset_path: str) -> Response:
-        """Return root-level files emitted by the static Web UI export."""
-        api_route = WEB_API_PREFIX.removeprefix("/")
-        # Keep SPA static fallback for browser routes, but send JSON API shape for unknown API paths.
-        if asset_path == api_route or asset_path.startswith(f"{api_route}/"):
-            return _api_not_found_response()
-        static_file = (web_dist / asset_path).resolve()
-        web_dist_root = web_dist.resolve()
-        if not static_file.is_relative_to(web_dist_root) or not static_file.is_file():
-            return PlainTextResponse(WEB_STATIC_ASSET_NOT_FOUND_MESSAGE, status_code=404)
-        return FileResponse(static_file)
-
-    for route in (
-        WEB_ROOT_ROUTE,
-        WEB_SETTINGS_ROUTE,
-        WEB_PATH_POLICY_ROUTE,
-        WEB_HISTORY_ROUTE,
-        WEB_RUN_DETAIL_ROUTE,
-        WEB_CHECK_ROUTE,
-        WEB_TRACKS_ROUTE,
-        WEB_PLANS_ROUTE,
-        WEB_PLAN_DETAIL_ROUTE,
-    ):
-        app.add_api_route(route, serve_spa, methods=["GET"], include_in_schema=False)
-
-    app.add_api_route("/{asset_path:path}", serve_static_asset, methods=["GET"], include_in_schema=False)
-
+    app.add_api_route(
+        f"{WEB_STATIC_ASSET_ROUTE}/{{asset_path:path}}",
+        serve_asset,
+        methods=["GET"],
+        include_in_schema=False,
+    )
+    app.add_api_route("/{ui_path:path}", serve_ui, methods=["GET"], include_in_schema=False)
     return app
 
 
-def _api_not_found_response() -> JSONResponse:
-    """Return the stable Web API route-miss envelope."""
-    return JSONResponse({"detail": None, "errors": [WEB_API_NOT_FOUND_MESSAGE]}, status_code=404)
+def _install_allowed_hosts(app: FastAPI, allowed_hosts: Sequence[str]) -> None:
+    allowed = frozenset(host.lower() for host in allowed_hosts)
+
+    @app.middleware("http")
+    async def enforce_allowed_host(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered middleware.
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if _host_name(request.headers.get("host", "")) in allowed:
+            return await call_next(request)
+        if _is_api_path(request.url.path):
+            return _api_failure(HTTP_NOT_FOUND_STATUS, ApiErrorCode.API_NOT_FOUND, WEB_API_NOT_FOUND_MESSAGE)
+        return PlainTextResponse(INVALID_HOST_MESSAGE, status_code=HTTP_BAD_REQUEST_STATUS)
 
 
-def _is_unknown_api_path(app: FastAPI, request_path: str) -> bool:
-    """Return whether a request path is under the API prefix but unregistered."""
-    if not _is_api_path(request_path):
+def _install_csrf_protection(app: FastAPI, context: ApiRouteContext) -> None:
+    @app.middleware("http")
+    async def enforce_csrf_token(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator middleware.
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if not _requires_csrf(request.method, request.url.path):
+            return await call_next(request)
+        token = request.headers.get(WEB_CSRF_HEADER_NAME)
+        if token is not None and secrets.compare_digest(token, context.csrf_token):
+            return await call_next(request)
+        return _api_failure(HTTP_FORBIDDEN_STATUS, ApiErrorCode.CSRF_INVALID, CSRF_INVALID_MESSAGE)
+
+
+def _requires_csrf(method: str, path: str) -> bool:
+    if method not in STATE_CHANGING_HTTP_METHODS:
         return False
+    return (method == "PUT" and path == WEB_API_SETTINGS_ROUTE) or any(
+        _matches_route_template(path, route) for route in CSRF_MUTATION_ROUTES
+    )
 
-    scope = {"type": "http", "path": request_path, "method": "GET", "root_path": ""}
+
+def _matches_route_template(path: str, route: str) -> bool:
+    """Match one concrete request path against a configured FastAPI route template."""
+    path_parts = PurePosixPath(path).parts
+    route_parts = PurePosixPath(route).parts
+    if len(path_parts) != len(route_parts):
+        return False
+    return all(
+        route_part == path_part or (route_part.startswith("{") and route_part.endswith("}"))
+        for path_part, route_part in zip(path_parts, route_parts, strict=True)
+    )
+
+
+def _install_response_headers(app: FastAPI) -> None:
+    @app.middleware("http")
+    async def add_response_headers(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered middleware.
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        correlation_id = str(uuid4())
+        request.state.correlation_id = correlation_id
+        response = await call_next(request)
+        _set_common_response_headers(response, correlation_id)
+        LOGGER.info(
+            "Web request completed correlation_id=%s method=%s path=%s status=%s",
+            correlation_id,
+            request.method,
+            request.url.path,
+            response.status_code,
+        )
+        return response
+
+
+def _install_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation_error(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered handlers.
+        request: Request,
+        exc: RequestValidationError,
+    ) -> Response:
+        if not _is_api_path(request.url.path):
+            return PlainTextResponse(VALIDATION_FAILED_MESSAGE, status_code=HTTP_UNPROCESSABLE_CONTENT_STATUS)
+        validation_errors = cast("list[dict[str, object]]", exc.errors())
+        is_json_decode = any(error.get("type") == "json_invalid" for error in validation_errors)
+        code = ApiErrorCode.INVALID_JSON if is_json_decode else ApiErrorCode.VALIDATION_FAILED
+        status_code = HTTP_BAD_REQUEST_STATUS if is_json_decode else HTTP_UNPROCESSABLE_CONTENT_STATUS
+        message = INVALID_JSON_MESSAGE if is_json_decode else VALIDATION_FAILED_MESSAGE
+        return _api_failure(status_code, code, message, field=_validation_field(exc))
+
+    @app.exception_handler(StarletteHTTPException)
+    async def handle_http_error(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered handlers.
+        request: Request,
+        exc: StarletteHTTPException,
+    ) -> Response:
+        if _is_api_path(request.url.path):
+            if exc.status_code == HTTP_METHOD_NOT_ALLOWED_STATUS and _is_known_api_path(app, request.url.path):
+                return _api_failure(
+                    HTTP_METHOD_NOT_ALLOWED_STATUS,
+                    ApiErrorCode.METHOD_NOT_ALLOWED,
+                    WEB_METHOD_NOT_ALLOWED_MESSAGE,
+                )
+            return _api_failure(HTTP_NOT_FOUND_STATUS, ApiErrorCode.API_NOT_FOUND, WEB_API_NOT_FOUND_MESSAGE)
+        message = (
+            WEB_METHOD_NOT_ALLOWED_MESSAGE
+            if exc.status_code == HTTP_METHOD_NOT_ALLOWED_STATUS
+            else WEB_UI_NOT_FOUND_MESSAGE
+        )
+        return PlainTextResponse(message, status_code=exc.status_code)
+
+    @app.exception_handler(Exception)
+    async def handle_unexpected_error(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered handlers.
+        request: Request,
+        exc: Exception,
+    ) -> Response:
+        correlation_id = _request_correlation_id(request)
+        LOGGER.error("Unhandled Web request error correlation_id=%s", correlation_id, exc_info=exc)
+        if _is_api_path(request.url.path):
+            response = _api_failure(HTTP_INTERNAL_ERROR_STATUS, ApiErrorCode.INTERNAL_ERROR, INTERNAL_ERROR_MESSAGE)
+        else:
+            response = PlainTextResponse(INTERNAL_ERROR_MESSAGE, status_code=HTTP_INTERNAL_ERROR_STATUS)
+        _set_common_response_headers(response, correlation_id)
+        return response
+
+
+def _request_correlation_id(request: Request) -> str:
+    correlation_id: object = getattr(request.state, "correlation_id", None)
+    if isinstance(correlation_id, str):
+        return correlation_id
+    generated = str(uuid4())
+    request.state.correlation_id = generated
+    return generated
+
+
+def _set_common_response_headers(response: Response, correlation_id: str) -> None:
+    response.headers[WEB_CORRELATION_HEADER_NAME] = correlation_id
+    response.headers[WEB_CSP_HEADER_NAME] = WEB_CONTENT_SECURITY_POLICY
+    response.headers[WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME] = WEB_CONTENT_TYPE_OPTIONS_VALUE
+    response.headers[WEB_REFERRER_POLICY_HEADER_NAME] = WEB_REFERRER_POLICY
+    response.headers[WEB_FRAME_OPTIONS_HEADER_NAME] = WEB_FRAME_OPTIONS
+
+
+def _api_failure(
+    status_code: int,
+    code: ApiErrorCode,
+    message: str,
+    *,
+    field: str | None = None,
+) -> JSONResponse:
+    error = (
+        ApiError(
+            code=code,
+            message=message,
+            field=field,
+            retryable=status_code >= HTTP_INTERNAL_ERROR_STATUS,
+        )
+        if field is not None
+        else ApiError(
+            code=code,
+            message=message,
+            retryable=status_code >= HTTP_INTERNAL_ERROR_STATUS,
+        )
+    )
+    envelope = ApiFailureEnvelope(
+        data=None,
+        errors=(error,),
+    )
+    return JSONResponse(envelope.model_dump(mode="json"), status_code=status_code)
+
+
+def _validation_field(exc: RequestValidationError) -> str | None:
+    errors = cast("list[dict[str, object]]", exc.errors())
+    if not errors:
+        return None
+    location = errors[0].get("loc")
+    if not isinstance(location, tuple):
+        return None
+    location_parts = cast("tuple[object, ...]", location)
+    return ".".join(str(part) for part in location_parts)
+
+
+def _asset_response(web_dist: Path, asset_path: str) -> Response:
+    if _is_rejected_path(asset_path) or not is_hashed_asset_name(PurePosixPath(asset_path).name):
+        return PlainTextResponse(WEB_STATIC_ASSET_NOT_FOUND_MESSAGE, status_code=HTTP_NOT_FOUND_STATUS)
+    asset_root = (web_dist / WEB_STATIC_ASSET_ROUTE.removeprefix("/")).resolve()
+    asset_file = (asset_root / asset_path).resolve()
+    if not asset_file.is_relative_to(asset_root) or not asset_file.is_file():
+        return PlainTextResponse(WEB_STATIC_ASSET_NOT_FOUND_MESSAGE, status_code=HTTP_NOT_FOUND_STATUS)
+    return FileResponse(asset_file, headers={"Cache-Control": WEB_ASSET_CACHE_CONTROL})
+
+
+def _ui_response(web_dist: Path, ui_path: str, request: Request) -> Response:
+    request_path = request.url.path
+    if _is_api_path(request_path):
+        return _api_failure(HTTP_NOT_FOUND_STATUS, ApiErrorCode.API_NOT_FOUND, WEB_API_NOT_FOUND_MESSAGE)
+    if request_path == WEB_STATIC_ASSET_ROUTE or request_path.startswith(f"{WEB_STATIC_ASSET_ROUTE}/"):
+        return PlainTextResponse(WEB_STATIC_ASSET_NOT_FOUND_MESSAGE, status_code=HTTP_NOT_FOUND_STATUS)
+    if _is_rejected_path(ui_path) or WEB_HTML_ACCEPT_MEDIA_TYPE not in request.headers.get("accept", "").lower():
+        return PlainTextResponse(WEB_UI_NOT_FOUND_MESSAGE, status_code=HTTP_NOT_FOUND_STATUS)
+    index_file = web_dist / WEB_STATIC_EXPORT_INDEX_FILE_NAME
+    if not index_file.is_file():
+        return PlainTextResponse(WEB_STATIC_EXPORT_MISSING_MESSAGE, status_code=HTTP_SERVICE_UNAVAILABLE_STATUS)
+    return FileResponse(index_file, headers={"Cache-Control": WEB_INDEX_CACHE_CONTROL})
+
+
+def _is_api_path(path: str) -> bool:
+    return path == WEB_API_PREFIX or path.startswith(f"{WEB_API_PREFIX}/")
+
+
+def _host_name(host_header: str) -> str | None:
+    host, separator, port = host_header.lower().partition(":")
+    if not host or (separator and not port.isdecimal()):
+        return None
+    return host
+
+
+def _is_known_api_path(app: FastAPI, request_path: str) -> bool:
+    scope: Scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1",
+        "server": ("localhost", 80),
+        "client": ("127.0.0.1", 0),
+        "scheme": "http",
+        "method": "GET",
+        "root_path": "",
+        "path": request_path,
+        "raw_path": request_path.encode("utf-8"),
+        "query_string": b"",
+        "headers": [],
+    }
     for route in app.routes:
         route_path = getattr(route, "path", None)
         if isinstance(route_path, str) and not _is_api_path(route_path):
             continue
-        # FastAPI stores included API routers as route containers without a path.
         if route_path is None and not hasattr(route, "original_router"):
             continue
         match, _child_scope = route.matches(scope)
         if match in {Match.FULL, Match.PARTIAL}:
-            return False
-    return True
+            return True
+    return False
 
 
-def _is_api_path(path: str) -> bool:
-    """Return whether a route or request path belongs to the JSON API."""
-    return path == WEB_API_PREFIX or path.startswith(f"{WEB_API_PREFIX}/")
+def _is_rejected_path(path: str) -> bool:
+    if "\\" in path:
+        return True
+    return any(segment in {".", ".."} or segment.startswith(".") for segment in PurePosixPath(path).parts)
