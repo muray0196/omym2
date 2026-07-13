@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Defines the bundled desktop React and Vite Web frontend contract, including routes, design rules, API boundaries, layout behavior, production serving, packaging, security, and performance gates.
 tags: [web-frontend, react, vite, clean-room, static-spa, performance]
-timestamp: 2026-07-13T19:23:00+09:00
+timestamp: 2026-07-13T21:02:26+09:00
 ---
 
 # Web Frontend
@@ -20,7 +20,7 @@ durable transport in
 [Durable Operations Over Polling](../decisions/0002-durable-operations-over-polling.md),
 and exclusive coordination in
 [Cross-Process Exclusive Operation Lock](../decisions/0003-cross-process-exclusive-operation-lock.md).
-Test categories and fixture policy are authoritative in [Testing](../TESTING.md).
+Test categories and fixture policy are authoritative in [Testing](../development/testing.md).
 
 ## Clean-Room Provenance And Current Boundary
 

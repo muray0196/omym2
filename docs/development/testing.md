@@ -1,9 +1,9 @@
 ---
-type: Testing Guide
+type: Development Guide
 title: Testing
 description: Defines OMYM2's Python, bundled-frontend, desktop-browser, architecture, integration, contract, fixture, and release test policy.
 tags: [testing, pytest, vitest, playwright, architecture-tests, fixtures]
-timestamp: 2026-07-13T19:23:00+09:00
+timestamp: 2026-07-13T21:02:26+09:00
 ---
 
 # Testing
@@ -12,7 +12,7 @@ This document is authoritative for Python, frontend, browser, architecture,
 integration, contract, fixture, and clean-room test policy, and for deciding
 which contract changes require which tests.
 
-Domain rules are in [DOMAIN.md](DOMAIN.md), execution semantics are in [execution/](execution/), storage rules are in [STORAGE.md](STORAGE.md), contract docs are in [contracts/](contracts/), and developer validation commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
+Domain rules are in [DOMAIN.md](../DOMAIN.md), execution semantics are in [execution/](../execution/), storage rules are in [STORAGE.md](../STORAGE.md), contract docs are in [contracts/](../contracts/), and developer validation commands are in [harness.md](harness.md).
 
 This document is not a test backlog.
 
@@ -202,4 +202,4 @@ after that milestone declares the flow complete.
 
 ## Test Commands
 
-Use [DEVELOPMENT.md](DEVELOPMENT.md#test-commands) for quick global checks, focused failure inspection, and deep debug commands. This document defines what to test; `docs/DEVELOPMENT.md` defines how to run validation commands.
+Use [harness.md](harness.md#test-commands) for quick global checks, focused failure inspection, and deep debug commands. This document defines what to test; `docs/development/harness.md` defines how to run validation commands.

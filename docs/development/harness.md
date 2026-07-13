@@ -3,7 +3,7 @@ type: Development Guide
 title: Development Harness
 description: Specifies dependency setup, current quality gates, release verification, checks.sh, suppressions, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation, web]
-timestamp: 2026-07-13T19:23:00+09:00
+timestamp: 2026-07-13T21:02:26+09:00
 ---
 
 # Development Harness
@@ -11,7 +11,7 @@ timestamp: 2026-07-13T19:23:00+09:00
 This document is authoritative for developer quality commands, validation gates,
 suppressions, and Python runtime configuration policy.
 
-Product command behavior is defined in [COMMANDS.md](COMMANDS.md). Test design is defined in [TESTING.md](TESTING.md). Application config and stored path policy are defined in [STORAGE.md](STORAGE.md) and [contracts/](contracts/).
+Product command behavior is defined in [COMMANDS.md](../COMMANDS.md). Test design is defined in [testing.md](testing.md). Application config and stored path policy are defined in [STORAGE.md](../STORAGE.md) and [contracts/](../contracts/).
 
 Keep this file limited to commands and validation policy.
 
@@ -186,7 +186,7 @@ first because backward state compatibility is not provided.
 
 ## Pipeline Performance Benchmark
 
-For a performance change, read [BENCHMARKS.md](BENCHMARKS.md) and run its
+For a performance change, read [benchmarks.md](benchmarks.md) and run its
 pipeline benchmark before and after the change. It owns the benchmark dataset,
 measurement boundaries, and `--trust-stat` comparison procedure.
 
@@ -219,4 +219,4 @@ Each suppression must include a brief justification comment explaining why the w
 
 Python/runtime configuration uses environment variables only.
 
-This does not change OMYM2 application configuration. Application config remains TOML-based and is governed by [contracts/config.md](contracts/config.md).
+This does not change OMYM2 application configuration. Application config remains TOML-based and is governed by [contracts/config.md](../contracts/config.md).

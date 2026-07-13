@@ -19,7 +19,7 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
 
 - Evaluate implementation only against `docs/codebase/web-frontend.md`,
   `docs/contracts/web-api.md`, `docs/contracts/status-reason-catalog.md`,
-  `docs/TESTING.md`, the clean-room fixtures, and accessibility tests.
+  `docs/development/testing.md`, the clean-room fixtures, and accessibility tests.
 - The frontend consumes committed OpenAPI-generated request/response types. It
   must not hand-copy an API schema or infer capabilities from status values.
 - Every state-changing request sends `X-OMYM2-CSRF-Token`; every durable

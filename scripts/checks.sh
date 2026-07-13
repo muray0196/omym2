@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Summary: One-command wrapper for the OMYM2 quality gates defined in docs/DEVELOPMENT.md.
+# Summary: One-command wrapper for the OMYM2 quality gates defined in docs/development/harness.md.
 # Why: Gives agents a single reliable entry point instead of re-deriving command groups.
 #
 # Usage:
 #   scripts/checks.sh <changed|py|api|web|e2e|package|performance|all|docs|arch>
 #   scripts/checks.sh test <pytest-target>
 #
-# See docs/DEVELOPMENT.md for canonical mode descriptions and gate policy.
+# See docs/development/harness.md for canonical mode descriptions and gate policy.
 
 set -euo pipefail
 

@@ -27,13 +27,13 @@ For an implementation task, start with
 focused documentation for the change. Do not replace those focused checks with
 the Architecture summary.
 
-Read `docs/DEVELOPMENT.md` for implementation, validation, quality gates,
-suppressions, or runtime configuration work.
+Read `docs/development/harness.md` for implementation, validation, quality
+gates, suppressions, or runtime configuration work.
 
 ## Validation Shortcut
 
 Mode selection is owned by `.agents/skills/validate/SKILL.md`. Gate
-definitions live in `docs/DEVELOPMENT.md`.
+definitions live in `docs/development/harness.md`.
 
 ## Knowledge Navigation
 
@@ -51,10 +51,8 @@ conformance via the docs bundle test under `tests/docs/`.
 | [docs/DOMAIN.md](docs/DOMAIN.md) | Domain concepts, invariants, and ID behavior. |
 | [docs/COMMANDS.md](docs/COMMANDS.md) | CLI command surface and command behavior. |
 | [docs/STORAGE.md](docs/STORAGE.md) | Storage responsibilities and persisted-state boundaries. |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development commands, quality gates, suppressions, and runtime configuration. |
-| [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | Pipeline benchmark procedure for performance changes. |
-| [docs/TESTING.md](docs/TESTING.md) | Test policy and coverage expectations. |
 | [docs/codebase/index.md](docs/codebase/index.md) | Detailed source layout, dependency, port, naming, and Web frontend rules. |
 | [docs/contracts/index.md](docs/contracts/index.md) | Config, DB, Operation, path identity, status, and Web API contracts. |
 | [docs/decisions/index.md](docs/decisions/index.md) | Accepted architecture decisions and their rationale and consequences. |
+| [docs/development/index.md](docs/development/index.md) | Development harness, quality gates, test policy, and benchmark procedure. |
 | [docs/execution/index.md](docs/execution/index.md) | Plan, apply, undo, refresh, organize, check, and failure semantics. |

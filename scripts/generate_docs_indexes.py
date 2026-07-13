@@ -64,8 +64,6 @@ DIRECTORY_METADATA: dict[str, DirectoryMetadata] = {
             "PRODUCT.md",
             "DOMAIN.md",
             "STORAGE.md",
-            "DEVELOPMENT.md",
-            "TESTING.md",
             "COMMANDS.md",
         ),
     ),
@@ -105,6 +103,17 @@ DIRECTORY_METADATA: dict[str, DirectoryMetadata] = {
             "0001-breaking-bundled-web-api.md",
             "0002-durable-operations-over-polling.md",
             "0003-cross-process-exclusive-operation-lock.md",
+        ),
+    ),
+    "development": DirectoryMetadata(
+        heading="Development",
+        intro="This folder contains the development harness, test policy, and benchmark procedure.",
+        display_name="Development",
+        parent_description="Development harness, quality gates, test policy, and benchmark procedure.",
+        file_order=(
+            "harness.md",
+            "testing.md",
+            "benchmarks.md",
         ),
     ),
     "execution": DirectoryMetadata(

@@ -3,14 +3,14 @@ type: Development Guide
 title: Pipeline Performance Benchmark
 description: Defines the reproducible end-to-end pipeline benchmark, its dataset, measurement boundaries, and trust-stat comparison procedure for performance changes.
 tags: [development, performance, benchmark, pipeline]
-timestamp: 2026-07-12T02:41:12+09:00
+timestamp: 2026-07-13T21:02:26+09:00
 ---
 
 # Pipeline Performance Benchmark
 
 This document is authoritative for the end-to-end pipeline benchmark used to
 measure performance changes. Developer quality gates remain in
-[DEVELOPMENT.md](DEVELOPMENT.md).
+[harness.md](harness.md).
 
 Run the benchmark before and after a performance change:
 

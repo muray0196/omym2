@@ -22,7 +22,7 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 | Inspect one failing test | `scripts/checks.sh test <pytest-node-id>` |
 | Deep-debug one failing test | `uv run pytest <pytest-node-id> -q --tb=long -s --show-capture=all` |
 
-`scripts/checks.sh` wraps the authoritative commands in `docs/DEVELOPMENT.md`. If the script is missing or itself broken, run those commands directly.
+`scripts/checks.sh` wraps the authoritative commands in `docs/development/harness.md`. If the script is missing or itself broken, run those commands directly.
 
 The wrapper requires an explicit mode and assumes dependencies are already
 installed. Run `uv sync --locked --dev` after checkout or Python dependency

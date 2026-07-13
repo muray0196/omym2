@@ -5,7 +5,7 @@ description: Safety checklist for SQLite schema changes, migration files, and re
 
 # DB Schema Change
 
-Authoritative docs: `docs/contracts/db-schema.md`, `docs/TESTING.md`
+Authoritative docs: `docs/contracts/db-schema.md`, `docs/development/testing.md`
 (Contract Change Test Requirements), `docs/STORAGE.md`.
 
 ## Non-negotiable invariants
@@ -40,7 +40,7 @@ Authoritative docs: `docs/contracts/db-schema.md`, `docs/TESTING.md`
 
 - The table definitions in `docs/contracts/db-schema.md` are updated in the
   same change (open `update-docs`).
-- Tests are added per `docs/TESTING.md`'s Contract Change Test Requirements
+- Tests are added per `docs/development/testing.md`'s Contract Change Test Requirements
   table, DB schema contract row. Anchor:
   `tests/adapters/db/sqlite/test_sqlite_foundation.py`.
 

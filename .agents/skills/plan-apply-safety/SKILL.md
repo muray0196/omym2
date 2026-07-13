@@ -59,7 +59,7 @@ Authoritative docs: `docs/execution/model.md`, `docs/execution/apply.md`,
   Operation before dispatch, while the shared lock remains held?
 - [ ] Can restart/dispatch reconciliation leave pending FileEvents pending and
   derive Plan/Run state only from durable evidence?
-- [ ] Every changed contract edge has a test per `docs/TESTING.md`'s Contract Change Test Requirements table, Execution contract row.
+- [ ] Every changed contract edge has a test per `docs/development/testing.md`'s Contract Change Test Requirements table, Execution contract row.
 
 ## Stop and report when
 

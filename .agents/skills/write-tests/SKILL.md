@@ -5,7 +5,7 @@ description: Add or update OMYM2 tests. Use when writing tests for a change, dec
 
 # Write Tests
 
-Test policy is authoritative in `docs/TESTING.md`. This skill is the operational shortcut.
+Test policy is authoritative in `docs/development/testing.md`. This skill is the operational shortcut.
 
 ## Placement
 
@@ -35,11 +35,11 @@ Frontend unit/component tests live beside their feature or under
 - Frontend unit/component tests use the contract-approved Vitest, React Testing
   Library, `user-event`, and MSW stack. Browser tests use Playwright Chromium
   and axe. Exact versions come from the frontend lockfile.
-- Use only the canonical fixtures in `docs/TESTING.md`.
+- Use only the canonical fixtures in `docs/development/testing.md`.
 
 ## What must be tested (by contract touched)
 
-Open `docs/TESTING.md`'s Contract Change Test Requirements table and match
+Open `docs/development/testing.md`'s Contract Change Test Requirements table and match
 the row for the contract you changed (Config, DB schema, Path identity,
 Status catalog, Execution, Architecture, Web API, durable Operation, exclusive
 operation, or generated API).

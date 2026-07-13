@@ -1,11 +1,11 @@
 ---
 name: config-schema-change
-description: Safety checklist for changes to the persisted TOML application-config contract — the AppConfig dataclass shape, TOML keys, defaults, allowed values or enums, validation rules, and config serialization such as the TOML store and web settings serializers or choices lists. Use before designing or reviewing any change to settings save or load paths. Do not use it for code that merely reads an existing config value inside a feature, and do not use it for runtime environment-variable configuration, which is docs/DEVELOPMENT.md's domain.
+description: Safety checklist for changes to the persisted TOML application-config contract — the AppConfig dataclass shape, TOML keys, defaults, allowed values or enums, validation rules, and config serialization such as the TOML store and web settings serializers or choices lists. Use before designing or reviewing any change to settings save or load paths. Do not use it for code that merely reads an existing config value inside a feature, and do not use it for runtime environment-variable configuration, which is docs/development/harness.md's domain.
 ---
 
 # Config Schema Change
 
-Authoritative doc: `docs/contracts/config.md`. Test policy: `docs/TESTING.md`'s
+Authoritative doc: `docs/contracts/config.md`. Test policy: `docs/development/testing.md`'s
 Contract Change Test Requirements table, "Config contract" row.
 
 ## Non-negotiable invariants
@@ -63,7 +63,7 @@ Libraries would not detect the settings change as stale.
 1. Confirm scope: AppConfig shape, TOML keys, defaults, allowed values,
    validation, or serialization. Reading an already-defined value, or
    changing an environment variable, is out of scope — see
-   `docs/DEVELOPMENT.md`.
+   `docs/development/harness.md`.
 2. Edit every surface in the table above in the same change.
    If the change touches save/load concurrency rather than the TOML schema,
    edit only the raw-revision/CAS surfaces and do not invent a TOML key.
@@ -78,7 +78,7 @@ Libraries would not detect the settings change as stale.
 ## Done means
 
 - Tests cover load, save, validation, defaults, and migration/
-  backward-compatibility behavior per `docs/TESTING.md`'s Contract Change Test
+  backward-compatibility behavior per `docs/development/testing.md`'s Contract Change Test
   Requirements table. Anchors: `tests/adapters/config/test_toml_config_store.py`
   and `tests/domain/test_app_config.py`; when the typed Web Settings slice
   exists, its route-level Pydantic contract tests are required too.
