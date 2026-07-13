@@ -6,6 +6,7 @@ Why: Serves the typed Bootstrap API and packaged Vite SPA with one secure loopba
 from __future__ import annotations
 
 import logging
+import secrets
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
@@ -29,19 +30,26 @@ from omym2.adapters.web.schemas.api_errors import ApiError, ApiErrorCode
 from omym2.adapters.web.static_assets import is_hashed_asset_name
 from omym2.config import (
     HTTP_BAD_REQUEST_STATUS,
+    HTTP_FORBIDDEN_STATUS,
     HTTP_INTERNAL_ERROR_STATUS,
     HTTP_METHOD_NOT_ALLOWED_STATUS,
     HTTP_NOT_FOUND_STATUS,
     HTTP_SERVICE_UNAVAILABLE_STATUS,
     HTTP_UNPROCESSABLE_CONTENT_STATUS,
+    WEB_API_ADD_PLAN_ROUTE,
+    WEB_API_CHECK_RUN_ROUTE,
     WEB_API_NOT_FOUND_MESSAGE,
+    WEB_API_ORGANIZE_PLAN_ROUTE,
     WEB_API_PREFIX,
+    WEB_API_REFRESH_PLAN_ROUTE,
+    WEB_API_SETTINGS_ROUTE,
     WEB_ASSET_CACHE_CONTROL,
     WEB_CONTENT_SECURITY_POLICY,
     WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME,
     WEB_CONTENT_TYPE_OPTIONS_VALUE,
     WEB_CORRELATION_HEADER_NAME,
     WEB_CSP_HEADER_NAME,
+    WEB_CSRF_HEADER_NAME,
     WEB_FRAME_OPTIONS,
     WEB_FRAME_OPTIONS_HEADER_NAME,
     WEB_HTML_ACCEPT_MEDIA_TYPE,
@@ -68,6 +76,16 @@ INTERNAL_ERROR_MESSAGE = "An unexpected internal error occurred."
 INVALID_JSON_MESSAGE = "Request body must be valid JSON."
 VALIDATION_FAILED_MESSAGE = "Request validation failed."
 INVALID_HOST_MESSAGE = "Invalid host header"
+CSRF_INVALID_MESSAGE = "The Web mutation token is missing or invalid."
+STATE_CHANGING_HTTP_METHODS = frozenset({"POST", "PUT"})
+CSRF_OPERATION_ROUTES = frozenset(
+    {
+        WEB_API_ADD_PLAN_ROUTE,
+        WEB_API_ORGANIZE_PLAN_ROUTE,
+        WEB_API_REFRESH_PLAN_ROUTE,
+        WEB_API_CHECK_RUN_ROUTE,
+    }
+)
 
 
 def create_web_app(
@@ -80,8 +98,13 @@ def create_web_app(
     app = create_api_schema_app()
     app.state.api_route_context = context
     _install_allowed_hosts(app, allowed_hosts)
+    _install_csrf_protection(app, context)
     _install_error_handlers(app)
     _install_response_headers(app)
+    if context.start_runtime is not None:
+        app.router.add_event_handler("startup", context.start_runtime)
+    if context.close_runtime is not None:
+        app.router.add_event_handler("shutdown", context.close_runtime)
 
     package_dir = Path(__file__).resolve().parent
     web_dist = static_dist_path or package_dir / WEB_STATIC_EXPORT_DIRECTORY_NAME
@@ -115,6 +138,26 @@ def _install_allowed_hosts(app: FastAPI, allowed_hosts: Sequence[str]) -> None:
         if _is_api_path(request.url.path):
             return _api_failure(HTTP_NOT_FOUND_STATUS, ApiErrorCode.API_NOT_FOUND, WEB_API_NOT_FOUND_MESSAGE)
         return PlainTextResponse(INVALID_HOST_MESSAGE, status_code=HTTP_BAD_REQUEST_STATUS)
+
+
+def _install_csrf_protection(app: FastAPI, context: ApiRouteContext) -> None:
+    @app.middleware("http")
+    async def enforce_csrf_token(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator middleware.
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if not _requires_csrf(request.method, request.url.path):
+            return await call_next(request)
+        token = request.headers.get(WEB_CSRF_HEADER_NAME)
+        if token is not None and secrets.compare_digest(token, context.csrf_token):
+            return await call_next(request)
+        return _api_failure(HTTP_FORBIDDEN_STATUS, ApiErrorCode.CSRF_INVALID, CSRF_INVALID_MESSAGE)
+
+
+def _requires_csrf(method: str, path: str) -> bool:
+    if method not in STATE_CHANGING_HTTP_METHODS:
+        return False
+    return (method == "PUT" and path == WEB_API_SETTINGS_ROUTE) or path in CSRF_OPERATION_ROUTES
 
 
 def _install_response_headers(app: FastAPI) -> None:

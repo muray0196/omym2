@@ -1,8 +1,8 @@
 /**
- * Summary: Centralizes deterministic M2 browser route fixtures.
+ * Summary: Centralizes deterministic M3 browser route fixtures.
  * Why: Keeps inspection deep links, accessibility, and the pre-M4 mutation gate aligned.
  */
-export const allM2RoutePaths = [
+export const allM3RoutePaths = [
   "/",
   "/plans",
   "/plans/new/add",
@@ -17,5 +17,5 @@ export const allM2RoutePaths = [
   "/settings",
 ] as const;
 
-export const deepPlanRoute = allM2RoutePaths[5];
+export const deepPlanRoute = allM3RoutePaths[5];
 export const notFoundRoute = "/missing-renewal-route";

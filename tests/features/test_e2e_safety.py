@@ -36,6 +36,7 @@ from omym2.features.add.usecases.create_add_plan import CreateAddPlanUseCase
 from omym2.features.apply.dto import ApplyOptions, ApplyPlanRequest
 from omym2.features.apply.ports import ApplyPlanPorts
 from omym2.features.apply.usecases.apply_plan import ApplyPlanUseCase
+from omym2.features.common_ports import ConfigRevisionMismatchError, ConfigSnapshot, ConfigSnapshotState
 from omym2.features.history.dto import GetRunHeaderRequest, ListRunEventsRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase
@@ -68,6 +69,8 @@ SUCCESS_CONTENT = b"successful audio"
 SUCCESS_TARGET_PATH = "Artist/2026_Album/1-02_Title.flac"
 REGISTERED_TRACK_PATH = "Artist/2026_Album/1-01_Existing.flac"
 RECALCULATED_TARGET_TEMPLATE = "{artist}/{title}"
+CONFIG_REVISION = "v1:e2e-safety"
+SAVED_CONFIG_REVISION = "v1:e2e-safety-saved"
 
 
 def test_inspect_plan_apply_and_history_use_recorded_paths_with_concrete_adapters(tmp_path: Path) -> None:
@@ -80,7 +83,10 @@ def test_inspect_plan_apply_and_history_use_recorded_paths_with_concrete_adapter
     assert inspected.canonical_path == SUCCESS_TARGET_PATH
 
     plan = _create_mixed_plan(setup)
-    setup.config_store.save(AppConfig(path_policy=PathPolicyConfig(template=RECALCULATED_TARGET_TEMPLATE)))
+    _ = setup.config_store.save(
+        AppConfig(path_policy=PathPolicyConfig(template=RECALCULATED_TARGET_TEMPLATE)),
+        expected_config_revision=setup.config_store.read_snapshot().config_revision,
+    )
     run = _apply_plan_with_asserting_mover(setup, plan.plan_id)
 
     assert run is not None
@@ -242,14 +248,27 @@ class MutableConfigStore:
     def __init__(self, config: AppConfig) -> None:
         """Store the current config."""
         self._config: AppConfig = config
+        self._config_revision: str = CONFIG_REVISION
+
+    def read_snapshot(self) -> ConfigSnapshot:
+        """Return current settings with their test revision."""
+        return ConfigSnapshot(
+            state=ConfigSnapshotState.VALID,
+            config=self._config,
+            config_revision=self._config_revision,
+        )
 
     def load(self) -> AppConfig:
         """Return the current config."""
         return self._config
 
-    def save(self, config: AppConfig) -> None:
-        """Replace the current config."""
+    def save(self, config: AppConfig, *, expected_config_revision: str) -> ConfigSnapshot:
+        """Replace current settings only for the matching test revision."""
+        if expected_config_revision != self._config_revision:
+            raise ConfigRevisionMismatchError(expected_config_revision, self._config_revision)
         self._config = config
+        self._config_revision = SAVED_CONFIG_REVISION
+        return self.read_snapshot()
 
 
 @dataclass(frozen=True, slots=True)

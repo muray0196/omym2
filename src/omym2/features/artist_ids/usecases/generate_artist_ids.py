@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from omym2.domain.models.app_config import ArtistIdConfig
 from omym2.domain.services.artist_id import generate_artist_id
 from omym2.features.artist_ids.dto import ArtistIdEntryResult, GenerateArtistIdsResult
-from omym2.features.common_ports import ConfigStoreValidationError
+from omym2.features.common_ports import ConfigSnapshotState, ConfigStoreValidationError
 
 if TYPE_CHECKING:
     from omym2.features.artist_ids.dto import GenerateArtistIdsRequest
@@ -29,7 +29,10 @@ class GenerateArtistIdsUseCase:
 
     def execute(self, request: GenerateArtistIdsRequest) -> GenerateArtistIdsResult:
         """Save missing artist IDs and preserve existing entries by default."""
-        config = self.config_store.load()
+        snapshot = self.config_store.read_snapshot()
+        if snapshot.state is ConfigSnapshotState.INVALID:
+            raise ConfigStoreValidationError(snapshot.errors)
+        config = snapshot.config
         saved_entries = dict(config.artist_ids.entries or {})
         results: list[ArtistIdEntryResult] = []
         changed = False
@@ -85,7 +88,10 @@ class GenerateArtistIdsUseCase:
                 )
             except ValueError as exc:
                 raise ConfigStoreValidationError((str(exc),)) from exc
-            self.config_store.save(replace(config, artist_ids=new_artist_ids))
+            _ = self.config_store.save(
+                replace(config, artist_ids=new_artist_ids),
+                expected_config_revision=snapshot.config_revision,
+            )
         return GenerateArtistIdsResult(entries=tuple(results))
 
     def _generation_artist(self, source_artist: str) -> str:

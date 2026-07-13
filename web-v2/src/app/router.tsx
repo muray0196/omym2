@@ -40,6 +40,10 @@ export const router = createBrowserRouter([
         path: "history/:runId",
         lazy: () => import("../routes/history/detail-route"),
       },
+      {
+        path: "operations/:operationId",
+        lazy: () => import("../routes/operations/detail-route"),
+      },
       { path: "settings", lazy: () => import("../routes/settings/route") },
       { path: "*", lazy: () => import("../routes/not-found/route") },
     ],

@@ -14,11 +14,13 @@ from uuid import UUID
 import pytest
 
 from omym2.adapters.config.default_config import default_app_config
+from omym2.config import OPERATION_RESULT_RETENTION_HOURS, OPERATION_TOMBSTONE_RETENTION_DAYS
 from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.models.operation import CheckCompletedResult, Operation, OperationKind, OperationStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.run import Run, RunStatus
@@ -52,7 +54,7 @@ from omym2.features.undo.usecases.create_undo_plan import (
     CreateUndoPlanUseCase,
     UndoPlanError,
 )
-from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
+from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
@@ -77,6 +79,8 @@ FILE_EXTENSION = ".flac"
 FILE_SIZE = 5
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 LIBRARY_ROOT = "/music/library"
+OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568e"))
+IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def01234568f")
 SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568d"))
 SECOND_LIBRARY_ROOT = "/music/second-library"
 METADATA_HASH = "metadata"
@@ -145,6 +149,26 @@ def test_check_reports_db_filesystem_plan_and_pending_event_issues() -> None:
     assert uow.libraries.get(LIBRARY_ID) is not None
     assert _absolute(UNMANAGED_PATH) not in snapshots.captured_paths
     assert content_hasher.calculated_paths == [_absolute(UNMANAGED_PATH)]
+
+
+def test_check_operation_success_exposes_persisted_check_run_ids() -> None:
+    """Orchestrated Check returns and commits the exact non-empty diagnostic identity set."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.operations.save(_running_check_operation())
+
+    result = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), MappingSnapshotReader({}))).execute(
+        CheckLibraryRequest(trust_stat=False, operation_id=OPERATION_ID)
+    )
+
+    assert result.check_run_ids == (CHECK_RUN_ID,)
+    assert uow.check_runs.latest(LIBRARY_ID) is not None
+    terminal = uow.operations.lookup(OPERATION_ID)
+    assert isinstance(terminal, Operation)
+    assert terminal.status is OperationStatus.SUCCEEDED
+    assert terminal.result == CheckCompletedResult(result.check_run_ids, len(result.issues))
+    assert terminal.result_expires_at == BASE_TIME + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS)
+    assert terminal.tombstone_expires_at == BASE_TIME + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS)
 
 
 def test_check_keeps_unmanaged_issue_when_file_vanishes_before_hashing() -> None:
@@ -980,6 +1004,17 @@ def _check_ports(
         if id_generator is None
         else id_generator,
     )
+
+
+def _running_check_operation() -> Operation:
+    return Operation.queued(
+        operation_id=OPERATION_ID,
+        kind=OperationKind.CHECK,
+        idempotency_key=IDEMPOTENCY_KEY,
+        request_fingerprint="check-request",
+        requested_at=BASE_TIME,
+        library_id=LIBRARY_ID,
+    ).mark_running(BASE_TIME)
 
 
 def _undo_ports(

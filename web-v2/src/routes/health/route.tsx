@@ -8,6 +8,7 @@ import {
   groupingLabel,
   issueTypeLabel,
 } from "../../features/health/health-catalog";
+import { CheckRunControl } from "../../features/health/check-run-control";
 import { healthCopy } from "../../features/health/health-copy";
 import {
   checkIssueFacetsQuery,
@@ -49,6 +50,7 @@ export function Component() {
             : healthCopy.neverChecked}
         </p>
       </header>
+      <CheckRunControl />
       <section className={styles.filters} aria-label="Health filters">
         <div className={styles.filterGrid}>
           <label className={styles.field}>

@@ -1,6 +1,6 @@
 /**
  * Summary: Centralizes English copy for persisted Health inspection.
- * Why: Keeps freshness and manual-review guidance consistent without exposing Check execution.
+ * Why: Keeps freshness, execution, and manual-review guidance consistent.
  */
 export const healthCopy = {
   eyebrow: "Persisted Check",
@@ -29,5 +29,17 @@ export const healthCopy = {
   findings: "Persisted findings",
   pending:
     "Mutation outcome is unknown. Review History and the filesystem manually; no automatic repair is available.",
+  run: {
+    title: "Run Check",
+    description:
+      "Scan current state and replace the selected Library's persisted findings.",
+    libraryLabel: "Check scope",
+    safety:
+      "Check reads the filesystem and persists diagnostics. It does not change Library music files or managed Tracks.",
+    submit: "Run Check",
+    starting: "Starting Check…",
+    completed: (issueCount: number, runCount: number) =>
+      `Saved ${issueCount} findings across ${runCount} Check runs. Persisted Health has been refreshed.`,
+  },
   unknown: { issueType: "Unknown issue type", grouping: "Unknown grouping" },
 } as const;

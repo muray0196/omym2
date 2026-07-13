@@ -22,6 +22,65 @@
         "title": "ActionType",
         "type": "string"
       },
+      "AddPlanRequest": {
+        "additionalProperties": false,
+        "description": "Validated Add planning inputs.",
+        "properties": {
+          "library_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Id"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          }
+        },
+        "title": "AddPlanRequest",
+        "type": "object"
+      },
+      "ApiEnvelope_ArtistIdDraftData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtistIdDraftData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[ArtistIdDraftData]",
+        "type": "object"
+      },
       "ApiEnvelope_BootstrapData_": {
         "additionalProperties": false,
         "properties": {
@@ -246,6 +305,62 @@
         "title": "ApiEnvelope[LibraryResource]",
         "type": "object"
       },
+      "ApiEnvelope_OperationRef_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[OperationRef]",
+        "type": "object"
+      },
+      "ApiEnvelope_OperationResource_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationResource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[OperationResource]",
+        "type": "object"
+      },
       "ApiEnvelope_PaginatedData_FileEventResource__": {
         "additionalProperties": false,
         "properties": {
@@ -386,6 +501,34 @@
         "title": "ApiEnvelope[PaginatedData[TrackResource]]",
         "type": "object"
       },
+      "ApiEnvelope_PathPreview_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PathPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[PathPreview]",
+        "type": "object"
+      },
       "ApiEnvelope_PlanActionFacetsData_": {
         "additionalProperties": false,
         "properties": {
@@ -524,6 +667,62 @@
           "errors"
         ],
         "title": "ApiEnvelope[RunFacetsData]",
+        "type": "object"
+      },
+      "ApiEnvelope_SettingsCandidateData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingsCandidateData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[SettingsCandidateData]",
+        "type": "object"
+      },
+      "ApiEnvelope_SettingsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "errors"
+        ],
+        "title": "ApiEnvelope[SettingsData]",
         "type": "object"
       },
       "ApiEnvelope_TrackFacetsData_": {
@@ -731,6 +930,160 @@
         "title": "ApiRemediation",
         "type": "object"
       },
+      "AppConfigResource": {
+        "additionalProperties": false,
+        "description": "Complete supported AppConfig representation.",
+        "properties": {
+          "add": {
+            "$ref": "#/components/schemas/CommandConfigResource"
+          },
+          "artist_ids": {
+            "$ref": "#/components/schemas/ArtistIdConfigResource"
+          },
+          "collision": {
+            "$ref": "#/components/schemas/CollisionConfigResource"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/MetadataConfigResource"
+          },
+          "organize": {
+            "$ref": "#/components/schemas/CommandConfigResource"
+          },
+          "path_policy": {
+            "$ref": "#/components/schemas/PathPolicyConfigResource"
+          },
+          "paths": {
+            "$ref": "#/components/schemas/PathsConfigResource"
+          },
+          "refresh": {
+            "$ref": "#/components/schemas/CommandConfigResource"
+          },
+          "ui": {
+            "$ref": "#/components/schemas/UiConfigResource"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "paths",
+          "add",
+          "organize",
+          "refresh",
+          "path_policy",
+          "artist_ids",
+          "metadata",
+          "collision",
+          "ui"
+        ],
+        "title": "AppConfigResource",
+        "type": "object"
+      },
+      "ArtistIdConfigResource": {
+        "additionalProperties": false,
+        "description": "Editable artist-ID generation settings and entries.",
+        "properties": {
+          "entries": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Entries",
+            "type": "object"
+          },
+          "fallback_id": {
+            "title": "Fallback Id",
+            "type": "string"
+          },
+          "max_length": {
+            "title": "Max Length",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_length",
+          "fallback_id",
+          "entries"
+        ],
+        "title": "ArtistIdConfigResource",
+        "type": "object"
+      },
+      "ArtistIdDraftData": {
+        "additionalProperties": false,
+        "description": "Generated entries for merging into the local form draft.",
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ArtistIdDraftEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "title": "ArtistIdDraftData",
+        "type": "object"
+      },
+      "ArtistIdDraftEntry": {
+        "additionalProperties": false,
+        "description": "One generated or preserved artist-ID draft entry.",
+        "properties": {
+          "artist_id": {
+            "title": "Artist Id",
+            "type": "string"
+          },
+          "generation_artist": {
+            "title": "Generation Artist",
+            "type": "string"
+          },
+          "overwritten": {
+            "title": "Overwritten",
+            "type": "boolean"
+          },
+          "source_artist": {
+            "title": "Source Artist",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_artist",
+          "generation_artist",
+          "artist_id",
+          "overwritten"
+        ],
+        "title": "ArtistIdDraftEntry",
+        "type": "object"
+      },
+      "ArtistIdDraftRequest": {
+        "additionalProperties": false,
+        "description": "Draft-only artist-ID generation input.",
+        "properties": {
+          "artist_ids": {
+            "$ref": "#/components/schemas/ArtistIdConfigResource"
+          },
+          "artist_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Artist Names",
+            "type": "array"
+          },
+          "overwrite": {
+            "title": "Overwrite",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "artist_names",
+          "overwrite",
+          "artist_ids"
+        ],
+        "title": "ArtistIdDraftRequest",
+        "type": "object"
+      },
       "BootstrapData": {
         "additionalProperties": false,
         "description": "Initial application state returned even when recovery is required.",
@@ -748,6 +1101,7 @@
           "active_operation_id": {
             "anyOf": [
               {
+                "format": "uuid",
                 "type": "string"
               },
               {
@@ -797,6 +1151,38 @@
           "active_operation_id"
         ],
         "title": "BootstrapData",
+        "type": "object"
+      },
+      "CheckCompletedResultResource": {
+        "additionalProperties": false,
+        "description": "Navigation result for persisted Check findings.",
+        "properties": {
+          "check_run_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Check Run Ids",
+            "type": "array"
+          },
+          "issue_count": {
+            "minimum": 0.0,
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "check_completed",
+            "default": "check_completed",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check_run_ids",
+          "issue_count"
+        ],
+        "title": "CheckCompletedResultResource",
         "type": "object"
       },
       "CheckIssueFacetSets": {
@@ -1044,6 +1430,71 @@
           "checked_at"
         ],
         "title": "CheckIssuesData",
+        "type": "object"
+      },
+      "CheckRunRequest": {
+        "additionalProperties": false,
+        "description": "Optional Library scope for a persisted Check Operation.",
+        "properties": {
+          "library_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Id"
+          }
+        },
+        "title": "CheckRunRequest",
+        "type": "object"
+      },
+      "CollisionConfigResource": {
+        "additionalProperties": false,
+        "description": "Editable plan-time collision decisions.",
+        "properties": {
+          "on_duplicate_hash": {
+            "title": "On Duplicate Hash",
+            "type": "string"
+          },
+          "on_missing_metadata": {
+            "title": "On Missing Metadata",
+            "type": "string"
+          },
+          "on_target_exists": {
+            "title": "On Target Exists",
+            "type": "string"
+          }
+        },
+        "required": [
+          "on_target_exists",
+          "on_duplicate_hash",
+          "on_missing_metadata"
+        ],
+        "title": "CollisionConfigResource",
+        "type": "object"
+      },
+      "CommandConfigResource": {
+        "additionalProperties": false,
+        "description": "Plan-first command defaults retained in Config.",
+        "properties": {
+          "auto_apply": {
+            "title": "Auto Apply",
+            "type": "boolean"
+          },
+          "default_mode": {
+            "title": "Default Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "default_mode",
+          "auto_apply"
+        ],
+        "title": "CommandConfigResource",
         "type": "object"
       },
       "ConfigValidationResource": {
@@ -1490,9 +1941,57 @@
         "title": "LibraryStatus",
         "type": "string"
       },
+      "MetadataConfigResource": {
+        "additionalProperties": false,
+        "description": "Editable metadata requirements and album-year policy.",
+        "properties": {
+          "album_year_resolution": {
+            "title": "Album Year Resolution",
+            "type": "string"
+          },
+          "prefer_album_artist": {
+            "title": "Prefer Album Artist",
+            "type": "boolean"
+          },
+          "require_album": {
+            "title": "Require Album",
+            "type": "boolean"
+          },
+          "require_artist": {
+            "title": "Require Artist",
+            "type": "boolean"
+          },
+          "require_title": {
+            "title": "Require Title",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "prefer_album_artist",
+          "require_title",
+          "require_artist",
+          "require_album",
+          "album_year_resolution"
+        ],
+        "title": "MetadataConfigResource",
+        "type": "object"
+      },
       "NonNegativeCount": {
         "minimum": 0.0,
         "type": "integer"
+      },
+      "OperationKind": {
+        "description": "Supported durable Operation kinds.",
+        "enum": [
+          "add_plan",
+          "organize_plan",
+          "refresh_plan",
+          "check",
+          "apply_plan",
+          "undo_plan"
+        ],
+        "title": "OperationKind",
+        "type": "string"
       },
       "OperationPollingPolicy": {
         "additionalProperties": false,
@@ -1517,6 +2016,272 @@
           "max_ms"
         ],
         "title": "OperationPollingPolicy",
+        "type": "object"
+      },
+      "OperationProgressResource": {
+        "additionalProperties": false,
+        "description": "Display-safe durable progress without fabricated percentages.",
+        "properties": {
+          "completed_units": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Units"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "stage_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Code"
+          },
+          "total_units": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Units"
+          }
+        },
+        "required": [
+          "stage_code",
+          "completed_units",
+          "total_units",
+          "message"
+        ],
+        "title": "OperationProgressResource",
+        "type": "object"
+      },
+      "OperationRef": {
+        "additionalProperties": false,
+        "description": "Compact reference returned when durable work is accepted or replayed.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/OperationKind"
+          },
+          "operation_id": {
+            "format": "uuid",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "poll_after_ms": {
+            "exclusiveMinimum": 0.0,
+            "title": "Poll After Ms",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OperationStatus"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "kind",
+          "status",
+          "status_url",
+          "poll_after_ms"
+        ],
+        "title": "OperationRef",
+        "type": "object"
+      },
+      "OperationResource": {
+        "additionalProperties": false,
+        "description": "Full retained Operation status returned by polling.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OperationKind"
+          },
+          "library_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Id"
+          },
+          "operation_id": {
+            "format": "uuid",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/OperationProgressResource"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationResultResource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OperationStatus"
+          }
+        },
+        "required": [
+          "operation_id",
+          "kind",
+          "status",
+          "library_id",
+          "plan_id",
+          "run_id",
+          "progress",
+          "result",
+          "error",
+          "requested_at",
+          "started_at",
+          "completed_at"
+        ],
+        "title": "OperationResource",
+        "type": "object"
+      },
+      "OperationResultResource": {
+        "discriminator": {
+          "mapping": {
+            "check_completed": "#/components/schemas/CheckCompletedResultResource",
+            "plan_created": "#/components/schemas/PlanCreatedResultResource",
+            "registered_without_plan": "#/components/schemas/RegisteredWithoutPlanResultResource",
+            "run_completed": "#/components/schemas/RunCompletedResultResource"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PlanCreatedResultResource"
+          },
+          {
+            "$ref": "#/components/schemas/RegisteredWithoutPlanResultResource"
+          },
+          {
+            "$ref": "#/components/schemas/CheckCompletedResultResource"
+          },
+          {
+            "$ref": "#/components/schemas/RunCompletedResultResource"
+          }
+        ]
+      },
+      "OperationStatus": {
+        "description": "Supported durable Operation lifecycle statuses.",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "interrupted"
+        ],
+        "title": "OperationStatus",
+        "type": "string"
+      },
+      "OrganizePlanRequest": {
+        "additionalProperties": false,
+        "description": "Explicit Library root for registration or reconciliation planning.",
+        "properties": {
+          "library_root": {
+            "title": "Library Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "library_root"
+        ],
+        "title": "OrganizePlanRequest",
         "type": "object"
       },
       "PageInfo": {
@@ -1655,6 +2420,142 @@
           "page"
         ],
         "title": "PaginatedData[TrackResource]",
+        "type": "object"
+      },
+      "PathPolicyConfigResource": {
+        "additionalProperties": false,
+        "description": "Editable canonical-path policy.",
+        "properties": {
+          "disc_number_condition": {
+            "title": "Disc Number Condition",
+            "type": "string"
+          },
+          "disc_number_style": {
+            "title": "Disc Number Style",
+            "type": "string"
+          },
+          "max_filename_length": {
+            "title": "Max Filename Length",
+            "type": "integer"
+          },
+          "sanitize": {
+            "title": "Sanitize",
+            "type": "boolean"
+          },
+          "template": {
+            "title": "Template",
+            "type": "string"
+          },
+          "unknown_album": {
+            "title": "Unknown Album",
+            "type": "string"
+          },
+          "unknown_artist": {
+            "title": "Unknown Artist",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template",
+          "unknown_artist",
+          "unknown_album",
+          "sanitize",
+          "max_filename_length",
+          "disc_number_style",
+          "disc_number_condition"
+        ],
+        "title": "PathPolicyConfigResource",
+        "type": "object"
+      },
+      "PathPreview": {
+        "additionalProperties": false,
+        "description": "One rendered relative path or typed draft errors.",
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          }
+        },
+        "required": [
+          "path",
+          "errors"
+        ],
+        "title": "PathPreview",
+        "type": "object"
+      },
+      "PathPreviewRequest": {
+        "additionalProperties": false,
+        "description": "Self-contained PathPolicy preview input.",
+        "properties": {
+          "artist_ids": {
+            "$ref": "#/components/schemas/ArtistIdConfigResource"
+          },
+          "file_extension": {
+            "title": "File Extension",
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/TrackMetadataResource-Input"
+          },
+          "path_policy": {
+            "$ref": "#/components/schemas/PathPolicyConfigResource"
+          }
+        },
+        "required": [
+          "path_policy",
+          "artist_ids",
+          "metadata",
+          "file_extension"
+        ],
+        "title": "PathPreviewRequest",
+        "type": "object"
+      },
+      "PathsConfigResource": {
+        "additionalProperties": false,
+        "description": "Editable Library and Incoming defaults.",
+        "properties": {
+          "incoming": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoming"
+          },
+          "library": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library"
+          }
+        },
+        "required": [
+          "library",
+          "incoming"
+        ],
+        "title": "PathsConfigResource",
         "type": "object"
       },
       "PlanActionFacetSets": {
@@ -2018,6 +2919,28 @@
         "title": "PlanCapabilities",
         "type": "object"
       },
+      "PlanCreatedResultResource": {
+        "additionalProperties": false,
+        "description": "Navigation result for planning Operations.",
+        "properties": {
+          "kind": {
+            "const": "plan_created",
+            "default": "plan_created",
+            "title": "Kind",
+            "type": "string"
+          },
+          "plan_id": {
+            "format": "uuid",
+            "title": "Plan Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id"
+        ],
+        "title": "PlanCreatedResultResource",
+        "type": "object"
+      },
       "PlanDetailData": {
         "additionalProperties": false,
         "description": "Plan header, current action summary, and advisory capabilities.",
@@ -2164,6 +3087,71 @@
         "title": "PlanType",
         "type": "string"
       },
+      "RefreshPlanRequest": {
+        "additionalProperties": false,
+        "description": "Exactly one selected Refresh scope for one Library.",
+        "properties": {
+          "library_id": {
+            "format": "uuid",
+            "title": "Library Id",
+            "type": "string"
+          },
+          "target_kind": {
+            "enum": [
+              "file",
+              "directory",
+              "all"
+            ],
+            "title": "Target Kind",
+            "type": "string"
+          },
+          "target_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Path"
+          }
+        },
+        "required": [
+          "library_id",
+          "target_kind"
+        ],
+        "title": "RefreshPlanRequest",
+        "type": "object"
+      },
+      "RegisteredWithoutPlanResultResource": {
+        "additionalProperties": false,
+        "description": "Navigation result for a clean Organize registration.",
+        "properties": {
+          "kind": {
+            "const": "registered_without_plan",
+            "default": "registered_without_plan",
+            "title": "Kind",
+            "type": "string"
+          },
+          "library_id": {
+            "format": "uuid",
+            "title": "Library Id",
+            "type": "string"
+          },
+          "track_count": {
+            "minimum": 0.0,
+            "title": "Track Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "library_id",
+          "track_count"
+        ],
+        "title": "RegisteredWithoutPlanResultResource",
+        "type": "object"
+      },
       "RunCapabilities": {
         "additionalProperties": false,
         "description": "Backend-authoritative Undo Plan availability for one Run.",
@@ -2185,6 +3173,28 @@
           "disabled_reasons"
         ],
         "title": "RunCapabilities",
+        "type": "object"
+      },
+      "RunCompletedResultResource": {
+        "additionalProperties": false,
+        "description": "Navigation result for Apply Operations.",
+        "properties": {
+          "kind": {
+            "const": "run_completed",
+            "default": "run_completed",
+            "title": "Kind",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "RunCompletedResultResource",
         "type": "object"
       },
       "RunDetailData": {
@@ -2360,6 +3370,227 @@
         "title": "RuntimeCapabilities",
         "type": "object"
       },
+      "SettingsCandidateData": {
+        "additionalProperties": false,
+        "description": "Validation or save result for one Settings candidate.",
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/SettingsChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "config": {
+            "$ref": "#/components/schemas/AppConfigResource"
+          },
+          "config_revision": {
+            "title": "Config Revision",
+            "type": "string"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/PathPreview"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/SettingsValidation"
+          }
+        },
+        "required": [
+          "config",
+          "config_revision",
+          "changes",
+          "validation",
+          "preview"
+        ],
+        "title": "SettingsCandidateData",
+        "type": "object"
+      },
+      "SettingsCandidateRequest": {
+        "additionalProperties": false,
+        "description": "Complete candidate Config tied to the caller's edit base.",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AppConfigResource"
+          },
+          "expected_config_revision": {
+            "title": "Expected Config Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "expected_config_revision"
+        ],
+        "title": "SettingsCandidateRequest",
+        "type": "object"
+      },
+      "SettingsChange": {
+        "additionalProperties": false,
+        "description": "One deterministic field-level Config difference.",
+        "properties": {
+          "after": {
+            "$ref": "#/components/schemas/SettingsChangeValue"
+          },
+          "before": {
+            "$ref": "#/components/schemas/SettingsChangeValue"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "before",
+          "after"
+        ],
+        "title": "SettingsChange",
+        "type": "object"
+      },
+      "SettingsChangeValue": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "SettingsChoices": {
+        "additionalProperties": false,
+        "description": "Backend-owned closed choices used by Settings controls.",
+        "properties": {
+          "album_year_resolutions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Album Year Resolutions",
+            "type": "array"
+          },
+          "command_modes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Command Modes",
+            "type": "array"
+          },
+          "disc_number_conditions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Disc Number Conditions",
+            "type": "array"
+          },
+          "disc_number_styles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Disc Number Styles",
+            "type": "array"
+          },
+          "duplicate_hash_policies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Duplicate Hash Policies",
+            "type": "array"
+          },
+          "missing_metadata_policies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Metadata Policies",
+            "type": "array"
+          },
+          "path_placeholders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Path Placeholders",
+            "type": "array"
+          },
+          "target_exists_policies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Target Exists Policies",
+            "type": "array"
+          }
+        },
+        "required": [
+          "command_modes",
+          "disc_number_styles",
+          "disc_number_conditions",
+          "album_year_resolutions",
+          "target_exists_policies",
+          "duplicate_hash_policies",
+          "missing_metadata_policies",
+          "path_placeholders"
+        ],
+        "title": "SettingsChoices",
+        "type": "object"
+      },
+      "SettingsData": {
+        "additionalProperties": false,
+        "description": "Current recovery-capable Settings edit state.",
+        "properties": {
+          "choices": {
+            "$ref": "#/components/schemas/SettingsChoices"
+          },
+          "config": {
+            "$ref": "#/components/schemas/AppConfigResource"
+          },
+          "config_revision": {
+            "title": "Config Revision",
+            "type": "string"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/PathPreview"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/SettingsValidation"
+          }
+        },
+        "required": [
+          "config",
+          "config_revision",
+          "choices",
+          "validation",
+          "preview"
+        ],
+        "title": "SettingsData",
+        "type": "object"
+      },
+      "SettingsValidation": {
+        "additionalProperties": false,
+        "description": "Candidate or persisted Config validation evidence.",
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "errors"
+        ],
+        "title": "SettingsValidation",
+        "type": "object"
+      },
       "TrackFacetSets": {
         "additionalProperties": false,
         "description": "Filter-aware Track status facets.",
@@ -2433,7 +3664,125 @@
         "title": "TrackGroupsData",
         "type": "object"
       },
-      "TrackMetadataResource": {
+      "TrackMetadataResource-Input": {
+        "additionalProperties": false,
+        "description": "Self-contained sample metadata used only for PathPolicy preview.",
+        "properties": {
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "album_artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album Artist"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "disc_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disc Number"
+          },
+          "disc_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disc Total"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "track_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Number"
+          },
+          "track_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Total"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "title": "TrackMetadataResource",
+        "type": "object"
+      },
+      "TrackMetadataResource-Output": {
         "additionalProperties": false,
         "description": "Persisted tag metadata for one managed Track.",
         "properties": {
@@ -2595,7 +3944,7 @@
             "type": "string"
           },
           "metadata": {
-            "$ref": "#/components/schemas/TrackMetadataResource"
+            "$ref": "#/components/schemas/TrackMetadataResource-Output"
           },
           "metadata_hash": {
             "title": "Metadata Hash",
@@ -2663,6 +4012,26 @@
         ],
         "title": "TrackStatus",
         "type": "string"
+      },
+      "UiConfigResource": {
+        "additionalProperties": false,
+        "description": "Persisted legacy UI values retained for complete Config round trips.",
+        "properties": {
+          "show_advanced_settings": {
+            "title": "Show Advanced Settings",
+            "type": "boolean"
+          },
+          "theme": {
+            "title": "Theme",
+            "type": "string"
+          }
+        },
+        "required": [
+          "theme",
+          "show_advanced_settings"
+        ],
+        "title": "UiConfigResource",
+        "type": "object"
       }
     }
   },
@@ -3093,6 +4462,214 @@
           }
         },
         "summary": "Get Check Issue Groups"
+      }
+    },
+    "/api/check/run": {
+      "post": {
+        "operationId": "startCheck",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OMYM2-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Omym2-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationResource_"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationRef_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Conflict",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Gone",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start Check"
       }
     },
     "/api/history": {
@@ -3772,6 +5349,108 @@
         "summary": "Get Library"
       }
     },
+    "/api/operations/{operation_id}": {
+      "get": {
+        "operationId": "getOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Operation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationResource_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Gone",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Operation"
+      }
+    },
     "/api/plans": {
       "get": {
         "operationId": "listPlans",
@@ -3937,6 +5616,630 @@
           }
         },
         "summary": "List Plans"
+      }
+    },
+    "/api/plans/add": {
+      "post": {
+        "operationId": "startAddPlan",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OMYM2-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Omym2-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationResource_"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationRef_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Conflict",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Gone",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start Add Plan"
+      }
+    },
+    "/api/plans/organize": {
+      "post": {
+        "operationId": "startOrganizePlan",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OMYM2-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Omym2-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizePlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationResource_"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationRef_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Conflict",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Gone",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start Organize Plan"
+      }
+    },
+    "/api/plans/refresh": {
+      "post": {
+        "operationId": "startRefreshPlan",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OMYM2-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Omym2-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationResource_"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationRef_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Conflict",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Gone",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start Refresh Plan"
       }
     },
     "/api/plans/{plan_id}": {
@@ -4591,6 +6894,306 @@
           }
         },
         "summary": "Get Plan Action Groups"
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "operationId": "getSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_SettingsData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Settings"
+      },
+      "put": {
+        "operationId": "saveSettings",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-OMYM2-CSRF-Token",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Omym2-Csrf-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsCandidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_SettingsCandidateData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Save Settings"
+      }
+    },
+    "/api/settings/artist-ids/generate": {
+      "post": {
+        "operationId": "generateArtistIdDraft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtistIdDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_ArtistIdDraftData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Generate Artist Id Draft"
+      }
+    },
+    "/api/settings/preview": {
+      "post": {
+        "operationId": "previewSettingsPath",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PathPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_PathPreview_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Preview Settings Path"
+      }
+    },
+    "/api/settings/validate": {
+      "post": {
+        "operationId": "validateSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsCandidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_SettingsCandidateData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Validate Settings"
       }
     },
     "/api/tracks": {

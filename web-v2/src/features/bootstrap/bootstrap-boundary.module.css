@@ -24,6 +24,14 @@
   color: var(--color-green);
 }
 
+.activeOperation {
+  border-color: var(--color-blue);
+}
+
+.activeOperation svg {
+  color: var(--color-blue);
+}
+
 .loading svg {
   color: var(--color-blue);
 }

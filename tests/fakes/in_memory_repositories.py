@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
 from omym2.domain.models.file_event import FileEventStatus
+from omym2.domain.models.operation import Operation, OperationLookup, OperationStatus, OperationTombstone
 from omym2.domain.models.plan_action import ActionStatus
 from omym2.domain.models.track import TrackGrouping
 from omym2.features.check.usecases.group_check_issues import (
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
     from datetime import datetime
     from types import TracebackType
+    from uuid import UUID
 
     from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
     from omym2.domain.models.check_run import CheckRun
@@ -41,7 +43,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.plan_action import ActionType, PlanAction, PlanActionReason
     from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackStatus
-    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
+    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
     from omym2.shared.pagination import PageRequest
 
 KEYSET_CURSOR_KEY_LENGTH = 2  # every Track/Track-group cursor key is a 2-tuple
@@ -846,6 +848,88 @@ class InMemoryFileEventRepository:
 
 
 @dataclass(slots=True)
+class InMemoryOperationRepository:
+    """In-memory OperationRepository fake."""
+
+    records: dict[OperationId, OperationLookup] = field(default_factory=dict)
+
+    def lookup(self, operation_id: OperationId) -> OperationLookup | None:
+        """Return a full Operation or retained tombstone by stable ID."""
+        return self.records.get(operation_id)
+
+    def find_by_idempotency_key(self, idempotency_key: UUID) -> OperationLookup | None:
+        """Return retained request identity for idempotent replay classification."""
+        return next(
+            (record for record in self.records.values() if record.idempotency_key == idempotency_key),
+            None,
+        )
+
+    def list_reconciliation_candidates(self) -> tuple[Operation, ...]:
+        """Return full unfinished/interrupted Operations in deterministic request order."""
+        candidates = (
+            record
+            for record in self.records.values()
+            if isinstance(record, Operation)
+            and record.status in {OperationStatus.QUEUED, OperationStatus.RUNNING, OperationStatus.INTERRUPTED}
+        )
+        return tuple(sorted(candidates, key=lambda record: (record.requested_at, str(record.operation_id))))
+
+    def find_active(self) -> Operation | None:
+        """Return the single queued or running Operation, if one exists."""
+        return next(
+            (
+                record
+                for record in self.list_reconciliation_candidates()
+                if record.status in {OperationStatus.QUEUED, OperationStatus.RUNNING}
+            ),
+            None,
+        )
+
+    def save(self, operation: Operation) -> None:
+        """Store or replace one full Operation."""
+        self.records[operation.operation_id] = operation
+
+    def expire_terminal_payloads(self, now: datetime) -> int:
+        """Replace expired full Operations with minimal retained tombstones."""
+        expired = tuple(
+            operation
+            for operation in self.records.values()
+            if isinstance(operation, Operation)
+            and operation.is_terminal
+            and operation.result_expires_at is not None
+            and operation.result_expires_at <= now
+        )
+        for operation in expired:
+            if operation.tombstone_expires_at is None:
+                continue
+            self.records[operation.operation_id] = OperationTombstone(
+                operation_id=operation.operation_id,
+                idempotency_key=operation.idempotency_key,
+                kind=operation.kind,
+                request_fingerprint=operation.request_fingerprint,
+                tombstone_expires_at=operation.tombstone_expires_at,
+            )
+        return len(expired)
+
+    def purge_expired_tombstones(self, now: datetime) -> int:
+        """Delete terminal records whose tombstone retention elapsed."""
+        expired_ids = tuple(
+            operation_id
+            for operation_id, record in self.records.items()
+            if (isinstance(record, OperationTombstone) and record.tombstone_expires_at <= now)
+            or (
+                isinstance(record, Operation)
+                and record.is_terminal
+                and record.tombstone_expires_at is not None
+                and record.tombstone_expires_at <= now
+            )
+        )
+        for operation_id in expired_ids:
+            del self.records[operation_id]
+        return len(expired_ids)
+
+
+@dataclass(slots=True)
 class InMemoryUnitOfWork:
     """In-memory UnitOfWork fake with observable transaction calls."""
 
@@ -857,6 +941,7 @@ class InMemoryUnitOfWork:
     plan_actions: InMemoryPlanActionRepository = field(default_factory=InMemoryPlanActionRepository)
     runs: InMemoryRunRepository = field(default_factory=InMemoryRunRepository)
     file_events: InMemoryFileEventRepository = field(default_factory=InMemoryFileEventRepository)
+    operations: InMemoryOperationRepository = field(default_factory=InMemoryOperationRepository)
     commit_count: int = 0
     rollback_count: int = 0
     usecase_scope_enter_count: int = 0

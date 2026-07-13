@@ -14,4 +14,6 @@ export const bootstrapCopy = {
   retry: "Try again",
   diagnosticsLabel: "Recovery diagnostics",
   remediationsLabel: "Recovery actions",
+  activeOperation: "An accepted Operation is still active.",
+  resumeOperation: "Resume Operation progress",
 } as const;

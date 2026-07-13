@@ -14,6 +14,7 @@ ActionId = NewType("ActionId", UUID)
 CheckRunId = NewType("CheckRunId", UUID)
 EventId = NewType("EventId", UUID)
 LibraryId = NewType("LibraryId", UUID)
+OperationId = NewType("OperationId", UUID)
 PlanId = NewType("PlanId", UUID)
 RunId = NewType("RunId", UUID)
 TrackId = NewType("TrackId", UUID)
@@ -47,6 +48,11 @@ def new_event_id() -> EventId:
 def new_library_id() -> LibraryId:
     """Create a Library identifier."""
     return LibraryId(new_uuid7())
+
+
+def new_operation_id() -> OperationId:
+    """Create an Operation identifier."""
+    return OperationId(new_uuid7())
 
 
 def new_plan_id() -> PlanId:

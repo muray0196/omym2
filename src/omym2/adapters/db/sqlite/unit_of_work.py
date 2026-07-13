@@ -16,6 +16,7 @@ from omym2.adapters.db.sqlite.repositories import (
     SQLiteCheckRunRepository,
     SQLiteFileEventRepository,
     SQLiteLibraryRepository,
+    SQLiteOperationRepository,
     SQLitePlanActionRepository,
     SQLitePlanRepository,
     SQLiteRunRepository,
@@ -46,6 +47,7 @@ class SQLiteUnitOfWork:
     _plan_actions: SQLitePlanActionRepository | None = field(default=None, init=False)
     _runs: SQLiteRunRepository | None = field(default=None, init=False)
     _file_events: SQLiteFileEventRepository | None = field(default=None, init=False)
+    _operations: SQLiteOperationRepository | None = field(default=None, init=False)
     _is_completed: bool = field(default=True, init=False)
     _is_transaction_open: bool = field(default=False, init=False)
     _is_usecase_scope_open: bool = field(default=False, init=False)
@@ -119,6 +121,13 @@ class SQLiteUnitOfWork:
             raise RuntimeError(UNIT_OF_WORK_NOT_OPEN_MESSAGE)
         return self._file_events
 
+    @property
+    def operations(self) -> SQLiteOperationRepository:
+        """Repository for durable background request lifecycle records."""
+        if self._operations is None:
+            raise RuntimeError(UNIT_OF_WORK_NOT_OPEN_MESSAGE)
+        return self._operations
+
     def __enter__(self) -> Self:
         """Open the SQLite transaction boundary."""
         if self._is_transaction_open:
@@ -143,6 +152,7 @@ class SQLiteUnitOfWork:
         self._plan_actions = SQLitePlanActionRepository(connection)
         self._runs = SQLiteRunRepository(connection)
         self._file_events = SQLiteFileEventRepository(connection)
+        self._operations = SQLiteOperationRepository(connection)
         self._is_completed = False
         self._is_transaction_open = True
         return self
@@ -198,6 +208,7 @@ class SQLiteUnitOfWork:
         self._plan_actions = None
         self._runs = None
         self._file_events = None
+        self._operations = None
         self._is_completed = True
         self._is_transaction_open = False
 

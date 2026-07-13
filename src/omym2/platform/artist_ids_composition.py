@@ -12,11 +12,14 @@ from omym2.adapters.artist_ids.musicbrainz_artist_lookup import MusicBrainzArtis
 from omym2.adapters.artist_ids.no_op_artist_name_resolver import NoOpArtistNameResolver
 from omym2.adapters.artist_ids.no_op_language_detector import NoOpLanguageDetector
 from omym2.adapters.cli.commands.artist_ids import ArtistIdsCommandPorts
+from omym2.features.artist_ids.usecases.generate_artist_ids import GenerateArtistIdsUseCase
+from omym2.platform.operation_composition import OperationRuntime
 from omym2.platform.runtime_context import runtime_context_for
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from omym2.features.artist_ids.dto import GenerateArtistIdsRequest, GenerateArtistIdsResult
     from omym2.features.artist_ids.ports import ArtistLanguageDetector, ArtistNameResolver
     from omym2.platform.runtime_context import RuntimeContext
 
@@ -43,10 +46,12 @@ def web_artist_name_resolver() -> ArtistNameResolver:
     return NoOpArtistNameResolver()
 
 
-def artist_ids_command_ports_for(runtime: RuntimeContext) -> ArtistIdsCommandPorts:
+def artist_ids_command_ports_for(runtime: RuntimeContext, operations: OperationRuntime) -> ArtistIdsCommandPorts:
     """Build artist-ids CLI ports from a shared RuntimeContext."""
     return ArtistIdsCommandPorts(
-        config_store=runtime.config_store,
+        generate_artist_ids=lambda request, detector, resolver: _generate_artist_ids(
+            runtime, operations, request, detector, resolver
+        ),
         language_detector_factory=language_detector_for_model,
         artist_resolver=default_artist_resolver(),
     )
@@ -54,4 +59,22 @@ def artist_ids_command_ports_for(runtime: RuntimeContext) -> ArtistIdsCommandPor
 
 def build_artist_ids_command_ports(config_path: Path | None = None) -> ArtistIdsCommandPorts:
     """Build artist-ids CLI ports directly from an optional config path."""
-    return artist_ids_command_ports_for(runtime_context_for(config_path))
+    runtime = runtime_context_for(config_path)
+    return artist_ids_command_ports_for(runtime, OperationRuntime(runtime))
+
+
+def _generate_artist_ids(
+    runtime: RuntimeContext,
+    operations: OperationRuntime,
+    request: GenerateArtistIdsRequest,
+    detector: ArtistLanguageDetector,
+    resolver: ArtistNameResolver,
+) -> GenerateArtistIdsResult:
+    return operations.execute_exclusive(
+        "generate_artist_ids",
+        lambda: GenerateArtistIdsUseCase(
+            config_store=runtime.config_store,
+            language_detector=detector,
+            artist_resolver=resolver,
+        ).execute(request),
+    )

@@ -17,6 +17,7 @@ from omym2.features.common_ports import ConfigSnapshotState
 if TYPE_CHECKING:
     from omym2.domain.models.library import Library
     from omym2.features.common_ports import ConfigSnapshot
+    from omym2.shared.ids import OperationId
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,10 +35,12 @@ class GetBootstrapUseCase:
 
         try:
             libraries = tuple(self.ports.library_snapshot_reader.list_libraries())
+            active_operation_id = self.ports.operation_snapshot_reader.active_operation_id()
         except LibrarySnapshotUnavailableError:
             return _result(
                 config_snapshot,
                 None,
+                active_operation_id=None,
                 path_policy_current=False,
                 library_reasons=(BootstrapReason.STORAGE_UNAVAILABLE,),
                 state_storage_available=False,
@@ -53,16 +56,18 @@ class GetBootstrapUseCase:
         return _result(
             config_snapshot,
             active_library,
+            active_operation_id=active_operation_id,
             path_policy_current=path_policy_current,
             library_reasons=library_reasons,
             state_storage_available=True,
         )
 
 
-def _result(
+def _result(  # noqa: PLR0913  # Bootstrap degraded evidence is assembled as one explicit snapshot.
     config_snapshot: ConfigSnapshot | None,
     active_library: Library | None,
     *,
+    active_operation_id: OperationId | None,
     path_policy_current: bool,
     library_reasons: tuple[BootstrapReason, ...],
     state_storage_available: bool,
@@ -85,6 +90,7 @@ def _result(
             library_reasons=library_reasons,
             state_storage_available=state_storage_available,
         ),
+        active_operation_id=active_operation_id,
     )
 
 

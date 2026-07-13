@@ -5,19 +5,20 @@ Why: Reports read-only DB and filesystem consistency issues.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
 from omym2.features.check.dto import CheckLibraryRequest
-from omym2.features.check.usecases.check_library import CheckLibraryError, CheckLibraryUseCase
-from omym2.features.common_ports import ConfigStoreValidationError, MetadataReadError
+from omym2.features.check.usecases.check_library import CheckLibraryError
+from omym2.features.common_ports import ConfigStoreValidationError, ExclusiveOperationBusyError, MetadataReadError
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from typing import TextIO
 
     from omym2.domain.models.check_issue import CheckIssue
-    from omym2.features.check.ports import CheckLibraryPorts
+    from omym2.features.check.dto import CheckLibraryResult
 
 CHECK_USAGE_MESSAGE = "Usage: omym2 check [--trust-stat]"
 ERROR_EXIT_CODE = 1
@@ -27,29 +28,36 @@ TRUST_STAT_FLAG = "--trust-stat"
 USAGE_EXIT_CODE = 2
 
 
+@dataclass(frozen=True, slots=True)
+class CheckCommandDependencies:
+    """Durable Check execution injected by platform orchestration."""
+
+    check_library: Callable[[CheckLibraryRequest], CheckLibraryResult]
+
+
 def run_check_command(
     args: Sequence[str],
     stdout: TextIO,
     stderr: TextIO,
-    ports: CheckLibraryPorts,
+    dependencies: CheckCommandDependencies,
 ) -> int:
     """Run check and return a process exit code."""
     if len(args) > 1 or (len(args) == 1 and args[0] != TRUST_STAT_FLAG):
         write_usage(stderr, CHECK_USAGE_MESSAGE)
         return USAGE_EXIT_CODE
 
-    return _run_check(ports, stdout, stderr, trust_stat=len(args) == 1)
+    return _run_check(dependencies, stdout, stderr, trust_stat=len(args) == 1)
 
 
 def _run_check(
-    ports: CheckLibraryPorts,
+    dependencies: CheckCommandDependencies,
     stdout: TextIO,
     stderr: TextIO,
     *,
     trust_stat: bool,
 ) -> int:
     try:
-        result = CheckLibraryUseCase(ports).execute(CheckLibraryRequest(trust_stat=trust_stat))
+        result = dependencies.check_library(CheckLibraryRequest(trust_stat=trust_stat))
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
         return ERROR_EXIT_CODE
@@ -59,8 +67,9 @@ def _run_check(
     except MetadataReadError as exc:
         write_line(stderr, f"Metadata read error: {exc}")
         return ERROR_EXIT_CODE
-    except OSError as exc:
-        write_line(stderr, f"Check I/O error: {exc}")
+    except (ExclusiveOperationBusyError, OSError) as exc:
+        message = str(exc) if isinstance(exc, ExclusiveOperationBusyError) else f"Check I/O error: {exc}"
+        write_line(stderr, message)
         return ERROR_EXIT_CODE
 
     issues = result.issues

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from omym2.domain.models.library import Library, LibraryStatus
     from omym2.features.common_ports import ConfigSnapshot
+    from omym2.shared.ids import OperationId
 
 
 class BootstrapReason(StrEnum):
@@ -52,3 +53,4 @@ class BootstrapResult:
     library_reasons: tuple[BootstrapReason, ...]
     state_storage_available: bool
     runtime_capabilities: BootstrapCapabilities
+    active_operation_id: OperationId | None

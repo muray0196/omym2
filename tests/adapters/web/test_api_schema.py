@@ -17,23 +17,32 @@ from omym2.adapters.web.schema_app import create_api_schema_app
 from omym2.adapters.web.schemas.api_envelopes import ApiEnvelope
 from omym2.adapters.web.schemas.api_errors import ApiError, ApiErrorCode
 from omym2.config import (
+    WEB_API_ADD_PLAN_ROUTE,
     WEB_API_BOOTSTRAP_ROUTE,
     WEB_API_CHECK_FACETS_ROUTE,
     WEB_API_CHECK_GROUPS_ROUTE,
     WEB_API_CHECK_ROUTE,
+    WEB_API_CHECK_RUN_ROUTE,
     WEB_API_HISTORY_FACETS_ROUTE,
     WEB_API_HISTORY_ROUTE,
     WEB_API_LIBRARIES_ROUTE,
     WEB_API_LIBRARY_DETAIL_ROUTE,
+    WEB_API_OPERATION_ROUTE,
+    WEB_API_ORGANIZE_PLAN_ROUTE,
     WEB_API_PLAN_ACTIONS_ROUTE,
     WEB_API_PLAN_DETAIL_ROUTE,
     WEB_API_PLAN_FACETS_ROUTE,
     WEB_API_PLAN_GROUPS_ROUTE,
     WEB_API_PLANS_ROUTE,
+    WEB_API_REFRESH_PLAN_ROUTE,
     WEB_API_RUN_DETAIL_ROUTE,
     WEB_API_RUN_EVENT_FACETS_ROUTE,
     WEB_API_RUN_EVENT_GROUPS_ROUTE,
     WEB_API_RUN_EVENTS_ROUTE,
+    WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
+    WEB_API_SETTINGS_PREVIEW_ROUTE,
+    WEB_API_SETTINGS_ROUTE,
+    WEB_API_SETTINGS_VALIDATE_ROUTE,
     WEB_API_TRACK_DETAIL_ROUTE,
     WEB_API_TRACK_FACETS_ROUTE,
     WEB_API_TRACK_GROUPS_ROUTE,
@@ -62,6 +71,15 @@ def test_schema_app_exports_the_production_m2_read_routes_without_io(tmp_path: P
 
     assert set(paths) == {
         WEB_API_BOOTSTRAP_ROUTE,
+        WEB_API_OPERATION_ROUTE,
+        WEB_API_ADD_PLAN_ROUTE,
+        WEB_API_ORGANIZE_PLAN_ROUTE,
+        WEB_API_REFRESH_PLAN_ROUTE,
+        WEB_API_CHECK_RUN_ROUTE,
+        WEB_API_SETTINGS_ROUTE,
+        WEB_API_SETTINGS_VALIDATE_ROUTE,
+        WEB_API_SETTINGS_PREVIEW_ROUTE,
+        WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
         WEB_API_LIBRARIES_ROUTE,
         WEB_API_LIBRARY_DETAIL_ROUTE,
         WEB_API_PLANS_ROUTE,
@@ -87,6 +105,27 @@ def test_schema_app_exports_the_production_m2_read_routes_without_io(tmp_path: P
     schemas = _mapping(_mapping(schema, "components"), "schemas")
     assert "HTTPValidationError" not in schemas
     assert not tuple(tmp_path.iterdir())
+
+
+def test_settings_operations_have_stable_ids_and_declared_typed_errors() -> None:
+    """Generated Settings clients receive all synchronous and draft-only operations."""
+    schema = cast("dict[str, object]", create_api_schema_app().openapi())
+    paths = _mapping(schema, "paths")
+    settings = _mapping(paths, WEB_API_SETTINGS_ROUTE)
+
+    assert _mapping(settings, "get")["operationId"] == "getSettings"
+    assert _mapping(settings, "put")["operationId"] == "saveSettings"
+    assert _mapping(_mapping(paths, WEB_API_SETTINGS_VALIDATE_ROUTE), "post")["operationId"] == "validateSettings"
+    assert _mapping(_mapping(paths, WEB_API_SETTINGS_PREVIEW_ROUTE), "post")["operationId"] == "previewSettingsPath"
+    assert _mapping(_mapping(paths, WEB_API_SETTINGS_ARTIST_IDS_ROUTE), "post")["operationId"] == (
+        "generateArtistIdDraft"
+    )
+    put_responses = _mapping(_mapping(settings, "put"), "responses")
+    assert {"200", "403", "409", "422", "500"} <= set(put_responses)
+    schemas = _mapping(_mapping(schema, "components"), "schemas")
+    assert "SettingsData" in schemas
+    assert "SettingsCandidateData" in schemas
+    assert "ArtistIdDraftData" in schemas
 
 
 def test_plan_read_operations_have_stable_ids_and_declared_typed_errors() -> None:

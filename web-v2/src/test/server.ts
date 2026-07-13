@@ -5,6 +5,7 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 
+import type { ApiEnvelopeLibrariesData } from "../api/generated";
 import { normalBootstrap } from "./fixtures/bootstrap";
 import {
   BLOCKED_PLAN_ID,
@@ -23,9 +24,35 @@ import {
   readyPlanGroupsFirstPage,
   readyPlanGroupsSecondPage,
 } from "./fixtures/plans";
+import {
+  artistIdDraftEnvelope,
+  previewEnvelope,
+  reviewedSettingsEnvelope,
+  savedSettingsEnvelope,
+  settingsEnvelope,
+} from "./fixtures/settings";
+
+const libraries = {
+  data: {
+    items: normalBootstrap.data?.active_library
+      ? [normalBootstrap.data.active_library]
+      : [],
+  },
+  errors: [],
+} satisfies ApiEnvelopeLibrariesData;
 
 export const server = setupServer(
   http.get("*/api/bootstrap", () => HttpResponse.json(normalBootstrap)),
+  http.get("*/api/libraries", () => HttpResponse.json(libraries)),
+  http.get("*/api/settings", () => HttpResponse.json(settingsEnvelope)),
+  http.post("*/api/settings/validate", () =>
+    HttpResponse.json(reviewedSettingsEnvelope),
+  ),
+  http.post("*/api/settings/preview", () => HttpResponse.json(previewEnvelope)),
+  http.post("*/api/settings/artist-ids/generate", () =>
+    HttpResponse.json(artistIdDraftEnvelope),
+  ),
+  http.put("*/api/settings", () => HttpResponse.json(savedSettingsEnvelope)),
   http.get("*/api/plans", ({ request }) => {
     const parameters = new URL(request.url).searchParams;
     const query = parameters.get("query");

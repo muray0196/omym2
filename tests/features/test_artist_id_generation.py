@@ -12,7 +12,12 @@ import pytest
 from omym2.domain.models.app_config import AppConfig, ArtistIdConfig
 from omym2.features.artist_ids.dto import GenerateArtistIdsRequest
 from omym2.features.artist_ids.usecases.generate_artist_ids import GenerateArtistIdsUseCase
-from omym2.features.common_ports import ConfigStoreValidationError
+from omym2.features.common_ports import (
+    ConfigRevisionMismatchError,
+    ConfigSnapshot,
+    ConfigSnapshotState,
+    ConfigStoreValidationError,
+)
 
 JAPANESE_ARTIST = "米津玄師"
 RESOLVED_ARTIST = "Kenshi Yonezu"
@@ -26,19 +31,33 @@ NO_USABLE_CHARS_ARTIST = "!!!"
 # gained the same entries-value pattern check at construction time.
 TRUNCATION_UNSAFE_FALLBACK_ID = "AB-CD"
 TRUNCATION_MAX_LENGTH = 3
+CONFIG_REVISION = "v1:artist-ids"
+SAVED_CONFIG_REVISION = "v1:artist-ids-saved"
 
 
 @dataclass(slots=True)
 class _MemoryConfigStore:
     config: AppConfig
     saves: int = 0
+    config_revision: str = CONFIG_REVISION
+
+    def read_snapshot(self) -> ConfigSnapshot:
+        return ConfigSnapshot(
+            state=ConfigSnapshotState.VALID,
+            config=self.config,
+            config_revision=self.config_revision,
+        )
 
     def load(self) -> AppConfig:
         return self.config
 
-    def save(self, config: AppConfig) -> None:
+    def save(self, config: AppConfig, *, expected_config_revision: str) -> ConfigSnapshot:
+        if expected_config_revision != self.config_revision:
+            raise ConfigRevisionMismatchError(expected_config_revision, self.config_revision)
         self.config = config
         self.saves += 1
+        self.config_revision = SAVED_CONFIG_REVISION
+        return self.read_snapshot()
 
 
 @dataclass(frozen=True, slots=True)

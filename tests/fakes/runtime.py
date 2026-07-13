@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
+    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
 
 EMPTY_SEQUENCE_MESSAGE = "No deterministic IDs remain for this type."
 
@@ -39,6 +39,7 @@ class SequenceIdGenerator:
     action_ids: deque[ActionId] = field(default_factory=deque)
     run_ids: deque[RunId] = field(default_factory=deque)
     event_ids: deque[EventId] = field(default_factory=deque)
+    operation_ids: deque[OperationId] = field(default_factory=deque)
 
     def new_library_id(self) -> LibraryId:
         """Return the next deterministic Library ID."""
@@ -67,6 +68,10 @@ class SequenceIdGenerator:
     def new_event_id(self) -> EventId:
         """Return the next deterministic FileEvent ID."""
         return _pop_next(self.event_ids)
+
+    def new_operation_id(self) -> OperationId:
+        """Return the next deterministic Operation ID."""
+        return _pop_next(self.operation_ids)
 
 
 def _pop_next[IdT](values: deque[IdT]) -> IdT:

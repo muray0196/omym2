@@ -5,7 +5,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetBootstrapData, GetBootstrapErrors, GetBootstrapResponses, GetCheckIssueFacetsData, GetCheckIssueFacetsErrors, GetCheckIssueFacetsResponses, GetCheckIssueGroupsData, GetCheckIssueGroupsErrors, GetCheckIssueGroupsResponses, GetCheckIssuesData, GetCheckIssuesErrors, GetCheckIssuesResponses, GetHistoryData, GetHistoryErrors, GetHistoryFacetsData, GetHistoryFacetsErrors, GetHistoryFacetsResponses, GetHistoryResponses, GetLibrariesData, GetLibrariesErrors, GetLibrariesResponses, GetLibraryData, GetLibraryErrors, GetLibraryResponses, GetPlanActionFacetsData, GetPlanActionFacetsErrors, GetPlanActionFacetsResponses, GetPlanData, GetPlanErrors, GetPlanResponses, GetRunData, GetRunErrors, GetRunEventFacetsData, GetRunEventFacetsErrors, GetRunEventFacetsResponses, GetRunEventGroupsData, GetRunEventGroupsErrors, GetRunEventGroupsResponses, GetRunEventsData, GetRunEventsErrors, GetRunEventsResponses, GetRunResponses, GetTrackData, GetTrackErrors, GetTrackFacetsData, GetTrackFacetsErrors, GetTrackFacetsResponses, GetTrackGroupsData, GetTrackGroupsErrors, GetTrackGroupsResponses, GetTrackResponses, GroupPlanActionsData, GroupPlanActionsErrors, GroupPlanActionsResponses, ListPlanActionsData, ListPlanActionsErrors, ListPlanActionsResponses, ListPlansData, ListPlansErrors, ListPlansResponses, ListTracksData, ListTracksErrors, ListTracksResponses } from './types.gen';
+import type { GenerateArtistIdDraftData, GenerateArtistIdDraftErrors, GenerateArtistIdDraftResponses, GetBootstrapData, GetBootstrapErrors, GetBootstrapResponses, GetCheckIssueFacetsData, GetCheckIssueFacetsErrors, GetCheckIssueFacetsResponses, GetCheckIssueGroupsData, GetCheckIssueGroupsErrors, GetCheckIssueGroupsResponses, GetCheckIssuesData, GetCheckIssuesErrors, GetCheckIssuesResponses, GetHistoryData, GetHistoryErrors, GetHistoryFacetsData, GetHistoryFacetsErrors, GetHistoryFacetsResponses, GetHistoryResponses, GetLibrariesData, GetLibrariesErrors, GetLibrariesResponses, GetLibraryData, GetLibraryErrors, GetLibraryResponses, GetOperationData, GetOperationErrors, GetOperationResponses, GetPlanActionFacetsData, GetPlanActionFacetsErrors, GetPlanActionFacetsResponses, GetPlanData, GetPlanErrors, GetPlanResponses, GetRunData, GetRunErrors, GetRunEventFacetsData, GetRunEventFacetsErrors, GetRunEventFacetsResponses, GetRunEventGroupsData, GetRunEventGroupsErrors, GetRunEventGroupsResponses, GetRunEventsData, GetRunEventsErrors, GetRunEventsResponses, GetRunResponses, GetSettingsData, GetSettingsErrors, GetSettingsResponses, GetTrackData, GetTrackErrors, GetTrackFacetsData, GetTrackFacetsErrors, GetTrackFacetsResponses, GetTrackGroupsData, GetTrackGroupsErrors, GetTrackGroupsResponses, GetTrackResponses, GroupPlanActionsData, GroupPlanActionsErrors, GroupPlanActionsResponses, ListPlanActionsData, ListPlanActionsErrors, ListPlanActionsResponses, ListPlansData, ListPlansErrors, ListPlansResponses, ListTracksData, ListTracksErrors, ListTracksResponses, PreviewSettingsPathData, PreviewSettingsPathErrors, PreviewSettingsPathResponses, SaveSettingsData, SaveSettingsErrors, SaveSettingsResponses, StartAddPlanData, StartAddPlanErrors, StartAddPlanResponses, StartCheckData, StartCheckErrors, StartCheckResponses, StartOrganizePlanData, StartOrganizePlanErrors, StartOrganizePlanResponses, StartRefreshPlanData, StartRefreshPlanErrors, StartRefreshPlanResponses, ValidateSettingsData, ValidateSettingsErrors, ValidateSettingsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -40,6 +40,18 @@ export const getCheckIssueFacets = <ThrowOnError extends boolean = false>(option
  * Get Check Issue Groups
  */
 export const getCheckIssueGroups = <ThrowOnError extends boolean = false>(options: Options<GetCheckIssueGroupsData, ThrowOnError>): RequestResult<GetCheckIssueGroupsResponses, GetCheckIssueGroupsErrors, ThrowOnError> => (options.client ?? client).get<GetCheckIssueGroupsResponses, GetCheckIssueGroupsErrors, ThrowOnError>({ url: '/api/check/groups', ...options });
+
+/**
+ * Start Check
+ */
+export const startCheck = <ThrowOnError extends boolean = false>(options: Options<StartCheckData, ThrowOnError>): RequestResult<StartCheckResponses, StartCheckErrors, ThrowOnError> => (options.client ?? client).post<StartCheckResponses, StartCheckErrors, ThrowOnError>({
+    url: '/api/check/run',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Get History
@@ -82,9 +94,50 @@ export const getLibraries = <ThrowOnError extends boolean = false>(options?: Opt
 export const getLibrary = <ThrowOnError extends boolean = false>(options: Options<GetLibraryData, ThrowOnError>): RequestResult<GetLibraryResponses, GetLibraryErrors, ThrowOnError> => (options.client ?? client).get<GetLibraryResponses, GetLibraryErrors, ThrowOnError>({ url: '/api/libraries/{library_id}', ...options });
 
 /**
+ * Get Operation
+ */
+export const getOperation = <ThrowOnError extends boolean = false>(options: Options<GetOperationData, ThrowOnError>): RequestResult<GetOperationResponses, GetOperationErrors, ThrowOnError> => (options.client ?? client).get<GetOperationResponses, GetOperationErrors, ThrowOnError>({ url: '/api/operations/{operation_id}', ...options });
+
+/**
  * List Plans
  */
 export const listPlans = <ThrowOnError extends boolean = false>(options?: Options<ListPlansData, ThrowOnError>): RequestResult<ListPlansResponses, ListPlansErrors, ThrowOnError> => (options?.client ?? client).get<ListPlansResponses, ListPlansErrors, ThrowOnError>({ url: '/api/plans', ...options });
+
+/**
+ * Start Add Plan
+ */
+export const startAddPlan = <ThrowOnError extends boolean = false>(options: Options<StartAddPlanData, ThrowOnError>): RequestResult<StartAddPlanResponses, StartAddPlanErrors, ThrowOnError> => (options.client ?? client).post<StartAddPlanResponses, StartAddPlanErrors, ThrowOnError>({
+    url: '/api/plans/add',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Start Organize Plan
+ */
+export const startOrganizePlan = <ThrowOnError extends boolean = false>(options: Options<StartOrganizePlanData, ThrowOnError>): RequestResult<StartOrganizePlanResponses, StartOrganizePlanErrors, ThrowOnError> => (options.client ?? client).post<StartOrganizePlanResponses, StartOrganizePlanErrors, ThrowOnError>({
+    url: '/api/plans/organize',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Start Refresh Plan
+ */
+export const startRefreshPlan = <ThrowOnError extends boolean = false>(options: Options<StartRefreshPlanData, ThrowOnError>): RequestResult<StartRefreshPlanResponses, StartRefreshPlanErrors, ThrowOnError> => (options.client ?? client).post<StartRefreshPlanResponses, StartRefreshPlanErrors, ThrowOnError>({
+    url: '/api/plans/refresh',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Get Plan
@@ -105,6 +158,59 @@ export const getPlanActionFacets = <ThrowOnError extends boolean = false>(option
  * Get Plan Action Groups
  */
 export const groupPlanActions = <ThrowOnError extends boolean = false>(options: Options<GroupPlanActionsData, ThrowOnError>): RequestResult<GroupPlanActionsResponses, GroupPlanActionsErrors, ThrowOnError> => (options.client ?? client).get<GroupPlanActionsResponses, GroupPlanActionsErrors, ThrowOnError>({ url: '/api/plans/{plan_id}/groups', ...options });
+
+/**
+ * Get Settings
+ */
+export const getSettings = <ThrowOnError extends boolean = false>(options?: Options<GetSettingsData, ThrowOnError>): RequestResult<GetSettingsResponses, GetSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetSettingsResponses, GetSettingsErrors, ThrowOnError>({ url: '/api/settings', ...options });
+
+/**
+ * Save Settings
+ */
+export const saveSettings = <ThrowOnError extends boolean = false>(options: Options<SaveSettingsData, ThrowOnError>): RequestResult<SaveSettingsResponses, SaveSettingsErrors, ThrowOnError> => (options.client ?? client).put<SaveSettingsResponses, SaveSettingsErrors, ThrowOnError>({
+    url: '/api/settings',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate Artist Id Draft
+ */
+export const generateArtistIdDraft = <ThrowOnError extends boolean = false>(options: Options<GenerateArtistIdDraftData, ThrowOnError>): RequestResult<GenerateArtistIdDraftResponses, GenerateArtistIdDraftErrors, ThrowOnError> => (options.client ?? client).post<GenerateArtistIdDraftResponses, GenerateArtistIdDraftErrors, ThrowOnError>({
+    url: '/api/settings/artist-ids/generate',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Preview Settings Path
+ */
+export const previewSettingsPath = <ThrowOnError extends boolean = false>(options: Options<PreviewSettingsPathData, ThrowOnError>): RequestResult<PreviewSettingsPathResponses, PreviewSettingsPathErrors, ThrowOnError> => (options.client ?? client).post<PreviewSettingsPathResponses, PreviewSettingsPathErrors, ThrowOnError>({
+    url: '/api/settings/preview',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Validate Settings
+ */
+export const validateSettings = <ThrowOnError extends boolean = false>(options: Options<ValidateSettingsData, ThrowOnError>): RequestResult<ValidateSettingsResponses, ValidateSettingsErrors, ThrowOnError> => (options.client ?? client).post<ValidateSettingsResponses, ValidateSettingsErrors, ThrowOnError>({
+    url: '/api/settings/validate',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * List Tracks

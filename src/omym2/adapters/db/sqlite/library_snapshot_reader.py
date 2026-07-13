@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from os import PathLike
 
     from omym2.domain.models.library import Library
+    from omym2.shared.ids import OperationId
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,5 +31,14 @@ class SQLiteLibrarySnapshotReader:
         try:
             with SQLiteUnitOfWork(self.database_path) as uow:
                 return tuple(uow.libraries.list_all())
+        except (OSError, sqlite3.DatabaseError) as exc:
+            raise LibrarySnapshotUnavailableError from exc
+
+    def active_operation_id(self) -> OperationId | None:
+        """Return the active durable Operation identity through the same failure boundary."""
+        try:
+            with SQLiteUnitOfWork(self.database_path) as uow:
+                operation = uow.operations.find_active()
+                return None if operation is None else operation.operation_id
         except (OSError, sqlite3.DatabaseError) as exc:
             raise LibrarySnapshotUnavailableError from exc

@@ -25,7 +25,12 @@ from omym2.domain.models.app_config import (
     PathsConfig,
     UiConfig,
 )
-from omym2.features.common_ports import ConfigSnapshotState, ConfigStoreValidationError
+from omym2.features.common_ports import (
+    ConfigRevisionMismatchError,
+    ConfigSnapshotState,
+    ConfigStoreIoError,
+    ConfigStoreValidationError,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,6 +48,7 @@ FIRST_SAME_SIZE_LIBRARY_PATH = "/music/a"
 SECOND_SAME_SIZE_LIBRARY_PATH = "/music/b"
 DISC_NUMBER_STYLE_D_PREFIXED = "d_prefixed"
 DISC_NUMBER_CONDITION_MULTIPLE_DISCS = "multiple_discs"
+REPLACE_FAILURE_MESSAGE = "injected Config replace failure"
 
 
 def test_toml_config_store_loads_default_when_config_missing(tmp_path: Path) -> None:
@@ -66,7 +72,7 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
         ui=UiConfig(theme=UI_THEME_DARK),
     )
 
-    store.save(config)
+    _save_current(store, config)
 
     assert config_path.is_file()
     assert store.load() == config
@@ -87,7 +93,7 @@ def test_toml_config_store_saves_and_loads_disc_number_settings(tmp_path: Path) 
         )
     )
 
-    store.save(config)
+    _save_current(store, config)
 
     config_text = config_path.read_text(encoding=CONFIG_FILE_ENCODING)
     assert f'disc_number_style = "{DISC_NUMBER_STYLE_D_PREFIXED}"' in config_text
@@ -99,7 +105,7 @@ def test_toml_config_store_load_caches_parsed_config(tmp_path: Path, monkeypatch
     """A second load of an unchanged file reuses the parsed AppConfig."""
     config_path = tmp_path / CONFIG_FILE_NAME
     store = TomlConfigStore(config_path)
-    store.save(AppConfig(ui=UiConfig(theme=UI_THEME_DARK)))
+    _save_current(store, AppConfig(ui=UiConfig(theme=UI_THEME_DARK)))
     parse_calls = 0
     real_load_config_text = toml_config_store.load_config_text
 
@@ -121,7 +127,7 @@ def test_toml_config_store_cached_artist_id_entries_are_immutable(tmp_path: Path
     """Cached loads cannot be poisoned by unsaved artist ID entry mutations."""
     config_path = tmp_path / CONFIG_FILE_NAME
     store = TomlConfigStore(config_path)
-    store.save(AppConfig(artist_ids=ArtistIdConfig(entries={ARTIST_NAME: ARTIST_ID})))
+    _save_current(store, AppConfig(artist_ids=ArtistIdConfig(entries={ARTIST_NAME: ARTIST_ID})))
 
     first_config = store.load()
     assert first_config.artist_ids.entries is not None
@@ -138,7 +144,7 @@ def test_toml_config_store_load_reparses_after_external_rewrite(tmp_path: Path) 
     """Rewriting the config file with new content invalidates the cache."""
     config_path = tmp_path / CONFIG_FILE_NAME
     store = TomlConfigStore(config_path)
-    store.save(AppConfig())
+    _save_current(store, AppConfig())
 
     assert store.load() == AppConfig()
 
@@ -169,12 +175,12 @@ def test_toml_config_store_save_invalidates_cached_load(tmp_path: Path) -> None:
     """Saving after a cached load returns the newly saved config."""
     config_path = tmp_path / CONFIG_FILE_NAME
     store = TomlConfigStore(config_path)
-    store.save(AppConfig())
+    _save_current(store, AppConfig())
 
     assert store.load() == AppConfig()
 
     updated_config = AppConfig(ui=UiConfig(theme=UI_THEME_DARK))
-    store.save(updated_config)
+    _save_current(store, updated_config)
 
     assert store.load() == updated_config
 
@@ -333,6 +339,17 @@ def test_config_snapshot_preserves_revision_and_recovery_defaults_for_invalid_to
     assert "Invalid TOML" in snapshot.errors[0]
 
 
+def test_config_snapshot_wraps_raw_storage_io_failure(tmp_path: Path) -> None:
+    """Unusable raw Config storage surfaces through the typed I/O boundary."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    config_path.mkdir()
+
+    with pytest.raises(ConfigStoreIoError) as exc_info:
+        _ = TomlConfigStore(config_path).read_snapshot()
+
+    assert isinstance(exc_info.value.cause, IsADirectoryError)
+
+
 def test_config_snapshot_revision_changes_after_identical_file_replacement(tmp_path: Path) -> None:
     """Replacing Config with identical bytes still changes raw storage identity."""
     config_path = tmp_path / CONFIG_FILE_NAME
@@ -356,10 +373,133 @@ def test_config_snapshot_revision_changes_with_raw_content(tmp_path: Path) -> No
     """A raw Config edit produces a new opaque revision."""
     config_path = tmp_path / CONFIG_FILE_NAME
     store = TomlConfigStore(config_path)
-    store.save(AppConfig(paths=PathsConfig(library=FIRST_SAME_SIZE_LIBRARY_PATH)))
+    _save_current(store, AppConfig(paths=PathsConfig(library=FIRST_SAME_SIZE_LIBRARY_PATH)))
     before = store.read_snapshot()
 
-    store.save(AppConfig(paths=PathsConfig(library=SECOND_SAME_SIZE_LIBRARY_PATH)))
+    _save_current(store, AppConfig(paths=PathsConfig(library=SECOND_SAME_SIZE_LIBRARY_PATH)))
     after = store.read_snapshot()
 
     assert after.config_revision != before.config_revision
+
+
+def test_config_save_creates_missing_file_with_new_valid_revision_and_synced_storage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A matching missing revision installs deterministic TOML and syncs file and directory."""
+    config_path = tmp_path / "nested" / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    missing_snapshot = store.read_snapshot()
+    fsync_calls = 0
+    real_fsync = os.fsync
+
+    def _counting_fsync(file_descriptor: int) -> None:
+        nonlocal fsync_calls
+        fsync_calls += 1
+        real_fsync(file_descriptor)
+
+    monkeypatch.setattr(os, "fsync", _counting_fsync)
+
+    installed = store.save(AppConfig(), expected_config_revision=missing_snapshot.config_revision)
+
+    assert installed.state is ConfigSnapshotState.VALID
+    assert installed.config == AppConfig()
+    assert installed.config_revision != missing_snapshot.config_revision
+    assert config_path.read_text(encoding=CONFIG_FILE_ENCODING) == dump_config_toml(AppConfig())
+    assert fsync_calls == (1 if os.name == "nt" else 2)
+    assert tuple(config_path.parent.glob(f".{CONFIG_FILE_NAME}.*.tmp")) == ()
+
+
+def test_config_save_can_replace_invalid_raw_state_with_its_observed_revision(tmp_path: Path) -> None:
+    """Invalid Config recovery succeeds only through the raw revision that identified it."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text("version = ", encoding=CONFIG_FILE_ENCODING)
+    store = TomlConfigStore(config_path)
+    invalid_snapshot = store.read_snapshot()
+    replacement = AppConfig(ui=UiConfig(theme=UI_THEME_DARK))
+
+    installed = store.save(replacement, expected_config_revision=invalid_snapshot.config_revision)
+
+    assert invalid_snapshot.state is ConfigSnapshotState.INVALID
+    assert installed.state is ConfigSnapshotState.VALID
+    assert installed.config == replacement
+    assert installed.errors == ()
+
+
+def test_config_save_rejects_stale_revision_without_writing(tmp_path: Path) -> None:
+    """An initial revision mismatch is a typed conflict and leaves current bytes unchanged."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    stale_revision = store.read_snapshot().config_revision
+    current = AppConfig(paths=PathsConfig(library=FIRST_SAME_SIZE_LIBRARY_PATH))
+    _save_current(store, current)
+    current_bytes = config_path.read_bytes()
+
+    with pytest.raises(ConfigRevisionMismatchError) as exc_info:
+        _ = store.save(AppConfig(), expected_config_revision=stale_revision)
+
+    assert exc_info.value.expected_config_revision == stale_revision
+    assert exc_info.value.actual_config_revision == store.read_snapshot().config_revision
+    assert config_path.read_bytes() == current_bytes
+    assert tuple(tmp_path.glob(f".{CONFIG_FILE_NAME}.*.tmp")) == ()
+
+
+def test_config_save_detects_external_replacement_before_atomic_replace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The second revision check preserves an identical external replacement after temp sync."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    replacement_path = tmp_path / "external.toml"
+    store = TomlConfigStore(config_path)
+    _save_current(store, AppConfig())
+    expected_revision = store.read_snapshot().config_revision
+    external_config = AppConfig()
+    real_fsync = os.fsync
+    fsync_calls = 0
+
+    def _replace_after_temp_sync(file_descriptor: int) -> None:
+        nonlocal fsync_calls
+        real_fsync(file_descriptor)
+        fsync_calls += 1
+        if fsync_calls == 1:
+            _ = replacement_path.write_text(dump_config_toml(external_config), encoding=CONFIG_FILE_ENCODING)
+            _ = replacement_path.replace(config_path)
+
+    monkeypatch.setattr(os, "fsync", _replace_after_temp_sync)
+
+    with pytest.raises(ConfigRevisionMismatchError):
+        _ = store.save(AppConfig(ui=UiConfig(theme=UI_THEME_DARK)), expected_config_revision=expected_revision)
+
+    assert store.load() == external_config
+    assert tuple(tmp_path.glob(f".{CONFIG_FILE_NAME}.*.tmp")) == ()
+
+
+def test_config_save_propagates_replace_io_failure_and_removes_temp_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A destination I/O failure is observable, preserves Config, and leaves no temp file."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    current = AppConfig(paths=PathsConfig(library=FIRST_SAME_SIZE_LIBRARY_PATH))
+    _save_current(store, current)
+    expected_revision = store.read_snapshot().config_revision
+    current_bytes = config_path.read_bytes()
+
+    def _fail_replace(_source: object, _target: object) -> None:
+        raise OSError(REPLACE_FAILURE_MESSAGE)
+
+    monkeypatch.setattr(os, "replace", _fail_replace)
+
+    with pytest.raises(ConfigStoreIoError, match=REPLACE_FAILURE_MESSAGE) as exc_info:
+        _ = store.save(AppConfig(ui=UiConfig(theme=UI_THEME_DARK)), expected_config_revision=expected_revision)
+
+    assert isinstance(exc_info.value.cause, OSError)
+    assert config_path.read_bytes() == current_bytes
+    assert tuple(tmp_path.glob(f".{CONFIG_FILE_NAME}.*.tmp")) == ()
+
+
+def _save_current(store: TomlConfigStore, config: AppConfig) -> None:
+    """Save one test Config against the raw revision observed immediately beforehand."""
+    _ = store.save(config, expected_config_revision=store.read_snapshot().config_revision)

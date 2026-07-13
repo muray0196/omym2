@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines OMYM2's SQLite tables, Operation schema draft and atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
+description: Defines OMYM2's SQLite tables, durable Operation schema, atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-13T10:31:02+09:00
 ---
 
 # DB Schema Contract
@@ -185,7 +185,7 @@ A Run is created before applying PlanActions and before any Library music file m
 
 ### operations
 
-Schema draft: stores durable state for accepted background requests. An
+Stores durable state for accepted background requests. An
 Operation is distinct from a FileEvent: it supports acceptance, idempotency,
 polling, progress, retention, and restart reconciliation, while a FileEvent is
 evidence for one attempted Library music file mutation.
@@ -323,14 +323,14 @@ Every schema change needs tests for:
 * path representation changes when affected
 * foreign-key or uniqueness behavior when affected
 
-The `plans.source_run_id` and `plan_actions.reverses_event_id` columns plus the
-`operations` table above are an accepted schema draft, not a claim that the
-current database already contains them. Implementation requires one or more
-new forward migrations whose filenames sort after every applied migration. Do
-not edit an existing migration. Exact DDL, constraint syntax, foreign-key
-actions, and index names must be finalized with the domain models,
-repositories, and migration tests; this M0 contract does not invent SQL before
-that implementation exists.
+The `operations` table is implemented by the forward migration
+`202607130001_operations.sql`. The `plans.source_run_id` and
+`plan_actions.reverses_event_id` columns remain an accepted schema draft until
+the execution console implementation adds them. That implementation requires
+one or more new forward migrations whose filenames sort after every applied
+migration. Do not edit an existing migration. Exact DDL, constraint syntax,
+foreign-key actions, and index names for those remaining fields must be
+finalized with the domain models, repositories, and migration tests.
 
 Before altering a database that already contains Undo Plans, migration
 preflight must prove a unique source Run and source FileEvent for every such

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.library import Library
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
+    from omym2.shared.ids import OperationId
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +21,7 @@ class CreateOrganizePlanRequest:
 
     trust_stat: bool
     library_root: str | None = None
+    operation_id: OperationId | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,12 +7,19 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, replace
+from datetime import timedelta
 from os import fspath
 from pathlib import PurePath
 from typing import TYPE_CHECKING
 
-from omym2.config import PLAN_ACTION_SORT_ORDER_START, PLAN_ACTION_SORT_ORDER_STEP
+from omym2.config import (
+    OPERATION_RESULT_RETENTION_HOURS,
+    OPERATION_TOMBSTONE_RETENTION_DAYS,
+    PLAN_ACTION_SORT_ORDER_START,
+    PLAN_ACTION_SORT_ORDER_STEP,
+)
 from omym2.domain.models.library import LibraryStatus
+from omym2.domain.models.operation import Operation, OperationKind, OperationStatus, PlanCreatedResult
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import TrackStatus
@@ -30,6 +37,7 @@ from omym2.domain.services.config_fingerprint import (
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 from omym2.domain.services.snapshot_baseline import snapshot_from_trusted_stat
 from omym2.features.common_ports import FileSnapshotCaptureRequest
+from omym2.features.refresh.dto import RefreshTargetKind
 from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
@@ -43,7 +51,7 @@ if TYPE_CHECKING:
     from omym2.features.common_ports import FileSystemPath, UnitOfWork
     from omym2.features.refresh.dto import CreateRefreshPlanRequest
     from omym2.features.refresh.ports import CreateRefreshPlanPorts
-    from omym2.shared.ids import PlanId
+    from omym2.shared.ids import OperationId, PlanId
 
 AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE = (
     "Multiple registered Libraries exist. Library selection is not supported for refresh yet."
@@ -58,6 +66,7 @@ SUMMARY_ACTION_COUNT_KEY = "action_count"
 SUMMARY_BLOCKED_ACTIONS_KEY = "blocked_actions"
 SUMMARY_METADATA_ACTIONS_KEY = "metadata_actions"
 SUMMARY_MOVE_ACTIONS_KEY = "move_actions"
+RUNNING_OPERATION_REQUIRED_MESSAGE = "Refresh completion requires its corresponding running Operation."
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +89,7 @@ class CreateRefreshPlanUseCase:
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
+            operation = _running_operation(uow, request.operation_id)
             library = _select_registered_library(uow, request, path_policy_hash)
             active_tracks = tuple(
                 track for track in uow.tracks.list_by_library(library.library_id) if track.status == TrackStatus.ACTIVE
@@ -112,6 +122,16 @@ class CreateRefreshPlanUseCase:
             uow.plans.save(plan)
             for action in actions:
                 uow.plan_actions.save(action)
+            if operation is not None:
+                completed_at = self.ports.clock.now()
+                uow.operations.save(
+                    replace(operation, library_id=library.library_id).mark_succeeded(
+                        result=PlanCreatedResult(plan.plan_id),
+                        completed_at=completed_at,
+                        result_expires_at=completed_at + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS),
+                        tombstone_expires_at=completed_at + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS),
+                    )
+                )
 
             uow.commit()
             return plan
@@ -174,7 +194,9 @@ class CreateRefreshPlanUseCase:
 
         relative_target = _target_relative_path(self.ports, library, target_path)
         exact_matches = tuple(track for track in active_tracks if track.current_path == relative_target)
-        if len(exact_matches) > 0:
+        if request.target_kind is RefreshTargetKind.FILE:
+            return _require_matches(exact_matches)
+        if request.target_kind is None and len(exact_matches) > 0:
             return exact_matches
 
         prefix = f"{relative_target}/"
@@ -373,6 +395,19 @@ def _require_one_target_selector(request: CreateRefreshPlanRequest) -> None:
     )
     if selector_count != 1:
         raise RefreshTargetSelectionError(TARGET_SELECTOR_COUNT_MESSAGE)
+
+
+def _running_operation(uow: UnitOfWork, operation_id: OperationId | None) -> Operation | None:
+    if operation_id is None:
+        return None
+    retained = uow.operations.lookup(operation_id)
+    if (
+        not isinstance(retained, Operation)
+        or retained.kind is not OperationKind.REFRESH_PLAN
+        or retained.status is not OperationStatus.RUNNING
+    ):
+        raise RuntimeError(RUNNING_OPERATION_REQUIRED_MESSAGE)
+    return retained
 
 
 def _select_registered_library(

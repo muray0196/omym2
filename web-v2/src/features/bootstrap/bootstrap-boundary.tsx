@@ -16,6 +16,7 @@ import { Button } from "../../ui/primitives/button";
 import { bootstrapCopy } from "./bootstrap-copy";
 import { BootstrapContext } from "./bootstrap-context";
 import { BootstrapApiError, bootstrapQuery } from "./bootstrap-query";
+import { operationRecoveryRoute } from "../operations/operation-routes";
 import styles from "./bootstrap-boundary.module.css";
 
 export function BootstrapBoundary({ children }: { children: ReactNode }) {
@@ -60,27 +61,59 @@ function BootstrapResult({
     ...data.library_diagnostics,
   ]);
   if (!data.config_validation.valid || diagnostics.length > 0) {
-    return <DegradedBanner diagnostics={diagnostics} />;
+    return (
+      <>
+        <DegradedBanner diagnostics={diagnostics} />
+        <ActiveOperationRecovery operationId={data.active_operation_id} />
+      </>
+    );
   }
 
   return (
-    <div
-      className={`${styles.banner} ${styles.normal}`}
-      data-bootstrap-state="normal"
-      role="status"
-    >
-      <Icon name="check" />
+    <>
+      <div
+        className={`${styles.banner} ${styles.normal}`}
+        data-bootstrap-state="normal"
+        role="status"
+      >
+        <Icon name="check" />
+        <div className={styles.content}>
+          <p className={styles.summary}>{bootstrapCopy.connected}</p>
+          <p
+            className={
+              data.active_library === null
+                ? styles.detail
+                : `${styles.detail} ${styles.path}`
+            }
+          >
+            {data.active_library?.root_path ?? bootstrapCopy.noLibrary}
+          </p>
+        </div>
+      </div>
+      <ActiveOperationRecovery operationId={data.active_operation_id} />
+    </>
+  );
+}
+
+function ActiveOperationRecovery({
+  operationId,
+}: {
+  operationId: string | null;
+}) {
+  if (operationId === null) {
+    return null;
+  }
+  return (
+    <div className={`${styles.banner} ${styles.activeOperation}`} role="status">
+      <Icon name="info" />
       <div className={styles.content}>
-        <p className={styles.summary}>{bootstrapCopy.connected}</p>
-        <p
-          className={
-            data.active_library === null
-              ? styles.detail
-              : `${styles.detail} ${styles.path}`
-          }
+        <p className={styles.summary}>{bootstrapCopy.activeOperation}</p>
+        <Link
+          className={styles.recoveryLink}
+          to={operationRecoveryRoute(operationId)}
         >
-          {data.active_library?.root_path ?? bootstrapCopy.noLibrary}
-        </p>
+          {bootstrapCopy.resumeOperation}
+        </Link>
       </div>
     </div>
   );

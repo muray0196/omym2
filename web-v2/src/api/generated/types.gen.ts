@@ -22,6 +22,33 @@ export type ActionStatus = 'planned' | 'blocked' | 'applied' | 'failed';
 export type ActionType = 'move' | 'skip' | 'refresh_metadata';
 
 /**
+ * AddPlanRequest
+ *
+ * Validated Add planning inputs.
+ */
+export type AddPlanRequest = {
+    /**
+     * Library Id
+     */
+    library_id?: string | null;
+    /**
+     * Source Path
+     */
+    source_path?: string | null;
+};
+
+/**
+ * ApiEnvelope[ArtistIdDraftData]
+ */
+export type ApiEnvelopeArtistIdDraftData = {
+    data: ArtistIdDraftData | null;
+    /**
+     * Errors
+     */
+    errors: Array<ApiError>;
+};
+
+/**
  * ApiEnvelope[BootstrapData]
  */
 export type ApiEnvelopeBootstrapData = {
@@ -110,6 +137,28 @@ export type ApiEnvelopeLibraryResource = {
 };
 
 /**
+ * ApiEnvelope[OperationRef]
+ */
+export type ApiEnvelopeOperationRef = {
+    data: OperationRef | null;
+    /**
+     * Errors
+     */
+    errors: Array<ApiError>;
+};
+
+/**
+ * ApiEnvelope[OperationResource]
+ */
+export type ApiEnvelopeOperationResource = {
+    data: OperationResource | null;
+    /**
+     * Errors
+     */
+    errors: Array<ApiError>;
+};
+
+/**
  * ApiEnvelope[PaginatedData[FileEventResource]]
  */
 export type ApiEnvelopePaginatedDataFileEventResource = {
@@ -165,6 +214,17 @@ export type ApiEnvelopePaginatedDataTrackResource = {
 };
 
 /**
+ * ApiEnvelope[PathPreview]
+ */
+export type ApiEnvelopePathPreview = {
+    data: PathPreview | null;
+    /**
+     * Errors
+     */
+    errors: Array<ApiError>;
+};
+
+/**
  * ApiEnvelope[PlanActionFacetsData]
  */
 export type ApiEnvelopePlanActionFacetsData = {
@@ -213,6 +273,28 @@ export type ApiEnvelopeRunDetailData = {
  */
 export type ApiEnvelopeRunFacetsData = {
     data: RunFacetsData | null;
+    /**
+     * Errors
+     */
+    errors: Array<ApiError>;
+};
+
+/**
+ * ApiEnvelope[SettingsCandidateData]
+ */
+export type ApiEnvelopeSettingsCandidateData = {
+    data: SettingsCandidateData | null;
+    /**
+     * Errors
+     */
+    errors: Array<ApiError>;
+};
+
+/**
+ * ApiEnvelope[SettingsData]
+ */
+export type ApiEnvelopeSettingsData = {
+    data: SettingsData | null;
     /**
      * Errors
      */
@@ -321,6 +403,102 @@ export type ApiRemediation = {
 };
 
 /**
+ * AppConfigResource
+ *
+ * Complete supported AppConfig representation.
+ */
+export type AppConfigResource = {
+    add: CommandConfigResource;
+    artist_ids: ArtistIdConfigResource;
+    collision: CollisionConfigResource;
+    metadata: MetadataConfigResource;
+    organize: CommandConfigResource;
+    path_policy: PathPolicyConfigResource;
+    paths: PathsConfigResource;
+    refresh: CommandConfigResource;
+    ui: UiConfigResource;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * ArtistIdConfigResource
+ *
+ * Editable artist-ID generation settings and entries.
+ */
+export type ArtistIdConfigResource = {
+    /**
+     * Entries
+     */
+    entries: {
+        [key: string]: string;
+    };
+    /**
+     * Fallback Id
+     */
+    fallback_id: string;
+    /**
+     * Max Length
+     */
+    max_length: number;
+};
+
+/**
+ * ArtistIdDraftData
+ *
+ * Generated entries for merging into the local form draft.
+ */
+export type ArtistIdDraftData = {
+    /**
+     * Entries
+     */
+    entries: Array<ArtistIdDraftEntry>;
+};
+
+/**
+ * ArtistIdDraftEntry
+ *
+ * One generated or preserved artist-ID draft entry.
+ */
+export type ArtistIdDraftEntry = {
+    /**
+     * Artist Id
+     */
+    artist_id: string;
+    /**
+     * Generation Artist
+     */
+    generation_artist: string;
+    /**
+     * Overwritten
+     */
+    overwritten: boolean;
+    /**
+     * Source Artist
+     */
+    source_artist: string;
+};
+
+/**
+ * ArtistIdDraftRequest
+ *
+ * Draft-only artist-ID generation input.
+ */
+export type ArtistIdDraftRequest = {
+    artist_ids: ArtistIdConfigResource;
+    /**
+     * Artist Names
+     */
+    artist_names: Array<string>;
+    /**
+     * Overwrite
+     */
+    overwrite: boolean;
+};
+
+/**
  * BootstrapData
  *
  * Initial application state returned even when recovery is required.
@@ -350,6 +528,26 @@ export type BootstrapData = {
      * Status Catalog Version
      */
     status_catalog_version: number;
+};
+
+/**
+ * CheckCompletedResultResource
+ *
+ * Navigation result for persisted Check findings.
+ */
+export type CheckCompletedResultResource = {
+    /**
+     * Check Run Ids
+     */
+    check_run_ids: Array<string>;
+    /**
+     * Issue Count
+     */
+    issue_count: number;
+    /**
+     * Kind
+     */
+    kind?: 'check_completed';
 };
 
 /**
@@ -471,6 +669,54 @@ export type CheckIssuesData = {
      */
     items: Array<CheckIssueResource>;
     page: PageInfo;
+};
+
+/**
+ * CheckRunRequest
+ *
+ * Optional Library scope for a persisted Check Operation.
+ */
+export type CheckRunRequest = {
+    /**
+     * Library Id
+     */
+    library_id?: string | null;
+};
+
+/**
+ * CollisionConfigResource
+ *
+ * Editable plan-time collision decisions.
+ */
+export type CollisionConfigResource = {
+    /**
+     * On Duplicate Hash
+     */
+    on_duplicate_hash: string;
+    /**
+     * On Missing Metadata
+     */
+    on_missing_metadata: string;
+    /**
+     * On Target Exists
+     */
+    on_target_exists: string;
+};
+
+/**
+ * CommandConfigResource
+ *
+ * Plan-first command defaults retained in Config.
+ */
+export type CommandConfigResource = {
+    /**
+     * Auto Apply
+     */
+    auto_apply: boolean;
+    /**
+     * Default Mode
+     */
+    default_mode: string;
 };
 
 /**
@@ -724,7 +970,42 @@ export type LibraryResource = {
  */
 export type LibraryStatus = 'registered' | 'unregistered' | 'stale' | 'blocked';
 
+/**
+ * MetadataConfigResource
+ *
+ * Editable metadata requirements and album-year policy.
+ */
+export type MetadataConfigResource = {
+    /**
+     * Album Year Resolution
+     */
+    album_year_resolution: string;
+    /**
+     * Prefer Album Artist
+     */
+    prefer_album_artist: boolean;
+    /**
+     * Require Album
+     */
+    require_album: boolean;
+    /**
+     * Require Artist
+     */
+    require_artist: boolean;
+    /**
+     * Require Title
+     */
+    require_title: boolean;
+};
+
 export type NonNegativeCount = number;
+
+/**
+ * OperationKind
+ *
+ * Supported durable Operation kinds.
+ */
+export type OperationKind = 'add_plan' | 'organize_plan' | 'refresh_plan' | 'check' | 'apply_plan' | 'undo_plan';
 
 /**
  * OperationPollingPolicy
@@ -744,6 +1025,122 @@ export type OperationPollingPolicy = {
      * Max Ms
      */
     max_ms: number;
+};
+
+/**
+ * OperationProgressResource
+ *
+ * Display-safe durable progress without fabricated percentages.
+ */
+export type OperationProgressResource = {
+    /**
+     * Completed Units
+     */
+    completed_units: number | null;
+    /**
+     * Message
+     */
+    message: string | null;
+    /**
+     * Stage Code
+     */
+    stage_code: string | null;
+    /**
+     * Total Units
+     */
+    total_units: number | null;
+};
+
+/**
+ * OperationRef
+ *
+ * Compact reference returned when durable work is accepted or replayed.
+ */
+export type OperationRef = {
+    kind: OperationKind;
+    /**
+     * Operation Id
+     */
+    operation_id: string;
+    /**
+     * Poll After Ms
+     */
+    poll_after_ms: number;
+    status: OperationStatus;
+    /**
+     * Status Url
+     */
+    status_url: string;
+};
+
+/**
+ * OperationResource
+ *
+ * Full retained Operation status returned by polling.
+ */
+export type OperationResource = {
+    /**
+     * Completed At
+     */
+    completed_at: string | null;
+    error: ApiError | null;
+    kind: OperationKind;
+    /**
+     * Library Id
+     */
+    library_id: string | null;
+    /**
+     * Operation Id
+     */
+    operation_id: string;
+    /**
+     * Plan Id
+     */
+    plan_id: string | null;
+    progress: OperationProgressResource;
+    /**
+     * Requested At
+     */
+    requested_at: string;
+    result: OperationResultResource | null;
+    /**
+     * Run Id
+     */
+    run_id: string | null;
+    /**
+     * Started At
+     */
+    started_at: string | null;
+    status: OperationStatus;
+};
+
+export type OperationResultResource = ({
+    kind: 'plan_created';
+} & PlanCreatedResultResource) | ({
+    kind: 'registered_without_plan';
+} & RegisteredWithoutPlanResultResource) | ({
+    kind: 'check_completed';
+} & CheckCompletedResultResource) | ({
+    kind: 'run_completed';
+} & RunCompletedResultResource);
+
+/**
+ * OperationStatus
+ *
+ * Supported durable Operation lifecycle statuses.
+ */
+export type OperationStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
+
+/**
+ * OrganizePlanRequest
+ *
+ * Explicit Library root for registration or reconciliation planning.
+ */
+export type OrganizePlanRequest = {
+    /**
+     * Library Root
+     */
+    library_root: string;
 };
 
 /**
@@ -816,6 +1213,89 @@ export type PaginatedDataTrackResource = {
      */
     items: Array<TrackResource>;
     page: PageInfo;
+};
+
+/**
+ * PathPolicyConfigResource
+ *
+ * Editable canonical-path policy.
+ */
+export type PathPolicyConfigResource = {
+    /**
+     * Disc Number Condition
+     */
+    disc_number_condition: string;
+    /**
+     * Disc Number Style
+     */
+    disc_number_style: string;
+    /**
+     * Max Filename Length
+     */
+    max_filename_length: number;
+    /**
+     * Sanitize
+     */
+    sanitize: boolean;
+    /**
+     * Template
+     */
+    template: string;
+    /**
+     * Unknown Album
+     */
+    unknown_album: string;
+    /**
+     * Unknown Artist
+     */
+    unknown_artist: string;
+};
+
+/**
+ * PathPreview
+ *
+ * One rendered relative path or typed draft errors.
+ */
+export type PathPreview = {
+    /**
+     * Errors
+     */
+    errors: Array<ApiError>;
+    /**
+     * Path
+     */
+    path: string | null;
+};
+
+/**
+ * PathPreviewRequest
+ *
+ * Self-contained PathPolicy preview input.
+ */
+export type PathPreviewRequest = {
+    artist_ids: ArtistIdConfigResource;
+    /**
+     * File Extension
+     */
+    file_extension: string;
+    metadata: TrackMetadataResourceInput;
+    path_policy: PathPolicyConfigResource;
+};
+
+/**
+ * PathsConfigResource
+ *
+ * Editable Library and Incoming defaults.
+ */
+export type PathsConfigResource = {
+    /**
+     * Incoming
+     */
+    incoming: string | null;
+    /**
+     * Library
+     */
+    library: string | null;
 };
 
 /**
@@ -1001,6 +1481,22 @@ export type PlanCapabilities = {
 };
 
 /**
+ * PlanCreatedResultResource
+ *
+ * Navigation result for planning Operations.
+ */
+export type PlanCreatedResultResource = {
+    /**
+     * Kind
+     */
+    kind?: 'plan_created';
+    /**
+     * Plan Id
+     */
+    plan_id: string;
+};
+
+/**
  * PlanDetailData
  *
  * Plan header, current action summary, and advisory capabilities.
@@ -1083,6 +1579,46 @@ export type PlanSummary = {
 export type PlanType = 'add' | 'organize' | 'refresh' | 'undo';
 
 /**
+ * RefreshPlanRequest
+ *
+ * Exactly one selected Refresh scope for one Library.
+ */
+export type RefreshPlanRequest = {
+    /**
+     * Library Id
+     */
+    library_id: string;
+    /**
+     * Target Kind
+     */
+    target_kind: 'file' | 'directory' | 'all';
+    /**
+     * Target Path
+     */
+    target_path?: string | null;
+};
+
+/**
+ * RegisteredWithoutPlanResultResource
+ *
+ * Navigation result for a clean Organize registration.
+ */
+export type RegisteredWithoutPlanResultResource = {
+    /**
+     * Kind
+     */
+    kind?: 'registered_without_plan';
+    /**
+     * Library Id
+     */
+    library_id: string;
+    /**
+     * Track Count
+     */
+    track_count: number;
+};
+
+/**
  * RunCapabilities
  *
  * Backend-authoritative Undo Plan availability for one Run.
@@ -1096,6 +1632,22 @@ export type RunCapabilities = {
      * Disabled Reasons
      */
     disabled_reasons: Array<ApiError>;
+};
+
+/**
+ * RunCompletedResultResource
+ *
+ * Navigation result for Apply Operations.
+ */
+export type RunCompletedResultResource = {
+    /**
+     * Kind
+     */
+    kind?: 'run_completed';
+    /**
+     * Run Id
+     */
+    run_id: string;
 };
 
 /**
@@ -1199,6 +1751,126 @@ export type RuntimeCapabilities = {
 };
 
 /**
+ * SettingsCandidateData
+ *
+ * Validation or save result for one Settings candidate.
+ */
+export type SettingsCandidateData = {
+    /**
+     * Changes
+     */
+    changes: Array<SettingsChange>;
+    config: AppConfigResource;
+    /**
+     * Config Revision
+     */
+    config_revision: string;
+    preview: PathPreview;
+    validation: SettingsValidation;
+};
+
+/**
+ * SettingsCandidateRequest
+ *
+ * Complete candidate Config tied to the caller's edit base.
+ */
+export type SettingsCandidateRequest = {
+    config: AppConfigResource;
+    /**
+     * Expected Config Revision
+     */
+    expected_config_revision: string;
+};
+
+/**
+ * SettingsChange
+ *
+ * One deterministic field-level Config difference.
+ */
+export type SettingsChange = {
+    after: SettingsChangeValue;
+    before: SettingsChangeValue;
+    /**
+     * Field
+     */
+    field: string;
+};
+
+export type SettingsChangeValue = string | number | boolean | null;
+
+/**
+ * SettingsChoices
+ *
+ * Backend-owned closed choices used by Settings controls.
+ */
+export type SettingsChoices = {
+    /**
+     * Album Year Resolutions
+     */
+    album_year_resolutions: Array<string>;
+    /**
+     * Command Modes
+     */
+    command_modes: Array<string>;
+    /**
+     * Disc Number Conditions
+     */
+    disc_number_conditions: Array<string>;
+    /**
+     * Disc Number Styles
+     */
+    disc_number_styles: Array<string>;
+    /**
+     * Duplicate Hash Policies
+     */
+    duplicate_hash_policies: Array<string>;
+    /**
+     * Missing Metadata Policies
+     */
+    missing_metadata_policies: Array<string>;
+    /**
+     * Path Placeholders
+     */
+    path_placeholders: Array<string>;
+    /**
+     * Target Exists Policies
+     */
+    target_exists_policies: Array<string>;
+};
+
+/**
+ * SettingsData
+ *
+ * Current recovery-capable Settings edit state.
+ */
+export type SettingsData = {
+    choices: SettingsChoices;
+    config: AppConfigResource;
+    /**
+     * Config Revision
+     */
+    config_revision: string;
+    preview: PathPreview;
+    validation: SettingsValidation;
+};
+
+/**
+ * SettingsValidation
+ *
+ * Candidate or persisted Config validation evidence.
+ */
+export type SettingsValidation = {
+    /**
+     * Errors
+     */
+    errors: Array<ApiError>;
+    /**
+     * Valid
+     */
+    valid: boolean;
+};
+
+/**
  * TrackFacetSets
  *
  * Filter-aware Track status facets.
@@ -1244,9 +1916,57 @@ export type TrackGroupsData = {
 /**
  * TrackMetadataResource
  *
+ * Self-contained sample metadata used only for PathPolicy preview.
+ */
+export type TrackMetadataResourceInput = {
+    /**
+     * Album
+     */
+    album?: string | null;
+    /**
+     * Album Artist
+     */
+    album_artist?: string | null;
+    /**
+     * Artist
+     */
+    artist?: string | null;
+    /**
+     * Disc Number
+     */
+    disc_number?: number | null;
+    /**
+     * Disc Total
+     */
+    disc_total?: number | null;
+    /**
+     * Genre
+     */
+    genre?: string | null;
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Track Number
+     */
+    track_number?: number | null;
+    /**
+     * Track Total
+     */
+    track_total?: number | null;
+    /**
+     * Year
+     */
+    year?: number | null;
+};
+
+/**
+ * TrackMetadataResource
+ *
  * Persisted tag metadata for one managed Track.
  */
-export type TrackMetadataResource = {
+export type TrackMetadataResourceOutput = {
     /**
      * Album
      */
@@ -1319,7 +2039,7 @@ export type TrackResource = {
      * Library Id
      */
     library_id: string;
-    metadata: TrackMetadataResource;
+    metadata: TrackMetadataResourceOutput;
     /**
      * Metadata Hash
      */
@@ -1346,6 +2066,22 @@ export type TrackResource = {
  * Known managed Track states.
  */
 export type TrackStatus = 'active' | 'removed';
+
+/**
+ * UiConfigResource
+ *
+ * Persisted legacy UI values retained for complete Config round trips.
+ */
+export type UiConfigResource = {
+    /**
+     * Show Advanced Settings
+     */
+    show_advanced_settings: boolean;
+    /**
+     * Theme
+     */
+    theme: string;
+};
 
 export type GetBootstrapData = {
     body?: never;
@@ -1518,6 +2254,65 @@ export type GetCheckIssueGroupsResponses = {
 };
 
 export type GetCheckIssueGroupsResponse = GetCheckIssueGroupsResponses[keyof GetCheckIssueGroupsResponses];
+
+export type StartCheckData = {
+    body: CheckRunRequest;
+    headers: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key': string;
+        /**
+         * X-Omym2-Csrf-Token
+         */
+        'X-OMYM2-CSRF-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/check/run';
+};
+
+export type StartCheckErrors = {
+    /**
+     * Forbidden
+     */
+    403: ApiFailureEnvelope;
+    /**
+     * Not Found
+     */
+    404: ApiFailureEnvelope;
+    /**
+     * Conflict
+     */
+    409: ApiFailureEnvelope;
+    /**
+     * Gone
+     */
+    410: ApiFailureEnvelope;
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type StartCheckError = StartCheckErrors[keyof StartCheckErrors];
+
+export type StartCheckResponses = {
+    /**
+     * OK
+     */
+    200: ApiEnvelopeOperationResource;
+    /**
+     * Successful Response
+     */
+    202: ApiEnvelopeOperationRef;
+};
+
+export type StartCheckResponse = StartCheckResponses[keyof StartCheckResponses];
 
 export type GetHistoryData = {
     body?: never;
@@ -1848,6 +2643,48 @@ export type GetLibraryResponses = {
 
 export type GetLibraryResponse = GetLibraryResponses[keyof GetLibraryResponses];
 
+export type GetOperationData = {
+    body?: never;
+    path: {
+        /**
+         * Operation Id
+         */
+        operation_id: string;
+    };
+    query?: never;
+    url: '/api/operations/{operation_id}';
+};
+
+export type GetOperationErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiFailureEnvelope;
+    /**
+     * Gone
+     */
+    410: ApiFailureEnvelope;
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type GetOperationError = GetOperationErrors[keyof GetOperationErrors];
+
+export type GetOperationResponses = {
+    /**
+     * Successful Response
+     */
+    200: ApiEnvelopeOperationResource;
+};
+
+export type GetOperationResponse = GetOperationResponses[keyof GetOperationResponses];
+
 export type ListPlansData = {
     body?: never;
     path?: never;
@@ -1905,6 +2742,183 @@ export type ListPlansResponses = {
 };
 
 export type ListPlansResponse = ListPlansResponses[keyof ListPlansResponses];
+
+export type StartAddPlanData = {
+    body: AddPlanRequest;
+    headers: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key': string;
+        /**
+         * X-Omym2-Csrf-Token
+         */
+        'X-OMYM2-CSRF-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/plans/add';
+};
+
+export type StartAddPlanErrors = {
+    /**
+     * Forbidden
+     */
+    403: ApiFailureEnvelope;
+    /**
+     * Not Found
+     */
+    404: ApiFailureEnvelope;
+    /**
+     * Conflict
+     */
+    409: ApiFailureEnvelope;
+    /**
+     * Gone
+     */
+    410: ApiFailureEnvelope;
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type StartAddPlanError = StartAddPlanErrors[keyof StartAddPlanErrors];
+
+export type StartAddPlanResponses = {
+    /**
+     * OK
+     */
+    200: ApiEnvelopeOperationResource;
+    /**
+     * Successful Response
+     */
+    202: ApiEnvelopeOperationRef;
+};
+
+export type StartAddPlanResponse = StartAddPlanResponses[keyof StartAddPlanResponses];
+
+export type StartOrganizePlanData = {
+    body: OrganizePlanRequest;
+    headers: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key': string;
+        /**
+         * X-Omym2-Csrf-Token
+         */
+        'X-OMYM2-CSRF-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/plans/organize';
+};
+
+export type StartOrganizePlanErrors = {
+    /**
+     * Forbidden
+     */
+    403: ApiFailureEnvelope;
+    /**
+     * Not Found
+     */
+    404: ApiFailureEnvelope;
+    /**
+     * Conflict
+     */
+    409: ApiFailureEnvelope;
+    /**
+     * Gone
+     */
+    410: ApiFailureEnvelope;
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type StartOrganizePlanError = StartOrganizePlanErrors[keyof StartOrganizePlanErrors];
+
+export type StartOrganizePlanResponses = {
+    /**
+     * OK
+     */
+    200: ApiEnvelopeOperationResource;
+    /**
+     * Successful Response
+     */
+    202: ApiEnvelopeOperationRef;
+};
+
+export type StartOrganizePlanResponse = StartOrganizePlanResponses[keyof StartOrganizePlanResponses];
+
+export type StartRefreshPlanData = {
+    body: RefreshPlanRequest;
+    headers: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key': string;
+        /**
+         * X-Omym2-Csrf-Token
+         */
+        'X-OMYM2-CSRF-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/plans/refresh';
+};
+
+export type StartRefreshPlanErrors = {
+    /**
+     * Forbidden
+     */
+    403: ApiFailureEnvelope;
+    /**
+     * Not Found
+     */
+    404: ApiFailureEnvelope;
+    /**
+     * Conflict
+     */
+    409: ApiFailureEnvelope;
+    /**
+     * Gone
+     */
+    410: ApiFailureEnvelope;
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type StartRefreshPlanError = StartRefreshPlanErrors[keyof StartRefreshPlanErrors];
+
+export type StartRefreshPlanResponses = {
+    /**
+     * OK
+     */
+    200: ApiEnvelopeOperationResource;
+    /**
+     * Successful Response
+     */
+    202: ApiEnvelopeOperationRef;
+};
+
+export type StartRefreshPlanResponse = StartRefreshPlanResponses[keyof StartRefreshPlanResponses];
 
 export type GetPlanData = {
     body?: never;
@@ -2133,6 +3147,165 @@ export type GroupPlanActionsResponses = {
 };
 
 export type GroupPlanActionsResponse = GroupPlanActionsResponses[keyof GroupPlanActionsResponses];
+
+export type GetSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings';
+};
+
+export type GetSettingsErrors = {
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type GetSettingsError = GetSettingsErrors[keyof GetSettingsErrors];
+
+export type GetSettingsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ApiEnvelopeSettingsData;
+};
+
+export type GetSettingsResponse = GetSettingsResponses[keyof GetSettingsResponses];
+
+export type SaveSettingsData = {
+    body: SettingsCandidateRequest;
+    headers: {
+        /**
+         * X-Omym2-Csrf-Token
+         */
+        'X-OMYM2-CSRF-Token': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/settings';
+};
+
+export type SaveSettingsErrors = {
+    /**
+     * Forbidden
+     */
+    403: ApiFailureEnvelope;
+    /**
+     * Conflict
+     */
+    409: ApiFailureEnvelope;
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type SaveSettingsError = SaveSettingsErrors[keyof SaveSettingsErrors];
+
+export type SaveSettingsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ApiEnvelopeSettingsCandidateData;
+};
+
+export type SaveSettingsResponse = SaveSettingsResponses[keyof SaveSettingsResponses];
+
+export type GenerateArtistIdDraftData = {
+    body: ArtistIdDraftRequest;
+    path?: never;
+    query?: never;
+    url: '/api/settings/artist-ids/generate';
+};
+
+export type GenerateArtistIdDraftErrors = {
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type GenerateArtistIdDraftError = GenerateArtistIdDraftErrors[keyof GenerateArtistIdDraftErrors];
+
+export type GenerateArtistIdDraftResponses = {
+    /**
+     * Successful Response
+     */
+    200: ApiEnvelopeArtistIdDraftData;
+};
+
+export type GenerateArtistIdDraftResponse = GenerateArtistIdDraftResponses[keyof GenerateArtistIdDraftResponses];
+
+export type PreviewSettingsPathData = {
+    body: PathPreviewRequest;
+    path?: never;
+    query?: never;
+    url: '/api/settings/preview';
+};
+
+export type PreviewSettingsPathErrors = {
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type PreviewSettingsPathError = PreviewSettingsPathErrors[keyof PreviewSettingsPathErrors];
+
+export type PreviewSettingsPathResponses = {
+    /**
+     * Successful Response
+     */
+    200: ApiEnvelopePathPreview;
+};
+
+export type PreviewSettingsPathResponse = PreviewSettingsPathResponses[keyof PreviewSettingsPathResponses];
+
+export type ValidateSettingsData = {
+    body: SettingsCandidateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/settings/validate';
+};
+
+export type ValidateSettingsErrors = {
+    /**
+     * Conflict
+     */
+    409: ApiFailureEnvelope;
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type ValidateSettingsError = ValidateSettingsErrors[keyof ValidateSettingsErrors];
+
+export type ValidateSettingsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ApiEnvelopeSettingsCandidateData;
+};
+
+export type ValidateSettingsResponse = ValidateSettingsResponses[keyof ValidateSettingsResponses];
 
 export type ListTracksData = {
     body?: never;

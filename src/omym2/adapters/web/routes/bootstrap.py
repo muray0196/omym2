@@ -95,7 +95,7 @@ def _bootstrap_envelope(result: BootstrapResult, csrf_token: str) -> ApiEnvelope
                 backoff_factor=OPERATION_POLL_BACKOFF_FACTOR,
                 max_ms=int(OPERATION_POLL_MAX_SECONDS * MILLISECONDS_PER_SECOND),
             ),
-            active_operation_id=None,
+            active_operation_id=result.active_operation_id,
         ),
         errors=top_errors,
     )

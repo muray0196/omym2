@@ -1,13 +1,13 @@
 /**
- * Summary: Runs axe against primary M2 clean-room browser states.
+ * Summary: Runs axe against primary M3 clean-room browser states.
  * Why: Makes WCAG regressions in the shell, palette, and fallback independently diagnosable.
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { allM2RoutePaths, notFoundRoute } from "./route-fixtures";
+import { allM3RoutePaths, notFoundRoute } from "./route-fixtures";
 
-for (const path of [...allM2RoutePaths, notFoundRoute]) {
+for (const path of [...allM3RoutePaths, notFoundRoute]) {
   test(`has no detectable accessibility violations at ${path}`, async ({
     page,
   }) => {

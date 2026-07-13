@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -15,6 +15,8 @@ import pytest
 
 from omym2.adapters.config.default_config import default_app_config
 from omym2.config import (
+    OPERATION_RESULT_RETENTION_HOURS,
+    OPERATION_TOMBSTONE_RETENTION_DAYS,
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
@@ -22,6 +24,13 @@ from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.models.operation import (
+    Operation,
+    OperationKind,
+    OperationStatus,
+    PlanCreatedResult,
+    RegisteredWithoutPlanResult,
+)
 from omym2.domain.models.plan import PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, PlanActionReason
 from omym2.domain.models.track import Track, TrackStatus
@@ -38,7 +47,7 @@ from omym2.features.organize.usecases.create_organize_plan import (
     CreateOrganizePlanUseCase,
     OrganizeLibrarySelectionError,
 )
-from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
+from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
@@ -75,6 +84,8 @@ MISSING_ARTIST_METADATA = TrackMetadata(
 )
 MISPLACED_PATH = "Unsorted/Title.flac"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
+OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568e"))
+IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def01234568f")
 SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 SECOND_LIBRARY_ROOT = "/music/other"
@@ -133,6 +144,30 @@ def test_organize_registers_clean_library_without_mutation_plan() -> None:
     assert track.mtime == BASE_TIME
     assert uow.plans.list_by_library(LIBRARY_ID) == ()
     assert uow.commit_count == 1
+
+
+def test_organize_operation_success_records_clean_registration_result() -> None:
+    """A clean orchestrated registration links its Library and persisted Track count."""
+    uow = InMemoryUnitOfWork()
+    uow.operations.save(_running_operation())
+    ports, _, _ = _ports(
+        uow,
+        (_entry(CANONICAL_ABSOLUTE_PATH),),
+        {CANONICAL_ABSOLUTE_PATH: _snapshot(CANONICAL_ABSOLUTE_PATH, METADATA)},
+        SequenceIdGenerator(library_ids=deque((LIBRARY_ID,)), track_ids=deque((TRACK_ID,))),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT, operation_id=OPERATION_ID)
+    )
+
+    terminal = uow.operations.lookup(OPERATION_ID)
+    assert isinstance(terminal, Operation)
+    assert terminal.status is OperationStatus.SUCCEEDED
+    assert terminal.result == RegisteredWithoutPlanResult(result.library.library_id, result.track_count)
+    assert terminal.library_id == result.library.library_id
+    assert terminal.result_expires_at == BASE_TIME + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS)
+    assert terminal.tombstone_expires_at == BASE_TIME + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS)
 
 
 def test_organize_trust_stat_skips_full_capture_for_matching_active_track() -> None:
@@ -260,6 +295,34 @@ def test_organize_creates_plan_for_misplaced_library_file() -> None:
     assert track is not None
     assert track.current_path == MISPLACED_PATH
     assert track.canonical_path == EXPECTED_CANONICAL_PATH
+
+
+def test_organize_operation_success_records_created_plan_result() -> None:
+    """An orchestrated misplaced scan links the reviewed Plan committed with success."""
+    uow = InMemoryUnitOfWork()
+    uow.operations.save(_running_operation())
+    ports, _, _ = _ports(
+        uow,
+        (_entry(MISPLACED_ABSOLUTE_PATH),),
+        {MISPLACED_ABSOLUTE_PATH: _snapshot(MISPLACED_ABSOLUTE_PATH, METADATA)},
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            track_ids=deque((TRACK_ID,)),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID,)),
+        ),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT, operation_id=OPERATION_ID)
+    )
+
+    assert result.plan is not None
+    terminal = uow.operations.lookup(OPERATION_ID)
+    assert isinstance(terminal, Operation)
+    assert terminal.status is OperationStatus.SUCCEEDED
+    assert terminal.result == PlanCreatedResult(result.plan.plan_id)
+    assert terminal.plan_id == result.plan.plan_id
 
 
 def test_organize_resolves_latest_album_year_across_scanned_album_group() -> None:
@@ -655,6 +718,16 @@ def _library(library_id: LibraryId, root_path: str) -> Library:
         created_at=BASE_TIME,
         updated_at=BASE_TIME,
     )
+
+
+def _running_operation() -> Operation:
+    return Operation.queued(
+        operation_id=OPERATION_ID,
+        kind=OperationKind.ORGANIZE_PLAN,
+        idempotency_key=IDEMPOTENCY_KEY,
+        request_fingerprint="organize-request",
+        requested_at=BASE_TIME,
+    ).mark_running(BASE_TIME)
 
 
 def _album_track_metadata(title: str, year: int | None, track_number: int) -> TrackMetadata:

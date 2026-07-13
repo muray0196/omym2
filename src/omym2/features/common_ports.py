@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from contextlib import AbstractContextManager
     from datetime import datetime
     from types import TracebackType
+    from uuid import UUID
 
     from omym2.domain.models.app_config import AppConfig
     from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
@@ -26,12 +27,13 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.library import Library
+    from omym2.domain.models.operation import Operation, OperationLookup
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
     from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
     from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
     from omym2.domain.models.track_metadata import TrackMetadata
-    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
+    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
     from omym2.shared.pagination import FacetValue, GroupCount, Page, PageRequest
 
 type FileSystemPath = str | PathLike[str]
@@ -55,6 +57,29 @@ class ConfigSnapshot:
     errors: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class ExclusiveOperationRequest:
+    """Diagnostic identity for one attempt to enter the mutation boundary."""
+
+    operation_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class ExclusiveOperationLease:
+    """Proof that orchestration currently owns the shared mutation boundary."""
+
+    request: ExclusiveOperationRequest
+
+
+class ExclusiveOperationBusyError(RuntimeError):
+    """Raised when another process or thread already owns mutation exclusion."""
+
+    def __init__(self, request: ExclusiveOperationRequest, message: str) -> None:
+        """Retain the rejected request for typed inbound-adapter handling."""
+        self.request: ExclusiveOperationRequest = request
+        super().__init__(message)
+
+
 class ConfigStoreValidationError(ValueError):
     """Raised when persisted settings cannot be converted into AppConfig."""
 
@@ -62,6 +87,25 @@ class ConfigStoreValidationError(ValueError):
         """Store stable validation messages for feature and CLI callers."""
         self.errors: tuple[str, ...] = tuple(errors)
         super().__init__("; ".join(self.errors))
+
+
+class ConfigRevisionMismatchError(RuntimeError):
+    """Raised when Config storage no longer matches a caller's opaque revision."""
+
+    def __init__(self, expected_config_revision: str, actual_config_revision: str) -> None:
+        """Retain both opaque revisions for typed adapter-boundary handling."""
+        self.expected_config_revision: str = expected_config_revision
+        self.actual_config_revision: str = actual_config_revision
+        super().__init__("Config storage changed after it was read.")
+
+
+class ConfigStoreIoError(OSError):
+    """Raised when raw Config storage cannot complete a requested I/O operation."""
+
+    def __init__(self, cause: OSError) -> None:
+        """Retain the operating-system failure for typed boundary translation."""
+        self.cause: OSError = cause
+        super().__init__(str(cause))
 
 
 class MetadataReadError(ValueError):
@@ -454,6 +498,38 @@ class FileEventRepository(Protocol):
         ...
 
 
+class OperationRepository(Protocol):
+    """Persistence contract for durable background request lifecycle records."""
+
+    def lookup(self, operation_id: OperationId) -> OperationLookup | None:
+        """Return a full Operation or retained tombstone by stable ID."""
+        ...
+
+    def find_by_idempotency_key(self, idempotency_key: UUID) -> OperationLookup | None:
+        """Return retained request identity for idempotent replay classification."""
+        ...
+
+    def list_reconciliation_candidates(self) -> Sequence[Operation]:
+        """Return full unfinished/interrupted Operations in deterministic request order."""
+        ...
+
+    def find_active(self) -> Operation | None:
+        """Return the single queued or running Operation, if one exists."""
+        ...
+
+    def save(self, operation: Operation) -> None:
+        """Persist one full Operation without deciding lifecycle policy."""
+        ...
+
+    def expire_terminal_payloads(self, now: datetime) -> int:
+        """Clear expired result/error payloads and return the affected row count."""
+        ...
+
+    def purge_expired_tombstones(self, now: datetime) -> int:
+        """Delete expired terminal tombstones and return the affected row count."""
+        ...
+
+
 class UnitOfWork(Protocol):
     """Transaction boundary for one usecase interaction with repositories."""
 
@@ -499,6 +575,11 @@ class UnitOfWork(Protocol):
     @property
     def file_events(self) -> FileEventRepository:
         """Repository for durable filesystem operation logs."""
+        ...
+
+    @property
+    def operations(self) -> OperationRepository:
+        """Repository for durable background request lifecycle records."""
         ...
 
     def __enter__(self) -> Self:
@@ -570,6 +651,14 @@ class FilePresence(Protocol):
         ...
 
 
+class ExclusiveOperationLock(Protocol):
+    """Cross-process nonblocking boundary shared by every state-changing flow."""
+
+    def hold(self, request: ExclusiveOperationRequest) -> AbstractContextManager[ExclusiveOperationLease]:
+        """Return a context that retains exclusion for its complete lifetime."""
+        ...
+
+
 class MetadataReader(Protocol):
     """Metadata adapter contract for reading music tags."""
 
@@ -604,15 +693,11 @@ class PathResolver(Protocol):
         ...
 
 
-class ConfigStore(Protocol):
-    """Application config persistence contract."""
+class ConfigReader(Protocol):
+    """Read-only parsed application config contract."""
 
     def load(self) -> AppConfig:
         """Load application settings."""
-        ...
-
-    def save(self, config: AppConfig) -> None:
-        """Save application settings."""
         ...
 
 
@@ -621,6 +706,14 @@ class ConfigSnapshotReader(Protocol):
 
     def read_snapshot(self) -> ConfigSnapshot:
         """Return parsed recovery data and an opaque revision from one raw read."""
+        ...
+
+
+class ConfigStore(ConfigReader, ConfigSnapshotReader, Protocol):
+    """Revision-aware application config persistence contract."""
+
+    def save(self, config: AppConfig, *, expected_config_revision: str) -> ConfigSnapshot:
+        """Atomically save settings only when raw storage still has the expected revision."""
         ...
 
 
@@ -661,6 +754,10 @@ class IdGenerator(Protocol):
 
     def new_event_id(self) -> EventId:
         """Create a FileEvent ID."""
+        ...
+
+    def new_operation_id(self) -> OperationId:
+        """Create an Operation ID."""
         ...
 
 
@@ -704,3 +801,7 @@ class Uuid7IdGenerator:
     def new_event_id(self) -> EventId:
         """Create a UUIDv7-backed FileEvent ID."""
         return shared_ids.new_event_id()
+
+    def new_operation_id(self) -> OperationId:
+        """Create a UUIDv7-backed Operation ID."""
+        return shared_ids.new_operation_id()

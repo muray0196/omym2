@@ -82,6 +82,7 @@ TRACK_TITLE = "Title"
 REQUIRED_TABLES = {
     "file_events",
     "libraries",
+    "operations",
     "plan_actions",
     "plans",
     "runs",

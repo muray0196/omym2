@@ -32,7 +32,6 @@ if TYPE_CHECKING:
 
     import pytest
 
-    from omym2.features.add.ports import CreateAddPlanPorts
     from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath
 
@@ -54,9 +53,7 @@ UNEXPECTED_STDIN_READ_MESSAGE = "stdin should not be read"
 YEAR = 2026
 
 
-def test_add_command_passes_normalized_source_path_to_request(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_add_command_passes_normalized_source_path_to_request() -> None:
     """add delegates source normalization before creating the usecase request."""
     captured_requests: list[CreateAddPlanRequest] = []
 
@@ -72,7 +69,6 @@ def test_add_command_passes_normalized_source_path_to_request(
             captured_requests.append(request)
             return _empty_plan(PlanType.ADD)
 
-    monkeypatch.setattr("omym2.adapters.cli.commands.add.CreateAddPlanUseCase", CapturingCreateAddPlanUseCase)
     stdout = StringIO()
     stderr = StringIO()
 
@@ -81,7 +77,7 @@ def test_add_command_passes_normalized_source_path_to_request(
         stdout,
         stderr,
         AddCommandDependencies(
-            create_add_plan_ports_factory=_stub_create_add_plan_ports,
+            create_add_plan=CapturingCreateAddPlanUseCase(object()).execute,
             apply_plan_ports_factory=_stub_apply_plan_ports,
             normalize_source_path=lambda path: f"normalized:{path}",
         ),
@@ -400,10 +396,6 @@ def _empty_plan(plan_type: PlanType) -> Plan:
         config_hash=CONFIG_HASH,
         library_root_at_plan=LIBRARY_ROOT,
     )
-
-
-def _stub_create_add_plan_ports() -> CreateAddPlanPorts:
-    return cast("CreateAddPlanPorts", object())
 
 
 def _stub_apply_plan_ports() -> ApplyPlanPorts:

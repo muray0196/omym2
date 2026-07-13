@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
     from omym2.domain.models.library import Library
     from omym2.features.common_ports import ConfigSnapshotReader
+    from omym2.shared.ids import OperationId
 
 
 class LibrarySnapshotUnavailableError(RuntimeError):
@@ -27,9 +28,18 @@ class LibrarySnapshotReader(Protocol):
         ...
 
 
+class OperationSnapshotReader(Protocol):
+    """Read-only active Operation boundary for Bootstrap recovery."""
+
+    def active_operation_id(self) -> OperationId | None:
+        """Return the single queued/running Operation identity, if present."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class BootstrapPorts:
     """Ports required to inspect Config and Library readiness."""
 
     config_snapshot_reader: ConfigSnapshotReader
     library_snapshot_reader: LibrarySnapshotReader
+    operation_snapshot_reader: OperationSnapshotReader

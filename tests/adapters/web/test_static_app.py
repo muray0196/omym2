@@ -178,6 +178,7 @@ def _bootstrap_result() -> BootstrapResult:
             change_settings_disabled_reasons=(),
             start_operations_disabled_reasons=(BootstrapReason.LIBRARY_UNREGISTERED,),
         ),
+        active_operation_id=None,
     )
 
 

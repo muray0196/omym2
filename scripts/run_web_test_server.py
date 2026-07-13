@@ -18,14 +18,15 @@ import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from uuid import UUID
 
 import uvicorn
+from mutagen.flac import FLAC
 
 from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
-from omym2.domain.models.app_config import AppConfig, PathsConfig
+from omym2.domain.models.app_config import AppConfig, PathPolicyConfig, PathsConfig
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
 from omym2.platform.web_composition import build_web_app
@@ -44,10 +45,42 @@ SERVER_START_TIMEOUT_SECONDS = 20.0
 SERVER_STOP_TIMEOUT_SECONDS = 10.0
 ENVIRONMENT_VARIABLE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
 E2E_LIBRARY_DIRECTORY_NAME = "library"
+E2E_INCOMING_DIRECTORY_NAME = "incoming"
 E2E_SENTINEL_FILE_NAME = "sentinel.flac"
-E2E_SENTINEL_CONTENT = b"OMYM2 M2 mutation sentinel\n"
 E2E_LIBRARY_ID = LibraryId(UUID("01912345-6789-7abc-8def-0123456789ab"))
 E2E_FIXED_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+E2E_FLAC_BYTE_ORDER = "big"
+E2E_FLAC_CHANNEL_COUNT = 1
+E2E_FLAC_CHANNEL_COUNT_BITS = 3
+E2E_FLAC_FRAME_SIZE_FIELDS_BYTES = 6
+E2E_FLAC_LAST_METADATA_BLOCK_FLAG = 0x80
+E2E_FLAC_MD5_BYTES = 16
+E2E_FLAC_SAMPLE_RATE_BITS = 20
+E2E_FLAC_SAMPLE_RATE_HZ = 8_000
+E2E_FLAC_SAMPLE_SIZE_BITS = 8
+E2E_FLAC_SAMPLE_SIZE_FIELD_BITS = 5
+E2E_FLAC_STREAMINFO_BLOCK_SIZE_SAMPLES = 4_096
+E2E_FLAC_STREAMINFO_LENGTH_BYTES = 34
+E2E_FLAC_STREAM_MARKER = b"fLaC"
+E2E_FLAC_TOTAL_SAMPLES_BITS = 36
+E2E_INDEX_DISPLAY_OFFSET = 1
+E2E_SENTINEL_TITLE = "sentinel"
+E2E_SENTINEL_ARTIST = "Sentinel Artist"
+E2E_SENTINEL_ALBUM = "Sentinel Album"
+E2E_SENTINEL_YEAR = 2026
+E2E_SENTINEL_TRACK_NUMBER = "1/1"
+E2E_SENTINEL_DISC_NUMBER = "1/1"
+E2E_PATH_POLICY_TEMPLATE = "{title}"
+
+
+class FlacTagWriter(Protocol):
+    """Narrow fixture-only surface used to tag the sentinel FLAC."""
+
+    def __setitem__(self, key: str, value: str) -> None:
+        """Set one Vorbis-comment field."""
+
+    def save(self) -> None:
+        """Persist the sentinel metadata."""
 
 
 class WebTestServerError(RuntimeError):
@@ -150,9 +183,16 @@ def _require_empty_application_root(application_root: Path) -> None:
 def _seed_e2e_state(config_path: Path, database_path: Path, application_root: Path) -> Path:
     library_root = application_root / E2E_LIBRARY_DIRECTORY_NAME
     _ = library_root.mkdir(parents=True)
-    _ = (library_root / E2E_SENTINEL_FILE_NAME).write_bytes(E2E_SENTINEL_CONTENT)
-    config = AppConfig(paths=PathsConfig(library=str(library_root)))
-    TomlConfigStore(config_path).save(config)
+    _write_e2e_sentinel(library_root / E2E_SENTINEL_FILE_NAME)
+    incoming_root = application_root / E2E_INCOMING_DIRECTORY_NAME
+    _ = incoming_root.mkdir(parents=True)
+    config = AppConfig(
+        paths=PathsConfig(library=str(library_root), incoming=str(incoming_root)),
+        path_policy=PathPolicyConfig(template=E2E_PATH_POLICY_TEMPLATE),
+    )
+    config_store = TomlConfigStore(config_path)
+    config_snapshot = config_store.read_snapshot()
+    _ = config_store.save(config, expected_config_revision=config_snapshot.config_revision)
     path_policy_hash = calculate_path_policy_fingerprint(
         config.path_policy,
         config.artist_ids,
@@ -171,6 +211,52 @@ def _seed_e2e_state(config_path: Path, database_path: Path, application_root: Pa
         unit_of_work.libraries.save(library)
         unit_of_work.commit()
     return library_root
+
+
+def _write_e2e_sentinel(path: Path) -> None:
+    _ = path.write_bytes(_minimal_flac_bytes())
+    audio = cast("FlacTagWriter", FLAC(path))
+    audio["title"] = E2E_SENTINEL_TITLE
+    audio["artist"] = E2E_SENTINEL_ARTIST
+    audio["albumartist"] = E2E_SENTINEL_ARTIST
+    audio["album"] = E2E_SENTINEL_ALBUM
+    audio["date"] = str(E2E_SENTINEL_YEAR)
+    audio["tracknumber"] = E2E_SENTINEL_TRACK_NUMBER
+    audio["discnumber"] = E2E_SENTINEL_DISC_NUMBER
+    audio.save()
+
+
+def _minimal_flac_bytes() -> bytes:
+    stream_info = E2E_FLAC_STREAMINFO_BLOCK_SIZE_SAMPLES.to_bytes(2, E2E_FLAC_BYTE_ORDER) * 2
+    stream_info += bytes(E2E_FLAC_FRAME_SIZE_FIELDS_BYTES)
+    sample_rate_shift = E2E_FLAC_CHANNEL_COUNT_BITS + E2E_FLAC_SAMPLE_SIZE_FIELD_BITS + E2E_FLAC_TOTAL_SAMPLES_BITS
+    channel_count_shift = E2E_FLAC_SAMPLE_SIZE_FIELD_BITS + E2E_FLAC_TOTAL_SAMPLES_BITS
+    sample_size_shift = E2E_FLAC_TOTAL_SAMPLES_BITS
+    packed_audio_properties = (
+        E2E_FLAC_SAMPLE_RATE_HZ << sample_rate_shift
+        | (E2E_FLAC_CHANNEL_COUNT - E2E_INDEX_DISPLAY_OFFSET) << channel_count_shift
+        | (E2E_FLAC_SAMPLE_SIZE_BITS - E2E_INDEX_DISPLAY_OFFSET) << sample_size_shift
+    )
+    stream_info += packed_audio_properties.to_bytes(
+        (
+            E2E_FLAC_SAMPLE_RATE_BITS
+            + E2E_FLAC_CHANNEL_COUNT_BITS
+            + E2E_FLAC_SAMPLE_SIZE_FIELD_BITS
+            + E2E_FLAC_TOTAL_SAMPLES_BITS
+        )
+        // 8,
+        E2E_FLAC_BYTE_ORDER,
+    )
+    stream_info += bytes(E2E_FLAC_MD5_BYTES)
+    block_header = bytes(
+        (
+            E2E_FLAC_LAST_METADATA_BLOCK_FLAG,
+            0,
+            0,
+            E2E_FLAC_STREAMINFO_LENGTH_BYTES,
+        )
+    )
+    return E2E_FLAC_STREAM_MARKER + block_header + stream_info
 
 
 def _snapshot_file_tree(root: Path) -> dict[str, tuple[str, bytes]]:

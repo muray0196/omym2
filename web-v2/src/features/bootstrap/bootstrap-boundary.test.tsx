@@ -10,6 +10,7 @@ import type { ApiFailureEnvelope } from "../../api/generated";
 import { renderShell } from "../../test/render-shell";
 import {
   degradedBootstrap,
+  normalBootstrap,
   unregisteredBootstrap,
 } from "../../test/fixtures/bootstrap";
 import { server } from "../../test/server";
@@ -20,6 +21,25 @@ describe("BootstrapBoundary", () => {
 
     expect(await screen.findByText("Local service connected")).toBeVisible();
     expect(screen.getByText("/music/library")).toBeVisible();
+  });
+
+  it("links a recovered active Operation into the SPA polling route", async () => {
+    const operationId = "018f0000-0000-7000-8000-000000000020";
+    server.use(
+      http.get("*/api/bootstrap", () =>
+        HttpResponse.json({
+          ...normalBootstrap,
+          data: normalBootstrap.data
+            ? { ...normalBootstrap.data, active_operation_id: operationId }
+            : null,
+        }),
+      ),
+    );
+    renderShell();
+
+    expect(
+      await screen.findByRole("link", { name: "Resume Operation progress" }),
+    ).toHaveAttribute("href", `/operations/${operationId}`);
   });
 
   it("keeps Settings recovery available with degraded data and top-level errors", async () => {

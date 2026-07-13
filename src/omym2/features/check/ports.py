@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from omym2.features.common_ports import (
         BatchFileSnapshotReader,
         Clock,
-        ConfigStore,
+        ConfigReader,
         FileScanner,
         FileSystemPath,
         IdGenerator,
@@ -37,7 +37,7 @@ class CheckLibraryPorts:
     file_scanner: FileScanner
     file_snapshot_reader: BatchFileSnapshotReader
     file_content_hasher: FileContentHasher
-    config_store: ConfigStore
+    config_store: ConfigReader
     path_resolver: PathResolver
     clock: Clock
     id_generator: IdGenerator

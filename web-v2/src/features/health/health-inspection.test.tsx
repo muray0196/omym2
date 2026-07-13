@@ -1,6 +1,6 @@
 /**
- * Summary: Tests persisted Health freshness, group drill-down, and pending review guidance.
- * Why: Ensures GET-only inspection stays URL-addressable and never exposes Run Check.
+ * Summary: Tests persisted Health freshness, group drill-down, and Check availability.
+ * Why: Ensures inspection stays URL-addressable and Check never starts implicitly.
  */
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -15,13 +15,17 @@ import type {
   ApiEnvelopeCheckIssuesData,
 } from "../../api/generated";
 import { createQueryClient } from "../../app/query-client";
+import { BootstrapContext } from "../bootstrap/bootstrap-context";
 import { Component as HealthRoute } from "../../routes/health/route";
+import { normalBootstrap } from "../../test/fixtures/bootstrap";
+import { completedCheckOperation } from "../../test/fixtures/operations";
 import { server } from "../../test/server";
 import { issueTypeLabel } from "./health-catalog";
 
 describe("Health inspection", () => {
-  it("drills into an opaque server group and keeps Check execution unavailable", async () => {
+  it("drills into an opaque server group without starting the available Check control", async () => {
     let drillDownSeen = false;
+    let checkStarts = 0;
     server.use(
       http.get("*/api/check", ({ request }) => {
         const url = new URL(request.url);
@@ -32,6 +36,10 @@ describe("Health inspection", () => {
       }),
       http.get("*/api/check/facets", () => HttpResponse.json(checkFacets)),
       http.get("*/api/check/groups", () => HttpResponse.json(checkGroups)),
+      http.post("*/api/check/run", () => {
+        checkStarts += 1;
+        return HttpResponse.error();
+      }),
     );
     const { router } = renderRoute("/health?group_by=severity");
 
@@ -44,15 +52,45 @@ describe("Health inspection", () => {
 
     await waitFor(() => expect(drillDownSeen).toBe(true));
     expect(router.state.location.search).toContain("group_key=warning");
-    expect(
-      screen.queryByRole("button", { name: /run check/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /run check/i })).toBeEnabled();
+    expect(checkStarts).toBe(0);
   });
 
   it("preserves a raw unknown issue value", () => {
     expect(issueTypeLabel("future_issue")).toBe(
       "Unknown issue type: future_issue",
     );
+  });
+
+  it("runs Check with safe headers and refreshes persisted findings", async () => {
+    let issueReads = 0;
+    let csrfHeader: string | null = null;
+    let idempotencyHeader: string | null = null;
+    server.use(
+      http.get("*/api/check", () => {
+        issueReads += 1;
+        return HttpResponse.json(checkIssues);
+      }),
+      http.get("*/api/check/facets", () => HttpResponse.json(checkFacets)),
+      http.get("*/api/check/groups", () => HttpResponse.json(checkGroups)),
+      http.post("*/api/check/run", ({ request }) => {
+        csrfHeader = request.headers.get("X-OMYM2-CSRF-Token");
+        idempotencyHeader = request.headers.get("Idempotency-Key");
+        return HttpResponse.json(completedCheckOperation);
+      }),
+    );
+    renderRoute("/health");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /^run check$/i }),
+    );
+
+    expect(
+      await screen.findByText(/Saved 2 findings across 1 Check runs/i),
+    ).toBeVisible();
+    await waitFor(() => expect(issueReads).toBeGreaterThan(1));
+    expect(csrfHeader).toBe(normalBootstrap.data.csrf_token);
+    expect(idempotencyHeader).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
 
@@ -65,7 +103,9 @@ function renderRoute(initialEntry: string) {
     router,
     ...render(
       <QueryClientProvider client={createQueryClient()}>
-        <RouterProvider router={router} />
+        <BootstrapContext value={normalBootstrap.data}>
+          <RouterProvider router={router} />
+        </BootstrapContext>
       </QueryClientProvider>,
     ),
   };

@@ -6,11 +6,18 @@ Why: Lets users review incoming imports before any Library file mutation.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from omym2.config import PLAN_ACTION_SORT_ORDER_START, PLAN_ACTION_SORT_ORDER_STEP
+from omym2.config import (
+    OPERATION_RESULT_RETENTION_HOURS,
+    OPERATION_TOMBSTONE_RETENTION_DAYS,
+    PLAN_ACTION_SORT_ORDER_START,
+    PLAN_ACTION_SORT_ORDER_STEP,
+)
 from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.models.operation import Operation, OperationKind, OperationStatus, PlanCreatedResult
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
 from omym2.domain.models.track import TrackStatus
@@ -39,17 +46,20 @@ if TYPE_CHECKING:
     from omym2.features.add.dto import CreateAddPlanRequest
     from omym2.features.add.ports import CreateAddPlanPorts
     from omym2.features.common_ports import UnitOfWork
-    from omym2.shared.ids import PlanId, TrackId
+    from omym2.shared.ids import LibraryId, OperationId, PlanId, TrackId
 
 AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE = (
     "Multiple registered Libraries exist. Library selection is not supported for add yet."
 )
 NO_INCOMING_SOURCE_MESSAGE = "No Incoming path is configured. Use add SOURCE_DIR."
 NO_REGISTERED_LIBRARY_MESSAGE = "No registered Library can be selected. Run organize --library PATH."
+SELECTED_LIBRARY_NOT_FOUND_MESSAGE = "The selected Library was not found."
+SELECTED_LIBRARY_NOT_REGISTERED_MESSAGE = "The selected Library is not registered."
 SUMMARY_ACTION_COUNT_KEY = "action_count"
 SUMMARY_BLOCKED_ACTIONS_KEY = "blocked_actions"
 SUMMARY_MOVE_ACTIONS_KEY = "move_actions"
 SUMMARY_SKIP_ACTIONS_KEY = "skip_actions"
+RUNNING_OPERATION_REQUIRED_MESSAGE = "Add completion requires its corresponding running Operation."
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +82,8 @@ class CreateAddPlanUseCase:
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
-            library = _select_registered_library(uow, path_policy_hash)
+            operation = _running_operation(uow, request.operation_id)
+            library = _select_registered_library(uow, path_policy_hash, request.library_id)
             library_tracks = tuple(uow.tracks.list_by_library(library.library_id))
             active_library_tracks = tuple(track for track in library_tracks if track.status == TrackStatus.ACTIVE)
             duplicate_track_by_hash = _duplicate_track_by_hash(active_library_tracks)
@@ -95,6 +106,16 @@ class CreateAddPlanUseCase:
             uow.plans.save(plan)
             for action in actions:
                 uow.plan_actions.save(action)
+            if operation is not None:
+                completed_at = self.ports.clock.now()
+                uow.operations.save(
+                    replace(operation, library_id=library.library_id).mark_succeeded(
+                        result=PlanCreatedResult(plan.plan_id),
+                        completed_at=completed_at,
+                        result_expires_at=completed_at + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS),
+                        tombstone_expires_at=completed_at + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS),
+                    )
+                )
 
             uow.commit()
             return plan
@@ -310,11 +331,38 @@ def _source_root(request: CreateAddPlanRequest, config: AppConfig) -> str:
     raise AddSourceSelectionError(NO_INCOMING_SOURCE_MESSAGE)
 
 
+def _running_operation(uow: UnitOfWork, operation_id: OperationId | None) -> Operation | None:
+    if operation_id is None:
+        return None
+    retained = uow.operations.lookup(operation_id)
+    if (
+        not isinstance(retained, Operation)
+        or retained.kind is not OperationKind.ADD_PLAN
+        or retained.status is not OperationStatus.RUNNING
+    ):
+        raise RuntimeError(RUNNING_OPERATION_REQUIRED_MESSAGE)
+    return retained
+
+
 def _normalize_external_source_path(raw_path: str) -> str:
     return str(Path(raw_path).expanduser().resolve(strict=False))
 
 
-def _select_registered_library(uow: UnitOfWork, path_policy_hash: str) -> Library:
+def _select_registered_library(
+    uow: UnitOfWork,
+    path_policy_hash: str,
+    library_id: LibraryId | None,
+) -> Library:
+    if library_id is not None:
+        selected_library = uow.libraries.get(library_id)
+        if selected_library is None:
+            raise AddLibrarySelectionError(SELECTED_LIBRARY_NOT_FOUND_MESSAGE)
+        if selected_library.status != LibraryStatus.REGISTERED:
+            raise AddLibrarySelectionError(SELECTED_LIBRARY_NOT_REGISTERED_MESSAGE)
+        if is_path_policy_stale(selected_library.path_policy_hash, path_policy_hash):
+            raise AddLibrarySelectionError(STALE_LIBRARY_MESSAGE)
+        return selected_library
+
     registered_libraries = tuple(
         library for library in uow.libraries.list_all() if library.status == LibraryStatus.REGISTERED
     )

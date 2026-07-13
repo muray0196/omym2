@@ -5,6 +5,8 @@ Why: Starts the SPA with typed recovery, readiness, and polling policy data.
 
 from __future__ import annotations
 
+from uuid import UUID  # noqa: TC003  # Pydantic resolves UUID schema types at runtime.
+
 from omym2.adapters.web.schemas.api_errors import ApiError, ApiModel
 from omym2.adapters.web.schemas.libraries import (
     LibraryResource,  # noqa: TC001  # Pydantic resolves nested schema types at runtime.
@@ -47,4 +49,4 @@ class BootstrapData(ApiModel):
     config_validation: ConfigValidationResource
     runtime_capabilities: RuntimeCapabilities
     operation_polling: OperationPollingPolicy
-    active_operation_id: str | None
+    active_operation_id: UUID | None

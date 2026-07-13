@@ -93,7 +93,8 @@ def test_bootstrap_projects_one_current_library_as_ready(tmp_path: Path) -> None
     config_path = tmp_path / "config.toml"
     database_path = tmp_path / "state.sqlite3"
     config = default_app_config()
-    TomlConfigStore(config_path).save(config)
+    config_store = TomlConfigStore(config_path)
+    _ = config_store.save(config, expected_config_revision=config_store.read_snapshot().config_revision)
     path_policy_hash = calculate_path_policy_fingerprint(
         config.path_policy,
         config.artist_ids,
@@ -126,7 +127,8 @@ def test_bootstrap_refuses_to_guess_between_libraries(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     database_path = tmp_path / "state.sqlite3"
     config = default_app_config()
-    TomlConfigStore(config_path).save(config)
+    config_store = TomlConfigStore(config_path)
+    _ = config_store.save(config, expected_config_revision=config_store.read_snapshot().config_revision)
     _save_libraries(database_path, _library(LIBRARY_ID, "one"), _library(SECOND_LIBRARY_ID, "two"))
 
     data = _object(

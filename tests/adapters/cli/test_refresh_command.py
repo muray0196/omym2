@@ -37,7 +37,6 @@ if TYPE_CHECKING:
 
     from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath
-    from omym2.features.refresh.ports import CreateRefreshPlanPorts
 
 AUDIO_CONTENT = b"fake audio bytes"
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
@@ -93,9 +92,7 @@ SECOND_NEW_METADATA = TrackMetadata(
 )
 
 
-def test_refresh_command_passes_normalized_target_path_and_trust_stat_to_request(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_refresh_command_passes_normalized_target_path_and_trust_stat_to_request() -> None:
     """refresh forwards normalized target and trust-stat values."""
     captured_requests: list[CreateRefreshPlanRequest] = []
 
@@ -111,9 +108,6 @@ def test_refresh_command_passes_normalized_target_path_and_trust_stat_to_request
             captured_requests.append(request)
             return _empty_plan()
 
-    monkeypatch.setattr(
-        "omym2.adapters.cli.commands.refresh.CreateRefreshPlanUseCase", CapturingCreateRefreshPlanUseCase
-    )
     stdout = StringIO()
     stderr = StringIO()
 
@@ -122,7 +116,7 @@ def test_refresh_command_passes_normalized_target_path_and_trust_stat_to_request
         stdout,
         stderr,
         RefreshCommandDependencies(
-            create_refresh_plan_ports_factory=_stub_create_refresh_plan_ports,
+            create_refresh_plan=CapturingCreateRefreshPlanUseCase(object()).execute,
             apply_plan_ports_factory=_stub_apply_plan_ports,
             normalize_target_path=lambda path: f"normalized:{path}",
         ),
@@ -132,7 +126,7 @@ def test_refresh_command_passes_normalized_target_path_and_trust_stat_to_request
         stdout,
         stderr,
         RefreshCommandDependencies(
-            create_refresh_plan_ports_factory=_stub_create_refresh_plan_ports,
+            create_refresh_plan=CapturingCreateRefreshPlanUseCase(object()).execute,
             apply_plan_ports_factory=_stub_apply_plan_ports,
             normalize_target_path=lambda path: f"normalized:{path}",
         ),
@@ -422,10 +416,6 @@ def _empty_plan() -> Plan:
         config_hash=CONFIG_HASH,
         library_root_at_plan=LIBRARY_ROOT,
     )
-
-
-def _stub_create_refresh_plan_ports() -> CreateRefreshPlanPorts:
-    return cast("CreateRefreshPlanPorts", object())
 
 
 def _stub_apply_plan_ports() -> ApplyPlanPorts:

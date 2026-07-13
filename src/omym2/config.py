@@ -15,6 +15,7 @@ CONFIG_FILE_ENCODING: Final = "utf-8"  # TOML config file encoding
 CONFIG_FILE_NAME: Final = "config.toml"  # TOML settings file name
 CURRENT_DIRECTORY_REFERENCE: Final = "."
 DATA_DIRECTORY_NAME: Final = ".data"  # internal data directory under the application root
+EXCLUSIVE_OPERATION_LOCK_FILE_NAME: Final = "exclusive-operation.lock"  # shared cross-process mutation lock file name
 SQLITE_DATABASE_FILE_NAME: Final = "omym2.sqlite3"  # SQLite database file name
 BENCHMARK_DEFAULT_TRACK_COUNT: Final = 100  # default synthetic benchmark size, tracks, >= 1
 BENCHMARK_DEFAULT_FILE_SIZE_BYTES: Final = 1_048_576  # default synthetic file size, bytes, >= 4096
@@ -33,11 +34,23 @@ WEB_ROOT_ROUTE: Final = "/"  # local Web UI root path
 WEB_SETTINGS_ROUTE: Final = "/settings"  # local Web UI settings SPA path
 WEB_API_PREFIX: Final = "/api"  # local Web UI JSON API path prefix
 WEB_API_BOOTSTRAP_ROUTE: Final = "/api/bootstrap"  # renewed Web UI Bootstrap JSON API path
+WEB_API_SETTINGS_ROUTE: Final = "/api/settings"  # Settings edit and atomic save JSON API path
+WEB_API_SETTINGS_VALIDATE_ROUTE: Final = "/api/settings/validate"  # Settings candidate validation JSON API path
+WEB_API_SETTINGS_PREVIEW_ROUTE: Final = "/api/settings/preview"  # draft PathPolicy preview JSON API path
+WEB_API_SETTINGS_ARTIST_IDS_ROUTE: Final = (
+    "/api/settings/artist-ids/generate"  # draft-only artist-ID generation JSON API path
+)
 WEB_API_PLANS_ROUTE: Final = "/api/plans"  # read-only Plan browse JSON API path
 WEB_API_PLAN_DETAIL_ROUTE: Final = "/api/plans/{plan_id}"  # Plan detail JSON API path
 WEB_API_PLAN_ACTIONS_ROUTE: Final = "/api/plans/{plan_id}/actions"  # PlanAction browse JSON API path
 WEB_API_PLAN_FACETS_ROUTE: Final = "/api/plans/{plan_id}/facets"  # PlanAction facet JSON API path
 WEB_API_PLAN_GROUPS_ROUTE: Final = "/api/plans/{plan_id}/groups"  # PlanAction group JSON API path
+WEB_API_ADD_PLAN_ROUTE: Final = "/api/plans/add"  # durable Add Plan operation JSON API path
+WEB_API_ORGANIZE_PLAN_ROUTE: Final = "/api/plans/organize"  # durable Organize Plan operation JSON API path
+WEB_API_REFRESH_PLAN_ROUTE: Final = "/api/plans/refresh"  # durable Refresh Plan operation JSON API path
+WEB_API_CHECK_RUN_ROUTE: Final = "/api/check/run"  # durable persisted Check operation JSON API path
+WEB_API_OPERATION_ROUTE: Final = "/api/operations/{operation_id}"  # durable Operation polling JSON API path
+WEB_IDEMPOTENCY_HEADER_NAME: Final = "Idempotency-Key"  # UUID header required to start durable Operations
 WEB_API_TRACKS_ROUTE: Final = "/api/tracks"  # read-only Track browse JSON API path
 WEB_API_TRACK_DETAIL_ROUTE: Final = "/api/tracks/{track_id}"  # Track detail JSON API path
 WEB_API_TRACK_FACETS_ROUTE: Final = "/api/tracks/facets"  # Track status facet JSON API path
@@ -76,6 +89,10 @@ WEB_REFERRER_POLICY: Final = "no-referrer"  # Web response referrer policy
 WEB_FRAME_OPTIONS: Final = "DENY"  # legacy framing prohibition response value
 WEB_ASSET_HASH_MIN_LENGTH: Final = 8  # minimum Vite content hash length in packaged asset names, characters
 HTTP_BAD_REQUEST_STATUS: Final = 400  # malformed HTTP request status code
+HTTP_ACCEPTED_STATUS: Final = 202  # durable Operation accepted status code
+HTTP_FORBIDDEN_STATUS: Final = 403  # rejected state-changing request authorization status code
+HTTP_CONFLICT_STATUS: Final = 409  # state or idempotency conflict status code
+HTTP_GONE_STATUS: Final = 410  # retained Operation result expired status code
 HTTP_OK_STATUS: Final = 200  # successful HTTP request status code
 HTTP_NOT_FOUND_STATUS: Final = 404  # missing HTTP resource status code
 HTTP_METHOD_NOT_ALLOWED_STATUS: Final = 405  # unsupported HTTP method status code
@@ -94,6 +111,8 @@ OPERATION_POLL_MAX_SECONDS: Final = 5.0  # maximum Operation polling delay, seco
 OPERATION_RECONCILE_INTERVAL_SECONDS: Final = 5.0  # Web reconciliation supervisor interval, seconds, > 0
 OPERATION_RESULT_RETENTION_HOURS: Final = 24  # full terminal Operation retention, hours, >= 1
 OPERATION_TOMBSTONE_RETENTION_DAYS: Final = 30  # Operation idempotency tombstone retention, days, >= 1
+OPERATION_REQUEST_FINGERPRINT_ALGORITHM: Final = "sha256"  # canonical Operation request digest algorithm
+OPERATION_WORKER_COUNT: Final = 1  # exclusive background Operation worker slots, exactly 1
 LOGICAL_PATH_SEPARATOR: Final = "/"
 PARENT_DIRECTORY_REFERENCE: Final = ".."
 UUID_VERSION: Final = 7

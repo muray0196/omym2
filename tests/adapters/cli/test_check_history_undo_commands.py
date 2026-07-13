@@ -8,10 +8,10 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 from uuid import UUID
 
-from omym2.adapters.cli.commands.check import run_check_command
+from omym2.adapters.cli.commands.check import CheckCommandDependencies, run_check_command
 from omym2.adapters.config.application_paths import ApplicationPaths, default_application_paths
 from omym2.adapters.config.default_config import default_app_config
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
@@ -36,7 +36,6 @@ if TYPE_CHECKING:
 
     import pytest
 
-    from omym2.features.check.ports import CheckLibraryPorts
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
@@ -57,7 +56,7 @@ CONTENT_HASH = calculate_content_fingerprint(AUDIO_CONTENT)
 METADATA_HASH = calculate_metadata_fingerprint(METADATA)
 
 
-def test_check_command_passes_trust_stat_to_request(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_command_passes_trust_stat_to_request() -> None:
     """check forwards the explicit trust-stat opt-in to its usecase request."""
     captured_requests: list[CheckLibraryRequest] = []
 
@@ -73,10 +72,7 @@ def test_check_command_passes_trust_stat_to_request(monkeypatch: pytest.MonkeyPa
             captured_requests.append(request)
             return CheckLibraryResult(issues=(), checked_at=BASE_TIME)
 
-    monkeypatch.setattr(
-        "omym2.adapters.cli.commands.check.CheckLibraryUseCase",
-        CapturingCheckLibraryUseCase,
-    )
+    dependencies = CheckCommandDependencies(check_library=CapturingCheckLibraryUseCase(object()).execute)
     stdout = StringIO()
     stderr = StringIO()
 
@@ -84,13 +80,13 @@ def test_check_command_passes_trust_stat_to_request(monkeypatch: pytest.MonkeyPa
         [],
         stdout,
         stderr,
-        cast("CheckLibraryPorts", object()),
+        dependencies,
     )
     trusted_exit_code = run_check_command(
         ["--trust-stat"],
         stdout,
         stderr,
-        cast("CheckLibraryPorts", object()),
+        dependencies,
     )
 
     assert default_exit_code == SUCCESS_EXIT_CODE

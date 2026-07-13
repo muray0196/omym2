@@ -8,8 +8,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from omym2.features.settings.dto import LoadSettingsResult
+
 if TYPE_CHECKING:
-    from omym2.domain.models.app_config import AppConfig
     from omym2.features.settings.ports import SettingsPorts
 
 
@@ -19,6 +20,12 @@ class LoadSettingsUseCase:
 
     ports: SettingsPorts
 
-    def execute(self) -> AppConfig:
-        """Return the current application settings."""
-        return self.ports.config_store.load()
+    def execute(self) -> LoadSettingsResult:
+        """Return the current settings recovery draft and raw-storage revision."""
+        snapshot = self.ports.config_store.read_snapshot()
+        return LoadSettingsResult(
+            state=snapshot.state,
+            config=snapshot.config,
+            config_revision=snapshot.config_revision,
+            errors=snapshot.errors,
+        )

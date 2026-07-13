@@ -12,6 +12,7 @@ from omym2.config import (
     CONFIG_DIRECTORY_NAME,
     CONFIG_FILE_NAME,
     DATA_DIRECTORY_NAME,
+    EXCLUSIVE_OPERATION_LOCK_FILE_NAME,
     SQLITE_DATABASE_FILE_NAME,
 )
 
@@ -34,3 +35,10 @@ def test_db_path_is_under_app_root_data(tmp_path: Path) -> None:
 
     assert paths.data_dir == tmp_path / DATA_DIRECTORY_NAME
     assert paths.database_file == tmp_path / DATA_DIRECTORY_NAME / SQLITE_DATABASE_FILE_NAME
+
+
+def test_exclusive_operation_lock_path_is_under_app_root_data(tmp_path: Path) -> None:
+    """The cross-process mutation lock shares the application data directory."""
+    paths = default_application_paths(tmp_path)
+
+    assert paths.exclusive_operation_lock_file == (tmp_path / DATA_DIRECTORY_NAME / EXCLUSIVE_OPERATION_LOCK_FILE_NAME)

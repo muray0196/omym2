@@ -12,10 +12,9 @@ from omym2.adapters.cli.commands.apply_execution import confirm_and_apply_plan
 from omym2.adapters.cli.commands.confirmation import ConfirmationOptions
 from omym2.adapters.cli.commands.output import write_line, write_usage, write_validation_errors
 from omym2.domain.models.plan_action import ActionStatus, ActionType
-from omym2.features.common_ports import ConfigStoreValidationError, MetadataReadError
+from omym2.features.common_ports import ConfigStoreValidationError, ExclusiveOperationBusyError, MetadataReadError
 from omym2.features.refresh.dto import CreateRefreshPlanRequest
 from omym2.features.refresh.usecases.create_refresh_plan import (
-    CreateRefreshPlanUseCase,
     RefreshLibrarySelectionError,
     RefreshTargetSelectionError,
 )
@@ -27,7 +26,6 @@ if TYPE_CHECKING:
     from omym2.domain.models.plan import Plan
     from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath
-    from omym2.features.refresh.ports import CreateRefreshPlanPorts
 
 ALL_FLAG = "--all"
 APPLY_FLAG = "--apply"
@@ -42,7 +40,7 @@ USAGE_EXIT_CODE = 2
 class RefreshCommandDependencies:
     """Factories for the ports needed by refresh plan creation and optional apply."""
 
-    create_refresh_plan_ports_factory: Callable[[], CreateRefreshPlanPorts]
+    create_refresh_plan: Callable[[CreateRefreshPlanRequest], Plan]
     apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
     normalize_target_path: Callable[[FileSystemPath], str]
 
@@ -70,10 +68,8 @@ def _run_refresh(
     dependencies: RefreshCommandDependencies,
 ) -> int:
     target_path = dependencies.normalize_target_path(options.target_path) if options.target_path is not None else None
-    ports = dependencies.create_refresh_plan_ports_factory()
-
     try:
-        plan = CreateRefreshPlanUseCase(ports).execute(
+        plan = dependencies.create_refresh_plan(
             CreateRefreshPlanRequest(
                 trust_stat=options.trust_stat,
                 target_path=target_path,
@@ -89,8 +85,9 @@ def _run_refresh(
     except MetadataReadError as exc:
         write_line(stderr, f"Metadata read error: {exc}")
         return ERROR_EXIT_CODE
-    except OSError as exc:
-        write_line(stderr, f"Refresh I/O error: {exc}")
+    except (ExclusiveOperationBusyError, OSError) as exc:
+        message = str(exc) if isinstance(exc, ExclusiveOperationBusyError) else f"Refresh I/O error: {exc}"
+        write_line(stderr, message)
         return ERROR_EXIT_CODE
 
     _write_result(stdout, plan)

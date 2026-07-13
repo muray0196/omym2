@@ -12,18 +12,23 @@ from fastapi import Depends, Request
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from uuid import UUID
 
     from fastapi import FastAPI
 
     from omym2.domain.models.file_event import FileEvent
+    from omym2.domain.models.operation import Operation
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
     from omym2.domain.models.run import Run
     from omym2.domain.models.track import Track
+    from omym2.features.add.dto import CreateAddPlanRequest
+    from omym2.features.artist_ids.dto import GenerateArtistIdDraftRequest, GenerateArtistIdDraftResult
     from omym2.features.bootstrap.dto import BootstrapResult
     from omym2.features.check.dto import (
         CheckIssueFacetsRequest,
         CheckIssueFacetsResult,
+        CheckLibraryRequest,
         GroupCheckIssuesRequest,
         ListCheckIssuesRequest,
         ListCheckIssuesResult,
@@ -41,6 +46,8 @@ if TYPE_CHECKING:
         RunStatusFacetsResult,
     )
     from omym2.features.libraries.dto import InspectLibrariesRequest, LibraryInspection
+    from omym2.features.operations.dto import ReserveOperationResult
+    from omym2.features.organize.dto import CreateOrganizePlanRequest
     from omym2.features.plans.dto import (
         GetPlanActionSummariesRequest,
         GetPlanHeaderRequest,
@@ -56,6 +63,15 @@ if TYPE_CHECKING:
         GetPlanCapabilitiesRequest,
         PlanCapabilitiesResult,
     )
+    from omym2.features.refresh.dto import CreateRefreshPlanRequest
+    from omym2.features.settings.dto import (
+        PathPolicyPreviewRequest,
+        PathPolicyPreviewResult,
+        SaveSettingsRequest,
+        SettingsCandidateResult,
+        SettingsEditResult,
+        ValidateSettingsRequest,
+    )
     from omym2.features.tracks.dto import (
         GetTrackRequest,
         GroupTracksRequest,
@@ -63,7 +79,7 @@ if TYPE_CHECKING:
         TrackStatusFacetsRequest,
         TrackStatusFacetsResult,
     )
-    from omym2.shared.ids import PlanId
+    from omym2.shared.ids import OperationId, PlanId
     from omym2.shared.pagination import GroupCount, Page
 
 
@@ -119,6 +135,29 @@ class CheckRouteContext:
 
 
 @dataclass(frozen=True, slots=True)
+class SettingsRouteContext:
+    """Settings edit and draft handlers resolved by the platform composition root."""
+
+    get_settings: Callable[[], SettingsEditResult]
+    validate_settings: Callable[[ValidateSettingsRequest], SettingsCandidateResult]
+    preview_path_policy: Callable[[PathPolicyPreviewRequest], PathPolicyPreviewResult]
+    save_settings: Callable[[SaveSettingsRequest], SettingsCandidateResult]
+    generate_artist_id_draft: Callable[[GenerateArtistIdDraftRequest], GenerateArtistIdDraftResult]
+
+
+@dataclass(frozen=True, slots=True)
+class OperationsRouteContext:
+    """Durable M3 planning and Check handlers resolved by platform orchestration."""
+
+    get_operation: Callable[[OperationId], Operation]
+    active_operation_id: Callable[[], OperationId | None]
+    start_add_plan: Callable[[CreateAddPlanRequest, UUID], ReserveOperationResult]
+    start_organize_plan: Callable[[CreateOrganizePlanRequest, UUID], ReserveOperationResult]
+    start_refresh_plan: Callable[[CreateRefreshPlanRequest, UUID], ReserveOperationResult]
+    start_check: Callable[[CheckLibraryRequest, UUID], ReserveOperationResult]
+
+
+@dataclass(frozen=True, slots=True)
 class ApiRouteContext:
     """Concrete collaborators used by the renewed read-only API routes."""
 
@@ -129,6 +168,10 @@ class ApiRouteContext:
     libraries: LibrariesRouteContext | None = None
     history: HistoryRouteContext | None = None
     check: CheckRouteContext | None = None
+    settings: SettingsRouteContext | None = None
+    operations: OperationsRouteContext | None = None
+    start_runtime: Callable[[], None] | None = None
+    close_runtime: Callable[[], None] | None = None
 
 
 def get_api_route_context(request: Request) -> ApiRouteContext:

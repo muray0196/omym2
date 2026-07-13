@@ -17,7 +17,7 @@ from omym2.features.bootstrap.dto import BootstrapReason
 from omym2.features.bootstrap.ports import BootstrapPorts, LibrarySnapshotUnavailableError
 from omym2.features.bootstrap.usecases.get_bootstrap import GetBootstrapUseCase
 from omym2.features.common_ports import ConfigSnapshot, ConfigSnapshotState
-from omym2.shared.ids import LibraryId
+from omym2.shared.ids import LibraryId, OperationId
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -45,11 +45,17 @@ class StaticLibrarySnapshotReader:
 
     libraries: Sequence[Library] = ()
     unavailable: bool = False
+    operation_id: OperationId | None = None
 
     def list_libraries(self) -> Sequence[Library]:
         if self.unavailable:
             raise LibrarySnapshotUnavailableError
         return self.libraries
+
+    def active_operation_id(self) -> OperationId | None:
+        if self.unavailable:
+            raise LibrarySnapshotUnavailableError
+        return self.operation_id
 
 
 def test_bootstrap_selects_one_current_registered_library() -> None:
@@ -121,7 +127,9 @@ def test_bootstrap_preserves_config_recovery_when_state_storage_is_unavailable()
     """SQLite failure does not discard the independently read Config snapshot."""
     snapshot = _snapshot(default_app_config())
     ports = BootstrapPorts(
-        snapshot_reader := StaticConfigSnapshotReader(snapshot), StaticLibrarySnapshotReader(unavailable=True)
+        snapshot_reader := StaticConfigSnapshotReader(snapshot),
+        state_reader := StaticLibrarySnapshotReader(unavailable=True),
+        state_reader,
     )
 
     result = GetBootstrapUseCase(ports).execute()
@@ -135,8 +143,9 @@ def test_bootstrap_preserves_config_recovery_when_state_storage_is_unavailable()
 
 
 def _execute(snapshot: ConfigSnapshot, libraries: Sequence[Library]):
+    state_reader = StaticLibrarySnapshotReader(libraries)
     return GetBootstrapUseCase(
-        BootstrapPorts(StaticConfigSnapshotReader(snapshot), StaticLibrarySnapshotReader(libraries))
+        BootstrapPorts(StaticConfigSnapshotReader(snapshot), state_reader, state_reader)
     ).execute()
 
 

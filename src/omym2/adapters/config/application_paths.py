@@ -12,6 +12,7 @@ from omym2.config import (
     CONFIG_DIRECTORY_NAME,
     CONFIG_FILE_NAME,
     DATA_DIRECTORY_NAME,
+    EXCLUSIVE_OPERATION_LOCK_FILE_NAME,
     SQLITE_DATABASE_FILE_NAME,
 )
 
@@ -41,6 +42,11 @@ class ApplicationPaths:
     def database_file(self) -> Path:
         """Return the expected SQLite database file path."""
         return self.data_dir / SQLITE_DATABASE_FILE_NAME
+
+    @property
+    def exclusive_operation_lock_file(self) -> Path:
+        """Return the shared cross-process mutation lock file path."""
+        return self.data_dir / EXCLUSIVE_OPERATION_LOCK_FILE_NAME
 
 
 def default_application_paths(app_root: Path | None = None) -> ApplicationPaths:
