@@ -162,7 +162,7 @@ def create_operations_router() -> APIRouter:  # noqa: C901  # One factory keeps 
         request: AddPlanRequest,
         context: ApiContext,
         idempotency_key: Annotated[UUID, Header(alias=WEB_IDEMPOTENCY_HEADER_NAME)],
-        csrf_token: Annotated[str | None, Header(alias=WEB_CSRF_HEADER_NAME)] = None,
+        csrf_token: RequiredCsrfToken,
     ) -> JSONResponse:
         csrf_failure = _csrf_failure(context, csrf_token)
         if csrf_failure is not None:
@@ -188,7 +188,7 @@ def create_operations_router() -> APIRouter:  # noqa: C901  # One factory keeps 
         request: OrganizePlanRequest,
         context: ApiContext,
         idempotency_key: Annotated[UUID, Header(alias=WEB_IDEMPOTENCY_HEADER_NAME)],
-        csrf_token: Annotated[str | None, Header(alias=WEB_CSRF_HEADER_NAME)] = None,
+        csrf_token: RequiredCsrfToken,
     ) -> JSONResponse:
         csrf_failure = _csrf_failure(context, csrf_token)
         if csrf_failure is not None:
@@ -211,7 +211,7 @@ def create_operations_router() -> APIRouter:  # noqa: C901  # One factory keeps 
         request: RefreshPlanRequest,
         context: ApiContext,
         idempotency_key: Annotated[UUID, Header(alias=WEB_IDEMPOTENCY_HEADER_NAME)],
-        csrf_token: Annotated[str | None, Header(alias=WEB_CSRF_HEADER_NAME)] = None,
+        csrf_token: RequiredCsrfToken,
     ) -> JSONResponse:
         csrf_failure = _csrf_failure(context, csrf_token)
         if csrf_failure is not None:
@@ -240,7 +240,7 @@ def create_operations_router() -> APIRouter:  # noqa: C901  # One factory keeps 
         request: CheckRunRequest,
         context: ApiContext,
         idempotency_key: Annotated[UUID, Header(alias=WEB_IDEMPOTENCY_HEADER_NAME)],
-        csrf_token: Annotated[str | None, Header(alias=WEB_CSRF_HEADER_NAME)] = None,
+        csrf_token: RequiredCsrfToken,
     ) -> JSONResponse:
         csrf_failure = _csrf_failure(context, csrf_token)
         if csrf_failure is not None:

@@ -700,7 +700,7 @@ class MetadataReader(Protocol):
 class FileMover(Protocol):
     """Filesystem mutation contract used only by apply-like usecases."""
 
-    def move(
+    def move(  # noqa: PLR0913  # Source identity and content hash are separate mutation preconditions.
         self,
         source: FileSystemPath,
         target: FileSystemPath,
@@ -708,6 +708,7 @@ class FileMover(Protocol):
         source_root: FileSystemPath | None = None,
         target_root: FileSystemPath | None = None,
         expected_source_identity: FilesystemIdentity | None = None,
+        expected_source_content_hash: str | None = None,
     ) -> None:
         """Move one file without deciding PlanAction policy."""
         ...

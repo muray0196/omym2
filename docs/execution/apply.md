@@ -3,7 +3,7 @@ type: Execution Spec
 title: Apply Execution
 description: Defines atomic Apply acceptance, descriptor-anchored source and target verification, state transitions, Track baseline writes, FileEvent ordering, interruption, and Library-root preconditions.
 tags: [apply, atomic-claim, plan-state, run, operation, file-event]
-timestamp: 2026-07-13T17:24:07+09:00
+timestamp: 2026-07-13T22:03:37+09:00
 ---
 
 # Apply Execution
@@ -204,5 +204,11 @@ and metadata hashes with the recorded PlanAction. Both
 eligible action type; a missing or mismatched value fails the action as
 `source_changed` before any FileEvent, file mutation, or Track update. A
 matching persisted Track size and modification time never bypasses this gate.
+
+Apply passes the live snapshot's filesystem identity and content hash to the
+FileMover after the pending FileEvent commit. The mover verifies the retained
+source bytes and, for copy fallback, the exclusively claimed target bytes
+against that hash before unlinking the source. A mismatch fails the move and
+removes the claimed target.
 
 After a successful move or `refresh_metadata` action, the Track update persists the complete snapshot's `size` and `mtime` together with its hashes and metadata. A successful move uses the pre-mutation source snapshot because the confirmed move preserves that file state at the recorded target. Failed preconditions and failed mutations do not update the Track baseline.

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from omym2.adapters.fs.hash_calculator import FileContentHasher
 from omym2.config import PARENT_DIRECTORY_REFERENCE
 
 if TYPE_CHECKING:
@@ -60,9 +61,10 @@ class _ClaimedTarget:
 class FilesystemFileMover:
     """Move one filesystem file without applying business policy."""
 
+    content_hasher: FileContentHasher = field(default_factory=FileContentHasher)
     _ensured_parent_directories: set[Path] = field(default_factory=set, init=False, repr=False, compare=False)
 
-    def move(
+    def move(  # noqa: PLR0913  # Source identity and content hash are separate mutation preconditions.
         self,
         source: FileSystemPath,
         target: FileSystemPath,
@@ -70,6 +72,7 @@ class FilesystemFileMover:
         source_root: FileSystemPath | None = None,
         target_root: FileSystemPath | None = None,
         expected_source_identity: FilesystemIdentity | None = None,
+        expected_source_content_hash: str | None = None,
     ) -> None:
         """Move source to target while atomically refusing to overwrite an existing path.
 
@@ -92,7 +95,13 @@ class FilesystemFileMover:
         )
         try:
             if target_root is not None:
-                _move_inside_root(opened_source, target_path, Path(target_root))
+                _move_inside_root(
+                    opened_source,
+                    target_path,
+                    Path(target_root),
+                    expected_source_content_hash=expected_source_content_hash,
+                    content_hasher=self.content_hasher,
+                )
                 return
 
             target_parent = target_path.parent
@@ -101,14 +110,24 @@ class FilesystemFileMover:
                 target_parent.mkdir(parents=True, exist_ok=True)
                 self._ensured_parent_directories.add(target_parent)
 
-            claimed_target = _claim_target(opened_source, target_path)
+            claimed_target = _claim_target(
+                opened_source,
+                target_path,
+                expected_source_content_hash=expected_source_content_hash,
+                content_hasher=self.content_hasher,
+            )
 
             try:
                 _require_path_match(
                     condition=_path_matches_source(target_path, claimed_target.stat_result),
                     message=TARGET_REPLACED_MESSAGE,
                 )
-                _unlink_verified_source(opened_source, claimed_target.source_stat_after_claim)
+                _unlink_verified_source(
+                    opened_source,
+                    claimed_target.source_stat_after_claim,
+                    expected_source_content_hash=expected_source_content_hash,
+                    content_hasher=self.content_hasher,
+                )
             except BaseException:
                 _unlink_if_matches(target_path, claimed_target.stat_result)
                 raise
@@ -254,10 +273,21 @@ def _close_source(opened_source: _OpenedSource) -> None:
         os.close(opened_source.root_descriptor)
 
 
-def _claim_target(opened_source: _OpenedSource, target_path: Path) -> _ClaimedTarget:
+def _claim_target(
+    opened_source: _OpenedSource,
+    target_path: Path,
+    *,
+    expected_source_content_hash: str | None,
+    content_hasher: FileContentHasher,
+) -> _ClaimedTarget:
     _verify_opened_source(opened_source)
     if opened_source.root_descriptor is None:
-        return _claim_and_copy(opened_source, target_path)
+        return _claim_and_copy(
+            opened_source,
+            target_path,
+            expected_source_content_hash=expected_source_content_hash,
+            content_hasher=content_hasher,
+        )
     try:
         _link_source(opened_source, target_path)
     except FileExistsError:
@@ -268,7 +298,12 @@ def _claim_target(opened_source: _OpenedSource, target_path: Path) -> _ClaimedTa
         # target: cross-device moves (EXDEV) and filesystems that refuse
         # hardlinks (EPERM, ENOTSUP, ...). Claiming the target exclusively
         # before copying content stays overwrite-safe in all of them.
-        return _claim_and_copy(opened_source, target_path)
+        return _claim_and_copy(
+            opened_source,
+            target_path,
+            expected_source_content_hash=expected_source_content_hash,
+            content_hasher=content_hasher,
+        )
 
     source_stat_after_claim = os.fstat(opened_source.file_descriptor)
     try:
@@ -281,6 +316,15 @@ def _claim_target(opened_source: _OpenedSource, target_path: Path) -> _ClaimedTa
     ):
         _unlink_if_matches(target_path, opened_source.stat_result)
         raise ValueError(SOURCE_REPLACED_MESSAGE)
+    try:
+        _verify_expected_content_hash(
+            opened_source.file_descriptor,
+            expected_source_content_hash,
+            content_hasher,
+        )
+    except BaseException:
+        _unlink_if_matches(target_path, opened_source.stat_result)
+        raise
     return _ClaimedTarget(opened_source.stat_result, source_stat_after_claim)
 
 
@@ -299,9 +343,15 @@ def _link_source(
     )
 
 
-def _claim_and_copy(opened_source: _OpenedSource, target_path: Path) -> _ClaimedTarget:
+def _claim_and_copy(
+    opened_source: _OpenedSource,
+    target_path: Path,
+    *,
+    expected_source_content_hash: str | None,
+    content_hasher: FileContentHasher,
+) -> _ClaimedTarget:
     try:
-        target_fd = os.open(target_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        target_fd = os.open(target_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
     except FileNotFoundError as exc:
         raise ValueError(TARGET_REPLACED_MESSAGE) from exc
     try:
@@ -309,6 +359,8 @@ def _claim_and_copy(opened_source: _OpenedSource, target_path: Path) -> _Claimed
             opened_source.file_descriptor,
             opened_source.stat_result,
             target_fd,
+            expected_source_content_hash=expected_source_content_hash,
+            content_hasher=content_hasher,
         )
         claimed_target_stat = os.fstat(target_fd)
     except BaseException:
@@ -326,6 +378,9 @@ def _move_inside_root(
     opened_source: _OpenedSource,
     target_path: Path,
     target_root: Path,
+    *,
+    expected_source_content_hash: str | None,
+    content_hasher: FileContentHasher,
 ) -> None:
     try:
         relative_target = target_path.relative_to(target_root)
@@ -356,7 +411,13 @@ def _move_inside_root(
                 directory_fd = next_directory_fd
 
             target_name = target_parts[-1]
-            claimed_target = _claim_target_at(opened_source, target_name, directory_fd)
+            claimed_target = _claim_target_at(
+                opened_source,
+                target_name,
+                directory_fd,
+                expected_source_content_hash=expected_source_content_hash,
+                content_hasher=content_hasher,
+            )
             try:
                 _verify_claimed_target_below_root(
                     target_parts,
@@ -369,7 +430,12 @@ def _move_inside_root(
                 _unlink_if_matches(target_name, claimed_target.stat_result, dir_fd=directory_fd)
                 raise
             try:
-                _unlink_verified_source(opened_source, claimed_target.source_stat_after_claim)
+                _unlink_verified_source(
+                    opened_source,
+                    claimed_target.source_stat_after_claim,
+                    expected_source_content_hash=expected_source_content_hash,
+                    content_hasher=content_hasher,
+                )
             except BaseException:
                 _unlink_if_matches(target_name, claimed_target.stat_result, dir_fd=directory_fd)
                 raise
@@ -423,16 +489,31 @@ def _claim_target_at(
     opened_source: _OpenedSource,
     target_name: str,
     target_directory_fd: int,
+    *,
+    expected_source_content_hash: str | None,
+    content_hasher: FileContentHasher,
 ) -> _ClaimedTarget:
     _verify_opened_source(opened_source)
     if opened_source.root_descriptor is None:
-        return _claim_and_copy_at(opened_source, target_name, target_directory_fd)
+        return _claim_and_copy_at(
+            opened_source,
+            target_name,
+            target_directory_fd,
+            expected_source_content_hash=expected_source_content_hash,
+            content_hasher=content_hasher,
+        )
     try:
         _link_source(opened_source, target_name, target_directory_fd=target_directory_fd)
     except FileExistsError:
         raise
     except OSError, NotImplementedError:
-        return _claim_and_copy_at(opened_source, target_name, target_directory_fd)
+        return _claim_and_copy_at(
+            opened_source,
+            target_name,
+            target_directory_fd,
+            expected_source_content_hash=expected_source_content_hash,
+            content_hasher=content_hasher,
+        )
 
     source_stat_after_claim = os.fstat(opened_source.file_descriptor)
     try:
@@ -445,6 +526,15 @@ def _claim_target_at(
     ):
         _unlink_if_matches(target_name, opened_source.stat_result, dir_fd=target_directory_fd)
         raise ValueError(SOURCE_REPLACED_MESSAGE)
+    try:
+        _verify_expected_content_hash(
+            opened_source.file_descriptor,
+            expected_source_content_hash,
+            content_hasher,
+        )
+    except BaseException:
+        _unlink_if_matches(target_name, opened_source.stat_result, dir_fd=target_directory_fd)
+        raise
     return _ClaimedTarget(opened_source.stat_result, source_stat_after_claim)
 
 
@@ -452,11 +542,14 @@ def _claim_and_copy_at(
     opened_source: _OpenedSource,
     target_name: str,
     target_directory_fd: int,
+    *,
+    expected_source_content_hash: str | None,
+    content_hasher: FileContentHasher,
 ) -> _ClaimedTarget:
     try:
         target_fd = os.open(
             target_name,
-            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            os.O_CREAT | os.O_EXCL | os.O_RDWR,
             dir_fd=target_directory_fd,
         )
     except FileNotFoundError as exc:
@@ -466,6 +559,8 @@ def _claim_and_copy_at(
             opened_source.file_descriptor,
             opened_source.stat_result,
             target_fd,
+            expected_source_content_hash=expected_source_content_hash,
+            content_hasher=content_hasher,
         )
         claimed_target_stat = os.fstat(target_fd)
     except BaseException:
@@ -483,6 +578,9 @@ def _copy_open_source(
     source_fd: int,
     source_stat: os.stat_result,
     target_fd: int,
+    *,
+    expected_source_content_hash: str | None,
+    content_hasher: FileContentHasher,
 ) -> os.stat_result:
     if not _file_states_match(os.fstat(source_fd), source_stat):
         raise ValueError(SOURCE_REPLACED_MESSAGE)
@@ -500,6 +598,8 @@ def _copy_open_source(
         raise ValueError(SOURCE_REPLACED_MESSAGE)
     os.fchmod(target_fd, stat.S_IMODE(source_stat.st_mode))
     os.utime(target_fd, ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns))
+    _verify_expected_content_hash(target_fd, expected_source_content_hash, content_hasher)
+    _verify_expected_content_hash(source_fd, expected_source_content_hash, content_hasher)
     source_stat_after_copy = os.fstat(source_fd)
     if not _file_states_match(source_stat_after_copy, source_stat):
         raise ValueError(SOURCE_REPLACED_MESSAGE)
@@ -580,8 +680,19 @@ def _opened_source_state_is_unchanged(
     return _file_states_match(os.fstat(opened_source.file_descriptor), expected_source_stat)
 
 
-def _unlink_verified_source(opened_source: _OpenedSource, expected_source_stat: os.stat_result) -> None:
+def _unlink_verified_source(
+    opened_source: _OpenedSource,
+    expected_source_stat: os.stat_result,
+    *,
+    expected_source_content_hash: str | None,
+    content_hasher: FileContentHasher,
+) -> None:
     _verify_opened_source(opened_source, expected_source_stat)
+    _verify_expected_content_hash(
+        opened_source.file_descriptor,
+        expected_source_content_hash,
+        content_hasher,
+    )
     if opened_source.parent_descriptor is not None and opened_source.name is not None:
         if not _path_matches_source(
             opened_source.name,
@@ -595,6 +706,19 @@ def _unlink_verified_source(opened_source: _OpenedSource, expected_source_stat: 
     if not _path_matches_source(opened_source.path, expected_source_stat):
         raise ValueError(SOURCE_REPLACED_MESSAGE)
     opened_source.path.unlink()
+
+
+def _verify_expected_content_hash(
+    file_descriptor: int,
+    expected_content_hash: str | None,
+    content_hasher: FileContentHasher,
+) -> None:
+    """Reject a claimed file whose bytes differ from the apply-time snapshot."""
+    if (
+        expected_content_hash is not None
+        and content_hasher.calculate_descriptor(file_descriptor) != expected_content_hash
+    ):
+        raise ValueError(SOURCE_REPLACED_MESSAGE)
 
 
 def _unlink_if_matches(

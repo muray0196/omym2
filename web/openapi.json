@@ -4487,17 +4487,11 @@
           {
             "in": "header",
             "name": "X-OMYM2-CSRF-Token",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Omym2-Csrf-Token"
+              "minLength": 1,
+              "title": "X-Omym2-Csrf-Token",
+              "type": "string"
             }
           }
         ],
@@ -5843,17 +5837,11 @@
           {
             "in": "header",
             "name": "X-OMYM2-CSRF-Token",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Omym2-Csrf-Token"
+              "minLength": 1,
+              "title": "X-Omym2-Csrf-Token",
+              "type": "string"
             }
           }
         ],
@@ -6051,17 +6039,11 @@
           {
             "in": "header",
             "name": "X-OMYM2-CSRF-Token",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Omym2-Csrf-Token"
+              "minLength": 1,
+              "title": "X-Omym2-Csrf-Token",
+              "type": "string"
             }
           }
         ],
@@ -6259,17 +6241,11 @@
           {
             "in": "header",
             "name": "X-OMYM2-CSRF-Token",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Omym2-Csrf-Token"
+              "minLength": 1,
+              "title": "X-Omym2-Csrf-Token",
+              "type": "string"
             }
           }
         ],

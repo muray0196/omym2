@@ -355,7 +355,7 @@ class LosingPlanRepository(InMemoryPlanRepository):
 class UnusedFileMover:
     """FileMover fake that rejects accidental mutation during claim tests."""
 
-    def move(
+    def move(  # noqa: PLR0913  # Fake mirrors the stable FileMover safety port.
         self,
         source: FileSystemPath,
         target: FileSystemPath,
@@ -363,9 +363,10 @@ class UnusedFileMover:
         source_root: FileSystemPath | None = None,
         target_root: FileSystemPath | None = None,
         expected_source_identity: FilesystemIdentity | None = None,
+        expected_source_content_hash: str | None = None,
     ) -> None:
         """Fail because claim acceptance must not reach a filesystem mutation."""
-        del source, target, source_root, target_root, expected_source_identity
+        del source, target, source_root, target_root, expected_source_identity, expected_source_content_hash
         raise AssertionError
 
 

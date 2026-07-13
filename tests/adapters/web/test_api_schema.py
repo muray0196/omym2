@@ -177,7 +177,14 @@ def test_m4_execution_operations_have_stable_ids_and_typed_errors() -> None:
         responses = _mapping(_mapping(_mapping(paths, path), "post"), "responses")
         assert {"200", "403", "409", "422", "500"} <= set(responses)
         assert _response_schema(responses, "422") == {"$ref": "#/components/schemas/ApiFailureEnvelope"}
-    for path in (WEB_API_APPLY_PLAN_ROUTE, WEB_API_UNDO_PLAN_ROUTE):
+    for path in (
+        WEB_API_ADD_PLAN_ROUTE,
+        WEB_API_ORGANIZE_PLAN_ROUTE,
+        WEB_API_REFRESH_PLAN_ROUTE,
+        WEB_API_CHECK_RUN_ROUTE,
+        WEB_API_APPLY_PLAN_ROUTE,
+        WEB_API_UNDO_PLAN_ROUTE,
+    ):
         operation = _mapping(_mapping(paths, path), "post")
         csrf_parameter = _header_parameter(operation, WEB_CSRF_HEADER_NAME)
         assert csrf_parameter["required"] is True

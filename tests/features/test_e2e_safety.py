@@ -464,7 +464,7 @@ class AssertingFileMover:
     database_file: Path
     delegate: FileMover = field(default_factory=FilesystemFileMover)
 
-    def move(
+    def move(  # noqa: PLR0913  # Wrapper mirrors the stable FileMover safety port.
         self,
         source: FileSystemPath,
         target: FileSystemPath,
@@ -472,6 +472,7 @@ class AssertingFileMover:
         source_root: FileSystemPath | None = None,
         target_root: FileSystemPath | None = None,
         expected_source_identity: FilesystemIdentity | None = None,
+        expected_source_content_hash: str | None = None,
     ) -> None:
         """Assert pending FileEvent state exists before the filesystem mutation."""
         with SQLiteUnitOfWork(self.database_file) as uow:
@@ -491,6 +492,7 @@ class AssertingFileMover:
             source_root=source_root,
             target_root=target_root,
             expected_source_identity=expected_source_identity,
+            expected_source_content_hash=expected_source_content_hash,
         )
 
 
@@ -501,7 +503,7 @@ class ReplaceSourceBeforeMoveFileMover:
     delegate: FileMover = field(default_factory=FilesystemFileMover)
     expected_mtime_ns: int | None = field(default=None, init=False)
 
-    def move(
+    def move(  # noqa: PLR0913  # Wrapper mirrors the stable FileMover safety port.
         self,
         source: FileSystemPath,
         target: FileSystemPath,
@@ -509,6 +511,7 @@ class ReplaceSourceBeforeMoveFileMover:
         source_root: FileSystemPath | None = None,
         target_root: FileSystemPath | None = None,
         expected_source_identity: FilesystemIdentity | None = None,
+        expected_source_content_hash: str | None = None,
     ) -> None:
         """Install an indistinguishable replacement before delegating the mutation."""
         assert expected_source_identity is not None
@@ -527,6 +530,7 @@ class ReplaceSourceBeforeMoveFileMover:
             source_root=source_root,
             target_root=target_root,
             expected_source_identity=expected_source_identity,
+            expected_source_content_hash=expected_source_content_hash,
         )
 
 
@@ -536,7 +540,7 @@ class DeleteSourceBeforeMoveFileMover:
 
     delegate: FileMover = field(default_factory=FilesystemFileMover)
 
-    def move(
+    def move(  # noqa: PLR0913  # Wrapper mirrors the stable FileMover safety port.
         self,
         source: FileSystemPath,
         target: FileSystemPath,
@@ -544,6 +548,7 @@ class DeleteSourceBeforeMoveFileMover:
         source_root: FileSystemPath | None = None,
         target_root: FileSystemPath | None = None,
         expected_source_identity: FilesystemIdentity | None = None,
+        expected_source_content_hash: str | None = None,
     ) -> None:
         """Delete the source leaf before delegating to the concrete mover."""
         Path(source).unlink()
@@ -553,6 +558,7 @@ class DeleteSourceBeforeMoveFileMover:
             source_root=source_root,
             target_root=target_root,
             expected_source_identity=expected_source_identity,
+            expected_source_content_hash=expected_source_content_hash,
         )
 
 

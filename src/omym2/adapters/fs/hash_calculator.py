@@ -5,6 +5,7 @@ Why: Lets adapters stream bytes while preserving the configured hash policy.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from hashlib import new
 from pathlib import Path
@@ -36,3 +37,15 @@ class FileContentHasher:
             while chunk := file.read(self.chunk_size_bytes):
                 digest.update(chunk)
         return digest.hexdigest()
+
+    def calculate_descriptor(self, file_descriptor: int) -> str:
+        """Return the configured content hash without consuming a file descriptor."""
+        current_offset = os.lseek(file_descriptor, 0, os.SEEK_CUR)
+        try:
+            _ = os.lseek(file_descriptor, 0, os.SEEK_SET)
+            digest = new(CONTENT_FINGERPRINT_ALGORITHM)
+            while chunk := os.read(file_descriptor, self.chunk_size_bytes):
+                digest.update(chunk)
+            return digest.hexdigest()
+        finally:
+            _ = os.lseek(file_descriptor, current_offset, os.SEEK_SET)

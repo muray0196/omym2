@@ -3,7 +3,7 @@ type: Contract
 title: Path Identity And Storage Contract
 description: Defines Library and Track identity stability, stored path representation, PathResolver boundaries, descriptor-anchored mutation, absolute-path exceptions, and path escape prevention.
 tags: [paths, identity, storage, library]
-timestamp: 2026-07-13T17:12:10+09:00
+timestamp: 2026-07-13T22:03:37+09:00
 ---
 
 # Path Identity And Storage Contract
@@ -63,12 +63,13 @@ traversal anchored to the open Library root. Traversal must not follow
 symlinked descendants and must reject parent-directory segments itself. The
 mutation boundary retains source-file and source-parent descriptors, verifies
 the live source's device, inode, size, modification time, and change time
-against the apply-time capture, creates the target exclusively, then rechecks
-source state and root containment before unlinking through the retained parent
-descriptor. External sources are copied from retained descriptors even though
-they have no Library root. Lexical normalization and a separate resolved-path
-precheck are insufficient because a filesystem entry or its parent can change
-between checking and mutation.
+against the apply-time capture, creates the target exclusively, and verifies
+the claimed target and retained source bytes against the captured content hash.
+It then rechecks source state and root containment before unlinking through the
+retained parent descriptor. External sources are copied from retained
+descriptors even though they have no Library root. Lexical normalization and a
+separate resolved-path precheck are insufficient because a filesystem entry or
+its parent can change between checking and mutation.
 
 ## Absolute External Path Exceptions
 

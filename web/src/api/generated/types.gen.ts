@@ -2269,7 +2269,7 @@ export type StartCheckData = {
         /**
          * X-Omym2-Csrf-Token
          */
-        'X-OMYM2-CSRF-Token'?: string | null;
+        'X-OMYM2-CSRF-Token': string;
     };
     path?: never;
     query?: never;
@@ -2821,7 +2821,7 @@ export type StartAddPlanData = {
         /**
          * X-Omym2-Csrf-Token
          */
-        'X-OMYM2-CSRF-Token'?: string | null;
+        'X-OMYM2-CSRF-Token': string;
     };
     path?: never;
     query?: never;
@@ -2880,7 +2880,7 @@ export type StartOrganizePlanData = {
         /**
          * X-Omym2-Csrf-Token
          */
-        'X-OMYM2-CSRF-Token'?: string | null;
+        'X-OMYM2-CSRF-Token': string;
     };
     path?: never;
     query?: never;
@@ -2939,7 +2939,7 @@ export type StartRefreshPlanData = {
         /**
          * X-Omym2-Csrf-Token
          */
-        'X-OMYM2-CSRF-Token'?: string | null;
+        'X-OMYM2-CSRF-Token': string;
     };
     path?: never;
     query?: never;

@@ -1482,7 +1482,7 @@ class RecordingFileMover:
         self.moves: list[tuple[str, str]] = []
         self.source_roots: list[str | None] = []
 
-    def move(
+    def move(  # noqa: PLR0913  # Fake mirrors the stable FileMover safety port.
         self,
         source: FileSystemPath,
         target: FileSystemPath,
@@ -1490,9 +1490,10 @@ class RecordingFileMover:
         source_root: FileSystemPath | None = None,
         target_root: FileSystemPath | None = None,
         expected_source_identity: FilesystemIdentity | None = None,
+        expected_source_content_hash: str | None = None,
     ) -> None:
         """Record one move."""
-        del target_root, expected_source_identity
+        del target_root, expected_source_identity, expected_source_content_hash
         self.moves.append((str(source), str(target)))
         self.source_roots.append(None if source_root is None else str(source_root))
 

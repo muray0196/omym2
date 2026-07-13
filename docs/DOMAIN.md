@@ -3,7 +3,7 @@ type: Domain Model
 title: Domain
 description: Defines OMYM2's core entities, including durable Operations and Track stat baselines, their invariants, snapshot boundaries, and UUIDv7 identity policy.
 tags: [domain-model, entities, invariants, operations, id-design]
-timestamp: 2026-07-13T17:02:19+09:00
+timestamp: 2026-07-13T22:03:37+09:00
 ---
 
 # Domain
@@ -64,10 +64,11 @@ FileSnapshot is not the identity of a managed track.
 A fresh filesystem capture carries an ephemeral token containing device,
 inode, size, nanosecond mtime, and nanosecond ctime. Capture accepts the token
 only when the same state is observed before and after metadata and hash reads.
-Apply requires that token from its fresh precondition capture and the
-FileMover verifies it before claiming a target. The token is not persisted;
-snapshots reconstructed from trusted Track stat baselines carry no filesystem
-token and are never sufficient for Apply.
+Apply requires that token and the captured content hash from its fresh
+precondition capture. The FileMover verifies the token before claiming a
+target and both the token and bytes before unlinking the source. The token is
+not persisted; snapshots reconstructed from trusted Track stat baselines carry
+no filesystem token and are never sufficient for Apply.
 
 `size` and `mtime` are optimization hints, not proof of content equality. Default workflows and apply must not rely on them alone. The explicit CLI `--trust-stat` mode may reconstruct a snapshot from the last verified Track state only under the eligibility and risk rules owned by the organize, refresh, and check execution contracts.
 

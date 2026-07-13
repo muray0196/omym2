@@ -237,6 +237,7 @@ class ApplyPlanUseCase:
                 source_root=None if PurePath(source_path).is_absolute() else library.root_path,
                 target_root=None if PurePath(target_path).is_absolute() else library.root_path,
                 expected_source_identity=snapshot.filesystem_identity,
+                expected_source_content_hash=snapshot.content_hash,
             )
         except (OSError, ValueError) as exc:
             reason = _move_failure_reason(exc)

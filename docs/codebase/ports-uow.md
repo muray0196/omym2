@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Ports And UnitOfWork
 description: Defines OMYM2's ports and UnitOfWork contract, including durable Operations, Config revision CAS, atomic Apply claims, filesystem mutation preconditions, and FileEvent transaction ordering.
 tags: [ports, unit-of-work, transactions, architecture]
-timestamp: 2026-07-13T17:12:10+09:00
+timestamp: 2026-07-13T22:03:37+09:00
 ---
 
 # Ports And UnitOfWork
@@ -91,23 +91,26 @@ class FileMover(Protocol):
         source_root: PathLike | None = None,
         target_root: PathLike | None = None,
         expected_source_identity: FilesystemIdentity | None = None,
+        expected_source_content_hash: str | None = None,
     ) -> None: ...
 ```
 
 Every live `FileSnapshotReader.capture()` result carries an ephemeral
 `FilesystemIdentity` containing device, inode, size, modification time, and
-change time. Apply passes that exact token as `expected_source_identity`; a
-trusted snapshot reconstructed without live I/O has no token and cannot
-authorize a filesystem mutation.
+change time. Apply passes that exact token and the captured content hash as
+`expected_source_identity` and `expected_source_content_hash`; a trusted
+snapshot reconstructed without live I/O has no token and cannot authorize a
+filesystem mutation.
 
 Apply independently supplies the verified open Library root as `source_root`
 and `target_root` whenever the corresponding path is Library-relative. The
 adapter opens descendant directories without following symlinks, retains the
 source file and parent descriptors, rechecks source identity and containment,
 creates the target exclusively, and rechecks the complete source state before
-unlinking it through the retained parent descriptor. External add sources use
-`source_root=None` but are still copied from a retained descriptor; absolute
-Undo restore targets use `target_root=None` only for the separately verified
+unlinking it through the retained parent descriptor. Copy claims also verify
+the target and retained source bytes against the expected content hash before
+unlinking. External add sources use `source_root=None` but are still copied
+from a retained descriptor; absolute Undo restore targets use `target_root=None` only for the separately verified
 external-restore exception. Omitting one root must not weaken the other
 anchored boundary.
 

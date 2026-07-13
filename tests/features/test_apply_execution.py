@@ -97,6 +97,7 @@ def test_apply_creates_run_and_pending_file_event_before_file_move() -> None:
     assert mover.source_roots == [None]
     assert mover.target_roots == [LIBRARY_ROOT]
     assert mover.expected_source_identities == [FILESYSTEM_IDENTITY]
+    assert mover.expected_source_content_hashes == [CONTENT_HASH]
     assert mover.states_at_move == [("running", "applying", "pending")]
     assert _stored_plan(uow).status == PlanStatus.APPLIED
     assert _stored_action(uow).status == ActionStatus.APPLIED
@@ -503,9 +504,10 @@ class RecordingFileMover:
         self.source_roots: list[str | None] = []
         self.target_roots: list[str | None] = []
         self.expected_source_identities: list[FilesystemIdentity | None] = []
+        self.expected_source_content_hashes: list[str | None] = []
         self.states_at_move: list[tuple[str, str, str]] = []
 
-    def move(
+    def move(  # noqa: PLR0913  # Fake mirrors the stable FileMover safety port.
         self,
         source: FileSystemPath,
         target: FileSystemPath,
@@ -513,12 +515,14 @@ class RecordingFileMover:
         source_root: FileSystemPath | None = None,
         target_root: FileSystemPath | None = None,
         expected_source_identity: FilesystemIdentity | None = None,
+        expected_source_content_hash: str | None = None,
     ) -> None:
         """Record move inputs and fail configured targets."""
         self.moves.append((str(source), str(target)))
         self.source_roots.append(None if source_root is None else str(source_root))
         self.target_roots.append(None if target_root is None else str(target_root))
         self.expected_source_identities.append(expected_source_identity)
+        self.expected_source_content_hashes.append(expected_source_content_hash)
         run = self._uow.runs.get(RUN_ID)
         plan = self._uow.plans.get(PLAN_ID)
         events = tuple(self._uow.file_events.records.values())

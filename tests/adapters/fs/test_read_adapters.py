@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import errno
 import os
+import shutil
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +42,8 @@ from omym2.features.common_ports import FileSnapshotCaptureRequest, MetadataRead
 from tests.fakes.runtime import FixedClock
 
 if TYPE_CHECKING:
+    from typing import BinaryIO
+
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
@@ -408,6 +411,48 @@ def test_file_mover_moves_managed_source_through_forced_copy(
 
     assert not source_path.exists()
     assert target_path.read_bytes() == AUDIO_CONTENT
+
+
+def test_file_mover_removes_never_claimed_copy_when_content_hash_differs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A copied target with unexpected bytes cannot cause the source to be removed."""
+    library_root = tmp_path / "library"
+    source_path = library_root / "source" / AUDIO_FILE_NAME
+    target_path = library_root / NESTED_DIRECTORY_NAME / TARGET_FILE_NAME
+    source_path.parent.mkdir(parents=True)
+    _ = source_path.write_bytes(AUDIO_CONTENT)
+    expected_identity = _filesystem_identity(source_path)
+    expected_content_hash = calculate_content_fingerprint(AUDIO_CONTENT)
+
+    def force_cross_device_copy(
+        source: os.PathLike[str] | str,
+        target: os.PathLike[str] | str,
+        **kwargs: object,
+    ) -> None:
+        del source, target, kwargs
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    def write_wrong_content(source_file: BinaryIO, target_file: BinaryIO, length: int = -1) -> None:
+        del source_file, length
+        _ = target_file.write(CHANGED_AUDIO_CONTENT)
+
+    monkeypatch.setattr(os, "link", force_cross_device_copy)
+    monkeypatch.setattr(shutil, "copyfileobj", write_wrong_content)
+
+    with pytest.raises(ValueError, match=SOURCE_REPLACED_MESSAGE):
+        FilesystemFileMover().move(
+            source_path,
+            target_path,
+            source_root=library_root,
+            target_root=library_root,
+            expected_source_identity=expected_identity,
+            expected_source_content_hash=expected_content_hash,
+        )
+
+    assert source_path.read_bytes() == AUDIO_CONTENT
+    assert not target_path.exists()
 
 
 def test_file_mover_moves_file_when_filesystem_refuses_hardlinks(
