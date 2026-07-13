@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Defines the bundled desktop React and Vite Web frontend contract, including routes, design rules, API boundaries, layout behavior, production serving, packaging, security, and performance gates.
 tags: [web-frontend, react, vite, clean-room, static-spa, performance]
-timestamp: 2026-07-13T21:02:26+09:00
+timestamp: 2026-07-14T01:06:39+09:00
 ---
 
 # Web Frontend
@@ -38,14 +38,13 @@ packaging, and open-decision assumptions cannot re-enter the build.
 There is one frontend under `web/`: no feature flag, parallel tree,
 compatibility implementation, or screen-by-screen migration path is allowed.
 
-## Initiative Branch And Atomic Release
+## Atomic Cutover
 
 M1-M4 were kept on one unreleased integration line. M5 deleted the legacy tree,
 moved the implementation to `web/`, and established the only releasable source
 path. The SPA and breaking API therefore ship atomically; there is no runtime
 feature flag, dual API mount, compatibility route set, or separately shipped
-staging UI. The pinned pre-cutover commit remains only as a packaged rollback
-artifact.
+staging UI.
 
 ## Stack And Source Layout
 
@@ -320,12 +319,6 @@ Python build inclusion is configured through `pyproject.toml` package data.
 The build does not assume or require a separate `MANIFEST.in`; add one only
 if an audited sdist build proves the existing build backend cannot satisfy this
 contract.
-
-The official release stores the final wheel and sdist directly. Its rollback
-ZIP preserves the standardized same-version wheel and sdist from the pinned
-last pre-cutover commit together with checksums, provenance, and recovery
-guidance. Expiring CI artifacts are not the sole storage for either package
-set.
 
 ## Performance Contract
 

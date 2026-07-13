@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies dependency setup, current quality gates, release verification, checks.sh, suppressions, and Python runtime configuration policy.
+description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, suppressions, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation, web]
-timestamp: 2026-07-13T21:02:26+09:00
+timestamp: 2026-07-14T01:15:53+09:00
 ---
 
 # Development Harness
@@ -90,7 +90,7 @@ and inline-style output before packaging.
 
 ## Final Quality Gates
 
-Run the aggregate gate before marking implementation work complete:
+The aggregate completion gate is:
 
 ```bash
 scripts/checks.sh all
@@ -117,18 +117,48 @@ All gates must pass:
 
 If the Python project skeleton or tool configuration does not exist yet, report the commands as not runnable instead of inventing replacement commands.
 
+## Codex Completion Backstop
+
+The repo-local `.codex/hooks.json` registers one `Stop` hook that delegates to
+the path-aware `scripts/checks.sh completion` mode when repository work is
+present. The hook does not redefine gate commands or install dependencies.
+
+During Codex implementation, run the smallest checks that cover the changed
+area, then let the `Stop` hook own one completion run. Do not run
+`scripts/checks.sh completion` manually immediately before a normal Codex
+handoff: the hook cannot consume that result and would repeat the same checks.
+
+Run the completion mode manually when the hook is unavailable or bypassed, a
+hook failure needs direct diagnosis, or an environment-only repair must be
+verified. Repository edits change the hook fingerprint and trigger validation
+again. Environment-only repairs do not, so they require one manual completion
+run before completion is attempted again.
+
+The completion mode selects checks from paths changed relative to the merge base
+with `origin/main`, including staged, unstaged, and untracked work. Docs-only
+changes run docs checks, frontend changes run Web checks, Python/backend/tooling
+changes run Python gates, and Web-adapter changes run both Web and Python gates.
+Unknown paths conservatively run Python gates. If `origin/main` is unavailable,
+all completion check groups run. E2E, package, performance, and cross-platform
+checks remain in the full aggregate gate and hosted CI.
+
+This division of responsibility applies to Codex sessions only. It does not
+replace independent CI or developer validation outside that workflow.
+
 ## Wrapper Script
 
 `scripts/checks.sh` wraps the command groups in this document so they can be run with one call:
 
 ```bash
-scripts/checks.sh <changed|py|api|web|e2e|package|performance|all|docs|arch>
+scripts/checks.sh <changed|completion|py|api|web|e2e|package|performance|all|docs|arch>
 scripts/checks.sh test <pytest-target>
 ```
 
 The mode is required; there is no default. The wrapper does not install dependencies.
 
 * `changed`: edit-loop checks on Python files changed vs `HEAD`
+* `completion`: path-aware Codex completion checks; excludes E2E, package,
+  performance, and cross-platform validation
 * `py`: full Python gates
 * `api`: schema-only OpenAPI and generated-client drift gate
 * `web`: API drift, frontend format/lint/typecheck/unit/build, static sync, and
@@ -163,26 +193,6 @@ a clean-checkout guard against validation tools mutating tracked files; it is
 intentionally CI-only because a local implementation worktree normally
 contains intended changes. Ignored `static_dist/` is protected instead by its
 explicit byte-for-byte audit.
-
-## Release And Rollback
-
-`.github/workflows/release.yml` is the only publication path. It is manually
-dispatched against `main`, requires successful push CI for the exact commit,
-and publishes through the GitHub environment named `release`. Configure that
-environment with required reviewers before the first dispatch. The workflow
-refuses an existing release tag instead of overwriting published state.
-
-The release stores the audited final wheel and source distribution directly.
-It also stores one deterministic rollback ZIP built from the pinned last
-pre-cutover commit. The ZIP keeps the standardized wheel and sdist filenames
-and includes integrity-covered checksums, provenance, and a README. Before
-publication, the workflow re-downloads the draft assets, verifies every nested
-artifact, compares the staged and downloaded bytes, and rechecks the tag.
-
-Final and rollback distributions both identify themselves as version `0.1.0`.
-Install rollback into a fresh environment or force a reinstall. Rollback
-changes application code only; restore a pre-cutover persisted-state backup
-first because backward state compatibility is not provided.
 
 ## Pipeline Performance Benchmark
 

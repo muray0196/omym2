@@ -3,7 +3,7 @@
 # Why: Gives agents a single reliable entry point instead of re-deriving command groups.
 #
 # Usage:
-#   scripts/checks.sh <changed|py|api|web|e2e|package|performance|all|docs|arch>
+#   scripts/checks.sh <changed|completion|py|api|web|e2e|package|performance|all|docs|arch>
 #   scripts/checks.sh test <pytest-target>
 #
 # See docs/development/harness.md for canonical mode descriptions and gate policy.
@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 usage() {
-    echo "usage: scripts/checks.sh <changed|py|api|web|e2e|package|performance|all|docs|arch> | scripts/checks.sh test <pytest-target>" >&2
+    echo "usage: scripts/checks.sh <changed|completion|py|api|web|e2e|package|performance|all|docs|arch> | scripts/checks.sh test <pytest-target>" >&2
 }
 
 if [[ $# -eq 0 ]]; then
@@ -98,9 +98,77 @@ run_performance() {
     uv run python scripts/build_web_evidence.py --run-performance
 }
 
+run_docs() {
+    uv run pytest tests/docs -q
+}
+
+run_completion() {
+    local comparison
+    local -a files=()
+    local needs_docs=false
+    local needs_python=false
+    local needs_web=false
+    local file
+
+    if ! comparison="$(git merge-base HEAD origin/main 2>/dev/null)"; then
+        echo "checks.sh: origin/main unavailable; running all completion check groups." >&2
+        run_docs
+        run_web
+        run_py
+        return
+    fi
+
+    mapfile -t files < <(
+        {
+            git diff --name-only --diff-filter=ACDMR "$comparison" --
+            git ls-files --others --exclude-standard
+        } | sort -u
+    )
+    git diff --check "$comparison" --
+
+    if [[ ${#files[@]} -eq 0 ]]; then
+        echo "checks.sh: no repository changes; nothing to complete." >&2
+        return
+    fi
+
+    for file in "${files[@]}"; do
+        case "$file" in
+        src/omym2/adapters/web/*)
+            needs_python=true
+            needs_web=true
+            ;;
+        web/*)
+            needs_web=true
+            ;;
+        *.py | *.pyi | src/* | tests/* | scripts/* | .codex/* | pyproject.toml | uv.lock | .python-version)
+            needs_python=true
+            ;;
+        docs/* | .agents/* | AGENTS.md | ARCHITECTURE.md | README.md)
+            needs_docs=true
+            ;;
+        *)
+            needs_python=true
+            ;;
+        esac
+    done
+
+    if [[ "$needs_docs" == true && "$needs_python" == false ]]; then
+        run_docs
+    fi
+    if [[ "$needs_web" == true ]]; then
+        run_web
+    fi
+    if [[ "$needs_python" == true ]]; then
+        run_py
+    fi
+}
+
 case "$mode" in
 changed)
     run_changed
+    ;;
+completion)
+    run_completion
     ;;
 py)
     run_py
@@ -127,7 +195,7 @@ all)
     run_performance
     ;;
 docs)
-    uv run pytest tests/docs -q
+    run_docs
     ;;
 arch)
     uv run pytest tests/architecture -q

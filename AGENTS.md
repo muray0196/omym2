@@ -33,7 +33,11 @@ gates, suppressions, or runtime configuration work.
 ## Validation Shortcut
 
 Mode selection is owned by `.agents/skills/validate/SKILL.md`. Gate
-definitions live in `docs/development/harness.md`.
+definitions live in `docs/development/harness.md`. During Codex implementation,
+run the focused checks selected by the skill. When the repo-local `Stop` hook is
+available, let it own the path-aware completion gate instead of repeating those
+checks manually before handoff. Full aggregate validation remains a CI or
+explicit-request concern.
 
 ## Knowledge Navigation
 

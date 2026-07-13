@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Testing
-description: Defines OMYM2's Python, bundled-frontend, desktop-browser, architecture, integration, contract, fixture, and release test policy.
+description: Defines OMYM2's Python, bundled-frontend, desktop-browser, architecture, integration, contract, fixture, and CI test policy.
 tags: [testing, pytest, vitest, playwright, architecture-tests, fixtures]
-timestamp: 2026-07-13T21:02:26+09:00
+timestamp: 2026-07-14T01:06:39+09:00
 ---
 
 # Testing
@@ -192,13 +192,9 @@ The bundled frontend requires these independently diagnosable CI gates:
 7. Windows package/static smoke and, from M3 onward, real multiprocess
    exclusive-lock contention/crash-release tests
 
-Pull requests run gates 1–6 on Linux and every gate-7 check required by the
-current milestone on Windows (package/static smoke from M1; multiprocess lock
-tests from M3).
-Protected-branch and release builds retain the same gates and publish their
-audited artifacts according to the distribution contract. A gate may be added
-before its product flow exists, but it must not be weakened or silently skipped
-after that milestone declares the flow complete.
+Pull requests and protected branches run gates 1–6 on Linux. Windows CI runs
+the package/static smoke and real multiprocess lock tests from gate 7. Completed
+product-flow gates must not be weakened or silently skipped.
 
 ## Test Commands
 

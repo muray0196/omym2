@@ -10,7 +10,9 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 | Situation | Command |
 | --- | --- |
 | After editing Python files (edit loop) | `scripts/checks.sh changed` |
-| Before declaring any implementation complete | `scripts/checks.sh all` |
+| Agent completion with the repo `Stop` hook available | No manual command; the hook runs `scripts/checks.sh completion` |
+| Completion when the repo `Stop` hook is unavailable or bypassed | `scripts/checks.sh completion` |
+| After a `Stop` hook failure | Use the smallest mode that reproduces the first failure |
 | Python-only full gates | `scripts/checks.sh py` |
 | OpenAPI/generated-client drift only | `scripts/checks.sh api` |
 | Frontend gates only | `scripts/checks.sh web` |
@@ -28,6 +30,15 @@ The wrapper requires an explicit mode and assumes dependencies are already
 installed. Run `uv sync --locked --dev` after checkout or Python dependency
 changes. Install frontend dependencies in `web/`. Do not reinstall dependencies
 during ordinary edit loops or validation reruns.
+
+Do not run `scripts/checks.sh completion` immediately before a normal Codex handoff.
+The `Stop` hook cannot reuse a manual success, so doing both repeats the complete
+completion check. Run it manually only when the hook is unavailable or bypassed,
+a hook failure needs direct diagnosis, or an environment-only repair must be
+verified. Environment-only repairs do not change the repository fingerprint, so
+verify them manually before attempting completion again. Run `scripts/checks.sh
+all` only when the user explicitly requests the full aggregate gate or when
+diagnosing CI-equivalent behavior.
 
 ## Triage table
 
@@ -61,12 +72,15 @@ Fix the first failing gate before looking at later ones.
 2. Run it.
 3. If it fails, find the first failure in the triage table above and take its next action.
 4. Apply a suppression only as a last resort, per the suppression rules above, with a justification comment on the same line.
-5. Re-run the same command until it passes before moving to a broader mode (e.g. `changed` → `all`).
+5. Re-run the same focused command until it passes.
+6. Attempt completion and let the repo `Stop` hook run the path-aware completion gate. If the hook is unavailable or bypassed, run `scripts/checks.sh completion` manually instead.
+7. After a hook failure, reproduce only the first failure with the smallest applicable mode. A repository edit changes the fingerprint and causes the hook to validate again; after an environment-only repair, run the completion gate manually because the fingerprint is unchanged.
 
 ## Done means
 
 - Dependencies are synchronized when their manifests or lockfiles changed.
-- `scripts/checks.sh all` passes from a clean state.
+- Focused checks for the changed area pass.
+- The final repository fingerprint is validated by the repo `Stop` hook, or by a manual `scripts/checks.sh completion` fallback when the hook is unavailable or bypassed.
 
 ## Stop and report when
 

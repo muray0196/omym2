@@ -1,5 +1,5 @@
-# Summary: Runs the complete cross-platform quality and package evidence gates.
-# Why: Blocks regressions before M5 release assets can be published.
+# Summary: Runs the complete cross-platform quality and package validation gates.
+# Why: Blocks regressions before changes merge into protected branches.
 
 name: CI
 
