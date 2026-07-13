@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Path Identity And Storage Contract
-description: Defines the authoritative rules for Library and Track identity stability, stored path representation, PathResolver boundaries, absolute-path exceptions, and path escape prevention.
+description: Defines Library and Track identity stability, stored path representation, PathResolver boundaries, descriptor-anchored mutation, absolute-path exceptions, and path escape prevention.
 tags: [paths, identity, storage, library]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-13T17:12:10+09:00
 ---
 
 # Path Identity And Storage Contract
@@ -58,7 +58,17 @@ PathPolicy generates Library-root-relative canonical paths. It does not join pat
 
 Target-path collision comparison is an exact string match on the normalized Library-root-relative path — intentionally platform-independent, so it is case- and Unicode-form-sensitive rather than folding for case-insensitive or Unicode-normalization-insensitive filesystems. Filesystem-level differences that this comparison cannot see, such as a case-insensitive filesystem treating two distinct normalized paths as the same file, are caught fail-closed at apply time by the exclusive-create FileMover.
 
-Apply executes Library-relative targets through traversal anchored to the Library root; the traversal must not follow symlinked descendants, must reject parent-directory segments itself, and must not claim a symlinked source file into managed storage. Lexical normalization and a separate resolved-path precheck are insufficient because a filesystem entry can change between checking and mutation.
+Apply independently executes every Library-relative source and target through
+traversal anchored to the open Library root. Traversal must not follow
+symlinked descendants and must reject parent-directory segments itself. The
+mutation boundary retains source-file and source-parent descriptors, verifies
+the live source's device, inode, size, modification time, and change time
+against the apply-time capture, creates the target exclusively, then rechecks
+source state and root containment before unlinking through the retained parent
+descriptor. External sources are copied from retained descriptors even though
+they have no Library root. Lexical normalization and a separate resolved-path
+precheck are insufficient because a filesystem entry or its parent can change
+between checking and mutation.
 
 ## Absolute External Path Exceptions
 

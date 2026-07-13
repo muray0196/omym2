@@ -192,6 +192,63 @@ def test_sqlite_operation_repository_round_trips_progress_errors_and_candidates(
         assert uow.operations.list_reconciliation_candidates() == ()
 
 
+@pytest.mark.parametrize(
+    ("plan_applying", "run_running", "is_candidate"),
+    [
+        (True, False, True),
+        (False, True, True),
+        (False, False, False),
+    ],
+)
+def test_sqlite_operation_repository_reconciles_interrupted_apply_only_with_unfinished_managed_state(
+    tmp_path: Path,
+    *,
+    plan_applying: bool,
+    run_running: bool,
+    is_candidate: bool,
+) -> None:
+    """Interrupted Apply remains eligible only while its Plan or Run still needs repair."""
+    database_file = default_application_paths(tmp_path).database_file
+    plan = _plan().mark_applying() if plan_applying else _plan().mark_failed()
+    run = _run() if run_running else _run().mark_failed(COMPLETED_TIME, TERMINAL_ERROR_MESSAGE)
+    error = OperationError(
+        code=OperationErrorCode.OPERATION_INTERRUPTED,
+        message=TERMINAL_ERROR_MESSAGE,
+        retryable=False,
+    )
+    interrupted = (
+        Operation.queued(
+            operation_id=OPERATION_ID,
+            kind=OperationKind.APPLY_PLAN,
+            idempotency_key=IDEMPOTENCY_KEY,
+            request_fingerprint=REQUEST_FINGERPRINT,
+            requested_at=BASE_TIME,
+            library_id=LIBRARY_ID,
+            plan_id=PLAN_ID,
+            run_id=RUN_ID,
+        )
+        .mark_running(STARTED_TIME)
+        .mark_interrupted(
+            error=error,
+            completed_at=COMPLETED_TIME,
+            result_expires_at=RESULT_EXPIRY_TIME,
+            tombstone_expires_at=TOMBSTONE_EXPIRY_TIME,
+        )
+    )
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.plans.save(plan)
+        uow.runs.save(run)
+        uow.operations.save(interrupted)
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        candidates = uow.operations.list_reconciliation_candidates()
+
+    assert (candidates == (interrupted,)) is is_candidate
+
+
 def test_sqlite_operation_repository_enforces_global_idempotency_and_single_active_row(tmp_path: Path) -> None:
     """SQLite rejects a reused idempotency key and a second queued/running Operation."""
     database_file = default_application_paths(tmp_path).database_file

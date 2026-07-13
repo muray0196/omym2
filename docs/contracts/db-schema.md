@@ -3,7 +3,7 @@ type: Contract
 title: DB Schema Contract
 description: Defines OMYM2's SQLite tables, durable Operation schema, atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-13T10:31:02+09:00
+timestamp: 2026-07-13T15:55:03+09:00
 ---
 
 # DB Schema Contract
@@ -181,7 +181,8 @@ Minimum representative fields:
 * `completed_at`
 * `error_summary`
 
-A Run is created before applying PlanActions and before any Library music file mutation.
+A Run is created before applying PlanActions and before any Library music file
+mutation. The single-use Plan contract permits at most one Run per Plan.
 
 ### operations
 
@@ -323,22 +324,30 @@ Every schema change needs tests for:
 * path representation changes when affected
 * foreign-key or uniqueness behavior when affected
 
-The `operations` table is implemented by the forward migration
-`202607130001_operations.sql`. The `plans.source_run_id` and
-`plan_actions.reverses_event_id` columns remain an accepted schema draft until
-the execution console implementation adds them. That implementation requires
-one or more new forward migrations whose filenames sort after every applied
-migration. Do not edit an existing migration. Exact DDL, constraint syntax,
-foreign-key actions, and index names for those remaining fields must be
-finalized with the domain models, repositories, and migration tests.
+`202607130001_operations.sql` implements the `operations` table.
+`202607130002_undo_provenance_and_apply_claim.sql` adds nullable
+`plans.source_run_id` and `plan_actions.reverses_event_id` columns. Their
+foreign keys use `ON DELETE RESTRICT` against `runs.run_id` and
+`file_events.event_id`, respectively.
 
-Before altering a database that already contains Undo Plans, migration
-preflight must prove a unique source Run and source FileEvent for every such
-Plan/action from existing durable records. It may backfill only those proven
-one-to-one associations. If any association is absent or ambiguous, migration
-fails explicitly before applying or recording any schema change; it must not
-leave legacy Undo rows with null provenance while enabling dedupe-sensitive
-Undo creation.
+Before adding those columns to a database that already contains Undo Plans,
+`202607130002_undo_provenance_and_apply_claim.sql` proves the legacy provenance
+from durable records. A candidate for an Undo move action must be a succeeded
+source move FileEvent, have the same Library and Track through an applied source
+move PlanAction whose recorded paths exactly match that event, belong to the
+same Plan and Library as its terminal source Run, and have both the event and
+Run complete no later than the Undo Plan's creation. The Undo action's target
+must match the event's recorded source path, and the terminal source Plan's
+Config hash must match the Undo Plan. Every legacy Undo Plan must have at least
+one action, every action must have exactly one candidate source event, one
+event may map to only one action in that Plan, and all candidates for the Plan
+must belong to one source Run.
+
+The migration backfills only those proven associations. An absent or ambiguous
+association violates its migration guard before either column is added. The
+migration runner then rolls back the guard, schema changes, indexes, and
+`schema_migrations` marker in the same transaction; it never enables
+deduplication with nullable legacy Undo provenance.
 
 ### Migration Safety Rules
 
@@ -361,32 +370,43 @@ Undo creation.
 
 Indexes exist to keep the Web API's list, facet, and group-by endpoints (authoritative in [web-api.md](web-api.md)) fast at scale. They are persistence details: they change lookup cost, never table responsibilities or stored data.
 
-The forward Operation/Undo migration must provide lookup shapes for:
+`202607130001_operations.sql` adds:
 
-* `plans (source_run_id, status, created_at, plan_id)` — finds prior Undo
-  Plans for the source-Run provenance and deduplication query.
-* `plan_actions (reverses_event_id, status, action_id)` — finds prior Undo
-  attempts and confirmed reversals for one source FileEvent.
-* `operations (status, updated_at, operation_id)` — finds active Operations
-  and unfinished rows during restart reconciliation.
-* `operations (result_expires_at, operation_id)` and
-  `operations (tombstone_expires_at, operation_id)` — finds rows eligible for
-  the two retention phases without scanning active rows.
-* `operations (plan_id, operation_id)` and
-  `operations (run_id, operation_id)` — resolves Plan/Run associations.
+* `uq_operations_idempotency_key`, a unique index on
+  `operations (idempotency_key)`.
+* `uq_operations_single_active`, a unique expression index on `1` where status
+  is `queued` or `running`; this enforces at most one active Operation in the
+  application database.
+* `idx_operations_status_updated` on
+  `operations (status, updated_at, operation_id)` for active and unfinished
+  Operation lookup.
+* `idx_operations_result_expiry` on
+  `operations (result_expires_at, operation_id)` and
+  `idx_operations_tombstone_expiry` on
+  `operations (tombstone_expires_at, operation_id)` for retention cleanup.
+* `idx_operations_plan` on `operations (plan_id, operation_id)` and
+  `idx_operations_run` on `operations (run_id, operation_id)` for association
+  lookup.
 
-The globally unique `idempotency_key` constraint must also have an indexed
-lookup. The forward migration must additionally enforce:
+`202607130002_undo_provenance_and_apply_claim.sql` adds:
 
-* at most one `queued` or `running` Operation in the application database;
-* at most one Run for a single-use Plan (`runs.plan_id` is unique);
-* at most one `ready`, `applying`, or `applied` Undo Plan for one non-null
-  `source_run_id`;
-* at most one action per non-null `reverses_event_id` within one Undo Plan.
+* `uq_runs_plan_id`, a unique index on `runs (plan_id)` that enforces at most
+  one Run for a single-use Plan.
+* `idx_plans_source_run_status` on
+  `plans (source_run_id, status, created_at, plan_id)` for prior Undo Plan and
+  deduplication lookup.
+* `uq_plans_active_undo_source_run`, a unique partial index on
+  `plans (source_run_id)` where `source_run_id` is non-null and status is
+  `ready`, `applying`, or `applied`.
+* `idx_plan_actions_reverse_event_status` on
+  `plan_actions (reverses_event_id, status, action_id)` for prior reversal
+  lookup.
+* `uq_plan_actions_plan_reverse_event`, a unique partial index on
+  `plan_actions (plan_id, reverses_event_id)` where `reverses_event_id` is
+  non-null.
 
-These constraints are defense in depth behind the cross-process lock and
-compare-and-set usecases. Exact index names and partial-index clauses are
-deferred to the forward migration and its query-plan tests.
+These unique constraints are defense in depth behind the cross-process lock
+and compare-and-set usecases.
 
 `202607090001_browsing_indexes.sql` adds:
 

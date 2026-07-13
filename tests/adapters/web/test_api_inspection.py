@@ -28,7 +28,7 @@ from omym2.features.plans.usecases.get_plan_capabilities import PlanCapabilities
 from omym2.features.plans.usecases.get_plan_header import PlanNotFoundError
 from omym2.features.tracks.dto import TrackStatusFacetsResult
 from omym2.features.tracks.usecases.get_track import TrackNotFoundError
-from omym2.shared.ids import ActionId, LibraryId, PlanId, TrackId
+from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
 from omym2.shared.pagination import FacetValue, GroupCount, Page
 
 if TYPE_CHECKING:
@@ -39,6 +39,7 @@ LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345670"))
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345671"))
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345672"))
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345673"))
+OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345674"))
 PLAN_NOT_FOUND_MESSAGE = "Plan was not found."
 TRACK_NOT_FOUND_MESSAGE = "Track was not found."
 
@@ -70,7 +71,7 @@ def test_plan_routes_return_typed_browse_and_detail_resources() -> None:
         "can_recreate": True,
         "disabled_reasons": [],
     }
-    assert detail_data["active_operation_id"] is None
+    assert detail_data["active_operation_id"] == str(OPERATION_ID)
     assert _objects(actions_data, "items")[0]["source_path"] == "Artist/old.flac"
     assert _object(facets_data, "facets")["status"] == [{"value": "planned", "count": 1}]
     assert _objects(groups_data, "items")[0]["blocked_count"] == 0
@@ -94,6 +95,9 @@ def test_plan_detail_returns_typed_not_found_envelope() -> None:
             list_plan_actions=handlers.list_plan_actions,
             get_plan_action_facets=handlers.get_plan_action_facets,
             group_plan_actions=handlers.group_plan_actions,
+            cancel_plan=handlers.cancel_plan,
+            active_operation_id=handlers.active_operation_id,
+            conflicting_operation_id=handlers.conflicting_operation_id,
         ),
     )
 
@@ -192,6 +196,9 @@ def _plan_handlers() -> PlanRouteHandlers:
             next_cursor_key=None,
             total=1,
         ),
+        cancel_plan=lambda _request: plan.mark_cancelled(),
+        active_operation_id=lambda _plan_id: OPERATION_ID,
+        conflicting_operation_id=lambda: OPERATION_ID,
     )
 
 

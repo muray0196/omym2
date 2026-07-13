@@ -57,7 +57,8 @@ if TYPE_CHECKING:
         SettingsEditResult,
         ValidateSettingsRequest,
     )
-    from omym2.shared.ids import OperationId
+    from omym2.features.undo.dto import CreateUndoPlanRequest
+    from omym2.shared.ids import OperationId, PlanId
 
 CSRF_TOKEN = "web-cli-exclusion-csrf"  # noqa: S105  # Deterministic non-secret test token.
 IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def012345690")
@@ -232,6 +233,8 @@ def _web_app(
             start_organize_plan=_unexpected_organize,
             start_refresh_plan=_unexpected_refresh,
             start_check=start_check,
+            start_apply_plan=_unexpected_apply,
+            start_undo_plan=_unexpected_undo,
         ),
         start_runtime=operations.start,
         close_runtime=operations.close,
@@ -279,6 +282,14 @@ def _unexpected_organize(_request: CreateOrganizePlanRequest, _key: UUID) -> Res
 
 
 def _unexpected_refresh(_request: CreateRefreshPlanRequest, _key: UUID) -> ReserveOperationResult:
+    raise AssertionError(UNEXPECTED_CALLBACK_MESSAGE)
+
+
+def _unexpected_apply(_plan_id: PlanId, _key: UUID) -> ReserveOperationResult:
+    raise AssertionError(UNEXPECTED_CALLBACK_MESSAGE)
+
+
+def _unexpected_undo(_request: CreateUndoPlanRequest, _key: UUID) -> ReserveOperationResult:
     raise AssertionError(UNEXPECTED_CALLBACK_MESSAGE)
 
 

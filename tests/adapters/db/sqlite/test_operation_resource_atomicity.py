@@ -245,6 +245,7 @@ class _StaticSnapshotReader:
                 content_hash=calculate_content_fingerprint(FILE_CONTENT),
                 metadata_hash=calculate_metadata_fingerprint(TRACK_METADATA),
                 metadata=TRACK_METADATA,
+                filesystem_identity=None,
                 captured_at=BASE_TIME,
             ),
         )

@@ -1,6 +1,6 @@
 /**
- * Summary: Renders a read-only deep inspection view for one recorded Plan.
- * Why: Exposes stored actions, facets, and opaque group drill-downs without operation controls.
+ * Summary: Renders one Plan review with exact capabilities and recorded action evidence.
+ * Why: Keeps M4 execution controls beside the immutable Plan data they act on.
  */
 import {
   type InfiniteData,
@@ -15,6 +15,7 @@ import { Button } from "../../ui/primitives/button";
 import { RouteHeading } from "../../ui/primitives/route-heading";
 import { planCopy } from "./plan-copy";
 import { PlanErrorState } from "./plan-error-state";
+import { PlanExecutionControls } from "./plan-execution-controls";
 import {
   actionGroupingLabel,
   actionStatusLabel,
@@ -24,7 +25,7 @@ import {
 } from "./plan-catalog";
 import { ActionStatusBadge, PlanStatusBadge } from "./plan-presentation";
 import {
-  exactPlanListQuery,
+  exactPlanQuery,
   planActionFacetsQuery,
   planActionGroupsInfiniteQuery,
   planActionsInfiniteQuery,
@@ -33,7 +34,7 @@ import {
   type PlanActionFacets,
   type PlanActionGroups,
   type PlanActionPage,
-  type PlanSummary,
+  type PlanDetail,
 } from "./plan-query";
 import {
   actionGroupingOptions,
@@ -62,7 +63,7 @@ export function PlanDetail() {
   const planId = routePlanId ?? "";
   const { clearGroup, filters, hasActiveFilters, resetFilters, updateFilters } =
     usePlanActionFilters();
-  const exactPlan = useQuery(exactPlanListQuery(planId));
+  const exactPlan = useQuery(exactPlanQuery(planId));
   const actions = useInfiniteQuery(planActionsInfiniteQuery(planId, filters));
   const facets = useQuery(planActionFacetsQuery(planId, filters));
   const groups = useInfiniteQuery(
@@ -90,11 +91,8 @@ export function PlanDetail() {
     );
   }
 
-  const plan = exactPlan.data.items.find((item) => item.plan_id === planId);
-
-  if (plan === undefined) {
-    return <NotFoundState />;
-  }
+  const detail = exactPlan.data;
+  const plan = detail.plan;
 
   return (
     <article className={styles.page}>
@@ -109,7 +107,8 @@ export function PlanDetail() {
         <PlanMetadata plan={plan} />
       </header>
 
-      <PlanSummaryTable summary={plan.summary} />
+      <PlanSummaryTable summary={detail.summary} />
+      <PlanExecutionControls detail={detail} />
 
       <ActionFilters
         clearGroup={clearGroup}
@@ -130,7 +129,7 @@ export function PlanDetail() {
   );
 }
 
-function PlanMetadata({ plan }: { plan: PlanSummary }) {
+function PlanMetadata({ plan }: { plan: PlanDetail["plan"] }) {
   return (
     <dl className={styles.metadataList}>
       <div>
@@ -163,7 +162,7 @@ function PlanMetadata({ plan }: { plan: PlanSummary }) {
   );
 }
 
-function PlanSummaryTable({ summary }: { summary: PlanSummary["summary"] }) {
+function PlanSummaryTable({ summary }: { summary: PlanDetail["summary"] }) {
   const rows = [
     { counts: summary.counts.planned, label: planCopy.labels.planned },
     { counts: summary.counts.blocked, label: planCopy.labels.blocked },

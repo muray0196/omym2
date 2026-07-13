@@ -5,6 +5,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApiEnvelopeOperationResource } from "../../api/generated";
@@ -49,12 +50,35 @@ describe("OperationStatus", () => {
     );
     expect(polls).toBe(2);
     expect(screen.queryByText(/Connection lost/i)).not.toBeInTheDocument();
-    expect(screen.getByText("Working")).toBeVisible();
-    expect(screen.queryByText("future_scan_stage")).not.toBeInTheDocument();
+    expect(screen.getByText(/Working: server stage/)).toBeVisible();
+    expect(screen.getByText("future_scan_stage")).toBeVisible();
 
     await act(() => vi.advanceTimersByTimeAsync(pollingPolicy.initial_ms));
     expect(polls).toBe(3);
     expect(screen.getByText("Terminal destination")).toBeVisible();
+  });
+
+  it("presents terminal error remediation without executing its command", () => {
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={createQueryClient()}>
+          <OperationStatus
+            initialOperation={interruptedOperation.data}
+            policy={pollingPolicy}
+            resultAction={() => null}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Inspect the interrupted Run.",
+    );
+    expect(screen.getByText("omym2 history")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Run" })).toHaveAttribute(
+      "href",
+      "/history/fixture-run",
+    );
   });
 });
 
@@ -100,6 +124,32 @@ const completedOperation = {
       plan_id: "018f0000-0000-7000-8000-000000000021",
     },
     status: "succeeded",
+  },
+  errors: [],
+} satisfies ApiEnvelopeOperationResource;
+
+const interruptedOperation = {
+  data: {
+    ...activeOperation.data,
+    completed_at: "2026-07-13T00:00:02Z",
+    error: {
+      code: "operation_interrupted",
+      message: "Inspect the interrupted Run.",
+      remediation: {
+        command: "omym2 history",
+        label: "Open Run",
+        route: "/history/fixture-run",
+      },
+      retryable: false,
+    },
+    progress: {
+      completed_units: null,
+      message: null,
+      stage_code: null,
+      total_units: null,
+    },
+    result: null,
+    status: "interrupted",
   },
   errors: [],
 } satisfies ApiEnvelopeOperationResource;

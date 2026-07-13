@@ -1,6 +1,6 @@
 /**
- * Summary: Centralizes English copy for read-only Run history inspection.
- * Why: Keeps mutation boundaries and pending-event recovery wording consistent.
+ * Summary: Centralizes English copy for Run evidence and reviewed Undo planning.
+ * Why: Keeps mutation boundaries, capability reasons, and pending-event recovery consistent.
  */
 export const historyCopy = {
   list: {
@@ -29,9 +29,6 @@ export const historyCopy = {
     notFound: "This Run is not available in recorded History.",
     error: "Run evidence could not be loaded",
     metadata: "Run metadata",
-    capability: "Undo eligibility",
-    eligible:
-      "This Run is eligible for reviewed Undo planning. Execution controls are not available in inspection mode.",
     events: "File mutation evidence",
     noEvents:
       "No FileEvents were recorded. This is valid for blocked, skipped, or metadata-only work.",
@@ -39,6 +36,18 @@ export const historyCopy = {
     facets: "Event status counts",
     loadMoreEvents: "Load more FileEvents",
     loadMoreGroups: "Load more groups",
+  },
+  undo: {
+    title: "Undo planning",
+    description:
+      "Create a new Undo Plan from durable Run evidence, then review every recorded reversal before Apply.",
+    create: "Create Undo Plan",
+    starting: "Starting Undo planning…",
+    activeOperation: "Recover active Operation",
+    noBootstrap:
+      "Undo planning needs the local startup token. Restore the service and reload this Run.",
+    error: "Undo Plan could not be started",
+    planResult: "Open Undo Plan review",
   },
   pending:
     "Outcome unknown. Run Health and review this event manually; OMYM2 will not repair it automatically.",

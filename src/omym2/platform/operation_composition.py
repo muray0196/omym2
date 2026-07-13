@@ -26,6 +26,10 @@ from omym2.domain.models.operation import (
     OperationKind,
     OperationStatus,
 )
+from omym2.domain.models.plan import PlanStatus
+from omym2.features.apply.dto import ClaimApplyRequest
+from omym2.features.apply.usecases.apply_plan import PLAN_NOT_READY_MESSAGE, PlanCannotBeAppliedError
+from omym2.features.apply.usecases.claim_apply import ClaimApplyUseCase
 from omym2.features.common_ports import (
     ExclusiveOperationBusyError,
     ExclusiveOperationRequest,
@@ -48,7 +52,7 @@ from omym2.features.operations.usecases.update_operation import (
     FinishOperationUseCase,
     MarkOperationRunningUseCase,
 )
-from omym2.platform.feature_composition import build_uow
+from omym2.platform.feature_composition import build_apply_plan_ports, build_uow
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -66,8 +70,10 @@ WORKER_THREAD_NAME_PREFIX = "omym2-operation"
 SUPERVISOR_THREAD_NAME = "omym2-operation-reconcile"
 
 type OperationWork = Callable[[OperationId], OperationResult]
+type OperationPreflight = Callable[[], None]
 type ExclusiveWork[T] = Callable[[], T]
 type InlineOperationWork[T] = Callable[[OperationId], T]
+type InlineApplyWork[T] = Callable[[OperationId, RunId], T]
 
 
 @dataclass(slots=True)
@@ -121,6 +127,22 @@ class OperationRuntime:
             return None
         return None if operation is None else operation.operation_id
 
+    def active_operation_id_for_plan(self, plan_id: PlanId) -> OperationId | None:
+        """Return the queued/running Operation associated with one Plan, if any."""
+        with build_uow(self.runtime) as uow:
+            operation = uow.operations.find_active()
+        if operation is None or operation.plan_id != plan_id:
+            return None
+        return operation.operation_id
+
+    def active_operation_id_for_run(self, run_id: RunId) -> OperationId | None:
+        """Return the queued/running Operation associated with one Run, if any."""
+        with build_uow(self.runtime) as uow:
+            operation = uow.operations.find_active()
+        if operation is None or operation.run_id != run_id:
+            return None
+        return operation.operation_id
+
     def accept(  # noqa: PLR0913  # Durable acceptance fields are one explicit transaction contract.
         self,
         *,
@@ -131,6 +153,7 @@ class OperationRuntime:
         library_id: LibraryId | None = None,
         plan_id: PlanId | None = None,
         run_id: RunId | None = None,
+        preflight: OperationPreflight | None = None,
     ) -> ReserveOperationResult:
         """Replay or durably accept one request before handing its retained lock to the worker."""
         request = ReserveOperationRequest(
@@ -147,10 +170,18 @@ class OperationRuntime:
 
         transfer = ExitStack()
         try:
-            _ = transfer.enter_context(
-                self.runtime.exclusive_operation_lock.hold(ExclusiveOperationRequest(operation_name=kind.value))
-            )
+            try:
+                _ = transfer.enter_context(
+                    self.runtime.exclusive_operation_lock.hold(ExclusiveOperationRequest(operation_name=kind.value))
+                )
+            except ExclusiveOperationBusyError:
+                replay = ClassifyOperationReplayUseCase(self._ports()).execute(request)
+                if replay is not None:
+                    return ReserveOperationResult(lookup=replay, is_new=False)
+                raise
             self._reconcile_and_cleanup()
+            if preflight is not None:
+                preflight()
             reserved = ReserveOperationUseCase(self._ports()).execute(request)
             if not reserved.is_new:
                 return reserved
@@ -166,6 +197,71 @@ class OperationRuntime:
             return reserved
         finally:
             transfer.close()
+
+    def accept_apply(
+        self,
+        *,
+        plan_id: PlanId,
+        idempotency_key: UUID,
+        canonical_request: Mapping[str, object],
+        work: OperationWork,
+    ) -> ReserveOperationResult:
+        """Atomically claim a ready Plan before dispatching its retained-lock worker."""
+        fingerprint = operation_request_fingerprint(canonical_request)
+        replay_request = ReserveOperationRequest(
+            kind=OperationKind.APPLY_PLAN,
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            plan_id=plan_id,
+        )
+        replay = ClassifyOperationReplayUseCase(self._ports()).execute(replay_request)
+        if replay is not None:
+            return ReserveOperationResult(lookup=replay, is_new=False)
+
+        transfer = ExitStack()
+        try:
+            try:
+                _ = transfer.enter_context(
+                    self.runtime.exclusive_operation_lock.hold(
+                        ExclusiveOperationRequest(operation_name=OperationKind.APPLY_PLAN.value)
+                    )
+                )
+            except ExclusiveOperationBusyError:
+                replay = ClassifyOperationReplayUseCase(self._ports()).execute(replay_request)
+                if replay is not None:
+                    return ReserveOperationResult(lookup=replay, is_new=False)
+                if not self._plan_is_ready(plan_id):
+                    raise PlanCannotBeAppliedError(PLAN_NOT_READY_MESSAGE) from None
+                raise
+            self._reconcile_and_cleanup()
+            claim = ClaimApplyUseCase(build_apply_plan_ports(self.runtime)).execute(
+                ClaimApplyRequest(
+                    plan_id=plan_id,
+                    idempotency_key=idempotency_key,
+                    request_fingerprint=fingerprint,
+                )
+            )
+            reserved = ReserveOperationResult(lookup=claim.lookup, is_new=claim.is_new)
+            if not reserved.is_new:
+                return reserved
+            if not isinstance(reserved.lookup, Operation):
+                raise TypeError
+            worker_stack = transfer.pop_all()
+            try:
+                _ = self._executor.submit(self._run, reserved.lookup.operation_id, work, worker_stack)
+            except RuntimeError:
+                with worker_stack:
+                    self._interrupt_dispatch_failure()
+                raise
+            return reserved
+        finally:
+            transfer.close()
+
+    def _plan_is_ready(self, plan_id: PlanId) -> bool:
+        """Read the target Plan after lock contention to distinguish a committed claim."""
+        with build_uow(self.runtime) as uow:
+            plan = uow.plans.get(plan_id)
+        return plan is None or plan.status is PlanStatus.READY
 
     def reconcile_if_idle(self) -> bool:
         """Attempt one nonblocking reconciliation pass without disturbing a live owner."""
@@ -216,7 +312,7 @@ class OperationRuntime:
             try:
                 result = work(operation_id)
             except MetadataReadError:
-                self._finish_failure(operation_id, OperationErrorCode.METADATA_READ_FAILED, METADATA_FAILURE_MESSAGE)
+                self._fail_metadata_execution(operation_id)
                 raise
             except Exception:
                 self._finish_failure(operation_id, OperationErrorCode.OPERATION_FAILED, OPERATION_FAILURE_MESSAGE)
@@ -224,6 +320,43 @@ class OperationRuntime:
             current = self.get(operation_id)
             if current.status is not OperationStatus.SUCCEEDED:
                 self._finish_failure(operation_id, OperationErrorCode.OPERATION_FAILED, OPERATION_FAILURE_MESSAGE)
+                raise RuntimeError(OPERATION_FAILURE_MESSAGE)
+            return result
+
+    def run_inline_apply[T](
+        self,
+        *,
+        plan_id: PlanId,
+        canonical_request: Mapping[str, object],
+        work: InlineApplyWork[T],
+    ) -> T:
+        """Atomically claim and execute one CLI Apply under the shared lock."""
+        from omym2.shared.ids import new_uuid7  # noqa: PLC0415  # One fresh key per CLI invocation.
+
+        with self.runtime.exclusive_operation_lock.hold(
+            ExclusiveOperationRequest(operation_name=OperationKind.APPLY_PLAN.value)
+        ):
+            self._reconcile_and_cleanup()
+            claim = ClaimApplyUseCase(build_apply_plan_ports(self.runtime)).execute(
+                ClaimApplyRequest(
+                    plan_id=plan_id,
+                    idempotency_key=new_uuid7(),
+                    request_fingerprint=operation_request_fingerprint(canonical_request),
+                )
+            )
+            if not claim.is_new or not isinstance(claim.lookup, Operation) or claim.lookup.run_id is None:
+                raise TypeError
+            operation_id = claim.lookup.operation_id
+            run_id = claim.lookup.run_id
+            try:
+                _ = MarkOperationRunningUseCase(self._ports()).execute(operation_id)
+                result = work(operation_id, run_id)
+            except Exception:
+                self._fail_apply_execution(operation_id)
+                raise
+            current = self.get(operation_id)
+            if not current.is_terminal:
+                self._fail_apply_execution(operation_id)
                 raise RuntimeError(OPERATION_FAILURE_MESSAGE)
             return result
 
@@ -241,14 +374,53 @@ class OperationRuntime:
                 result = work(operation_id)
                 current = self.get(operation_id)
                 if current.status is OperationStatus.RUNNING:
+                    if current.kind is OperationKind.APPLY_PLAN:
+                        LOGGER.error(
+                            "Apply worker returned before managed state became terminal operation_id=%s",
+                            operation_id,
+                        )
+                        self._fail_apply_execution(operation_id)
+                        return
                     _ = FinishOperationUseCase(self._ports()).execute(
                         FinishOperationRequest(operation_id=operation_id, result=result)
                     )
             except MetadataReadError:
-                self._finish_failure(operation_id, OperationErrorCode.METADATA_READ_FAILED, METADATA_FAILURE_MESSAGE)
+                self._fail_metadata_execution(operation_id)
             except Exception:
                 LOGGER.exception("Durable Operation worker failed operation_id=%s", operation_id)
-                self._finish_failure(operation_id, OperationErrorCode.OPERATION_FAILED, OPERATION_FAILURE_MESSAGE)
+                self._fail_operation_execution(operation_id)
+
+    def _fail_operation_execution(self, operation_id: OperationId) -> None:
+        try:
+            current = self.get(operation_id)
+        except Exception:
+            LOGGER.exception("Durable Operation lookup failed after worker error operation_id=%s", operation_id)
+            return
+        if current.kind is OperationKind.APPLY_PLAN and current.status in {
+            OperationStatus.QUEUED,
+            OperationStatus.RUNNING,
+        }:
+            self._fail_apply_execution(operation_id)
+            return
+        self._finish_failure(operation_id, OperationErrorCode.OPERATION_FAILED, OPERATION_FAILURE_MESSAGE)
+
+    def _fail_metadata_execution(self, operation_id: OperationId) -> None:
+        """Reconcile Apply managed state or persist a metadata-specific generic failure."""
+        try:
+            current = self.get(operation_id)
+        except Exception:
+            LOGGER.exception("Durable Operation lookup failed after metadata error operation_id=%s", operation_id)
+            return
+        if current.kind is OperationKind.APPLY_PLAN and current.status is OperationStatus.RUNNING:
+            self._fail_apply_execution(operation_id)
+            return
+        self._finish_failure(operation_id, OperationErrorCode.METADATA_READ_FAILED, METADATA_FAILURE_MESSAGE)
+
+    def _fail_apply_execution(self, operation_id: OperationId) -> None:
+        try:
+            _ = ReconcileOperationsUseCase(self._ports()).execute(failed_apply_operation_id=operation_id)
+        except Exception:
+            LOGGER.exception("Apply terminal reconciliation failed operation_id=%s", operation_id)
 
     def _finish_failure(self, operation_id: OperationId, code: OperationErrorCode, message: str) -> None:
         try:

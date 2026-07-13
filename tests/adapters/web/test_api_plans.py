@@ -1,6 +1,6 @@
 """
-Summary: Tests the typed read-only Plan inspection Web API.
-Why: Verifies Plan browsing stays query-only while preserving filters, pages, facets, and groups.
+Summary: Tests typed Plan inspection and ready-Plan cancellation Web APIs.
+Why: Verifies Plan browsing plus lock-protected synchronous Cancel behavior.
 """
 
 from __future__ import annotations
@@ -13,13 +13,19 @@ from fastapi.testclient import TestClient
 
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.config import (
+    HTTP_CONFLICT_STATUS,
+    HTTP_FORBIDDEN_STATUS,
     HTTP_NOT_FOUND_STATUS,
     HTTP_OK_STATUS,
     HTTP_UNPROCESSABLE_CONTENT_STATUS,
+    WEB_API_BOOTSTRAP_ROUTE,
+    WEB_API_CANCEL_PLAN_ROUTE,
     WEB_API_PLAN_ACTIONS_ROUTE,
+    WEB_API_PLAN_DETAIL_ROUTE,
     WEB_API_PLAN_FACETS_ROUTE,
     WEB_API_PLAN_GROUPS_ROUTE,
     WEB_API_PLANS_ROUTE,
+    WEB_CSRF_HEADER_NAME,
 )
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
@@ -160,6 +166,30 @@ def test_plan_inspection_rejects_invalid_queries_and_returns_plan_specific_not_f
     error = _error(missing_plan)
     assert error["code"] == "plan_not_found"
     assert error["field"] == "path.plan_id"
+
+
+def test_ready_plan_cancel_requires_csrf_and_returns_terminal_detail(tmp_path: Path) -> None:
+    """Cancel rejects missing CSRF before one lock-protected ready-to-cancelled transition."""
+    client = _seeded_client(tmp_path)
+    route = WEB_API_CANCEL_PLAN_ROUTE.format(plan_id=PLAN_ID)
+
+    forbidden = client.post(route)
+    before = client.get(WEB_API_PLAN_DETAIL_ROUTE.format(plan_id=PLAN_ID))
+    csrf_token = _data(client.get(WEB_API_BOOTSTRAP_ROUTE))["csrf_token"]
+    assert isinstance(csrf_token, str)
+    cancelled = client.post(route, headers={WEB_CSRF_HEADER_NAME: csrf_token})
+    repeated = client.post(route, headers={WEB_CSRF_HEADER_NAME: csrf_token})
+
+    assert forbidden.status_code == HTTP_FORBIDDEN_STATUS
+    assert _error(forbidden)["code"] == "csrf_invalid"
+    assert _object(_data(before), "plan")["status"] == "ready"
+    assert cancelled.status_code == HTTP_OK_STATUS
+    cancelled_data = _data(cancelled)
+    assert _object(cancelled_data, "plan")["status"] == "cancelled"
+    assert _object(cancelled_data, "capabilities")["can_cancel"] is False
+    assert cancelled_data["active_operation_id"] is None
+    assert repeated.status_code == HTTP_CONFLICT_STATUS
+    assert _error(repeated)["code"] == "plan_not_ready"
 
 
 def _seeded_client(tmp_path: Path) -> TestClient:

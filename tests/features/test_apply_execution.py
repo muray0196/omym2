@@ -6,6 +6,7 @@ Why: Protects durable FileEvent order before Library file mutation.
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -13,17 +14,25 @@ from uuid import UUID
 import pytest
 
 from omym2.domain.models.file_event import FileEvent, FileEventStatus
-from omym2.domain.models.file_snapshot import FileSnapshot
+from omym2.domain.models.file_snapshot import FileSnapshot, FilesystemIdentity
 from omym2.domain.models.library import Library, LibraryStatus
+from omym2.domain.models.operation import Operation, OperationKind, OperationStatus, RunCompletedResult
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
-from omym2.domain.models.run import RunStatus
+from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.features.apply.dto import ApplyOptions, ApplyPlanRequest
 from omym2.features.apply.ports import ApplyPlanPorts
-from omym2.features.apply.usecases.apply_plan import ApplyNotConfirmedError, ApplyPlanUseCase, PlanCannotBeAppliedError
-from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
+from omym2.features.apply.usecases.apply_plan import (
+    INVALID_PATH_MOVE_FAILURE_MESSAGE,
+    MOVE_FAILED_ERROR_CODE,
+    MOVE_FAILED_MESSAGE,
+    ApplyNotConfirmedError,
+    ApplyPlanError,
+    ApplyPlanUseCase,
+)
+from omym2.shared.ids import ActionId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
@@ -37,11 +46,14 @@ CONTENT_HASH = "content-hash"
 EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
 FILE_EXTENSION = ".flac"
 FILE_SIZE = 5
+FILESYSTEM_IDENTITY = FilesystemIdentity(device_id=1, inode=2, size=FILE_SIZE, mtime_ns=3, ctime_ns=4)
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 LIBRARY_ROOT = "/music/library"
 METADATA_HASH = "metadata-hash"
-MOVE_FAILURE_MESSAGE = "move failed"
-SUCCESSFUL_MOVE_COMMIT_COUNT = 4
+OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
+OPERATION_IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def012345682")
+OPERATION_REQUEST_FINGERPRINT = "apply-plan-fingerprint"
+SUCCESSFUL_MOVE_COMMIT_COUNT = 5
 OTHER_LIBRARY_ROOT = "/music/moved-library"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
@@ -49,6 +61,7 @@ SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 SECOND_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567f"))
 SECOND_SOURCE_PATH = "/music/incoming/Second.flac"
 SECOND_TARGET_PATH = "Artist/2026_Album/1-03_Second.flac"
+SENSITIVE_MOVE_FAILURE_DETAIL = "Permission denied while moving /home/alice/private-library/Secret.flac"
 SOURCE_PATH = "/music/incoming/Title.flac"
 TARGET_PATH = "Artist/2026_Album/1-02_Title.flac"
 TRACK_ARTIST = "Artist"
@@ -76,16 +89,22 @@ def test_apply_creates_run_and_pending_file_event_before_file_move() -> None:
         ),
     )
 
-    run = ApplyPlanUseCase(ports).execute(_apply_request())
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
 
     assert run is not None
     assert run.status == RunStatus.SUCCEEDED
     assert mover.moves == [(SOURCE_PATH, f"{LIBRARY_ROOT}/{TARGET_PATH}")]
+    assert mover.source_roots == [None]
     assert mover.target_roots == [LIBRARY_ROOT]
+    assert mover.expected_source_identities == [FILESYSTEM_IDENTITY]
     assert mover.states_at_move == [("running", "applying", "pending")]
     assert _stored_plan(uow).status == PlanStatus.APPLIED
     assert _stored_action(uow).status == ActionStatus.APPLIED
     assert _stored_event(uow).status == FileEventStatus.SUCCEEDED
+    operation = _stored_operation(uow)
+    assert operation.status == OperationStatus.SUCCEEDED
+    assert isinstance(operation.result, RunCompletedResult)
+    assert operation.result.run_id == RUN_ID
     assert uow.commit_count == SUCCESSFUL_MOVE_COMMIT_COUNT
     assert uow.usecase_scope_enter_count == USECASE_SCOPE_CALL_COUNT
     assert uow.usecase_scope_exit_count == USECASE_SCOPE_CALL_COUNT
@@ -104,7 +123,7 @@ def test_apply_marks_skip_action_applied_without_file_event() -> None:
     uow.plan_actions.save(_skip_action())
     ports, mover = _ports(uow, {}, SequenceIdGenerator(run_ids=deque((RUN_ID,))))
 
-    run = ApplyPlanUseCase(ports).execute(_apply_request())
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
 
     assert run is not None
     assert run.status == RunStatus.SUCCEEDED
@@ -121,7 +140,7 @@ def test_apply_succeeds_when_plan_has_no_eligible_move_actions() -> None:
     uow.plan_actions.save(_blocked_action())
     ports, mover = _ports(uow, {}, SequenceIdGenerator(run_ids=deque((RUN_ID,))))
 
-    run = ApplyPlanUseCase(ports).execute(_apply_request())
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
 
     assert run is not None
     assert run.status == RunStatus.SUCCEEDED
@@ -144,9 +163,75 @@ def test_apply_precondition_failure_creates_no_file_event() -> None:
         SequenceIdGenerator(run_ids=deque((RUN_ID,))),
     )
 
-    run = ApplyPlanUseCase(ports).execute(_apply_request())
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
 
     assert run is not None
+    assert run.status == RunStatus.FAILED
+    action = _stored_action(uow)
+    assert action.status == ActionStatus.FAILED
+    assert action.reason == PlanActionReason.SOURCE_CHANGED
+    assert uow.file_events.records == {}
+    assert mover.moves == []
+
+
+def test_apply_requires_filesystem_identity_before_pending_event() -> None:
+    """Matching hashes without an ephemeral source token cannot reach mutation."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan())
+    uow.plan_actions.save(_move_action())
+    ports, mover = _ports(
+        uow,
+        {SOURCE_PATH: _snapshot(SOURCE_PATH, filesystem_identity=None)},
+        SequenceIdGenerator(run_ids=deque((RUN_ID,))),
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status == RunStatus.FAILED
+    action = _stored_action(uow)
+    assert action.status == ActionStatus.FAILED
+    assert action.reason == PlanActionReason.SOURCE_CHANGED
+    assert uow.file_events.records == {}
+    assert mover.moves == []
+
+
+@pytest.mark.parametrize(
+    ("action_type", "content_hash_at_plan", "metadata_hash_at_plan"),
+    [
+        (ActionType.MOVE, None, METADATA_HASH),
+        (ActionType.MOVE, CONTENT_HASH, None),
+        (ActionType.REFRESH_METADATA, None, METADATA_HASH),
+        (ActionType.REFRESH_METADATA, CONTENT_HASH, None),
+        (ActionType.REFRESH_METADATA, "changed-content-hash", METADATA_HASH),
+        (ActionType.REFRESH_METADATA, CONTENT_HASH, "changed-metadata-hash"),
+    ],
+)
+def test_apply_requires_both_recorded_hashes_for_eligible_actions(
+    action_type: ActionType,
+    content_hash_at_plan: str | None,
+    metadata_hash_at_plan: str | None,
+) -> None:
+    """Move and refresh actions fail before mutation when either hash is unusable."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan())
+    uow.plan_actions.save(
+        replace(
+            _move_action(),
+            action_type=action_type,
+            content_hash_at_plan=content_hash_at_plan,
+            metadata_hash_at_plan=metadata_hash_at_plan,
+        )
+    )
+    ports, mover = _ports(
+        uow,
+        {SOURCE_PATH: _snapshot(SOURCE_PATH)},
+        SequenceIdGenerator(run_ids=deque((RUN_ID,))),
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
     assert run.status == RunStatus.FAILED
     action = _stored_action(uow)
     assert action.status == ActionStatus.FAILED
@@ -167,7 +252,7 @@ def test_apply_metadata_precondition_failure_creates_no_file_event() -> None:
         SequenceIdGenerator(run_ids=deque((RUN_ID,))),
     )
 
-    run = ApplyPlanUseCase(ports).execute(_apply_request())
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
 
     assert run is not None
     assert run.status == RunStatus.FAILED
@@ -199,7 +284,7 @@ def test_apply_marks_run_partial_failed_when_later_move_fails() -> None:
         mover=RecordingFileMover(uow, failing_targets={f"{LIBRARY_ROOT}/{SECOND_TARGET_PATH}"}),
     )
 
-    run = ApplyPlanUseCase(ports).execute(_apply_request())
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
 
     assert run is not None
     assert run.status == RunStatus.PARTIAL_FAILED
@@ -207,7 +292,14 @@ def test_apply_marks_run_partial_failed_when_later_move_fails() -> None:
     assert _stored_action(uow).status == ActionStatus.APPLIED
     assert _stored_action(uow, SECOND_ACTION_ID).status == ActionStatus.FAILED
     assert _stored_event(uow).status == FileEventStatus.SUCCEEDED
-    assert _stored_event(uow, SECOND_EVENT_ID).status == FileEventStatus.FAILED
+    failed_event = _stored_event(uow, SECOND_EVENT_ID)
+    assert failed_event.status == FileEventStatus.FAILED
+    assert failed_event.error_code == MOVE_FAILED_ERROR_CODE
+    assert failed_event.error_message == MOVE_FAILED_MESSAGE
+    assert run.error_summary == MOVE_FAILED_MESSAGE
+    assert SENSITIVE_MOVE_FAILURE_DETAIL not in failed_event.error_message
+    assert SENSITIVE_MOVE_FAILURE_DETAIL not in run.error_summary
+    assert _stored_operation(uow).status == OperationStatus.SUCCEEDED
 
 
 def test_apply_marks_action_invalid_path_when_mover_rejects_target() -> None:
@@ -223,7 +315,7 @@ def test_apply_marks_action_invalid_path_when_mover_rejects_target() -> None:
         mover=RecordingFileMover(uow, invalid_targets={f"{LIBRARY_ROOT}/{TARGET_PATH}"}),
     )
 
-    run = ApplyPlanUseCase(ports).execute(_apply_request())
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
 
     assert run is not None
     assert run.status == RunStatus.FAILED
@@ -233,17 +325,21 @@ def test_apply_marks_action_invalid_path_when_mover_rejects_target() -> None:
     event = _stored_event(uow)
     assert event.status == FileEventStatus.FAILED
     assert event.error_code == PlanActionReason.INVALID_PATH.value
+    assert event.error_message == INVALID_PATH_MOVE_FAILURE_MESSAGE
+    assert run.error_summary == INVALID_PATH_MOVE_FAILURE_MESSAGE
+    assert SENSITIVE_MOVE_FAILURE_DETAIL not in event.error_message
+    assert SENSITIVE_MOVE_FAILURE_DETAIL not in run.error_summary
 
 
-def test_plan_cannot_be_applied_twice() -> None:
-    """Terminal Plans are rejected without creating another Run."""
+def test_apply_rejects_execution_without_a_claimed_running_state() -> None:
+    """Apply execution cannot bypass the atomic acceptance boundary."""
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library())
     uow.plans.save(_plan(status=PlanStatus.APPLIED))
     ports, _ = _ports(uow, {}, SequenceIdGenerator(run_ids=deque((RUN_ID,))))
 
-    with pytest.raises(PlanCannotBeAppliedError):
-        _ = ApplyPlanUseCase(ports).execute(_apply_request())
+    with pytest.raises(ApplyPlanError):
+        _ = ApplyPlanUseCase(ports).execute(_unclaimed_apply_request())
 
     assert uow.runs.records == {}
     assert uow.file_events.records == {}
@@ -257,7 +353,7 @@ def test_apply_requires_confirmation_option() -> None:
     ports, _ = _ports(uow, {}, SequenceIdGenerator(run_ids=deque((RUN_ID,))))
 
     with pytest.raises(ApplyNotConfirmedError):
-        _ = ApplyPlanUseCase(ports).execute(ApplyPlanRequest(PLAN_ID))
+        _ = ApplyPlanUseCase(ports).execute(_unclaimed_apply_request(confirmed=False))
 
     assert uow.runs.records == {}
     assert uow.file_events.records == {}
@@ -278,24 +374,28 @@ def test_apply_disposes_usecase_scope_when_unexpected_error_escapes() -> None:
     )
 
     with pytest.raises(KeyError):
-        _ = ApplyPlanUseCase(ports).execute(_apply_request())
+        _ = ApplyPlanUseCase(ports).execute(_apply_request(uow))
 
     assert uow.usecase_scope_enter_count == USECASE_SCOPE_CALL_COUNT
     assert uow.usecase_scope_exit_count == USECASE_SCOPE_CALL_COUNT
 
 
-def test_apply_expires_plan_when_library_root_changed_before_run() -> None:
-    """A root mismatch before Run creation expires the Plan without FileEvents."""
+def test_apply_fails_claimed_run_when_library_root_changes_before_first_action() -> None:
+    """A root mismatch after claim fails managed state without FileEvents."""
     uow = InMemoryUnitOfWork()
-    uow.libraries.save(_library(root_path=OTHER_LIBRARY_ROOT))
+    uow.libraries.save(_library())
     uow.plans.save(_plan())
+    uow.plan_actions.save(_skip_action())
     ports, _ = _ports(uow, {}, SequenceIdGenerator(run_ids=deque((RUN_ID,))))
+    request = _apply_request(uow)
+    uow.libraries.save(_library(root_path=OTHER_LIBRARY_ROOT))
 
-    run = ApplyPlanUseCase(ports).execute(_apply_request())
+    run = ApplyPlanUseCase(ports).execute(request)
 
-    assert run is None
-    assert _stored_plan(uow).status == PlanStatus.EXPIRED
-    assert uow.runs.records == {}
+    assert run.status == RunStatus.FAILED
+    assert _stored_plan(uow).status == PlanStatus.FAILED
+    assert _stored_action(uow).status == ActionStatus.PLANNED
+    assert _stored_operation(uow).status == OperationStatus.FAILED
     assert uow.file_events.records == {}
 
 
@@ -317,7 +417,7 @@ def test_apply_marks_partial_failed_when_library_root_changes_after_run() -> Non
         mover=RecordingFileMover(uow, root_after_first_move=OTHER_LIBRARY_ROOT),
     )
 
-    run = ApplyPlanUseCase(ports).execute(_apply_request())
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
 
     assert run is not None
     assert run.status == RunStatus.PARTIAL_FAILED
@@ -325,6 +425,7 @@ def test_apply_marks_partial_failed_when_library_root_changes_after_run() -> Non
     assert _stored_action(uow).status == ActionStatus.APPLIED
     assert _stored_action(uow, SECOND_ACTION_ID).status == ActionStatus.PLANNED
     assert tuple(uow.file_events.records) == (EVENT_ID,)
+    assert _stored_operation(uow).status == OperationStatus.FAILED
 
 
 def test_apply_registers_library_after_successful_organize_plan() -> None:
@@ -334,13 +435,13 @@ def test_apply_registers_library_after_successful_organize_plan() -> None:
     uow.tracks.save(_track(size=FILE_SIZE, mtime=BASE_TIME))
     uow.plans.save(_plan(plan_type=PlanType.ORGANIZE))
     uow.plan_actions.save(_move_action(source_path=LIBRARY_SOURCE_PATH, track_id=TRACK_ID))
-    ports, _ = _ports(
+    ports, mover = _ports(
         uow,
         {LIBRARY_SOURCE_FILESYSTEM_PATH: _snapshot(LIBRARY_SOURCE_FILESYSTEM_PATH)},
         SequenceIdGenerator(run_ids=deque((RUN_ID,)), event_ids=deque((EVENT_ID,))),
     )
 
-    run = ApplyPlanUseCase(ports).execute(_apply_request())
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
 
     assert run is not None
     assert run.status == RunStatus.SUCCEEDED
@@ -352,6 +453,7 @@ def test_apply_registers_library_after_successful_organize_plan() -> None:
     assert track.track_id == TRACK_ID
     assert isinstance(ports.file_snapshot_reader, MappingSnapshotReader)
     assert ports.file_snapshot_reader.captured_paths == [LIBRARY_SOURCE_FILESYSTEM_PATH]
+    assert mover.source_roots == [LIBRARY_ROOT]
 
 
 class MappingSnapshotReader:
@@ -398,7 +500,9 @@ class RecordingFileMover:
         self._invalid_targets: set[str] = set() if invalid_targets is None else set(invalid_targets)
         self._root_after_first_move: str | None = root_after_first_move
         self.moves: list[tuple[str, str]] = []
+        self.source_roots: list[str | None] = []
         self.target_roots: list[str | None] = []
+        self.expected_source_identities: list[FilesystemIdentity | None] = []
         self.states_at_move: list[tuple[str, str, str]] = []
 
     def move(
@@ -406,11 +510,15 @@ class RecordingFileMover:
         source: FileSystemPath,
         target: FileSystemPath,
         *,
+        source_root: FileSystemPath | None = None,
         target_root: FileSystemPath | None = None,
+        expected_source_identity: FilesystemIdentity | None = None,
     ) -> None:
         """Record move inputs and fail configured targets."""
         self.moves.append((str(source), str(target)))
+        self.source_roots.append(None if source_root is None else str(source_root))
         self.target_roots.append(None if target_root is None else str(target_root))
+        self.expected_source_identities.append(expected_source_identity)
         run = self._uow.runs.get(RUN_ID)
         plan = self._uow.plans.get(PLAN_ID)
         events = tuple(self._uow.file_events.records.values())
@@ -420,10 +528,10 @@ class RecordingFileMover:
         self.states_at_move.append((run.status.value, plan.status.value, events[-1].status.value))
 
         if str(target) in self._failing_targets:
-            raise OSError(MOVE_FAILURE_MESSAGE)
+            raise OSError(SENSITIVE_MOVE_FAILURE_DETAIL)
 
         if str(target) in self._invalid_targets:
-            raise ValueError(MOVE_FAILURE_MESSAGE)
+            raise ValueError(SENSITIVE_MOVE_FAILURE_DETAIL)
 
         if self._root_after_first_move is not None and len(self.moves) == 1:
             library = self._uow.libraries.get(LIBRARY_ID)
@@ -565,7 +673,13 @@ def _track(
     )
 
 
-def _snapshot(path: str, *, content_hash: str = CONTENT_HASH, metadata_hash: str = METADATA_HASH) -> FileSnapshot:
+def _snapshot(
+    path: str,
+    *,
+    content_hash: str = CONTENT_HASH,
+    metadata_hash: str = METADATA_HASH,
+    filesystem_identity: FilesystemIdentity | None = FILESYSTEM_IDENTITY,
+) -> FileSnapshot:
     return FileSnapshot(
         path=path,
         size=FILE_SIZE,
@@ -574,6 +688,7 @@ def _snapshot(path: str, *, content_hash: str = CONTENT_HASH, metadata_hash: str
         content_hash=content_hash,
         metadata_hash=metadata_hash,
         metadata=_metadata(),
+        filesystem_identity=filesystem_identity,
         captured_at=BASE_TIME,
     )
 
@@ -582,8 +697,40 @@ def _metadata() -> TrackMetadata:
     return TrackMetadata(title=TRACK_TITLE, artist=TRACK_ARTIST)
 
 
-def _apply_request() -> ApplyPlanRequest:
-    return ApplyPlanRequest(PLAN_ID, options=ApplyOptions(yes=True))
+def _apply_request(uow: InMemoryUnitOfWork) -> ApplyPlanRequest:
+    plan = uow.plans.get(PLAN_ID)
+    assert plan is not None
+    run = Run(
+        run_id=RUN_ID,
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        status=RunStatus.RUNNING,
+        started_at=BASE_TIME,
+    )
+    operation = Operation.queued(
+        operation_id=OPERATION_ID,
+        kind=OperationKind.APPLY_PLAN,
+        idempotency_key=OPERATION_IDEMPOTENCY_KEY,
+        request_fingerprint=OPERATION_REQUEST_FINGERPRINT,
+        requested_at=BASE_TIME,
+        library_id=LIBRARY_ID,
+        plan_id=PLAN_ID,
+        run_id=RUN_ID,
+    )
+    assert uow.claim_apply(PLAN_ID, run, operation)
+    uow.commit()
+    uow.operations.save(operation.mark_running(BASE_TIME))
+    uow.commit()
+    return _unclaimed_apply_request()
+
+
+def _unclaimed_apply_request(*, confirmed: bool = True) -> ApplyPlanRequest:
+    return ApplyPlanRequest(
+        plan_id=PLAN_ID,
+        run_id=RUN_ID,
+        operation_id=OPERATION_ID,
+        options=ApplyOptions(yes=confirmed),
+    )
 
 
 def _stored_plan(uow: InMemoryUnitOfWork) -> Plan:
@@ -602,6 +749,12 @@ def _stored_event(uow: InMemoryUnitOfWork, event_id: EventId = EVENT_ID) -> File
     event = uow.file_events.get(event_id)
     assert event is not None
     return event
+
+
+def _stored_operation(uow: InMemoryUnitOfWork) -> Operation:
+    operation = uow.operations.lookup(OPERATION_ID)
+    assert isinstance(operation, Operation)
+    return operation
 
 
 def _stored_library(uow: InMemoryUnitOfWork) -> Library:

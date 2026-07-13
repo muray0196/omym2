@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from omym2.domain.models.operation import Operation, OperationError, OperationKind, OperationLookup, OperationResult
+    from omym2.domain.models.operation import OperationError, OperationKind, OperationLookup, OperationResult
     from omym2.shared.ids import LibraryId, OperationId, PlanId, RunId
 
 
@@ -42,19 +42,6 @@ class FinishOperationRequest:
     operation_id: OperationId
     result: OperationResult | None = None
     error: OperationError | None = None
-
-
-class IdempotencyKeyReusedError(RuntimeError):
-    """Raised when one key is reused across different canonical work."""
-
-
-class OperationInProgressError(RuntimeError):
-    """Raised when another active Operation already owns the global slot."""
-
-    def __init__(self, active_operation: Operation) -> None:
-        """Retain the active identity for structured remediation."""
-        self.active_operation: Operation = active_operation
-        super().__init__("Another state-changing Operation is in progress.")
 
 
 class OperationNotFoundError(LookupError):

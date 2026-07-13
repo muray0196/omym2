@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Never
 from uuid import UUID
 
 from omym2.adapters.cli.commands.organize import OrganizeCommandDependencies, run_organize_command
@@ -29,7 +29,6 @@ if TYPE_CHECKING:
 
     import pytest
 
-    from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
@@ -77,7 +76,7 @@ def test_organize_command_passes_normalized_library_root_and_trust_stat_to_reque
         stderr,
         OrganizeCommandDependencies(
             create_organize_plan=CapturingCreateOrganizePlanUseCase(object()).execute,
-            apply_plan_ports_factory=_stub_apply_plan_ports,
+            apply_plan=_unexpected_apply,
             normalize_library_root=lambda path: f"normalized:{path}",
         ),
     )
@@ -87,7 +86,7 @@ def test_organize_command_passes_normalized_library_root_and_trust_stat_to_reque
         stderr,
         OrganizeCommandDependencies(
             create_organize_plan=CapturingCreateOrganizePlanUseCase(object()).execute,
-            apply_plan_ports_factory=_stub_apply_plan_ports,
+            apply_plan=_unexpected_apply,
             normalize_library_root=lambda path: f"normalized:{path}",
         ),
     )
@@ -258,5 +257,6 @@ def _library(root_path: str) -> Library:
     )
 
 
-def _stub_apply_plan_ports() -> ApplyPlanPorts:
-    return cast("ApplyPlanPorts", object())
+def _unexpected_apply(*_args: object) -> Never:
+    """Fail if a Plan-only command test unexpectedly enters Apply."""
+    raise AssertionError

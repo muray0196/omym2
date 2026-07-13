@@ -22,12 +22,17 @@ from omym2.adapters.db.sqlite.repositories import (
     SQLiteRunRepository,
     SQLiteTrackRepository,
 )
+from omym2.domain.models.plan import PlanStatus
 
 if TYPE_CHECKING:
     import sqlite3
     from collections.abc import Generator
     from os import PathLike
     from types import TracebackType
+
+    from omym2.domain.models.operation import Operation
+    from omym2.domain.models.run import Run
+    from omym2.shared.ids import PlanId
 
 UNIT_OF_WORK_ALREADY_OPEN_MESSAGE = "SQLiteUnitOfWork is already open."
 UNIT_OF_WORK_NOT_OPEN_MESSAGE = "SQLiteUnitOfWork must be entered before use."
@@ -192,6 +197,15 @@ class SQLiteUnitOfWork:
         if not self._is_completed:
             connection.rollback()
             self._is_completed = True
+
+    def claim_apply(self, plan_id: PlanId, run: Run, operation: Operation) -> bool:
+        """Stage one compare-and-set Apply claim and its durable associations."""
+        claimed = self.plans.compare_and_set_status(plan_id, PlanStatus.READY, PlanStatus.APPLYING)
+        if not claimed:
+            return False
+        self.runs.save(run)
+        self.operations.save(operation)
+        return True
 
     def _require_connection(self) -> sqlite3.Connection:
         connection = self._connection

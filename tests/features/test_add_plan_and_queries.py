@@ -634,6 +634,7 @@ def test_add_plan_blocks_source_changed_after_scan() -> None:
         content_hash=CONTENT_HASH,
         metadata_hash=calculate_metadata_fingerprint(METADATA),
         metadata=METADATA,
+        filesystem_identity=None,
         captured_at=BASE_TIME,
     )
     uow = InMemoryUnitOfWork()
@@ -839,6 +840,7 @@ def _snapshot(path: str, metadata: TrackMetadata, content_hash: str) -> FileSnap
         content_hash=content_hash,
         metadata_hash=calculate_metadata_fingerprint(metadata),
         metadata=metadata,
+        filesystem_identity=None,
         captured_at=BASE_TIME,
     )
 

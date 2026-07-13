@@ -20,6 +20,7 @@ import {
   planListSecondPage,
   readyPlanActionsFirstPage,
   readyPlanActionsSecondPage,
+  readyPlanDetail,
   readyPlanFacets,
   readyPlanGroupsFirstPage,
   readyPlanGroupsSecondPage,
@@ -72,6 +73,7 @@ export const server = setupServer(
     }
     return HttpResponse.json(planListFirstPage);
   }),
+  http.get("*/api/plans/:planId", () => HttpResponse.json(readyPlanDetail)),
   http.get("*/api/plans/:planId/actions", ({ request }) => {
     const cursor = new URL(request.url).searchParams.get("cursor");
     return HttpResponse.json(

@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Never
 from uuid import UUID
 
 from omym2.adapters.cli.commands.refresh import RefreshCommandDependencies, run_refresh_command
@@ -35,7 +35,6 @@ if TYPE_CHECKING:
 
     import pytest
 
-    from omym2.features.apply.ports import ApplyPlanPorts
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
@@ -117,7 +116,7 @@ def test_refresh_command_passes_normalized_target_path_and_trust_stat_to_request
         stderr,
         RefreshCommandDependencies(
             create_refresh_plan=CapturingCreateRefreshPlanUseCase(object()).execute,
-            apply_plan_ports_factory=_stub_apply_plan_ports,
+            apply_plan=_unexpected_apply,
             normalize_target_path=lambda path: f"normalized:{path}",
         ),
     )
@@ -127,7 +126,7 @@ def test_refresh_command_passes_normalized_target_path_and_trust_stat_to_request
         stderr,
         RefreshCommandDependencies(
             create_refresh_plan=CapturingCreateRefreshPlanUseCase(object()).execute,
-            apply_plan_ports_factory=_stub_apply_plan_ports,
+            apply_plan=_unexpected_apply,
             normalize_target_path=lambda path: f"normalized:{path}",
         ),
     )
@@ -418,8 +417,9 @@ def _empty_plan() -> Plan:
     )
 
 
-def _stub_apply_plan_ports() -> ApplyPlanPorts:
-    return cast("ApplyPlanPorts", object())
+def _unexpected_apply(*_args: object) -> Never:
+    """Fail if a Plan-only command test unexpectedly enters Apply."""
+    raise AssertionError
 
 
 def _track(

@@ -23,13 +23,15 @@ from omym2.config import (
     WEB_API_CHECK_ROUTE,
     WEB_API_HISTORY_ROUTE,
     WEB_API_LIBRARIES_ROUTE,
+    WEB_API_RUN_DETAIL_ROUTE,
 )
 from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.run import Run, RunStatus
 from omym2.features.check.dto import ListCheckIssuesResult
+from omym2.features.history.dto import RunCapabilitiesResult, RunCapabilityReason, RunDetailResult
 from omym2.features.libraries.dto import LibraryInspection
-from omym2.shared.ids import LibraryId, PlanId, RunId
+from omym2.shared.ids import LibraryId, OperationId, PlanId, RunId
 from omym2.shared.pagination import Page
 
 if TYPE_CHECKING:
@@ -39,6 +41,7 @@ NOW = datetime(2026, 7, 13, tzinfo=UTC)
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345621"))
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345622"))
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345623"))
+OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345624"))
 
 
 def test_library_list_serializes_effective_readiness() -> None:
@@ -117,6 +120,75 @@ def test_history_rejects_invalid_cursor_with_typed_validation_envelope() -> None
     assert response.status_code == HTTP_UNPROCESSABLE_CONTENT_STATUS
     assert response.json()["errors"][0]["code"] == "validation_failed"
     assert response.json()["errors"][0]["field"] == "query.cursor"
+
+
+def test_history_detail_projects_only_the_related_active_operation() -> None:
+    """Run detail uses the platform's typed related-Operation projection."""
+    run = Run(
+        run_id=RUN_ID,
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        status=RunStatus.SUCCEEDED,
+        started_at=NOW,
+        completed_at=NOW,
+    )
+
+    def get_run_detail(_request: object) -> RunDetailResult:
+        return RunDetailResult(
+            run=run,
+            capabilities=RunCapabilitiesResult(can_create_undo=True, disabled_reasons=()),
+        )
+
+    def active_operation_id(_run_id: RunId) -> OperationId:
+        return OPERATION_ID
+
+    context = SimpleNamespace(
+        get_run_detail=get_run_detail,
+        active_operation_id=active_operation_id,
+    )
+
+    response = _client(create_history_router, context).get(WEB_API_RUN_DETAIL_ROUTE.format(run_id=RUN_ID))
+
+    assert response.status_code == HTTP_OK_STATUS
+    assert _object(_payload(cast("object", response.json())), "data")["active_operation_id"] == str(OPERATION_ID)
+
+
+def test_history_detail_serializes_already_undone_capability_reason() -> None:
+    """An applied or in-progress Undo remains a typed disabled capability, not a route failure."""
+    run = Run(
+        run_id=RUN_ID,
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        status=RunStatus.SUCCEEDED,
+        started_at=NOW,
+        completed_at=NOW,
+    )
+
+    def get_run_detail(_request: object) -> RunDetailResult:
+        return RunDetailResult(
+            run=run,
+            capabilities=RunCapabilitiesResult(
+                can_create_undo=False,
+                disabled_reasons=(RunCapabilityReason.ALREADY_UNDONE_OR_IN_PROGRESS,),
+            ),
+        )
+
+    def active_operation_id(_run_id: RunId) -> None:
+        return None
+
+    context = SimpleNamespace(
+        get_run_detail=get_run_detail,
+        active_operation_id=active_operation_id,
+    )
+
+    response = _client(create_history_router, context).get(WEB_API_RUN_DETAIL_ROUTE.format(run_id=RUN_ID))
+    data = _object(_payload(cast("object", response.json())), "data")
+    capabilities = _object(data, "capabilities")
+    reasons = _objects(capabilities, "disabled_reasons")
+
+    assert response.status_code == HTTP_OK_STATUS
+    assert capabilities["can_create_undo"] is False
+    assert reasons[0]["code"] == "already_undone_or_in_progress"
 
 
 def test_check_list_serializes_persisted_freshness_without_running_check() -> None:

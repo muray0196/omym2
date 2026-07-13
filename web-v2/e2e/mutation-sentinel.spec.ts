@@ -1,15 +1,17 @@
 /**
- * Summary: Proves every M3 Web route leaves the Library music tree byte-for-byte unchanged.
- * Why: Enforces the pre-M4 boundary that the renewed UI cannot mutate music files.
+ * Summary: Proves non-mutating Web routes leave unrelated Library music unchanged.
+ * Why: Keeps passive navigation distinct from the explicit Apply and Undo boundaries.
  */
 import { expect, test } from "@playwright/test";
 
 import { snapshotIsolatedLibrary } from "./library-snapshot";
 import { allM3RoutePaths } from "./route-fixtures";
 
-test("does not mutate Library music files before M4", async ({ page }) => {
-  const before = await snapshotIsolatedLibrary();
-  expect(before.some((entry) => entry.path === "sentinel.flac")).toBe(true);
+test("non-mutating routes preserve an unrelated Library file", async ({
+  page,
+}) => {
+  const before = await sentinelSnapshot();
+  expect(before).toBeDefined();
 
   for (const route of allM3RoutePaths) {
     await page.goto(route);
@@ -28,5 +30,11 @@ test("does not mutate Library music files before M4", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Navigation" })).toBeVisible();
   await page.getByRole("button", { name: "Close navigation" }).click();
 
-  expect(await snapshotIsolatedLibrary()).toEqual(before);
+  expect(await sentinelSnapshot()).toEqual(before);
 });
+
+async function sentinelSnapshot() {
+  return (await snapshotIsolatedLibrary()).find(
+    (entry) => entry.path === "sentinel.flac",
+  );
+}

@@ -14,6 +14,7 @@ export const operationCopy = {
   units: (completed: number, total: number) =>
     `${completed} of ${total} units complete`,
   unknownStage: "Working",
+  stageCode: "server stage",
   expired:
     "This Operation result has expired. Inspect the current Plans, History, or Health state before starting new work.",
   unexpected: "The Operation status could not be read.",
@@ -22,6 +23,7 @@ export const operationCopy = {
     `Library registered with ${trackCount} tracks.`,
   checkCompleted: (issueCount: number) =>
     `Check completed with ${issueCount} findings.`,
+  runCompleted: "Apply completed. Opening the Run in History.",
   associations: "Related persisted state",
   inspectPlan: "Inspect related Plan",
   inspectRun: "Inspect related Run",

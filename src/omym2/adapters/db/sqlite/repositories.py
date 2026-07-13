@@ -210,7 +210,8 @@ RUN_SELECT_FROM = """
             FROM runs
 """
 PLAN_SELECT_FROM = """
-            SELECT plan_id, library_id, plan_type, status, created_at, config_hash, library_root_at_plan, summary_json
+            SELECT plan_id, library_id, source_run_id, plan_type, status, created_at, config_hash,
+                   library_root_at_plan, summary_json
             FROM plans
 """
 PLAN_ACTION_SELECT_FROM = """
@@ -222,6 +223,7 @@ PLAN_ACTION_SELECT_FROM = """
                 action_type,
                 source_path,
                 target_path,
+                reverses_event_id,
                 content_hash_at_plan,
                 metadata_hash_at_plan,
                 status,
@@ -993,6 +995,19 @@ class SQLitePlanRepository(_SQLiteRepository):
         )
         return tuple(_plan_from_row(row) for row in rows)
 
+    def list_by_source_run(self, source_run_id: RunId) -> tuple[Plan, ...]:
+        """Return Undo Plans that record one source Run, in creation order."""
+        rows = _fetch_all(
+            self._connection,
+            PLAN_SELECT_FROM
+            + """
+            WHERE source_run_id = ? AND plan_type = 'undo'
+            ORDER BY created_at, plan_id
+            """,
+            (str(source_run_id),),
+        )
+        return tuple(_plan_from_row(row) for row in rows)
+
     def query_page(  # noqa: PLR0913  # Mirrors the stable PlanRepository browse contract.
         self,
         library_id: LibraryId | None,
@@ -1042,6 +1057,7 @@ class SQLitePlanRepository(_SQLiteRepository):
             INSERT INTO plans (
                 plan_id,
                 library_id,
+                source_run_id,
                 plan_type,
                 status,
                 created_at,
@@ -1049,9 +1065,10 @@ class SQLitePlanRepository(_SQLiteRepository):
                 library_root_at_plan,
                 summary_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(plan_id) DO UPDATE SET
                 library_id = excluded.library_id,
+                source_run_id = excluded.source_run_id,
                 plan_type = excluded.plan_type,
                 status = excluded.status,
                 created_at = excluded.created_at,
@@ -1062,6 +1079,7 @@ class SQLitePlanRepository(_SQLiteRepository):
             (
                 str(plan.plan_id),
                 str(plan.library_id),
+                None if plan.source_run_id is None else str(plan.source_run_id),
                 plan.plan_type.value,
                 plan.status.value,
                 _timestamp_to_text(plan.created_at),
@@ -1070,6 +1088,23 @@ class SQLitePlanRepository(_SQLiteRepository):
                 _summary_to_json(plan.summary),
             ),
         )
+
+    def compare_and_set_status(
+        self,
+        plan_id: PlanId,
+        expected_status: PlanStatus,
+        replacement_status: PlanStatus,
+    ) -> bool:
+        """Replace one Plan status only when the persisted state still matches."""
+        cursor = self._connection.execute(
+            """
+            UPDATE plans
+            SET status = ?
+            WHERE plan_id = ? AND status = ?
+            """,
+            (replacement_status.value, str(plan_id), expected_status.value),
+        )
+        return cursor.rowcount == 1
 
 
 class SQLitePlanActionRepository(_SQLiteRepository):
@@ -1308,13 +1343,14 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 action_type,
                 source_path,
                 target_path,
+                reverses_event_id,
                 content_hash_at_plan,
                 metadata_hash_at_plan,
                 status,
                 reason,
                 sort_order
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(action_id) DO UPDATE SET
                 plan_id = excluded.plan_id,
                 library_id = excluded.library_id,
@@ -1322,6 +1358,7 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 action_type = excluded.action_type,
                 source_path = excluded.source_path,
                 target_path = excluded.target_path,
+                reverses_event_id = excluded.reverses_event_id,
                 content_hash_at_plan = excluded.content_hash_at_plan,
                 metadata_hash_at_plan = excluded.metadata_hash_at_plan,
                 status = excluded.status,
@@ -1336,6 +1373,7 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 action.action_type.value,
                 action.source_path,
                 action.target_path,
+                None if action.reverses_event_id is None else str(action.reverses_event_id),
                 action.content_hash_at_plan,
                 action.metadata_hash_at_plan,
                 action.status.value,
@@ -1376,10 +1414,28 @@ class SQLiteOperationRepository(_SQLiteRepository):
         """Return unfinished Operations in deterministic request order."""
         rows = _fetch_all(
             self._connection,
-            OPERATION_SELECT_FROM
+            OPERATION_SELECT_FROM  # noqa: S608  # Concatenates only static repository SQL fragments.
             + """
-            WHERE status IN ('queued', 'running')
-            ORDER BY requested_at, operation_id
+            WHERE operations.status IN ('queued', 'running')
+               OR (
+                    operations.status = 'interrupted'
+                    AND operations.kind = 'apply_plan'
+                    AND (
+                        EXISTS (
+                            SELECT 1
+                            FROM plans
+                            WHERE plans.plan_id = operations.plan_id
+                              AND plans.status = 'applying'
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM runs
+                            WHERE runs.run_id = operations.run_id
+                              AND runs.status = 'running'
+                        )
+                    )
+               )
+            ORDER BY operations.requested_at, operations.operation_id
             """,
         )
         return tuple(_operation_from_row(row) for row in rows)
@@ -1852,6 +1908,7 @@ def _check_issue_from_row(row: sqlite3.Row) -> CheckIssue:
 
 
 def _plan_from_row(row: sqlite3.Row) -> Plan:
+    source_run_id = _row_optional_text(row, "source_run_id")
     return Plan(
         plan_id=PlanId(parse_uuid(_row_text(row, "plan_id"))),
         library_id=LibraryId(parse_uuid(_row_text(row, "library_id"))),
@@ -1860,12 +1917,14 @@ def _plan_from_row(row: sqlite3.Row) -> Plan:
         created_at=_timestamp_from_text(_row_text(row, "created_at")),
         config_hash=_row_text(row, "config_hash"),
         library_root_at_plan=_row_text(row, "library_root_at_plan"),
+        source_run_id=None if source_run_id is None else RunId(parse_uuid(source_run_id)),
         summary=_summary_from_json(_row_text(row, "summary_json")),
     )
 
 
 def _plan_action_from_row(row: sqlite3.Row) -> PlanAction:
     track_id = _row_optional_text(row, "track_id")
+    reverses_event_id = _row_optional_text(row, "reverses_event_id")
     reason = _row_optional_text(row, "reason")
     return PlanAction(
         action_id=ActionId(parse_uuid(_row_text(row, "action_id"))),
@@ -1880,6 +1939,7 @@ def _plan_action_from_row(row: sqlite3.Row) -> PlanAction:
         status=ActionStatus(_row_text(row, "status")),
         reason=None if reason is None else PlanActionReason(reason),
         sort_order=_row_int(row, "sort_order"),
+        reverses_event_id=None if reverses_event_id is None else EventId(parse_uuid(reverses_event_id)),
     )
 
 

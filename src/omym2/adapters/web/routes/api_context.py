@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from omym2.features.operations.dto import ReserveOperationResult
     from omym2.features.organize.dto import CreateOrganizePlanRequest
     from omym2.features.plans.dto import (
+        CancelPlanRequest,
         GetPlanActionSummariesRequest,
         GetPlanHeaderRequest,
         GroupPlanActionsRequest,
@@ -79,13 +80,14 @@ if TYPE_CHECKING:
         TrackStatusFacetsRequest,
         TrackStatusFacetsResult,
     )
-    from omym2.shared.ids import OperationId, PlanId
+    from omym2.features.undo.dto import CreateUndoPlanRequest
+    from omym2.shared.ids import OperationId, PlanId, RunId
     from omym2.shared.pagination import GroupCount, Page
 
 
 @dataclass(frozen=True, slots=True)
 class PlansRouteContext:
-    """Read-only Plan query handlers resolved by the platform composition root."""
+    """Plan query and synchronous cancellation handlers resolved by platform composition."""
 
     list_plans: Callable[[ListPlansRequest], Page[Plan]]
     get_plan_header: Callable[[GetPlanHeaderRequest], Plan]
@@ -94,6 +96,9 @@ class PlansRouteContext:
     list_plan_actions: Callable[[ListPlanActionsRequest], Page[PlanAction]]
     get_plan_action_facets: Callable[[PlanActionFacetsRequest], PlanActionFacetsResult]
     group_plan_actions: Callable[[GroupPlanActionsRequest], Page[PlanActionGroup]]
+    cancel_plan: Callable[[CancelPlanRequest], Plan]
+    active_operation_id: Callable[[PlanId], OperationId | None]
+    conflicting_operation_id: Callable[[], OperationId | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,7 +120,7 @@ class LibrariesRouteContext:
 
 @dataclass(frozen=True, slots=True)
 class HistoryRouteContext:
-    """Read-only Run and FileEvent handlers resolved by the platform composition root."""
+    """Run and FileEvent query handlers resolved by the platform composition root."""
 
     list_runs: Callable[[ListRunsRequest], Page[Run]]
     get_run_detail: Callable[[GetRunHeaderRequest], RunDetailResult]
@@ -123,6 +128,7 @@ class HistoryRouteContext:
     list_run_events: Callable[[ListRunEventsRequest], Page[FileEvent]]
     get_file_event_status_facets: Callable[[FileEventStatusFacetsRequest], FileEventStatusFacetsResult]
     group_run_events: Callable[[GroupRunEventsRequest], Page[GroupCount]]
+    active_operation_id: Callable[[RunId], OperationId | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,7 +153,7 @@ class SettingsRouteContext:
 
 @dataclass(frozen=True, slots=True)
 class OperationsRouteContext:
-    """Durable M3 planning and Check handlers resolved by platform orchestration."""
+    """Durable planning, Check, Apply, and Undo handlers resolved by platform orchestration."""
 
     get_operation: Callable[[OperationId], Operation]
     active_operation_id: Callable[[], OperationId | None]
@@ -155,11 +161,13 @@ class OperationsRouteContext:
     start_organize_plan: Callable[[CreateOrganizePlanRequest, UUID], ReserveOperationResult]
     start_refresh_plan: Callable[[CreateRefreshPlanRequest, UUID], ReserveOperationResult]
     start_check: Callable[[CheckLibraryRequest, UUID], ReserveOperationResult]
+    start_apply_plan: Callable[[PlanId, UUID], ReserveOperationResult]
+    start_undo_plan: Callable[[CreateUndoPlanRequest, UUID], ReserveOperationResult]
 
 
 @dataclass(frozen=True, slots=True)
 class ApiRouteContext:
-    """Concrete collaborators used by the renewed read-only API routes."""
+    """Concrete collaborators used by the renewed API routes."""
 
     csrf_token: str
     get_bootstrap: Callable[[], BootstrapResult]

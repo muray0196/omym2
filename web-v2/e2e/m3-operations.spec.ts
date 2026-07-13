@@ -1,11 +1,18 @@
 /**
- * Summary: Exercises real-API M3 Settings, planning, and persisted Check flows.
- * Why: Proves keyboard-safe mutations poll to durable results without moving music files.
+ * Summary: Exercises real-API planning, execution, Undo, and persisted evidence flows.
+ * Why: Proves keyboard-safe mutations use durable Operations and exact filesystem outcomes.
  */
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type Page, type Response } from "@playwright/test";
 
-import type { ApiEnvelopeOperationResource } from "../src/api/generated";
+import type {
+  ApiEnvelopeOperationRef,
+  ApiEnvelopeOperationResource,
+  ApiEnvelopePaginatedDataRunHeader,
+  ApiEnvelopePlanDetailData,
+  OperationResource,
+} from "../src/api/generated";
 import { snapshotIsolatedLibrary } from "./library-snapshot";
 
 test.describe.configure({ mode: "serial" });
@@ -152,6 +159,164 @@ test("polls Organize registration and Refresh planning without moving the sentin
   expect(await snapshotIsolatedLibrary()).toEqual(libraryBefore);
 });
 
+test.describe("M4 execution console", () => {
+  test.describe.configure({ mode: "serial", retries: 0 });
+
+  test("applies partial work, reviews evidence, undoes it, and cancels a fresh Plan", async ({
+    page,
+  }) => {
+    const applicationRoot = requiredApplicationRoot();
+    const incomingSuccess = join(applicationRoot, "incoming", "A-Success.flac");
+    const incomingFailure = join(applicationRoot, "incoming", "Z-Failure.flac");
+    const librarySuccess = join(applicationRoot, "library", "A-Success.flac");
+    const libraryFailure = join(applicationRoot, "library", "Z-Failure.flac");
+    const successBytes = await readFile(incomingSuccess);
+
+    expect(await fileExists(incomingFailure)).toBe(true);
+    expect(await fileExists(librarySuccess)).toBe(false);
+    expect(await fileExists(libraryFailure)).toBe(false);
+
+    const addPlanId = await createAddPlanByKeyboard(page);
+    const actions = page.getByRole("list", { name: "Recorded actions" });
+    await expect(
+      actions.getByText("A-Success.flac", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      actions.getByText("Z-Failure.flac", { exact: true }),
+    ).toBeVisible();
+
+    await writeFile(libraryFailure, "E2E apply-time target conflict.\n", {
+      flag: "wx",
+    });
+
+    const applyAcceptance = waitForMutation(
+      page,
+      `/api/plans/${addPlanId}/apply`,
+    );
+    const applyCompletion = waitForSucceededOperation(page);
+    const applyButton = page.getByRole("button", { name: "Apply Plan" });
+    await expect(applyButton).toBeEnabled();
+    await applyButton.focus();
+    await applyButton.press("Enter");
+
+    const acceptedApply = await requiredOperationReference(
+      await applyAcceptance,
+    );
+    const completedApply = await requiredOperation(await applyCompletion);
+    expect(completedApply.operation_id).toBe(acceptedApply.operation_id);
+    expect(completedApply.kind).toBe("apply_plan");
+    expect(completedApply.plan_id).toBe(addPlanId);
+    expect(completedApply.run_id).not.toBeNull();
+    expect(completedApply.result?.kind).toBe("run_completed");
+
+    const sourceRunId = requiredRunId(completedApply);
+    await expect(page).toHaveURL(`/history/${sourceRunId}`);
+    await expect(
+      page.getByRole("heading", { name: "Run detail" }),
+    ).toBeFocused();
+    await expect(
+      page.getByText("Partially failed", { exact: true }),
+    ).toBeVisible();
+    await expectRunEventEvidence(page, { failed: 1, succeeded: 1 });
+
+    expect(await readFile(librarySuccess)).toEqual(successBytes);
+    expect(await fileExists(incomingSuccess)).toBe(false);
+    expect(await fileExists(incomingFailure)).toBe(true);
+    expect(await fileExists(libraryFailure)).toBe(true);
+
+    const undoAcceptance = waitForMutation(
+      page,
+      `/api/history/${sourceRunId}/undo-plan`,
+    );
+    const undoCompletion = waitForSucceededOperation(page);
+    const createUndoPlan = page.getByRole("button", {
+      name: "Create Undo Plan",
+    });
+    await expect(createUndoPlan).toBeEnabled();
+    await createUndoPlan.focus();
+    await createUndoPlan.press("Enter");
+
+    const acceptedUndo = await requiredOperationReference(await undoAcceptance);
+    const completedUndo = await requiredOperation(await undoCompletion);
+    expect(completedUndo.operation_id).toBe(acceptedUndo.operation_id);
+    expect(completedUndo.kind).toBe("undo_plan");
+    expect(completedUndo.result?.kind).toBe("plan_created");
+    const undoPlanId = requiredPlanId(completedUndo);
+
+    await expect(page).toHaveURL(`/plans/${undoPlanId}`);
+    await expect(
+      page.getByRole("heading", { name: "Plan detail" }),
+    ).toBeFocused();
+    await expect(page.getByText("Undo", { exact: true })).toBeVisible();
+    const undoActions = page.getByRole("list", { name: "Recorded actions" });
+    await expect(
+      undoActions.getByText("A-Success.flac", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      undoActions.getByText(incomingSuccess, { exact: true }),
+    ).toBeVisible();
+
+    const undoApplyAcceptance = waitForMutation(
+      page,
+      `/api/plans/${undoPlanId}/apply`,
+    );
+    const undoApplyCompletion = waitForSucceededOperation(page);
+    const applyUndoButton = page.getByRole("button", { name: "Apply Plan" });
+    await expect(applyUndoButton).toBeEnabled();
+    await applyUndoButton.focus();
+    await applyUndoButton.press("Enter");
+
+    const acceptedUndoApply = await requiredOperationReference(
+      await undoApplyAcceptance,
+    );
+    const completedUndoApply = await requiredOperation(
+      await undoApplyCompletion,
+    );
+    expect(completedUndoApply.operation_id).toBe(
+      acceptedUndoApply.operation_id,
+    );
+    expect(completedUndoApply.kind).toBe("apply_plan");
+    expect(completedUndoApply.plan_id).toBe(undoPlanId);
+    const undoRunId = requiredRunId(completedUndoApply);
+
+    await expect(page).toHaveURL(`/history/${undoRunId}`);
+    await expect(
+      page.getByText("Succeeded", { exact: true }).first(),
+    ).toBeVisible();
+    await expectRunEventEvidence(page, { failed: 0, succeeded: 1 });
+    expect(await readFile(incomingSuccess)).toEqual(successBytes);
+    expect(await fileExists(librarySuccess)).toBe(false);
+
+    const freshPlanId = await createAddPlanByKeyboard(page);
+    await expect(page.getByText("Ready", { exact: true })).toBeVisible();
+    const libraryBeforeCancel = await snapshotIsolatedLibrary();
+    const cancelResponse = waitForMutation(
+      page,
+      `/api/plans/${freshPlanId}/cancel`,
+    );
+    const cancelButton = page.getByRole("button", { name: "Cancel Plan" });
+    await expect(cancelButton).toBeEnabled();
+    await cancelButton.focus();
+    await cancelButton.press("Enter");
+
+    const cancelledPlan = await requiredPlanDetail(await cancelResponse);
+    expect(cancelledPlan.plan.status).toBe("cancelled");
+    await expect(page.getByText("Cancelled", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Apply Plan" }),
+    ).toBeDisabled();
+    expect(await snapshotIsolatedLibrary()).toEqual(libraryBeforeCancel);
+
+    const cancelledHistoryResponse = await page.request.get(
+      `/api/history?plan_id=${freshPlanId}`,
+    );
+    expect(cancelledHistoryResponse.ok()).toBe(true);
+    const cancelledHistory =
+      (await cancelledHistoryResponse.json()) as ApiEnvelopePaginatedDataRunHeader;
+    expect(cancelledHistory.data?.items).toEqual([]);
+  });
+});
+
 function requiredApplicationRoot() {
   const applicationRoot = process.env.OMYM2_E2E_APPLICATION_ROOT;
   if (applicationRoot === undefined || applicationRoot.length === 0) {
@@ -160,6 +325,126 @@ function requiredApplicationRoot() {
     );
   }
   return applicationRoot;
+}
+
+async function createAddPlanByKeyboard(page: Page) {
+  await page.goto("/plans/new/add");
+  const operationPoll = waitForSucceededOperation(page);
+  const createPlan = page.getByRole("button", {
+    name: "Scan and create Plan",
+  });
+  await expect(createPlan).toBeEnabled();
+  await createPlan.focus();
+  await createPlan.press("Enter");
+  await operationPoll;
+  await expect(page).toHaveURL(/\/plans\/[0-9a-f-]+$/);
+  await expect(
+    page.getByRole("heading", { name: "Plan detail" }),
+  ).toBeFocused();
+  return requiredPathIdentifier(page.url(), "plans");
+}
+
+function waitForMutation(page: Page, pathname: string) {
+  return page.waitForResponse((response) => {
+    return (
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === pathname
+    );
+  });
+}
+
+async function requiredOperationReference(response: Response) {
+  expect(response.status()).toBe(202);
+  const envelope = (await response.json()) as ApiEnvelopeOperationRef;
+  if (envelope.data === null) {
+    throw new Error("Accepted Operation response did not contain data.");
+  }
+  expect(envelope.errors).toEqual([]);
+  expect(envelope.data.status_url).toBe(
+    `/api/operations/${envelope.data.operation_id}`,
+  );
+  return envelope.data;
+}
+
+async function requiredOperation(response: Response) {
+  const envelope = (await response.json()) as ApiEnvelopeOperationResource;
+  if (envelope.data === null) {
+    throw new Error("Operation poll did not contain data.");
+  }
+  expect(envelope.errors).toEqual([]);
+  expect(envelope.data.status).toBe("succeeded");
+  return envelope.data;
+}
+
+async function requiredPlanDetail(response: Response) {
+  expect(response.status()).toBe(200);
+  const envelope = (await response.json()) as ApiEnvelopePlanDetailData;
+  if (envelope.data === null) {
+    throw new Error("Plan mutation response did not contain data.");
+  }
+  expect(envelope.errors).toEqual([]);
+  return envelope.data;
+}
+
+function requiredRunId(operation: OperationResource) {
+  if (operation.result?.kind !== "run_completed") {
+    throw new Error("Apply Operation did not return a completed Run.");
+  }
+  return operation.result.run_id;
+}
+
+function requiredPlanId(operation: OperationResource) {
+  if (operation.result?.kind !== "plan_created") {
+    throw new Error("Planning Operation did not return a Plan.");
+  }
+  return operation.result.plan_id;
+}
+
+function requiredPathIdentifier(url: string, resource: string) {
+  const segments = new URL(url).pathname.split("/").filter(Boolean);
+  if (segments.length !== 2 || segments[0] !== resource) {
+    throw new Error(`Expected a ${resource} detail URL, received ${url}.`);
+  }
+  const identifier = segments[1];
+  if (identifier === undefined || identifier.length === 0) {
+    throw new Error(`Expected a ${resource} identifier in ${url}.`);
+  }
+  return identifier;
+}
+
+async function expectRunEventEvidence(
+  page: Page,
+  expected: { failed: number; succeeded: number },
+) {
+  const evidence = page
+    .getByRole("heading", { name: "File mutation evidence" })
+    .locator("..");
+  const events = evidence.getByRole("listitem");
+  await expect(events).toHaveCount(expected.failed + expected.succeeded);
+  await expect(events.filter({ hasText: "Succeeded" })).toHaveCount(
+    expected.succeeded,
+  );
+  await expect(events.filter({ hasText: "Failed" })).toHaveCount(
+    expected.failed,
+  );
+}
+
+async function fileExists(path: string) {
+  try {
+    await stat(path);
+  } catch (error) {
+    if (isMissingFileError(error)) return false;
+    throw error;
+  }
+  return true;
+}
+
+function isMissingFileError(error: unknown) {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
 }
 
 function waitForSucceededOperation(page: Page) {

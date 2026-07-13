@@ -1,6 +1,6 @@
 /**
- * Summary: Defines generated-SDK read queries for Plan inspection and opaque cursor pages.
- * Why: Keeps Plan browse data deduplicated, typed, and separate from any mutation transport.
+ * Summary: Defines generated-SDK read queries for exact Plan review and opaque cursor pages.
+ * Why: Keeps Plan capabilities and recorded evidence deduplicated without inferring execution state.
  */
 import {
   infiniteQueryOptions,
@@ -82,14 +82,6 @@ export function exactPlanQuery(planId: string) {
     enabled: planId.length > 0,
     queryFn: () => readPlanDetail(planId),
     queryKey: ["plans", planId, "detail"] as const,
-  });
-}
-
-export function exactPlanListQuery(planId: string) {
-  return queryOptions({
-    enabled: planId.length > 0,
-    queryFn: () => readExactPlanPage(planId),
-    queryKey: ["plans", "exact", planId] as const,
   });
 }
 
@@ -218,23 +210,6 @@ async function readPlanDetail(planId: string): Promise<PlanDetailData> {
   const response = await getPlan({
     baseUrl: globalThis.location.origin,
     path: { plan_id: planId },
-  });
-
-  if (response.error !== undefined) {
-    throwPlanResponseError(response.error, response.response);
-  }
-  if (response.data.data === null) {
-    throw new PlansUnexpectedDataError();
-  }
-  return response.data.data;
-}
-
-async function readExactPlanPage(
-  planId: string,
-): Promise<PaginatedDataPlanSummary> {
-  const response = await listPlans({
-    baseUrl: globalThis.location.origin,
-    query: { query: planId },
   });
 
   if (response.error !== undefined) {

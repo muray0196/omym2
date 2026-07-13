@@ -3204,6 +3204,7 @@
           "active_operation_id": {
             "anyOf": [
               {
+                "format": "uuid",
                 "type": "string"
               },
               {
@@ -5245,6 +5246,208 @@
         "summary": "Get Run Event Groups"
       }
     },
+    "/api/history/{run_id}/undo-plan": {
+      "post": {
+        "operationId": "createUndoPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OMYM2-CSRF-Token",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Omym2-Csrf-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationResource_"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationRef_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Conflict",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Gone",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Undo Plan"
+      }
+    },
     "/api/libraries": {
       "get": {
         "operationId": "getLibraries",
@@ -6547,6 +6750,346 @@
           }
         },
         "summary": "List Plan Actions"
+      }
+    },
+    "/api/plans/{plan_id}/apply": {
+      "post": {
+        "operationId": "applyPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OMYM2-CSRF-Token",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Omym2-Csrf-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationResource_"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_OperationRef_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Conflict",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Gone",
+            "headers": {
+              "Location": {
+                "description": "Relative durable Operation polling URL.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Apply Plan"
+      }
+    },
+    "/api/plans/{plan_id}/cancel": {
+      "post": {
+        "operationId": "cancelPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-OMYM2-CSRF-Token",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Omym2-Csrf-Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope_PlanDetailData_"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Conflict",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error",
+            "headers": {
+              "X-OMYM2-Correlation-ID": {
+                "description": "Request correlation identifier written to server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Cancel Plan"
       }
     },
     "/api/plans/{plan_id}/facets": {

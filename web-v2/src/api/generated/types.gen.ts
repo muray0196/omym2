@@ -2580,6 +2580,70 @@ export type GetRunEventGroupsResponses = {
 
 export type GetRunEventGroupsResponse = GetRunEventGroupsResponses[keyof GetRunEventGroupsResponses];
 
+export type CreateUndoPlanData = {
+    body?: never;
+    headers: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key': string;
+        /**
+         * X-Omym2-Csrf-Token
+         */
+        'X-OMYM2-CSRF-Token': string;
+    };
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/history/{run_id}/undo-plan';
+};
+
+export type CreateUndoPlanErrors = {
+    /**
+     * Forbidden
+     */
+    403: ApiFailureEnvelope;
+    /**
+     * Not Found
+     */
+    404: ApiFailureEnvelope;
+    /**
+     * Conflict
+     */
+    409: ApiFailureEnvelope;
+    /**
+     * Gone
+     */
+    410: ApiFailureEnvelope;
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type CreateUndoPlanError = CreateUndoPlanErrors[keyof CreateUndoPlanErrors];
+
+export type CreateUndoPlanResponses = {
+    /**
+     * OK
+     */
+    200: ApiEnvelopeOperationResource;
+    /**
+     * Successful Response
+     */
+    202: ApiEnvelopeOperationRef;
+};
+
+export type CreateUndoPlanResponse = CreateUndoPlanResponses[keyof CreateUndoPlanResponses];
+
 export type GetLibrariesData = {
     body?: never;
     path?: never;
@@ -3028,6 +3092,122 @@ export type ListPlanActionsResponses = {
 };
 
 export type ListPlanActionsResponse = ListPlanActionsResponses[keyof ListPlanActionsResponses];
+
+export type ApplyPlanData = {
+    body?: never;
+    headers: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key': string;
+        /**
+         * X-Omym2-Csrf-Token
+         */
+        'X-OMYM2-CSRF-Token': string;
+    };
+    path: {
+        /**
+         * Plan Id
+         */
+        plan_id: string;
+    };
+    query?: never;
+    url: '/api/plans/{plan_id}/apply';
+};
+
+export type ApplyPlanErrors = {
+    /**
+     * Forbidden
+     */
+    403: ApiFailureEnvelope;
+    /**
+     * Not Found
+     */
+    404: ApiFailureEnvelope;
+    /**
+     * Conflict
+     */
+    409: ApiFailureEnvelope;
+    /**
+     * Gone
+     */
+    410: ApiFailureEnvelope;
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type ApplyPlanError = ApplyPlanErrors[keyof ApplyPlanErrors];
+
+export type ApplyPlanResponses = {
+    /**
+     * OK
+     */
+    200: ApiEnvelopeOperationResource;
+    /**
+     * Successful Response
+     */
+    202: ApiEnvelopeOperationRef;
+};
+
+export type ApplyPlanResponse = ApplyPlanResponses[keyof ApplyPlanResponses];
+
+export type CancelPlanData = {
+    body?: never;
+    headers: {
+        /**
+         * X-Omym2-Csrf-Token
+         */
+        'X-OMYM2-CSRF-Token': string;
+    };
+    path: {
+        /**
+         * Plan Id
+         */
+        plan_id: string;
+    };
+    query?: never;
+    url: '/api/plans/{plan_id}/cancel';
+};
+
+export type CancelPlanErrors = {
+    /**
+     * Forbidden
+     */
+    403: ApiFailureEnvelope;
+    /**
+     * Not Found
+     */
+    404: ApiFailureEnvelope;
+    /**
+     * Conflict
+     */
+    409: ApiFailureEnvelope;
+    /**
+     * Unprocessable Content
+     */
+    422: ApiFailureEnvelope;
+    /**
+     * Internal Server Error
+     */
+    500: ApiFailureEnvelope;
+};
+
+export type CancelPlanError = CancelPlanErrors[keyof CancelPlanErrors];
+
+export type CancelPlanResponses = {
+    /**
+     * Successful Response
+     */
+    200: ApiEnvelopePlanDetailData;
+};
+
+export type CancelPlanResponse = CancelPlanResponses[keyof CancelPlanResponses];
 
 export type GetPlanActionFacetsData = {
     body?: never;

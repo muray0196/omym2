@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Self
 
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.operation import Operation, OperationLookup, OperationStatus, OperationTombstone
+from omym2.domain.models.plan import PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus
 from omym2.domain.models.track import TrackGrouping
 from omym2.features.check.usecases.group_check_issues import (
@@ -39,7 +40,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.check_run import CheckRun
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.library import Library
-    from omym2.domain.models.plan import Plan, PlanStatus, PlanType
+    from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import ActionType, PlanAction, PlanActionReason
     from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackStatus
@@ -387,9 +388,37 @@ class InMemoryPlanRepository:
         """Return Plans owned by a Library."""
         return tuple(plan for plan in self.records.values() if plan.library_id == library_id)
 
+    def list_by_source_run(self, source_run_id: RunId) -> tuple[Plan, ...]:
+        """Return Undo Plans that record one source Run, in creation order."""
+        plans = (
+            plan
+            for plan in self.records.values()
+            if plan.plan_type is PlanType.UNDO and plan.source_run_id == source_run_id
+        )
+        return tuple(sorted(plans, key=lambda plan: (plan.created_at, str(plan.plan_id))))
+
     def save(self, plan: Plan) -> None:
         """Store or replace one Plan."""
         self.records[plan.plan_id] = plan
+
+    def compare_and_set_status(
+        self,
+        plan_id: PlanId,
+        expected_status: PlanStatus,
+        replacement_status: PlanStatus,
+    ) -> bool:
+        """Replace one fake Plan status only when the current state matches."""
+        plan = self.records.get(plan_id)
+        if plan is None or plan.status is not expected_status:
+            return False
+        if replacement_status is PlanStatus.APPLYING:
+            replacement = plan.mark_applying()
+        elif replacement_status is PlanStatus.CANCELLED:
+            replacement = plan.mark_cancelled()
+        else:
+            raise ValueError(replacement_status)
+        self.records[plan_id] = replacement
+        return True
 
     def query_page(  # noqa: PLR0913  # Mirrors the stable PlanRepository browse contract.
         self,
@@ -983,3 +1012,12 @@ class InMemoryUnitOfWork:
     def rollback(self) -> None:
         """Record a rollback call."""
         self.rollback_count += 1
+
+    def claim_apply(self, plan_id: PlanId, run: Run, operation: Operation) -> bool:
+        """Stage one fake atomic Apply claim for feature tests."""
+        claimed = self.plans.compare_and_set_status(plan_id, PlanStatus.READY, PlanStatus.APPLYING)
+        if not claimed:
+            return False
+        self.runs.save(run)
+        self.operations.save(operation)
+        return True

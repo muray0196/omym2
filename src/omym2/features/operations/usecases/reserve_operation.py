@@ -9,9 +9,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from omym2.domain.models.operation import Operation, OperationTombstone
+from omym2.features.common_ports import IdempotencyKeyReusedError, OperationInProgressError
 from omym2.features.operations.dto import (
-    IdempotencyKeyReusedError,
-    OperationInProgressError,
     ReserveOperationResult,
 )
 

@@ -24,8 +24,9 @@ if TYPE_CHECKING:
     from typing import TextIO
 
     from omym2.domain.models.plan import Plan
-    from omym2.features.apply.ports import ApplyPlanPorts
+    from omym2.domain.models.run import Run
     from omym2.features.common_ports import FileSystemPath
+    from omym2.shared.ids import PlanId
 
 ADD_USAGE_MESSAGE = "Usage: omym2 add [SOURCE_DIR] [--apply] [--yes]"
 APPLY_FLAG = "--apply"
@@ -40,7 +41,7 @@ class AddCommandDependencies:
     """Factories for the ports needed by add plan creation and optional apply."""
 
     create_add_plan: Callable[[CreateAddPlanRequest], Plan]
-    apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
+    apply_plan: Callable[[PlanId], Run]
     normalize_source_path: Callable[[FileSystemPath], str]
 
 
@@ -90,7 +91,7 @@ def _run_add(
             plan.plan_id,
             stdout,
             stderr,
-            dependencies.apply_plan_ports_factory,
+            dependencies.apply_plan,
             confirmation=ConfirmationOptions(yes=options.yes),
         )
 

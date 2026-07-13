@@ -49,7 +49,7 @@ class RunDetailData(ApiModel):
 
     run: RunHeader
     capabilities: RunCapabilities
-    active_operation_id: str | None
+    active_operation_id: UUID | None
 
 
 class FileEventResource(ApiModel):

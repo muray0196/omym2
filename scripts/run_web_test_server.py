@@ -47,6 +47,8 @@ ENVIRONMENT_VARIABLE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
 E2E_LIBRARY_DIRECTORY_NAME = "library"
 E2E_INCOMING_DIRECTORY_NAME = "incoming"
 E2E_SENTINEL_FILE_NAME = "sentinel.flac"
+E2E_APPLY_SUCCESS_FILE_NAME = "A-Success.flac"
+E2E_APPLY_FAILURE_FILE_NAME = "Z-Failure.flac"
 E2E_LIBRARY_ID = LibraryId(UUID("01912345-6789-7abc-8def-0123456789ab"))
 E2E_FIXED_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 E2E_FLAC_BYTE_ORDER = "big"
@@ -65,6 +67,8 @@ E2E_FLAC_STREAM_MARKER = b"fLaC"
 E2E_FLAC_TOTAL_SAMPLES_BITS = 36
 E2E_INDEX_DISPLAY_OFFSET = 1
 E2E_SENTINEL_TITLE = "sentinel"
+E2E_APPLY_SUCCESS_TITLE = "A Success"
+E2E_APPLY_FAILURE_TITLE = "Z Failure"
 E2E_SENTINEL_ARTIST = "Sentinel Artist"
 E2E_SENTINEL_ALBUM = "Sentinel Album"
 E2E_SENTINEL_YEAR = 2026
@@ -74,13 +78,13 @@ E2E_PATH_POLICY_TEMPLATE = "{title}"
 
 
 class FlacTagWriter(Protocol):
-    """Narrow fixture-only surface used to tag the sentinel FLAC."""
+    """Narrow fixture-only surface used to tag E2E FLAC files."""
 
     def __setitem__(self, key: str, value: str) -> None:
         """Set one Vorbis-comment field."""
 
     def save(self) -> None:
-        """Persist the sentinel metadata."""
+        """Persist the fixture metadata."""
 
 
 class WebTestServerError(RuntimeError):
@@ -123,8 +127,7 @@ def run_with_server(
     database_path = application_root / ".data" / "omym2.sqlite3"
     _ = config_path.parent.mkdir(parents=True, exist_ok=True)
     _ = database_path.parent.mkdir(parents=True, exist_ok=True)
-    library_root = _seed_e2e_state(config_path, database_path, application_root)
-    library_before = _snapshot_file_tree(library_root)
+    _seed_e2e_state(config_path, database_path, application_root)
     app = build_web_app(config_path=config_path, database_path=database_path)
 
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -163,7 +166,6 @@ def run_with_server(
             env=environment,
             check=False,
         )
-        _require_unchanged_library(library_root, library_before)
         return result.returncode
     finally:
         server.should_exit = True
@@ -180,12 +182,14 @@ def _require_empty_application_root(application_root: Path) -> None:
         raise WebTestServerError(msg)
 
 
-def _seed_e2e_state(config_path: Path, database_path: Path, application_root: Path) -> Path:
+def _seed_e2e_state(config_path: Path, database_path: Path, application_root: Path) -> None:
     library_root = application_root / E2E_LIBRARY_DIRECTORY_NAME
     _ = library_root.mkdir(parents=True)
-    _write_e2e_sentinel(library_root / E2E_SENTINEL_FILE_NAME)
+    _write_e2e_audio(library_root / E2E_SENTINEL_FILE_NAME, title=E2E_SENTINEL_TITLE)
     incoming_root = application_root / E2E_INCOMING_DIRECTORY_NAME
     _ = incoming_root.mkdir(parents=True)
+    _write_e2e_audio(incoming_root / E2E_APPLY_SUCCESS_FILE_NAME, title=E2E_APPLY_SUCCESS_TITLE)
+    _write_e2e_audio(incoming_root / E2E_APPLY_FAILURE_FILE_NAME, title=E2E_APPLY_FAILURE_TITLE)
     config = AppConfig(
         paths=PathsConfig(library=str(library_root), incoming=str(incoming_root)),
         path_policy=PathPolicyConfig(template=E2E_PATH_POLICY_TEMPLATE),
@@ -210,13 +214,12 @@ def _seed_e2e_state(config_path: Path, database_path: Path, application_root: Pa
     with SQLiteUnitOfWork(database_path) as unit_of_work:
         unit_of_work.libraries.save(library)
         unit_of_work.commit()
-    return library_root
 
 
-def _write_e2e_sentinel(path: Path) -> None:
+def _write_e2e_audio(path: Path, *, title: str) -> None:
     _ = path.write_bytes(_minimal_flac_bytes())
     audio = cast("FlacTagWriter", FLAC(path))
-    audio["title"] = E2E_SENTINEL_TITLE
+    audio["title"] = title
     audio["artist"] = E2E_SENTINEL_ARTIST
     audio["albumartist"] = E2E_SENTINEL_ARTIST
     audio["album"] = E2E_SENTINEL_ALBUM
@@ -257,32 +260,6 @@ def _minimal_flac_bytes() -> bytes:
         )
     )
     return E2E_FLAC_STREAM_MARKER + block_header + stream_info
-
-
-def _snapshot_file_tree(root: Path) -> dict[str, tuple[str, bytes]]:
-    snapshot: dict[str, tuple[str, bytes]] = {}
-    for path in sorted(root.rglob("*")):
-        relative_path = path.relative_to(root).as_posix()
-        if path.is_symlink():
-            snapshot[relative_path] = ("symlink", os.fsencode(path.readlink()))
-        elif path.is_dir():
-            snapshot[relative_path] = ("directory", b"")
-        elif path.is_file():
-            snapshot[relative_path] = ("file", path.read_bytes())
-    return snapshot
-
-
-def _require_unchanged_library(root: Path, before: dict[str, tuple[str, bytes]]) -> None:
-    after = _snapshot_file_tree(root)
-    if before == after:
-        return
-    before_paths = before.keys()
-    after_paths = after.keys()
-    added = sorted(after_paths - before_paths)
-    removed = sorted(before_paths - after_paths)
-    changed = sorted(path for path in before_paths & after_paths if before[path] != after[path])
-    msg = f"Pre-M4 Library mutation sentinel changed; added={added}, removed={removed}, changed={changed}"
-    raise WebTestServerError(msg)
 
 
 def _wait_until_started(server: uvicorn.Server, thread: threading.Thread) -> None:

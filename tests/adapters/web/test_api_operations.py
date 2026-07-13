@@ -1,6 +1,6 @@
 """
-Summary: Tests durable Operation polling and M3 planning Web routes.
-Why: Protects typed acceptance, replay, authorization, conflict, and retention behavior.
+Summary: Tests durable Operation polling and mutation acceptance Web routes.
+Why: Protects typed planning, Apply, Undo, replay, authorization, and retention behavior.
 """
 
 from __future__ import annotations
@@ -34,11 +34,13 @@ from omym2.config import (
     OPERATION_RESULT_RETENTION_HOURS,
     OPERATION_TOMBSTONE_RETENTION_DAYS,
     WEB_API_ADD_PLAN_ROUTE,
+    WEB_API_APPLY_PLAN_ROUTE,
     WEB_API_BOOTSTRAP_ROUTE,
     WEB_API_CHECK_RUN_ROUTE,
     WEB_API_OPERATION_ROUTE,
     WEB_API_ORGANIZE_PLAN_ROUTE,
     WEB_API_REFRESH_PLAN_ROUTE,
+    WEB_API_UNDO_PLAN_ROUTE,
     WEB_CSRF_HEADER_NAME,
     WEB_IDEMPOTENCY_HEADER_NAME,
 )
@@ -51,18 +53,29 @@ from omym2.domain.models.operation import (
 )
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
 from omym2.features.add.dto import CreateAddPlanRequest
+from omym2.features.apply.usecases.apply_plan import PlanCannotBeAppliedError
+from omym2.features.apply.usecases.claim_apply import LibraryRootChangedError
 from omym2.features.check.dto import CheckLibraryRequest
-from omym2.features.common_ports import ExclusiveOperationBusyError, ExclusiveOperationRequest
-from omym2.features.operations.dto import (
+from omym2.features.common_ports import (
+    ExclusiveOperationBusyError,
+    ExclusiveOperationRequest,
     IdempotencyKeyReusedError,
+)
+from omym2.features.operations.dto import (
     OperationExpiredError,
     OperationNotFoundError,
     ReserveOperationResult,
 )
 from omym2.features.organize.dto import CreateOrganizePlanRequest
 from omym2.features.refresh.dto import CreateRefreshPlanRequest, RefreshTargetKind
+from omym2.features.undo.dto import CreateUndoPlanRequest
+from omym2.features.undo.usecases.create_undo_plan import (
+    NOTHING_TO_UNDO_MESSAGE,
+    PENDING_FILE_EVENT_REQUIRES_REVIEW_MESSAGE,
+    UndoPlanError,
+)
 from omym2.platform.web_composition import build_web_app
-from omym2.shared.ids import CheckRunId, LibraryId, OperationId
+from omym2.shared.ids import CheckRunId, LibraryId, OperationId, PlanId, RunId
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -77,6 +90,8 @@ SECOND_OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
 CHECK_RUN_ID = CheckRunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345682"))
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345683"))
 IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def012345684")
+PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345685"))
+RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345686"))
 CSRF_TOKEN = "operation-csrf-token"  # noqa: S105  # Deterministic non-secret test token.
 INVALID_CSRF_TOKEN = "invalid-operation-csrf-token"  # noqa: S105  # Deterministic non-secret test token.
 REQUEST_FINGERPRINT = "canonical-request-fingerprint"
@@ -216,6 +231,74 @@ def test_operation_start_routes_return_accepted_reference_and_location(
 
 
 @pytest.mark.parametrize(
+    ("route", "kind", "expected_request"),
+    [
+        (WEB_API_APPLY_PLAN_ROUTE.format(plan_id=PLAN_ID), OperationKind.APPLY_PLAN, PLAN_ID),
+        (
+            WEB_API_UNDO_PLAN_ROUTE.format(run_id=RUN_ID),
+            OperationKind.UNDO_PLAN,
+            CreateUndoPlanRequest(run_id=RUN_ID),
+        ),
+    ],
+)
+def test_m4_operation_routes_accept_bodyless_apply_and_undo_requests(
+    tmp_path: Path,
+    route: str,
+    kind: OperationKind,
+    expected_request: object,
+) -> None:
+    """Apply and Undo translate path identity into durable Operation acceptance."""
+    operations = FakeOperations(_queued_operation(kind))
+
+    response = _client(tmp_path, operations).post(route, headers=_mutation_headers())
+
+    assert response.status_code == HTTP_ACCEPTED_STATUS
+    assert response.headers["Location"] == _operation_url(OPERATION_ID)
+    assert _data(response)["kind"] == kind.value
+    assert operations.start_calls == [(kind, expected_request, IDEMPOTENCY_KEY)]
+
+
+@pytest.mark.parametrize(
+    ("route", "failure", "expected_code"),
+    [
+        (
+            WEB_API_APPLY_PLAN_ROUTE.format(plan_id=PLAN_ID),
+            PlanCannotBeAppliedError("not ready"),
+            "plan_not_ready",
+        ),
+        (
+            WEB_API_APPLY_PLAN_ROUTE.format(plan_id=PLAN_ID),
+            LibraryRootChangedError("root changed"),
+            "library_root_changed",
+        ),
+        (
+            WEB_API_UNDO_PLAN_ROUTE.format(run_id=RUN_ID),
+            UndoPlanError(NOTHING_TO_UNDO_MESSAGE),
+            "nothing_to_undo",
+        ),
+        (
+            WEB_API_UNDO_PLAN_ROUTE.format(run_id=RUN_ID),
+            UndoPlanError(PENDING_FILE_EVENT_REQUIRES_REVIEW_MESSAGE),
+            "pending_file_event_requires_review",
+        ),
+    ],
+)
+def test_m4_operation_routes_translate_synchronous_claim_and_preflight_conflicts(
+    tmp_path: Path,
+    route: str,
+    failure: Exception,
+    expected_code: str,
+) -> None:
+    """Atomic Apply claims and lock-held Undo validation keep their typed synchronous 409s."""
+    operations = FakeOperations(_queued_operation(OperationKind.CHECK), start_failure=failure)
+
+    response = _client(tmp_path, operations).post(route, headers=_mutation_headers())
+
+    assert response.status_code == HTTP_CONFLICT_STATUS
+    assert _first_error(response)["code"] == expected_code
+
+
+@pytest.mark.parametrize(
     ("replay_state", "expected_status", "expected_resource_status"),
     [
         ("active", HTTP_ACCEPTED_STATUS, "queued"),
@@ -295,6 +378,30 @@ def test_csrf_rejection_precedes_malformed_body_and_headers(tmp_path: Path, csrf
 
 
 @pytest.mark.parametrize(
+    "route",
+    [
+        WEB_API_APPLY_PLAN_ROUTE.format(plan_id="not-a-uuid"),
+        WEB_API_UNDO_PLAN_ROUTE.format(run_id="not-a-uuid"),
+    ],
+)
+def test_m4_dynamic_mutation_routes_reject_csrf_before_path_and_header_validation(
+    tmp_path: Path,
+    route: str,
+) -> None:
+    """Template-based CSRF matching protects Apply and Undo before UUID parsing."""
+    operations = FakeOperations(_queued_operation(OperationKind.CHECK))
+
+    response = _client(tmp_path, operations).post(
+        route,
+        headers={WEB_IDEMPOTENCY_HEADER_NAME: "not-a-uuid"},
+    )
+
+    assert response.status_code == HTTP_FORBIDDEN_STATUS
+    assert _first_error(response)["code"] == "csrf_invalid"
+    assert operations.start_calls == []
+
+
+@pytest.mark.parametrize(
     ("route", "body"),
     [
         (WEB_API_ADD_PLAN_ROUTE, {"source_path": "  ", "library_id": None}),
@@ -336,6 +443,8 @@ def test_operation_openapi_declares_location_and_typed_validation_responses() ->
         WEB_API_ORGANIZE_PLAN_ROUTE,
         WEB_API_REFRESH_PLAN_ROUTE,
         WEB_API_CHECK_RUN_ROUTE,
+        WEB_API_APPLY_PLAN_ROUTE,
+        WEB_API_UNDO_PLAN_ROUTE,
     ):
         operation = _mapping(_mapping(paths, route), "post")
         responses = _mapping(operation, "responses")
@@ -420,6 +529,8 @@ class FakeOperations:
             start_organize_plan=self.start_organize_plan,
             start_refresh_plan=self.start_refresh_plan,
             start_check=self.start_check,
+            start_apply_plan=self.start_apply_plan,
+            start_undo_plan=self.start_undo_plan,
         )
 
     def get_operation(self, _operation_id: OperationId) -> Operation:
@@ -444,6 +555,14 @@ class FakeOperations:
     def start_check(self, request: CheckLibraryRequest, key: UUID) -> ReserveOperationResult:
         """Record one Check translation."""
         return self._start(OperationKind.CHECK, request, key)
+
+    def start_apply_plan(self, plan_id: PlanId, key: UUID) -> ReserveOperationResult:
+        """Record one Apply translation."""
+        return self._start(OperationKind.APPLY_PLAN, plan_id, key)
+
+    def start_undo_plan(self, request: CreateUndoPlanRequest, key: UUID) -> ReserveOperationResult:
+        """Record one Undo translation."""
+        return self._start(OperationKind.UNDO_PLAN, request, key)
 
     def _start(self, kind: OperationKind, request: object, key: UUID) -> ReserveOperationResult:
         self.start_calls.append((kind, request, key))

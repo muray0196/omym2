@@ -97,6 +97,13 @@ class GetPlanHeaderRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class CancelPlanRequest:
+    """Request a compare-and-set cancellation of one ready Plan."""
+
+    plan_id: PlanId
+
+
+@dataclass(frozen=True, slots=True)
 class ListPlanActionsRequest:
     """Request one keyset page of a Plan's recorded actions.
 

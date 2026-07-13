@@ -1,9 +1,9 @@
 ---
 type: Execution Spec
 title: Apply Execution
-description: Defines atomic Apply acceptance, state transitions, source verification, Track baseline writes, FileEvent ordering, interruption, and Library-root preconditions.
+description: Defines atomic Apply acceptance, descriptor-anchored source and target verification, state transitions, Track baseline writes, FileEvent ordering, interruption, and Library-root preconditions.
 tags: [apply, atomic-claim, plan-state, run, operation, file-event]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-13T17:24:07+09:00
 ---
 
 # Apply Execution
@@ -61,7 +61,25 @@ A Plan may be applied even if it contains blocked PlanActions. `apply` executes 
 
 `apply` is the first implementation area that mutates Library music files.
 
-Library-relative move targets are executed through a filesystem boundary anchored to the open Library root. Each descendant directory is opened without following symlinks, parent-directory segments are rejected inside the boundary itself, and final target creation is relative to the verified directory descriptor. A symlinked Library descendant, a symlinked move source, or a pathname replacement between review and mutation must fail with `invalid_path` instead of redirecting the target outside the Library or claiming a link into managed storage.
+Every live apply-time source capture carries an ephemeral filesystem identity
+token comprising device, inode, size, modification time, and change time.
+Apply carries the exact token across the pending FileEvent commit to the
+filesystem mutation boundary. A trusted snapshot reconstructed without live
+I/O has no token and cannot authorize a move; any token mismatch fails with
+`invalid_path`.
+
+Library-relative move sources and targets are independently anchored to the
+open Library root. Descendant directories are opened without following
+symlinks, parent-directory segments are rejected inside the boundary itself,
+the source file and its parent descriptor remain open, and the final target is
+created exclusively relative to its verified directory descriptor. The mover
+rechecks the complete source state and root containment before unlinking the
+source through the retained parent descriptor. External add sources are still
+copied from retained descriptors, and absolute Undo restore targets use only
+the separately verified external-target exception. A symlinked Library
+descendant or any pathname, metadata, or source-parent replacement before
+mutation must fail with `invalid_path` instead of redirecting or claiming a
+file outside the reviewed boundary.
 
 An absolute move target is accepted only for an Undo PlanAction whose
 `reverses_event_id` identifies a succeeded external add/import FileEvent for the
@@ -179,6 +197,12 @@ The Run is marked `failed` or `partial_failed` depending on whether prior eligib
 
 ## Mandatory Source Verification And Track Baseline
 
-Apply has no stat-trust mode. Before every eligible move or `refresh_metadata` action, it captures a complete fresh source snapshot and compares its content and metadata hashes with the recorded PlanAction. A matching persisted Track size and modification time never bypass this SOURCE_CHANGED gate.
+Apply has no stat-trust mode. Before every eligible move or `refresh_metadata`
+action, it captures a complete fresh source snapshot and compares its content
+and metadata hashes with the recorded PlanAction. Both
+`content_hash_at_plan` and `metadata_hash_at_plan` are mandatory for either
+eligible action type; a missing or mismatched value fails the action as
+`source_changed` before any FileEvent, file mutation, or Track update. A
+matching persisted Track size and modification time never bypasses this gate.
 
 After a successful move or `refresh_metadata` action, the Track update persists the complete snapshot's `size` and `mtime` together with its hashes and metadata. A successful move uses the pre-mutation source snapshot because the confirmed move preserves that file state at the recorded target. Failed preconditions and failed mutations do not update the Track baseline.

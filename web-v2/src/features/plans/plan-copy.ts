@@ -1,6 +1,6 @@
 /**
- * Summary: Centralizes product-default-language copy for read-only Plan inspection.
- * Why: Keeps M2 state and recovery wording consistent across list and detail routes.
+ * Summary: Centralizes product-default-language copy for Plan review and execution.
+ * Why: Keeps recorded evidence, capability, and M4 recovery wording consistent.
  */
 export const planCopy = {
   list: {
@@ -67,6 +67,27 @@ export const planCopy = {
     loadingMoreGroups: "Loading more action groups…",
     loadMoreActions: "Load more actions",
     loadingMoreActions: "Loading more actions…",
+  },
+  execution: {
+    title: "Plan execution",
+    description:
+      "Use the backend-authoritative controls below. Availability is rechecked when a request is accepted.",
+    apply: "Apply Plan",
+    startingApply: "Starting Apply…",
+    cancel: "Cancel Plan",
+    cancelling: "Cancelling…",
+    recreate: "Create a new Plan from the current state",
+    activeOperation: "Recover active Operation",
+    noBootstrap:
+      "Execution controls need the local startup token. Restore the service and reload this Plan.",
+    applyError: "Apply could not be started",
+    cancelError: "Plan could not be cancelled",
+    cancelledAnnouncement: "Plan cancelled. Execution controls updated.",
+    historyResult: "Open completed Run in History",
+    blockedOnly:
+      "Every recorded action is blocked. Apply is still available when the backend permits it, but this Plan will not mutate a library file.",
+    mixedBlocked: (count: number) =>
+      `${count} blocked ${count === 1 ? "action remains" : "actions remain"} unresolved. Apply will process only the recorded executable actions.`,
   },
   labels: {
     identifier: "Plan ID",

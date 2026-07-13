@@ -37,12 +37,15 @@ from omym2.config import (
     HTTP_SERVICE_UNAVAILABLE_STATUS,
     HTTP_UNPROCESSABLE_CONTENT_STATUS,
     WEB_API_ADD_PLAN_ROUTE,
+    WEB_API_APPLY_PLAN_ROUTE,
+    WEB_API_CANCEL_PLAN_ROUTE,
     WEB_API_CHECK_RUN_ROUTE,
     WEB_API_NOT_FOUND_MESSAGE,
     WEB_API_ORGANIZE_PLAN_ROUTE,
     WEB_API_PREFIX,
     WEB_API_REFRESH_PLAN_ROUTE,
     WEB_API_SETTINGS_ROUTE,
+    WEB_API_UNDO_PLAN_ROUTE,
     WEB_ASSET_CACHE_CONTROL,
     WEB_CONTENT_SECURITY_POLICY,
     WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME,
@@ -78,12 +81,15 @@ VALIDATION_FAILED_MESSAGE = "Request validation failed."
 INVALID_HOST_MESSAGE = "Invalid host header"
 CSRF_INVALID_MESSAGE = "The Web mutation token is missing or invalid."
 STATE_CHANGING_HTTP_METHODS = frozenset({"POST", "PUT"})
-CSRF_OPERATION_ROUTES = frozenset(
+CSRF_MUTATION_ROUTES = frozenset(
     {
         WEB_API_ADD_PLAN_ROUTE,
+        WEB_API_APPLY_PLAN_ROUTE,
+        WEB_API_CANCEL_PLAN_ROUTE,
         WEB_API_ORGANIZE_PLAN_ROUTE,
         WEB_API_REFRESH_PLAN_ROUTE,
         WEB_API_CHECK_RUN_ROUTE,
+        WEB_API_UNDO_PLAN_ROUTE,
     }
 )
 
@@ -157,7 +163,21 @@ def _install_csrf_protection(app: FastAPI, context: ApiRouteContext) -> None:
 def _requires_csrf(method: str, path: str) -> bool:
     if method not in STATE_CHANGING_HTTP_METHODS:
         return False
-    return (method == "PUT" and path == WEB_API_SETTINGS_ROUTE) or path in CSRF_OPERATION_ROUTES
+    return (method == "PUT" and path == WEB_API_SETTINGS_ROUTE) or any(
+        _matches_route_template(path, route) for route in CSRF_MUTATION_ROUTES
+    )
+
+
+def _matches_route_template(path: str, route: str) -> bool:
+    """Match one concrete request path against a configured FastAPI route template."""
+    path_parts = PurePosixPath(path).parts
+    route_parts = PurePosixPath(route).parts
+    if len(path_parts) != len(route_parts):
+        return False
+    return all(
+        route_part == path_part or (route_part.startswith("{") and route_part.endswith("}"))
+        for path_part, route_part in zip(path_parts, route_parts, strict=True)
+    )
 
 
 def _install_response_headers(app: FastAPI) -> None:

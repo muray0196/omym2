@@ -8,10 +8,12 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Never
 from uuid import UUID
 
+from omym2.adapters.cli.commands.apply_execution import execute_and_report_apply
 from omym2.adapters.cli.commands.check import CheckCommandDependencies, run_check_command
+from omym2.adapters.cli.commands.undo import UndoCommandDependencies, run_undo_command
 from omym2.adapters.config.application_paths import ApplicationPaths, default_application_paths
 from omym2.adapters.config.default_config import default_app_config
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
@@ -27,6 +29,7 @@ from omym2.domain.services.config_fingerprint import calculate_config_fingerprin
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.check.dto import CheckLibraryRequest, CheckLibraryResult
+from omym2.features.common_ports import ExclusiveOperationBusyError, ExclusiveOperationRequest
 from omym2.platform.cli_entry_point import run_cli as main
 from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
 from omym2.shared.pagination import PageRequest
@@ -40,6 +43,7 @@ if TYPE_CHECKING:
 
 AUDIO_CONTENT = b"fake audio bytes"
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+BUSY_MESSAGE = "Another state-changing operation is already running."
 ERROR_EXIT_CODE = 1
 EXTERNAL_SOURCE = "incoming/Imported.flac"
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
@@ -205,6 +209,41 @@ def test_undo_apply_restores_external_file_and_marks_track_removed(
         assert track.current_path == TARGET_PATH
 
 
+def test_apply_reporting_returns_one_line_conflict_when_operation_lock_is_busy() -> None:
+    """CLI Apply maps Web/CLI lock contention to the established nonzero command boundary."""
+    stdout = StringIO()
+    stderr = StringIO()
+
+    def apply_plan(_plan_id: PlanId) -> Run:
+        raise ExclusiveOperationBusyError(ExclusiveOperationRequest(operation_name="apply_plan"), BUSY_MESSAGE)
+
+    exit_code = execute_and_report_apply(PLAN_ID, stdout, stderr, apply_plan)
+
+    assert exit_code == ERROR_EXIT_CODE
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue() == f"{BUSY_MESSAGE}\n"
+
+
+def test_undo_returns_one_line_conflict_when_operation_lock_is_busy() -> None:
+    """CLI Undo Plan creation does not leak a traceback when another mutation owns the lock."""
+    stdout = StringIO()
+    stderr = StringIO()
+
+    def create_undo_plan(_run_id: RunId) -> Plan:
+        raise ExclusiveOperationBusyError(ExclusiveOperationRequest(operation_name="undo_plan"), BUSY_MESSAGE)
+
+    exit_code = run_undo_command(
+        [str(RUN_ID)],
+        stdout,
+        stderr,
+        UndoCommandDependencies(create_undo_plan=create_undo_plan, apply_plan=_unexpected_apply),
+    )
+
+    assert exit_code == ERROR_EXIT_CODE
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue() == f"{BUSY_MESSAGE}\n"
+
+
 def _setup_applied_add_history(tmp_path: Path) -> tuple[ApplicationPaths, Path, Path]:
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
@@ -218,6 +257,11 @@ def _setup_applied_add_history(tmp_path: Path) -> tuple[ApplicationPaths, Path, 
     assert library_file.is_file()
     assert not incoming_file.exists()
     return app_paths, library_root, incoming_file
+
+
+def _unexpected_apply(*_args: object) -> Never:
+    """Fail if an Undo creation conflict unexpectedly reaches Apply."""
+    raise AssertionError
 
 
 def _register_library_state(database_file: Path, library_root: str, track: Track) -> None:

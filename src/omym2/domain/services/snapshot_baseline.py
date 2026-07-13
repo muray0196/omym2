@@ -42,5 +42,6 @@ def snapshot_from_trusted_stat(
         content_hash=track.content_hash,
         metadata_hash=track.metadata_hash,
         metadata=track.metadata,
+        filesystem_identity=None,
         captured_at=captured_at,
     )

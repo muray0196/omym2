@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.check_run import CheckRun
     from omym2.domain.models.file_event import FileEvent, FileEventStatus
     from omym2.domain.models.file_scan_entry import FileScanEntry
-    from omym2.domain.models.file_snapshot import FileSnapshot
+    from omym2.domain.models.file_snapshot import FileSnapshot, FilesystemIdentity
     from omym2.domain.models.library import Library
     from omym2.domain.models.operation import Operation, OperationLookup
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
@@ -78,6 +78,19 @@ class ExclusiveOperationBusyError(RuntimeError):
         """Retain the rejected request for typed inbound-adapter handling."""
         self.request: ExclusiveOperationRequest = request
         super().__init__(message)
+
+
+class IdempotencyKeyReusedError(RuntimeError):
+    """Raised when one retained key names different canonical work."""
+
+
+class OperationInProgressError(RuntimeError):
+    """Raised when another durable Operation already owns the global slot."""
+
+    def __init__(self, active_operation: Operation) -> None:
+        """Retain the active identity for structured conflict remediation."""
+        self.active_operation: Operation = active_operation
+        super().__init__("Another state-changing Operation is in progress.")
 
 
 class ConfigStoreValidationError(ValueError):
@@ -272,8 +285,21 @@ class PlanRepository(Protocol):
         """Return Plans owned by one Library."""
         ...
 
+    def list_by_source_run(self, source_run_id: RunId) -> Sequence[Plan]:
+        """Return Undo Plans that record one source Run, in creation order."""
+        ...
+
     def save(self, plan: Plan) -> None:
         """Persist a Plan header and summary."""
+        ...
+
+    def compare_and_set_status(
+        self,
+        plan_id: PlanId,
+        expected_status: PlanStatus,
+        replacement_status: PlanStatus,
+    ) -> bool:
+        """Atomically replace one Plan status only when its current status matches."""
         ...
 
     def query_page(  # noqa: PLR0913  # Plan browsing combines search and catalog filters in one stable port.
@@ -603,6 +629,10 @@ class UnitOfWork(Protocol):
         """Rollback the current unit of work."""
         ...
 
+    def claim_apply(self, plan_id: PlanId, run: Run, operation: Operation) -> bool:
+        """Stage the ready Plan claim, running Run, and queued Operation in this transaction."""
+        ...
+
 
 class FileScanner(Protocol):
     """Filesystem discovery contract for cheap candidate file scans."""
@@ -675,7 +705,9 @@ class FileMover(Protocol):
         source: FileSystemPath,
         target: FileSystemPath,
         *,
+        source_root: FileSystemPath | None = None,
         target_root: FileSystemPath | None = None,
+        expected_source_identity: FilesystemIdentity | None = None,
     ) -> None:
         """Move one file without deciding PlanAction policy."""
         ...

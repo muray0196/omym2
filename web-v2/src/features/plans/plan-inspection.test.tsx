@@ -1,6 +1,6 @@
 /**
- * Summary: Tests Plan list and detail inspection against typed MSW responses.
- * Why: Protects URL filters, opaque pagination, state handling, and read-only evidence.
+ * Summary: Tests Plan browsing and exact review against typed MSW responses.
+ * Why: Protects URL filters, opaque pagination, execution visibility, and recorded evidence.
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -14,13 +14,16 @@ import type {
   ApiEnvelopePaginatedDataPlanSummary,
   ApiEnvelopePlanActionFacetsData,
   ApiEnvelopePlanActionGroupsData,
+  ApiEnvelopePlanDetailData,
   ApiFailureEnvelope,
   PlanActionResource,
   PlanActionSummary,
   PlanSummary,
 } from "../../api/generated";
 import { createQueryClient } from "../../app/query-client";
+import { normalBootstrap } from "../../test/fixtures/bootstrap";
 import { server } from "../../test/server";
+import { BootstrapContext } from "../bootstrap/bootstrap-context";
 import { PlanDetail } from "./plan-detail";
 import { PlanList } from "./plan-list";
 
@@ -132,18 +135,14 @@ describe("Plan inspection", () => {
     expect(await screen.findByText("Blocked actions")).toBeVisible();
     expect(requestedPaths).toEqual(
       new Set([
-        "/api/plans",
+        `/api/plans/${PLAN_ID}`,
         `/api/plans/${PLAN_ID}/actions`,
         `/api/plans/${PLAN_ID}/facets`,
         `/api/plans/${PLAN_ID}/groups`,
       ]),
     );
-    expect(
-      screen.queryByRole("button", { name: /apply/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /cancel/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply Plan" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Cancel Plan" })).toBeEnabled();
 
     await user.click(screen.getByRole("button", { name: "Load more actions" }));
     expect(await screen.findByText(SECOND_ACTION_ID)).toBeVisible();
@@ -157,8 +156,8 @@ describe("Plan inspection", () => {
 
   it("renders the typed Plan not-found state instead of a generic failure", async () => {
     server.use(
-      http.get("*/api/plans", () =>
-        HttpResponse.json(planListEnvelope([], null)),
+      http.get(`*/api/plans/${PLAN_ID}`, () =>
+        HttpResponse.json(planNotFound, { status: 404 }),
       ),
       ...auxiliaryDetailHandlers(),
     );
@@ -190,7 +189,9 @@ function renderRoute(
   const user = userEvent.setup();
   const view = render(
     <QueryClientProvider client={createQueryClient()}>
-      <RouterProvider router={router} />
+      <BootstrapContext value={normalBootstrap.data}>
+        <RouterProvider router={router} />
+      </BootstrapContext>
     </QueryClientProvider>,
   );
   return { ...view, router, user };
@@ -201,14 +202,10 @@ function detailHandlers(
   actionCursors: Array<string | null>,
 ) {
   return [
-    http.get("*/api/plans", ({ request }) => {
+    http.get(`*/api/plans/${PLAN_ID}`, ({ request }) => {
       const url = new URL(request.url);
       requestedPaths.add(url.pathname);
-      return HttpResponse.json(
-        url.searchParams.get("query") === PLAN_ID
-          ? planListEnvelope([readyPlan], null)
-          : planListEnvelope([], null),
-      );
+      return HttpResponse.json(readyPlanDetailEnvelope);
     }),
     http.get(`*/api/plans/${PLAN_ID}/actions`, ({ request }) => {
       const url = new URL(request.url);
@@ -259,6 +256,29 @@ const readyPlan = {
   status: "ready",
   summary: mixedSummary,
 } satisfies PlanSummary;
+
+const readyPlanDetailEnvelope = {
+  data: {
+    active_operation_id: null,
+    capabilities: {
+      can_apply: true,
+      can_cancel: true,
+      can_recreate: true,
+      disabled_reasons: [],
+    },
+    plan: {
+      config_hash: "fixture-config-hash",
+      created_at: readyPlan.created_at,
+      library_id: readyPlan.library_id,
+      library_root_at_plan: "/music/library",
+      plan_id: readyPlan.plan_id,
+      plan_type: readyPlan.plan_type,
+      status: readyPlan.status,
+    },
+    summary: mixedSummary,
+  },
+  errors: [],
+} satisfies ApiEnvelopePlanDetailData;
 
 const secondPlan = {
   ...readyPlan,
@@ -327,6 +347,18 @@ const storageFailure = {
       code: "storage_unavailable",
       message: "Plan storage is unavailable.",
       retryable: true,
+    },
+  ],
+} satisfies ApiFailureEnvelope;
+
+const planNotFound = {
+  data: null,
+  errors: [
+    {
+      code: "plan_not_found",
+      field: "path.plan_id",
+      message: "Plan was not found.",
+      retryable: false,
     },
   ],
 } satisfies ApiFailureEnvelope;

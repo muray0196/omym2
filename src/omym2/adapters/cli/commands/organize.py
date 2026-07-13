@@ -22,8 +22,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from typing import TextIO
 
-    from omym2.features.apply.ports import ApplyPlanPorts
+    from omym2.domain.models.run import Run
     from omym2.features.common_ports import FileSystemPath
+    from omym2.shared.ids import PlanId
 
 APPLY_FLAG = "--apply"
 ERROR_EXIT_CODE = 1
@@ -40,7 +41,7 @@ class OrganizeCommandDependencies:
     """Factories for the ports needed by organize plan creation and optional apply."""
 
     create_organize_plan: Callable[[CreateOrganizePlanRequest], OrganizeLibraryResult]
-    apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
+    apply_plan: Callable[[PlanId], Run]
     normalize_library_root: Callable[[FileSystemPath], str]
 
 
@@ -97,7 +98,7 @@ def _run_organize(
             result.plan.plan_id,
             stdout,
             stderr,
-            dependencies.apply_plan_ports_factory,
+            dependencies.apply_plan,
             confirmation=ConfirmationOptions(),
         )
 

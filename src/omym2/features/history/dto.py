@@ -14,7 +14,7 @@ from omym2.shared.pagination import PageRequest
 if TYPE_CHECKING:
     from omym2.domain.models.file_event import FileEventStatus
     from omym2.domain.models.run import Run, RunStatus
-    from omym2.shared.ids import LibraryId, PlanId, RunId
+    from omym2.shared.ids import LibraryId, OperationId, PlanId, RunId
     from omym2.shared.pagination import FacetValue
 
 
@@ -43,6 +43,7 @@ class RunCapabilityReason(StrEnum):
     NOTHING_TO_UNDO = "nothing_to_undo"
     UNDO_REFRESH_METADATA_UNSUPPORTED = "undo_refresh_metadata_unsupported"
     PENDING_FILE_EVENT_REQUIRES_REVIEW = "pending_file_event_requires_review"
+    ALREADY_UNDONE_OR_IN_PROGRESS = "already_undone_or_in_progress"
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +60,7 @@ class RunDetailResult:
 
     run: Run
     capabilities: RunCapabilitiesResult
-    active_operation_id: str | None = None
+    active_operation_id: OperationId | None = None
 
 
 @dataclass(frozen=True, slots=True)

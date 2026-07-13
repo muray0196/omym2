@@ -1,6 +1,6 @@
 /**
- * Summary: Renders one Run with capabilities and durable FileEvent evidence.
- * Why: Surfaces partial, failed, and unknown mutation outcomes without offering Undo.
+ * Summary: Renders one Run with durable evidence and backend-authoritative Undo planning.
+ * Why: Keeps reversal generation reviewable while preserving partial and unknown outcomes.
  */
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
@@ -20,6 +20,7 @@ import {
   runEventGroupsInfiniteQuery,
   runEventsInfiniteQuery,
 } from "../../features/history/history-query";
+import { UndoPlanControl } from "../../features/history/undo-plan-control";
 import {
   eventStatusOptions,
   useEventFilters,
@@ -109,12 +110,6 @@ export function Component() {
             <dt>{historyCopy.labels.completed}</dt>
             <dd>{formatTimestamp(run.completed_at)}</dd>
           </div>
-          {detail.active_operation_id ? (
-            <div>
-              <dt>{historyCopy.labels.activeOperation}</dt>
-              <dd className={styles.id}>{detail.active_operation_id}</dd>
-            </div>
-          ) : null}
         </dl>
         {run.error_summary ? (
           <div className={styles.warning}>
@@ -123,28 +118,7 @@ export function Component() {
           </div>
         ) : null}
       </section>
-      <section className={styles.section}>
-        <h2>{historyCopy.detail.capability}</h2>
-        {detail.capabilities.can_create_undo ? (
-          <p>{historyCopy.detail.eligible}</p>
-        ) : (
-          <ul className={styles.diagnostics}>
-            {detail.capabilities.disabled_reasons.map((reason) => (
-              <li key={`${reason.code}:${reason.message}`}>
-                {reason.message}
-                {reason.remediation?.route ? (
-                  <>
-                    {" "}
-                    <Link to={reason.remediation.route}>
-                      {reason.remediation.label}
-                    </Link>
-                  </>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <UndoPlanControl detail={detail} />
       <section className={styles.filters} aria-label="FileEvent filters">
         <label className={styles.field}>
           Event status

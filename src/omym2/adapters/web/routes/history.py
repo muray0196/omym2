@@ -80,6 +80,7 @@ if TYPE_CHECKING:
         RunDetailResult,
         RunStatusFacetsResult,
     )
+    from omym2.shared.ids import OperationId
     from omym2.shared.pagination import GroupCount, Page
 
 HISTORY_HANDLERS_UNAVAILABLE_MESSAGE = "History route handlers are unavailable."
@@ -95,6 +96,7 @@ class HistoryRouteHandlers:
     list_run_events: Callable[[ListRunEventsRequest], Page[FileEvent]]
     get_file_event_status_facets: Callable[[FileEventStatusFacetsRequest], FileEventStatusFacetsResult]
     group_run_events: Callable[[GroupRunEventsRequest], Page[GroupCount]]
+    active_operation_id: Callable[[RunId], OperationId | None]
 
 
 def get_history_route_handlers(context: ApiContext) -> HistoryRouteHandlers:
@@ -197,7 +199,7 @@ def create_history_router() -> APIRouter:  # noqa: C901  # One factory keeps the
                         _run_capability_error(reason) for reason in result.capabilities.disabled_reasons
                     ),
                 ),
-                active_operation_id=result.active_operation_id,
+                active_operation_id=context.active_operation_id(result.run.run_id),
             ),
             errors=(),
         )
@@ -344,6 +346,10 @@ def _run_capability_error(reason: RunCapabilityReason) -> ApiError:
         RunCapabilityReason.PENDING_FILE_EVENT_REQUIRES_REVIEW: (
             "A pending FileEvent requires manual review before Undo planning.",
             ApiRemediation(label="Open Health", route="/health"),
+        ),
+        RunCapabilityReason.ALREADY_UNDONE_OR_IN_PROGRESS: (
+            "Undo has already been applied or is in progress for this Run.",
+            None,
         ),
     }
     message, remediation = definitions[reason]

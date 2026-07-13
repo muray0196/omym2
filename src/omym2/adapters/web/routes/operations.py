@@ -1,6 +1,6 @@
 """
-Summary: Implements durable Operation polling and M3 planning acceptance routes.
-Why: Exposes idempotent background work without blocking the local Web request loop.
+Summary: Implements durable Operation polling and mutation acceptance routes.
+Why: Exposes idempotent planning, Apply, Check, and Undo work without blocking Web requests.
 """
 
 from __future__ import annotations
@@ -44,10 +44,12 @@ from omym2.config import (
     MILLISECONDS_PER_SECOND,
     OPERATION_POLL_INITIAL_SECONDS,
     WEB_API_ADD_PLAN_ROUTE,
+    WEB_API_APPLY_PLAN_ROUTE,
     WEB_API_CHECK_RUN_ROUTE,
     WEB_API_OPERATION_ROUTE,
     WEB_API_ORGANIZE_PLAN_ROUTE,
     WEB_API_REFRESH_PLAN_ROUTE,
+    WEB_API_UNDO_PLAN_ROUTE,
     WEB_CORRELATION_HEADER_NAME,
     WEB_CSRF_HEADER_NAME,
     WEB_IDEMPOTENCY_HEADER_NAME,
@@ -63,17 +65,39 @@ from omym2.domain.models.operation import (
     RunCompletedResult,
 )
 from omym2.features.add.dto import CreateAddPlanRequest
+from omym2.features.apply.usecases.apply_plan import (
+    LIBRARY_NOT_FOUND_MESSAGE,
+    LIBRARY_ROOT_CHANGED_SUMMARY,
+    PLAN_NOT_FOUND_MESSAGE,
+    PLAN_NOT_READY_MESSAGE,
+    ApplyPlanError,
+    PlanCannotBeAppliedError,
+)
+from omym2.features.apply.usecases.apply_plan import (
+    PlanNotFoundError as ApplyPlanNotFoundError,
+)
+from omym2.features.apply.usecases.claim_apply import LibraryRootChangedError
 from omym2.features.check.dto import CheckLibraryRequest
-from omym2.features.common_ports import ExclusiveOperationBusyError
+from omym2.features.common_ports import ExclusiveOperationBusyError, IdempotencyKeyReusedError, OperationInProgressError
 from omym2.features.operations.dto import (
-    IdempotencyKeyReusedError,
     OperationExpiredError,
-    OperationInProgressError,
     OperationNotFoundError,
 )
 from omym2.features.organize.dto import CreateOrganizePlanRequest
 from omym2.features.refresh.dto import CreateRefreshPlanRequest, RefreshTargetKind
-from omym2.shared.ids import LibraryId, OperationId
+from omym2.features.undo.dto import CreateUndoPlanRequest
+from omym2.features.undo.usecases.create_undo_plan import (
+    ALREADY_UNDONE_OR_IN_PROGRESS_MESSAGE,
+    NOTHING_TO_UNDO_MESSAGE,
+    PENDING_FILE_EVENT_REQUIRES_REVIEW_MESSAGE,
+    RUN_LIBRARY_NOT_FOUND_MESSAGE,
+    RUN_NOT_FOUND_MESSAGE,
+    RUN_NOT_TERMINAL_MESSAGE,
+    RUN_PLAN_NOT_FOUND_MESSAGE,
+    RUN_REFRESH_METADATA_UNSUPPORTED_MESSAGE,
+    UndoPlanError,
+)
+from omym2.shared.ids import LibraryId, OperationId, PlanId, RunId
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -88,6 +112,8 @@ START_ADD_PLAN_OPERATION_ID = "startAddPlan"
 START_ORGANIZE_PLAN_OPERATION_ID = "startOrganizePlan"
 START_REFRESH_PLAN_OPERATION_ID = "startRefreshPlan"
 START_CHECK_OPERATION_ID = "startCheck"
+APPLY_PLAN_OPERATION_ID = "applyPlan"
+CREATE_UNDO_PLAN_OPERATION_ID = "createUndoPlan"
 CSRF_INVALID_MESSAGE = "The Web mutation token is missing or invalid."
 IDEMPOTENCY_REUSED_MESSAGE = "The idempotency key was already used for different work."
 OPERATION_IN_PROGRESS_MESSAGE = "Another state-changing Operation is already in progress."
@@ -98,6 +124,7 @@ LOCATION_HEADER_SCHEMA = {
     "description": "Relative durable Operation polling URL.",
     "schema": {"type": "string"},
 }
+type RequiredCsrfToken = Annotated[str, Header(alias=WEB_CSRF_HEADER_NAME, min_length=1)]
 
 
 def create_operations_router() -> APIRouter:  # noqa: C901  # One factory keeps schema and production routes identical.
@@ -228,6 +255,85 @@ def create_operations_router() -> APIRouter:  # noqa: C901  # One factory keeps 
             operations.active_operation_id,
         )
 
+    @router.post(
+        WEB_API_APPLY_PLAN_ROUTE,
+        operation_id=APPLY_PLAN_OPERATION_ID,
+        status_code=HTTP_ACCEPTED_STATUS,
+        response_model=ApiEnvelope[OperationRef],
+        responses=_acceptance_responses(),
+    )
+    def apply_plan(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered routes.
+        plan_id: UUID,
+        context: ApiContext,
+        idempotency_key: Annotated[UUID, Header(alias=WEB_IDEMPOTENCY_HEADER_NAME)],
+        csrf_token: RequiredCsrfToken,
+    ) -> JSONResponse:
+        csrf_failure = _csrf_failure(context, csrf_token)
+        if csrf_failure is not None:
+            return csrf_failure
+        operations = _operations_context(context)
+        try:
+            return _acceptance_response(
+                lambda: operations.start_apply_plan(PlanId(plan_id), idempotency_key),
+                operations.active_operation_id,
+            )
+        except ApplyPlanNotFoundError:
+            return _failure(
+                HTTP_NOT_FOUND_STATUS,
+                ApiErrorCode.PLAN_NOT_FOUND,
+                PLAN_NOT_FOUND_MESSAGE,
+                field="path.plan_id",
+            )
+        except PlanCannotBeAppliedError:
+            return _failure(
+                HTTP_CONFLICT_STATUS,
+                ApiErrorCode.PLAN_NOT_READY,
+                PLAN_NOT_READY_MESSAGE,
+                field="path.plan_id",
+            )
+        except LibraryRootChangedError:
+            return _failure(
+                HTTP_CONFLICT_STATUS,
+                ApiErrorCode.LIBRARY_ROOT_CHANGED,
+                LIBRARY_ROOT_CHANGED_SUMMARY,
+                field="path.plan_id",
+            )
+        except ApplyPlanError:
+            return _failure(
+                HTTP_NOT_FOUND_STATUS,
+                ApiErrorCode.LIBRARY_NOT_FOUND,
+                LIBRARY_NOT_FOUND_MESSAGE,
+                field="path.plan_id",
+            )
+
+    @router.post(
+        WEB_API_UNDO_PLAN_ROUTE,
+        operation_id=CREATE_UNDO_PLAN_OPERATION_ID,
+        status_code=HTTP_ACCEPTED_STATUS,
+        response_model=ApiEnvelope[OperationRef],
+        responses=_acceptance_responses(),
+    )
+    def create_undo_plan(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered routes.
+        run_id: UUID,
+        context: ApiContext,
+        idempotency_key: Annotated[UUID, Header(alias=WEB_IDEMPOTENCY_HEADER_NAME)],
+        csrf_token: RequiredCsrfToken,
+    ) -> JSONResponse:
+        csrf_failure = _csrf_failure(context, csrf_token)
+        if csrf_failure is not None:
+            return csrf_failure
+        operations = _operations_context(context)
+        try:
+            return _acceptance_response(
+                lambda: operations.start_undo_plan(CreateUndoPlanRequest(RunId(run_id)), idempotency_key),
+                operations.active_operation_id,
+            )
+        except UndoPlanError as exc:
+            response = _undo_plan_failure(str(exc))
+            if response is None:
+                raise
+            return response
+
     return router
 
 
@@ -243,7 +349,7 @@ def _acceptance_response(
         operation_id = exc.active_operation.operation_id if isinstance(exc, OperationInProgressError) else None
         if operation_id is None:
             operation_id = active_operation_id()
-        return _operation_in_progress_failure(operation_id)
+        return operation_in_progress_failure(operation_id)
 
     lookup = accepted.lookup
     location = _operation_status_url(lookup.operation_id)
@@ -336,7 +442,8 @@ def _csrf_failure(context: ApiContext, token: str | None) -> JSONResponse | None
     return _failure(HTTP_FORBIDDEN_STATUS, ApiErrorCode.CSRF_INVALID, CSRF_INVALID_MESSAGE)
 
 
-def _operation_in_progress_failure(operation_id: OperationId | None) -> JSONResponse:
+def operation_in_progress_failure(operation_id: OperationId | None) -> JSONResponse:
+    """Return the shared typed conflict with optional active-Operation remediation."""
     remediation = (
         ApiRemediation(label="View active Operation")
         if operation_id is None
@@ -356,8 +463,35 @@ def _operation_in_progress_failure(operation_id: OperationId | None) -> JSONResp
     return _json_response(envelope, HTTP_CONFLICT_STATUS)
 
 
-def _failure(status: int, code: ApiErrorCode, message: str) -> JSONResponse:
-    return api_failure_response(status, code, message)
+def _failure(status: int, code: ApiErrorCode, message: str, *, field: str | None = None) -> JSONResponse:
+    return api_failure_response(status, code, message, field=field)
+
+
+def _undo_plan_failure(message: str) -> JSONResponse | None:
+    definitions = {
+        RUN_NOT_FOUND_MESSAGE: (HTTP_NOT_FOUND_STATUS, ApiErrorCode.RUN_NOT_FOUND),
+        RUN_LIBRARY_NOT_FOUND_MESSAGE: (HTTP_NOT_FOUND_STATUS, ApiErrorCode.LIBRARY_NOT_FOUND),
+        RUN_PLAN_NOT_FOUND_MESSAGE: (HTTP_NOT_FOUND_STATUS, ApiErrorCode.PLAN_NOT_FOUND),
+        RUN_NOT_TERMINAL_MESSAGE: (HTTP_CONFLICT_STATUS, ApiErrorCode.RUN_NOT_TERMINAL),
+        NOTHING_TO_UNDO_MESSAGE: (HTTP_CONFLICT_STATUS, ApiErrorCode.NOTHING_TO_UNDO),
+        RUN_REFRESH_METADATA_UNSUPPORTED_MESSAGE: (
+            HTTP_CONFLICT_STATUS,
+            ApiErrorCode.UNDO_REFRESH_METADATA_UNSUPPORTED,
+        ),
+        ALREADY_UNDONE_OR_IN_PROGRESS_MESSAGE: (
+            HTTP_CONFLICT_STATUS,
+            ApiErrorCode.ALREADY_UNDONE_OR_IN_PROGRESS,
+        ),
+        PENDING_FILE_EVENT_REQUIRES_REVIEW_MESSAGE: (
+            HTTP_CONFLICT_STATUS,
+            ApiErrorCode.PENDING_FILE_EVENT_REQUIRES_REVIEW,
+        ),
+    }
+    definition = definitions.get(message)
+    if definition is None:
+        return None
+    status, code = definition
+    return _failure(status, code, message, field="path.run_id")
 
 
 def _json_response(

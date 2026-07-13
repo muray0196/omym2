@@ -36,8 +36,8 @@ describe("Operation recovery route", () => {
     expect(
       await screen.findByRole("heading", { name: "Operation recovery" }),
     ).toHaveFocus();
-    expect(await screen.findByText("Working")).toBeVisible();
-    expect(screen.queryByText("future_scan_stage")).not.toBeInTheDocument();
+    expect(await screen.findByText(/Working: server stage/)).toBeVisible();
+    expect(screen.getByText("future_scan_stage")).toBeVisible();
 
     expect(
       await screen.findByText("Operation storage is temporarily busy."),

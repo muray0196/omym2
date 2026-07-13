@@ -121,13 +121,15 @@ def test_ephemeral_server_runner_requires_a_command() -> None:
 
 
 def test_ephemeral_server_runner_seeds_registered_library_state() -> None:
-    """Browser gates receive temp Config, SQLite, and one registered Library tree."""
+    """Browser gates receive temp Config, SQLite, and deterministic M4 file fixtures."""
     probe = (
         "import os, pathlib; "
         f"root=pathlib.Path(os.environ['{APPLICATION_ROOT_ENVIRONMENT_VARIABLE}']); "
         "assert (root/'.config/config.toml').is_file(); "
         "assert str(root/'library') in (root/'.config/config.toml').read_text(); "
         "assert (root/'library/sentinel.flac').read_bytes(); "
+        "assert (root/'incoming/A-Success.flac').read_bytes(); "
+        "assert (root/'incoming/Z-Failure.flac').read_bytes(); "
         "database=(root/'.data/omym2.sqlite3').read_bytes(); "
         "assert b'01912345-6789-7abc-8def-0123456789ab' in database"
     )
@@ -137,8 +139,8 @@ def test_ephemeral_server_runner_seeds_registered_library_state() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_ephemeral_server_runner_rejects_library_tree_mutation() -> None:
-    """Any added, removed, moved, or changed Library file fails pre-M4 E2E."""
+def test_ephemeral_server_runner_allows_isolated_m4_library_mutation() -> None:
+    """M4 browser flows may mutate only the runner's disposable Library tree."""
     mutation = (
         "import os, pathlib; "
         f"root=pathlib.Path(os.environ['{APPLICATION_ROOT_ENVIRONMENT_VARIABLE}']); "
@@ -147,9 +149,7 @@ def test_ephemeral_server_runner_rejects_library_tree_mutation() -> None:
 
     result = _run_server_command(mutation)
 
-    assert result.returncode != 0
-    assert "Library mutation sentinel changed" in result.stderr
-    assert "sentinel.flac" in result.stderr
+    assert result.returncode == 0, result.stderr
 
 
 def test_ephemeral_server_runner_can_restore_node_path_only_for_the_child() -> None:

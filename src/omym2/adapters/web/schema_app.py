@@ -12,7 +12,7 @@ from omym2.config import WEB_APP_TITLE
 
 
 def create_api_schema_app() -> FastAPI:
-    """Create the M2 read-only API app without constructing runtime collaborators."""
+    """Create the complete API schema app without constructing runtime collaborators."""
     app = FastAPI(
         title=WEB_APP_TITLE,
         docs_url=None,

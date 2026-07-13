@@ -1,6 +1,6 @@
 /**
- * Summary: Snapshots the isolated E2E Library tree for pre-M4 mutation assertions.
- * Why: Lets every real-API M3 flow prove it did not alter Library music files.
+ * Summary: Snapshots the isolated E2E Library tree for observable file assertions.
+ * Why: Verifies passive routes and explicit execution effects against real files.
  */
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";

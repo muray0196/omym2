@@ -1,9 +1,10 @@
 /**
- * Summary: Tests read-only Run detail evidence and unknown-value presentation.
- * Why: Protects pending/manual-review UX while keeping Undo unavailable before M4.
+ * Summary: Tests Run evidence, capability-driven Undo planning, and durable recovery.
+ * Why: Protects pending/manual-review UX while routing reversals through reviewed Plans.
  */
-import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -13,16 +14,26 @@ import type {
   ApiEnvelopeFileEventGroupsData,
   ApiEnvelopePaginatedDataFileEventResource,
   ApiEnvelopeRunDetailData,
+  ApiFailureEnvelope,
 } from "../../api/generated";
 import { createQueryClient } from "../../app/query-client";
 import { Component as RunDetailRoute } from "../../routes/history/detail-route";
+import { normalBootstrap } from "../../test/fixtures/bootstrap";
+import {
+  OPERATION_ID,
+  completedPlanOperation,
+  queuedOperation,
+} from "../../test/fixtures/operations";
 import { server } from "../../test/server";
+import { RouteHeading } from "../../ui/primitives/route-heading";
+import { BootstrapContext } from "../bootstrap/bootstrap-context";
+import { bootstrapQuery } from "../bootstrap/bootstrap-query";
 import { eventStatusLabel, runStatusLabel } from "./history-catalog";
 
 const RUN_ID = "018f6a4f-3c2d-7b8a-9abc-def012345701";
 
 describe("Run detail inspection", () => {
-  it("shows pending mutation evidence and backend refusal without an Undo control", async () => {
+  it("shows pending mutation evidence and a disabled Undo control with recovery", async () => {
     server.use(
       http.get("*/api/history/:runId", () => HttpResponse.json(runDetail)),
       http.get("*/api/history/:runId/events", () =>
@@ -46,8 +57,128 @@ describe("Run detail inspection", () => {
       screen.getByText(/pending FileEvent requires manual review/i),
     ).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: /undo/i }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "Create Undo Plan" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Open Health" })).toHaveAttribute(
+      "href",
+      "/health",
+    );
+    expect(
+      screen.getByRole("link", { name: "Recover active Operation" }),
+    ).toHaveAttribute("href", `/operations/${OPERATION_ID}`);
+  });
+
+  it("starts Undo planning once, polls it, and opens the resulting Plan review", async () => {
+    const undoHeaders: Headers[] = [];
+    let operationReads = 0;
+    server.use(
+      http.get("*/api/history/:runId", () =>
+        HttpResponse.json(eligibleRunDetail),
+      ),
+      http.get("*/api/history/:runId/events", () =>
+        HttpResponse.json(runEvents),
+      ),
+      http.get("*/api/history/:runId/events/facets", () =>
+        HttpResponse.json(eventFacets),
+      ),
+      http.get("*/api/history/:runId/events/groups", () =>
+        HttpResponse.json(eventGroups),
+      ),
+      http.post("*/api/history/:runId/undo-plan", ({ request }) => {
+        undoHeaders.push(request.headers);
+        return HttpResponse.json(queuedOperation("undo_plan"), { status: 202 });
+      }),
+      http.get("*/api/operations/:operationId", () => {
+        operationReads += 1;
+        return HttpResponse.json(completedPlanOperation("undo_plan"));
+      }),
+    );
+    const { user } = renderRoute(`/history/${RUN_ID}`);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Create Undo Plan" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Undo Plan review" }),
+    ).toBeVisible();
+    expect(operationReads).toBe(1);
+    expect(undoHeaders[0]?.get("X-OMYM2-CSRF-Token")).toBe(
+      normalBootstrap.data.csrf_token,
+    );
+    expect(undoHeaders[0]?.get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
+  it("keeps Undo disabled after reloading a capable Run with an active Operation", async () => {
+    server.use(
+      http.get("*/api/history/:runId", () =>
+        HttpResponse.json(eligibleRunWithActiveOperation),
+      ),
+      http.get("*/api/history/:runId/events", () =>
+        HttpResponse.json(runEvents),
+      ),
+      http.get("*/api/history/:runId/events/facets", () =>
+        HttpResponse.json(eventFacets),
+      ),
+      http.get("*/api/history/:runId/events/groups", () =>
+        HttpResponse.json(eventGroups),
+      ),
+    );
+    renderRoute(`/history/${RUN_ID}`);
+
+    expect(
+      await screen.findByRole("button", { name: "Create Undo Plan" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("link", { name: "Recover active Operation" }),
+    ).toHaveAttribute("href", `/operations/${OPERATION_ID}`);
+  });
+
+  it("refetches Run capabilities and Bootstrap after an Undo race error", async () => {
+    let attempts = 0;
+    let bootstrapReads = 0;
+    let detailEnvelope: ApiEnvelopeRunDetailData = eligibleRunDetail;
+    server.use(
+      http.get("*/api/bootstrap", () => {
+        bootstrapReads += 1;
+        return HttpResponse.json(normalBootstrap);
+      }),
+      http.get("*/api/history/:runId", () => HttpResponse.json(detailEnvelope)),
+      http.get("*/api/history/:runId/events", () =>
+        HttpResponse.json(runEvents),
+      ),
+      http.get("*/api/history/:runId/events/facets", () =>
+        HttpResponse.json(eventFacets),
+      ),
+      http.get("*/api/history/:runId/events/groups", () =>
+        HttpResponse.json(eventGroups),
+      ),
+      http.post("*/api/history/:runId/undo-plan", () => {
+        attempts += 1;
+        detailEnvelope = runDetail;
+        return HttpResponse.json(undoConflict, { status: 409 });
+      }),
+    );
+    const { user } = renderRoute(`/history/${RUN_ID}`, true);
+
+    await waitFor(() => expect(bootstrapReads).toBe(1));
+    await user.click(
+      await screen.findByRole("button", { name: "Create Undo Plan" }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveFocus();
+    expect(alert).toHaveTextContent("Another Operation claimed this Run.");
+    expect(attempts).toBe(1);
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Create Undo Plan" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("link", { name: "Recover active Operation" }),
+      ).toHaveAttribute("href", `/operations/${OPERATION_ID}`);
+      expect(bootstrapReads).toBe(2);
+    });
   });
 
   it("preserves raw unknown catalog values", () => {
@@ -95,16 +226,34 @@ describe("Run detail inspection", () => {
   });
 });
 
-function renderRoute(initialEntry: string) {
+function renderRoute(initialEntry: string, observeBootstrap = false) {
   const router = createMemoryRouter(
-    [{ path: "/history/:runId", Component: RunDetailRoute }],
+    [
+      { path: "/history/:runId", Component: RunDetailRoute },
+      {
+        path: "/plans/:planId",
+        element: <RouteHeading>Undo Plan review</RouteHeading>,
+      },
+    ],
     { initialEntries: [initialEntry] },
   );
-  return render(
-    <QueryClientProvider client={createQueryClient()}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
+  return {
+    router,
+    user: userEvent.setup(),
+    ...render(
+      <QueryClientProvider client={createQueryClient()}>
+        {observeBootstrap ? <BootstrapQueryObserver /> : null}
+        <BootstrapContext value={normalBootstrap.data}>
+          <RouterProvider router={router} />
+        </BootstrapContext>
+      </QueryClientProvider>,
+    ),
+  };
+}
+
+function BootstrapQueryObserver() {
+  useQuery(bootstrapQuery);
+  return null;
 }
 
 const runDetail = {
@@ -130,10 +279,48 @@ const runDetail = {
         },
       ],
     },
-    active_operation_id: null,
+    active_operation_id: OPERATION_ID,
   },
   errors: [],
 } satisfies ApiEnvelopeRunDetailData;
+
+const eligibleRunDetail = {
+  data: {
+    active_operation_id: null,
+    capabilities: { can_create_undo: true, disabled_reasons: [] },
+    run: {
+      ...runDetail.data.run,
+      completed_at: "2026-07-13T00:01:00Z",
+      error_summary: null,
+      status: "succeeded",
+    },
+  },
+  errors: [],
+} satisfies ApiEnvelopeRunDetailData;
+
+const eligibleRunWithActiveOperation = {
+  ...eligibleRunDetail,
+  data: {
+    ...eligibleRunDetail.data,
+    active_operation_id: OPERATION_ID,
+  },
+} satisfies ApiEnvelopeRunDetailData;
+
+const undoConflict = {
+  data: null,
+  errors: [
+    {
+      code: "operation_in_progress",
+      field: "path.run_id",
+      message: "Another Operation claimed this Run.",
+      remediation: {
+        label: "View active Operation",
+        route: `/api/operations/${OPERATION_ID}`,
+      },
+      retryable: true,
+    },
+  ],
+} satisfies ApiFailureEnvelope;
 
 const runEvents = {
   data: {

@@ -12,6 +12,7 @@ import type {
   OperationResultResource,
 } from "../../api/generated";
 import { LiveRegion } from "../../ui/primitives/live-region";
+import { ApiDiagnostic } from "./api-diagnostic";
 import { operationCopy } from "./operation-copy";
 import {
   operationPollingErrors,
@@ -71,7 +72,7 @@ export function OperationStatus({
         </p>
       ) : null}
       {status === "queued" || status === "running" ? (
-        <p>{operationCopy.unknownStage}</p>
+        <OperationStage stageCode={operation?.progress.stage_code ?? null} />
       ) : null}
       {operation?.progress.completed_units !== null &&
       operation?.progress.completed_units !== undefined &&
@@ -87,7 +88,7 @@ export function OperationStatus({
       {terminalError ? (
         <div className={styles.error} role="alert">
           <strong>{statusLabel(status)}</strong>
-          <p>{terminalError.message}</p>
+          <ApiDiagnostic diagnostic={terminalError} />
         </div>
       ) : null}
       {expired ? (
@@ -102,7 +103,9 @@ export function OperationStatus({
           role="alert"
         >
           {queryErrors.map((error) => (
-            <li key={`${error.code}:${error.field ?? ""}`}>{error.message}</li>
+            <li key={`${error.code}:${error.field ?? ""}:${error.message}`}>
+              <ApiDiagnostic diagnostic={error} />
+            </li>
           ))}
         </ul>
       ) : null}
@@ -121,6 +124,18 @@ export function OperationStatus({
         <OperationAssociations operation={operation} />
       ) : null}
     </section>
+  );
+}
+
+function OperationStage({ stageCode }: { stageCode: string | null }) {
+  if (stageCode === null) {
+    return <p>{operationCopy.unknownStage}</p>;
+  }
+  return (
+    <p>
+      {operationCopy.unknownStage}: {operationCopy.stageCode}{" "}
+      <code className={styles.stageCode}>{stageCode}</code>
+    </p>
   );
 }
 
@@ -180,6 +195,8 @@ function announcementFor(
       return operationCopy.registered(operation.result.track_count);
     if (operation.result?.kind === "check_completed")
       return operationCopy.checkCompleted(operation.result.issue_count);
+    if (operation.result?.kind === "run_completed")
+      return operationCopy.runCompleted;
     return operationCopy.succeeded;
   }
   if (operation.status === "failed" || operation.status === "interrupted")

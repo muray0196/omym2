@@ -1,6 +1,6 @@
 """
-Summary: Implements read-only Plan inspection Web API routes.
-Why: Gives the renewed Plan Review UI typed summaries and backend capabilities.
+Summary: Implements Plan inspection and ready-Plan cancellation Web API routes.
+Why: Gives Plan Review typed evidence and a lock-protected synchronous Cancel action.
 """
 
 from __future__ import annotations
@@ -10,13 +10,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import JSONResponse  # noqa: TC002  # FastAPI resolves response annotations at registration.
 
 from omym2.adapters.web.routes.api_context import (
     ApiContext,  # noqa: TC001  # FastAPI resolves dependency annotations at registration.
 )
 from omym2.adapters.web.routes.api_responses import api_failure_response
+from omym2.adapters.web.routes.operations import operation_in_progress_failure
 from omym2.adapters.web.schemas.api_envelopes import ApiEnvelope, ApiFailureEnvelope
 from omym2.adapters.web.schemas.api_errors import ApiError, ApiErrorCode, ApiRemediation
 from omym2.adapters.web.schemas.browsing import FacetValueResource, PageInfo, PaginatedData
@@ -35,16 +36,20 @@ from omym2.adapters.web.schemas.plans import (
     PlanSummary,
 )
 from omym2.config import (
+    HTTP_CONFLICT_STATUS,
+    HTTP_FORBIDDEN_STATUS,
     HTTP_INTERNAL_ERROR_STATUS,
     HTTP_NOT_FOUND_STATUS,
     HTTP_OK_STATUS,
     HTTP_UNPROCESSABLE_CONTENT_STATUS,
+    WEB_API_CANCEL_PLAN_ROUTE,
     WEB_API_PLAN_ACTIONS_ROUTE,
     WEB_API_PLAN_DETAIL_ROUTE,
     WEB_API_PLAN_FACETS_ROUTE,
     WEB_API_PLAN_GROUPS_ROUTE,
     WEB_API_PLANS_ROUTE,
     WEB_CORRELATION_HEADER_NAME,
+    WEB_CSRF_HEADER_NAME,
 )
 from omym2.domain.models.plan import PlanStatus, PlanType
 from omym2.domain.models.plan_action import (
@@ -52,7 +57,9 @@ from omym2.domain.models.plan_action import (
     ActionType,
     PlanActionReason,
 )
+from omym2.features.common_ports import ExclusiveOperationBusyError
 from omym2.features.plans.dto import (
+    CancelPlanRequest,
     GetPlanActionSummariesRequest,
     GetPlanHeaderRequest,
     GroupPlanActionsRequest,
@@ -62,6 +69,10 @@ from omym2.features.plans.dto import (
     PlanActionGrouping,
     plan_action_summary_from_counts,
 )
+from omym2.features.plans.usecases.cancel_plan import (
+    PLAN_NOT_READY_MESSAGE,
+    PlanCannotBeCancelledError,
+)
 from omym2.features.plans.usecases.get_plan_capabilities import (
     GetPlanCapabilitiesRequest,
     PlanCapabilitiesResult,
@@ -69,7 +80,7 @@ from omym2.features.plans.usecases.get_plan_capabilities import (
     PlanCapabilityReason,
 )
 from omym2.features.plans.usecases.get_plan_header import PlanNotFoundError
-from omym2.shared.ids import PlanId
+from omym2.shared.ids import OperationId, PlanId
 from omym2.shared.pagination import (
     DEFAULT_PAGE_LIMIT,
     CursorDecodeError,
@@ -112,6 +123,9 @@ class PlanRouteHandlers:
     list_plan_actions: Callable[[ListPlanActionsRequest], Page[PlanAction]]
     get_plan_action_facets: Callable[[PlanActionFacetsRequest], PlanActionFacetsResult]
     group_plan_actions: Callable[[GroupPlanActionsRequest], Page[PlanActionGroup]]
+    cancel_plan: Callable[[CancelPlanRequest], Plan]
+    active_operation_id: Callable[[PlanId], OperationId | None]
+    conflicting_operation_id: Callable[[], OperationId | None]
 
 
 def get_plan_route_handlers(context: ApiContext) -> PlanRouteHandlers:
@@ -123,6 +137,7 @@ def get_plan_route_handlers(context: ApiContext) -> PlanRouteHandlers:
 
 
 type PlansContext = Annotated[PlanRouteHandlers, Depends(get_plan_route_handlers)]
+type CsrfToken = Annotated[str, Header(alias=WEB_CSRF_HEADER_NAME, min_length=1)]
 
 
 def create_plans_router() -> APIRouter:  # noqa: C901  # One factory registers the fixed Plan route set.
@@ -188,11 +203,11 @@ def create_plans_router() -> APIRouter:  # noqa: C901  # One factory registers t
             return _plan_not_found()
 
         return ApiEnvelope(
-            data=PlanDetailData(
-                plan=_plan_header(plan),
-                summary=_plan_action_summary(summaries[typed_plan_id]),
-                capabilities=_plan_capabilities(plan, capabilities),
-                active_operation_id=None,
+            data=_plan_detail_data(
+                context,
+                plan,
+                summaries[typed_plan_id],
+                capabilities,
             ),
             errors=(),
         )
@@ -322,6 +337,49 @@ def create_plans_router() -> APIRouter:  # noqa: C901  # One factory registers t
     return router
 
 
+def create_plan_mutation_router() -> APIRouter:
+    """Create the synchronous ready-Plan cancellation route without application I/O."""
+    router = APIRouter()
+    response_headers = {WEB_CORRELATION_HEADER_NAME: CORRELATION_HEADER_SCHEMA}
+
+    @router.post(
+        WEB_API_CANCEL_PLAN_ROUTE,
+        operation_id="cancelPlan",
+        response_model=ApiEnvelope[PlanDetailData],
+        responses={
+            HTTP_OK_STATUS: {"headers": response_headers},
+            HTTP_FORBIDDEN_STATUS: {"model": ApiFailureEnvelope, "headers": response_headers},
+            HTTP_NOT_FOUND_STATUS: {"model": ApiFailureEnvelope, "headers": response_headers},
+            HTTP_CONFLICT_STATUS: {"model": ApiFailureEnvelope, "headers": response_headers},
+            HTTP_UNPROCESSABLE_CONTENT_STATUS: {"model": ApiFailureEnvelope, "headers": response_headers},
+            HTTP_INTERNAL_ERROR_STATUS: {"model": ApiFailureEnvelope, "headers": response_headers},
+        },
+    )
+    def cancel_plan(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered routes.
+        plan_id: UUID,
+        context: PlansContext,
+        csrf_token: CsrfToken,
+    ) -> ApiEnvelope[PlanDetailData] | JSONResponse:
+        _ = csrf_token
+        typed_plan_id = PlanId(plan_id)
+        try:
+            plan = context.cancel_plan(CancelPlanRequest(typed_plan_id))
+            summaries = context.get_plan_action_summaries(GetPlanActionSummariesRequest((typed_plan_id,)))
+            capabilities = context.get_plan_capabilities(GetPlanCapabilitiesRequest(typed_plan_id))
+        except PlanNotFoundError:
+            return _plan_not_found()
+        except PlanCannotBeCancelledError:
+            return _plan_not_ready()
+        except ExclusiveOperationBusyError:
+            return operation_in_progress_failure(context.conflicting_operation_id())
+        return ApiEnvelope(
+            data=_plan_detail_data(context, plan, summaries[typed_plan_id], capabilities),
+            errors=(),
+        )
+
+    return router
+
+
 def _page_request(
     limit: int,
     cursor: str | None,
@@ -399,6 +457,21 @@ def _plan_header(plan: Plan) -> PlanHeader:
         created_at=plan.created_at,
         config_hash=plan.config_hash,
         library_root_at_plan=plan.library_root_at_plan,
+    )
+
+
+def _plan_detail_data(
+    context: PlanRouteHandlers,
+    plan: Plan,
+    summary: PlanActionSummaryDto | None,
+    capabilities: PlanCapabilitiesResult,
+) -> PlanDetailData:
+    """Project one current Plan detail after a read or synchronous transition."""
+    return PlanDetailData(
+        plan=_plan_header(plan),
+        summary=_plan_action_summary(summary),
+        capabilities=_plan_capabilities(plan, capabilities),
+        active_operation_id=context.active_operation_id(plan.plan_id),
     )
 
 
@@ -530,4 +603,13 @@ def _invalid_plan_query(field: str) -> JSONResponse:
         ApiErrorCode.VALIDATION_FAILED,
         INVALID_PLAN_QUERY_MESSAGE,
         field=field,
+    )
+
+
+def _plan_not_ready() -> JSONResponse:
+    return api_failure_response(
+        HTTP_CONFLICT_STATUS,
+        ApiErrorCode.PLAN_NOT_READY,
+        PLAN_NOT_READY_MESSAGE,
+        field="path.plan_id",
     )

@@ -28,15 +28,26 @@ export type OperationHeaders = {
   "X-OMYM2-CSRF-Token": string;
 };
 
-export class OperationApiError extends Error {
+export class ApiMutationError extends Error {
   readonly envelope: ApiFailureEnvelope;
   readonly status: number;
 
-  constructor(envelope: ApiFailureEnvelope, status: number) {
-    super("The Operation request returned a typed API failure.");
-    this.name = "OperationApiError";
+  constructor(envelope: ApiFailureEnvelope, status: number, message: string) {
+    super(message);
+    this.name = "ApiMutationError";
     this.envelope = envelope;
     this.status = status;
+  }
+}
+
+export class OperationApiError extends ApiMutationError {
+  constructor(envelope: ApiFailureEnvelope, status: number) {
+    super(
+      envelope,
+      status,
+      "The Operation request returned a typed API failure.",
+    );
+    this.name = "OperationApiError";
   }
 }
 

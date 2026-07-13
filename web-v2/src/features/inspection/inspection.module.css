@@ -1,6 +1,6 @@
 /**
- * Summary: Styles responsive read-only History and Health inspection surfaces.
- * Why: Makes dense durable evidence keyboard-accessible from mobile through desktop.
+ * Summary: Styles History, Health, durable evidence, and reviewed Undo controls.
+ * Why: Makes dense recovery evidence and capability guidance keyboard-accessible.
  */
 .page {
   display: grid;
@@ -197,6 +197,34 @@
   font-weight: 750;
 }
 .backLink {
+  color: var(--color-ink);
+  font-weight: 700;
+}
+.executionSection:focus {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 3px;
+}
+.capabilityPanel {
+  align-items: start;
+  display: grid;
+  gap: var(--space-12);
+  justify-items: start;
+}
+.capabilityReasons {
+  display: grid;
+  gap: var(--space-8);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.executionNotice {
+  border: 1px solid var(--color-yellow);
+  border-radius: var(--radius-10);
+  color: var(--color-body);
+  margin: 0;
+  padding: var(--space-12);
+}
+.recoveryLink {
   color: var(--color-ink);
   font-weight: 700;
 }

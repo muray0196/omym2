@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Ports And UnitOfWork
-description: Defines OMYM2's ports and UnitOfWork contract, including durable Operations, Config revision CAS, exclusive-operation coordination, atomic Apply claims, and FileEvent transaction ordering.
+description: Defines OMYM2's ports and UnitOfWork contract, including durable Operations, Config revision CAS, atomic Apply claims, filesystem mutation preconditions, and FileEvent transaction ordering.
 tags: [ports, unit-of-work, transactions, architecture]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-13T17:12:10+09:00
 ---
 
 # Ports And UnitOfWork
@@ -88,16 +88,28 @@ class FileMover(Protocol):
         source: PathLike,
         target: PathLike,
         *,
+        source_root: PathLike | None = None,
         target_root: PathLike | None = None,
+        expected_source_identity: FilesystemIdentity | None = None,
     ) -> None: ...
 ```
 
-Apply supplies the verified open Library root as `target_root` for every
-Library-relative destination. The adapter performs root-anchored traversal,
-rejects symlink/path replacement, and creates the final target exclusively.
-`target_root=None` is allowed only for the separately verified external-restore
-exception in the Undo/Apply contract. A plain source/target pair must not
-weaken the anchored boundary.
+Every live `FileSnapshotReader.capture()` result carries an ephemeral
+`FilesystemIdentity` containing device, inode, size, modification time, and
+change time. Apply passes that exact token as `expected_source_identity`; a
+trusted snapshot reconstructed without live I/O has no token and cannot
+authorize a filesystem mutation.
+
+Apply independently supplies the verified open Library root as `source_root`
+and `target_root` whenever the corresponding path is Library-relative. The
+adapter opens descendant directories without following symlinks, retains the
+source file and parent descriptors, rechecks source identity and containment,
+creates the target exclusively, and rechecks the complete source state before
+unlinking it through the retained parent descriptor. External add sources use
+`source_root=None` but are still copied from a retained descriptor; absolute
+Undo restore targets use `target_root=None` only for the separately verified
+external-restore exception. Omitting one root must not weaken the other
+anchored boundary.
 
 ```python
 class ConfigStore(Protocol):

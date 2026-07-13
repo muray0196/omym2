@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from omym2.domain.models.plan_action import PlanAction
-    from omym2.shared.ids import LibraryId, PlanId
+    from omym2.shared.ids import LibraryId, PlanId, RunId
 
 
 class PlanType(StrEnum):
@@ -61,6 +61,7 @@ class Plan:
     created_at: datetime
     config_hash: str
     library_root_at_plan: str
+    source_run_id: RunId | None = None
     summary: dict[str, str] = field(default_factory=dict)
     actions: tuple[PlanAction, ...] = ()
 
@@ -94,6 +95,10 @@ class Plan:
         """Return this Plan as expired before an apply run starts."""
         return self._with_status(PlanStatus.EXPIRED)
 
+    def mark_cancelled(self) -> Plan:
+        """Return this ready Plan as cancelled before apply starts."""
+        return self._with_status(PlanStatus.CANCELLED)
+
     def _with_status(self, status: PlanStatus) -> Plan:
         return Plan(
             plan_id=self.plan_id,
@@ -103,6 +108,7 @@ class Plan:
             created_at=self.created_at,
             config_hash=self.config_hash,
             library_root_at_plan=self.library_root_at_plan,
+            source_run_id=self.source_run_id,
             summary=dict(self.summary),
             actions=self.actions,
         )

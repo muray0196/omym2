@@ -24,8 +24,9 @@ if TYPE_CHECKING:
     from typing import TextIO
 
     from omym2.domain.models.plan import Plan
-    from omym2.features.apply.ports import ApplyPlanPorts
+    from omym2.domain.models.run import Run
     from omym2.features.common_ports import FileSystemPath
+    from omym2.shared.ids import PlanId
 
 ALL_FLAG = "--all"
 APPLY_FLAG = "--apply"
@@ -41,7 +42,7 @@ class RefreshCommandDependencies:
     """Factories for the ports needed by refresh plan creation and optional apply."""
 
     create_refresh_plan: Callable[[CreateRefreshPlanRequest], Plan]
-    apply_plan_ports_factory: Callable[[], ApplyPlanPorts]
+    apply_plan: Callable[[PlanId], Run]
     normalize_target_path: Callable[[FileSystemPath], str]
 
 
@@ -96,7 +97,7 @@ def _run_refresh(
             plan.plan_id,
             stdout,
             stderr,
-            dependencies.apply_plan_ports_factory,
+            dependencies.apply_plan,
             confirmation=ConfirmationOptions(),
         )
 

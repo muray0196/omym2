@@ -1,6 +1,6 @@
 /**
- * Summary: Styles responsive, read-only Plan list and inspection data regions.
- * Why: Makes dense recorded evidence scannable without introducing mutable controls.
+ * Summary: Styles Plan browsing, exact review, and capability-driven execution controls.
+ * Why: Keeps dense evidence and high-risk actions scannable in one keyboard-safe surface.
  */
 .page {
   display: grid;
@@ -38,6 +38,7 @@
 
 .filterPanel,
 .section,
+.executionSection,
 .state {
   background: var(--color-surface);
   border: 1px solid var(--color-hairline);
@@ -48,6 +49,55 @@
 .filterPanel {
   display: grid;
   gap: var(--space-16);
+}
+
+.executionSection {
+  display: grid;
+  gap: var(--space-16);
+}
+
+.executionSection:focus {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 3px;
+}
+
+.executionControls {
+  display: grid;
+  gap: var(--space-16);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.capabilityControl {
+  align-content: start;
+  display: grid;
+  gap: var(--space-8);
+}
+
+.capabilityControl > button {
+  width: 100%;
+}
+
+.capabilityReasons {
+  color: var(--color-body);
+  display: grid;
+  font-size: 14px;
+  gap: var(--space-8);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.executionNotice {
+  border: 1px solid var(--color-yellow);
+  border-radius: var(--radius-10);
+  color: var(--color-body);
+  margin: 0;
+  padding: var(--space-12);
+}
+
+.recoveryLink {
+  color: var(--color-ink);
+  font-weight: 700;
 }
 
 .filterGrid {
@@ -415,8 +465,13 @@
 @media (max-width: 767px) {
   .filterPanel,
   .section,
+  .executionSection,
   .state {
     padding: var(--space-16);
+  }
+
+  .executionControls {
+    grid-template-columns: 1fr;
   }
 
   .filterGrid,

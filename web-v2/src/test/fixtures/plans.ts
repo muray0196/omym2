@@ -1,6 +1,6 @@
 /**
- * Summary: Defines deterministic typed Plan inspection fixtures for the M2 read-only slice.
- * Why: Makes MSW fixtures drift with generated API envelopes instead of hand-maintained schemas.
+ * Summary: Defines deterministic typed Plan review and capability fixtures.
+ * Why: Makes M4 execution-control tests drift with generated API envelopes.
  */
 import type {
   ApiEnvelopePaginatedDataPlanActionResource,
@@ -128,6 +128,57 @@ export const readyPlanDetail = {
       status: readyPlanMixedActions.status,
     },
     summary: readyPlanSummary,
+  },
+  errors: [],
+} satisfies ApiEnvelopePlanDetailData;
+
+export const blockedOnlyPlanDetail = {
+  data: {
+    active_operation_id: null,
+    capabilities: {
+      can_apply: true,
+      can_cancel: true,
+      can_recreate: true,
+      disabled_reasons: [],
+    },
+    plan: {
+      config_hash: "fixture-blocked-config-hash",
+      created_at: blockedOnlyPlan.created_at,
+      library_id: blockedOnlyPlan.library_id,
+      library_root_at_plan: "/music/library",
+      plan_id: blockedOnlyPlan.plan_id,
+      plan_type: blockedOnlyPlan.plan_type,
+      status: blockedOnlyPlan.status,
+    },
+    summary: blockedOnlySummary,
+  },
+  errors: [],
+} satisfies ApiEnvelopePlanDetailData;
+
+export const cancelledPlanDetail = {
+  data: {
+    ...readyPlanDetail.data,
+    active_operation_id: null,
+    capabilities: {
+      can_apply: false,
+      can_cancel: false,
+      can_recreate: true,
+      disabled_reasons: [
+        {
+          code: "plan_not_ready",
+          field: "capabilities.can_apply",
+          message: "A cancelled Plan cannot be applied.",
+          retryable: false,
+        },
+        {
+          code: "plan_not_ready",
+          field: "capabilities.can_cancel",
+          message: "This Plan is already terminal.",
+          retryable: false,
+        },
+      ],
+    },
+    plan: { ...readyPlanDetail.data.plan, status: "cancelled" },
   },
   errors: [],
 } satisfies ApiEnvelopePlanDetailData;

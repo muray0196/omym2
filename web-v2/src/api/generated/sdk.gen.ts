@@ -5,7 +5,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateArtistIdDraftData, GenerateArtistIdDraftErrors, GenerateArtistIdDraftResponses, GetBootstrapData, GetBootstrapErrors, GetBootstrapResponses, GetCheckIssueFacetsData, GetCheckIssueFacetsErrors, GetCheckIssueFacetsResponses, GetCheckIssueGroupsData, GetCheckIssueGroupsErrors, GetCheckIssueGroupsResponses, GetCheckIssuesData, GetCheckIssuesErrors, GetCheckIssuesResponses, GetHistoryData, GetHistoryErrors, GetHistoryFacetsData, GetHistoryFacetsErrors, GetHistoryFacetsResponses, GetHistoryResponses, GetLibrariesData, GetLibrariesErrors, GetLibrariesResponses, GetLibraryData, GetLibraryErrors, GetLibraryResponses, GetOperationData, GetOperationErrors, GetOperationResponses, GetPlanActionFacetsData, GetPlanActionFacetsErrors, GetPlanActionFacetsResponses, GetPlanData, GetPlanErrors, GetPlanResponses, GetRunData, GetRunErrors, GetRunEventFacetsData, GetRunEventFacetsErrors, GetRunEventFacetsResponses, GetRunEventGroupsData, GetRunEventGroupsErrors, GetRunEventGroupsResponses, GetRunEventsData, GetRunEventsErrors, GetRunEventsResponses, GetRunResponses, GetSettingsData, GetSettingsErrors, GetSettingsResponses, GetTrackData, GetTrackErrors, GetTrackFacetsData, GetTrackFacetsErrors, GetTrackFacetsResponses, GetTrackGroupsData, GetTrackGroupsErrors, GetTrackGroupsResponses, GetTrackResponses, GroupPlanActionsData, GroupPlanActionsErrors, GroupPlanActionsResponses, ListPlanActionsData, ListPlanActionsErrors, ListPlanActionsResponses, ListPlansData, ListPlansErrors, ListPlansResponses, ListTracksData, ListTracksErrors, ListTracksResponses, PreviewSettingsPathData, PreviewSettingsPathErrors, PreviewSettingsPathResponses, SaveSettingsData, SaveSettingsErrors, SaveSettingsResponses, StartAddPlanData, StartAddPlanErrors, StartAddPlanResponses, StartCheckData, StartCheckErrors, StartCheckResponses, StartOrganizePlanData, StartOrganizePlanErrors, StartOrganizePlanResponses, StartRefreshPlanData, StartRefreshPlanErrors, StartRefreshPlanResponses, ValidateSettingsData, ValidateSettingsErrors, ValidateSettingsResponses } from './types.gen';
+import type { ApplyPlanData, ApplyPlanErrors, ApplyPlanResponses, CancelPlanData, CancelPlanErrors, CancelPlanResponses, CreateUndoPlanData, CreateUndoPlanErrors, CreateUndoPlanResponses, GenerateArtistIdDraftData, GenerateArtistIdDraftErrors, GenerateArtistIdDraftResponses, GetBootstrapData, GetBootstrapErrors, GetBootstrapResponses, GetCheckIssueFacetsData, GetCheckIssueFacetsErrors, GetCheckIssueFacetsResponses, GetCheckIssueGroupsData, GetCheckIssueGroupsErrors, GetCheckIssueGroupsResponses, GetCheckIssuesData, GetCheckIssuesErrors, GetCheckIssuesResponses, GetHistoryData, GetHistoryErrors, GetHistoryFacetsData, GetHistoryFacetsErrors, GetHistoryFacetsResponses, GetHistoryResponses, GetLibrariesData, GetLibrariesErrors, GetLibrariesResponses, GetLibraryData, GetLibraryErrors, GetLibraryResponses, GetOperationData, GetOperationErrors, GetOperationResponses, GetPlanActionFacetsData, GetPlanActionFacetsErrors, GetPlanActionFacetsResponses, GetPlanData, GetPlanErrors, GetPlanResponses, GetRunData, GetRunErrors, GetRunEventFacetsData, GetRunEventFacetsErrors, GetRunEventFacetsResponses, GetRunEventGroupsData, GetRunEventGroupsErrors, GetRunEventGroupsResponses, GetRunEventsData, GetRunEventsErrors, GetRunEventsResponses, GetRunResponses, GetSettingsData, GetSettingsErrors, GetSettingsResponses, GetTrackData, GetTrackErrors, GetTrackFacetsData, GetTrackFacetsErrors, GetTrackFacetsResponses, GetTrackGroupsData, GetTrackGroupsErrors, GetTrackGroupsResponses, GetTrackResponses, GroupPlanActionsData, GroupPlanActionsErrors, GroupPlanActionsResponses, ListPlanActionsData, ListPlanActionsErrors, ListPlanActionsResponses, ListPlansData, ListPlansErrors, ListPlansResponses, ListTracksData, ListTracksErrors, ListTracksResponses, PreviewSettingsPathData, PreviewSettingsPathErrors, PreviewSettingsPathResponses, SaveSettingsData, SaveSettingsErrors, SaveSettingsResponses, StartAddPlanData, StartAddPlanErrors, StartAddPlanResponses, StartCheckData, StartCheckErrors, StartCheckResponses, StartOrganizePlanData, StartOrganizePlanErrors, StartOrganizePlanResponses, StartRefreshPlanData, StartRefreshPlanErrors, StartRefreshPlanResponses, ValidateSettingsData, ValidateSettingsErrors, ValidateSettingsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -84,6 +84,11 @@ export const getRunEventFacets = <ThrowOnError extends boolean = false>(options:
 export const getRunEventGroups = <ThrowOnError extends boolean = false>(options: Options<GetRunEventGroupsData, ThrowOnError>): RequestResult<GetRunEventGroupsResponses, GetRunEventGroupsErrors, ThrowOnError> => (options.client ?? client).get<GetRunEventGroupsResponses, GetRunEventGroupsErrors, ThrowOnError>({ url: '/api/history/{run_id}/events/groups', ...options });
 
 /**
+ * Create Undo Plan
+ */
+export const createUndoPlan = <ThrowOnError extends boolean = false>(options: Options<CreateUndoPlanData, ThrowOnError>): RequestResult<CreateUndoPlanResponses, CreateUndoPlanErrors, ThrowOnError> => (options.client ?? client).post<CreateUndoPlanResponses, CreateUndoPlanErrors, ThrowOnError>({ url: '/api/history/{run_id}/undo-plan', ...options });
+
+/**
  * Get Libraries
  */
 export const getLibraries = <ThrowOnError extends boolean = false>(options?: Options<GetLibrariesData, ThrowOnError>): RequestResult<GetLibrariesResponses, GetLibrariesErrors, ThrowOnError> => (options?.client ?? client).get<GetLibrariesResponses, GetLibrariesErrors, ThrowOnError>({ url: '/api/libraries', ...options });
@@ -148,6 +153,16 @@ export const getPlan = <ThrowOnError extends boolean = false>(options: Options<G
  * List Plan Actions
  */
 export const listPlanActions = <ThrowOnError extends boolean = false>(options: Options<ListPlanActionsData, ThrowOnError>): RequestResult<ListPlanActionsResponses, ListPlanActionsErrors, ThrowOnError> => (options.client ?? client).get<ListPlanActionsResponses, ListPlanActionsErrors, ThrowOnError>({ url: '/api/plans/{plan_id}/actions', ...options });
+
+/**
+ * Apply Plan
+ */
+export const applyPlan = <ThrowOnError extends boolean = false>(options: Options<ApplyPlanData, ThrowOnError>): RequestResult<ApplyPlanResponses, ApplyPlanErrors, ThrowOnError> => (options.client ?? client).post<ApplyPlanResponses, ApplyPlanErrors, ThrowOnError>({ url: '/api/plans/{plan_id}/apply', ...options });
+
+/**
+ * Cancel Plan
+ */
+export const cancelPlan = <ThrowOnError extends boolean = false>(options: Options<CancelPlanData, ThrowOnError>): RequestResult<CancelPlanResponses, CancelPlanErrors, ThrowOnError> => (options.client ?? client).post<CancelPlanResponses, CancelPlanErrors, ThrowOnError>({ url: '/api/plans/{plan_id}/cancel', ...options });
 
 /**
  * Get Plan Action Facets

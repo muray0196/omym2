@@ -30,6 +30,9 @@ SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456c1"))
 LIBRARY_ROOT = "/music/library"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456d0"))
 SECOND_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456d1"))
+THIRD_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456d2"))
+FOURTH_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456d3"))
+FIFTH_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456d4"))
 
 RUN_ID_1 = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456f1"))
 RUN_ID_2 = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456f2"))
@@ -50,11 +53,13 @@ def test_run_query_page_walks_every_run_newest_first_with_desc_keyset_cursor(tmp
     """A limit=2 keyset walk over 5 Runs visits every Run once in (started_at DESC, run_id DESC) order."""
     database_file = default_application_paths(tmp_path).database_file
     run_ids = (RUN_ID_1, RUN_ID_2, RUN_ID_3, RUN_ID_4, RUN_ID_5)
+    plan_ids = (PLAN_ID, SECOND_PLAN_ID, THIRD_PLAN_ID, FOURTH_PLAN_ID, FIFTH_PLAN_ID)
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library(LIBRARY_ID))
-        uow.plans.save(_plan())
-        for index, run_id in enumerate(run_ids):
-            uow.runs.save(_run(run_id, started_at=BASE_TIME + timedelta(days=index)))
+        for plan_id in plan_ids:
+            uow.plans.save(_plan(plan_id=plan_id))
+        for index, (run_id, plan_id) in enumerate(zip(run_ids, plan_ids, strict=True)):
+            uow.runs.save(_run(run_id, started_at=BASE_TIME + timedelta(days=index), plan_id=plan_id))
         uow.commit()
 
     visited: list[RunId] = []
@@ -81,11 +86,13 @@ def test_run_query_page_breaks_started_at_ties_by_run_id_desc(tmp_path: Path) ->
     """Runs sharing one started_at are ordered and keyset-walked by run_id DESC."""
     database_file = default_application_paths(tmp_path).database_file
     run_ids = (RUN_ID_1, RUN_ID_2, RUN_ID_3)
+    plan_ids = (PLAN_ID, SECOND_PLAN_ID, THIRD_PLAN_ID)
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library(LIBRARY_ID))
-        uow.plans.save(_plan())
-        for run_id in run_ids:
-            uow.runs.save(_run(run_id, started_at=BASE_TIME))
+        for plan_id in plan_ids:
+            uow.plans.save(_plan(plan_id=plan_id))
+        for run_id, plan_id in zip(run_ids, plan_ids, strict=True):
+            uow.runs.save(_run(run_id, started_at=BASE_TIME, plan_id=plan_id))
         uow.commit()
 
     visited: list[RunId] = []
@@ -113,14 +120,24 @@ def test_run_query_page_pushes_status_and_library_filters_into_sql(tmp_path: Pat
         uow.libraries.save(_library(LIBRARY_ID))
         uow.libraries.save(_library(SECOND_LIBRARY_ID))
         uow.plans.save(_plan())
+        uow.plans.save(_plan(plan_id=SECOND_PLAN_ID))
+        uow.plans.save(_plan(plan_id=THIRD_PLAN_ID, library_id=SECOND_LIBRARY_ID))
         uow.runs.save(_run(RUN_ID_1, started_at=BASE_TIME, status=RunStatus.SUCCEEDED))
-        uow.runs.save(_run(RUN_ID_2, started_at=BASE_TIME + timedelta(days=1), status=RunStatus.FAILED))
+        uow.runs.save(
+            _run(
+                RUN_ID_2,
+                started_at=BASE_TIME + timedelta(days=1),
+                status=RunStatus.FAILED,
+                plan_id=SECOND_PLAN_ID,
+            )
+        )
         uow.runs.save(
             _run(
                 RUN_ID_3,
                 started_at=BASE_TIME + timedelta(days=2),
                 status=RunStatus.SUCCEEDED,
                 library_id=SECOND_LIBRARY_ID,
+                plan_id=THIRD_PLAN_ID,
             )
         )
         uow.commit()
@@ -156,9 +173,25 @@ def test_run_status_facets_order_count_desc_then_value_asc(tmp_path: Path) -> No
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library(LIBRARY_ID))
         uow.plans.save(_plan())
+        uow.plans.save(_plan(plan_id=SECOND_PLAN_ID))
+        uow.plans.save(_plan(plan_id=THIRD_PLAN_ID))
         uow.runs.save(_run(RUN_ID_1, started_at=BASE_TIME, status=RunStatus.SUCCEEDED))
-        uow.runs.save(_run(RUN_ID_2, started_at=BASE_TIME + timedelta(days=1), status=RunStatus.SUCCEEDED))
-        uow.runs.save(_run(RUN_ID_3, started_at=BASE_TIME + timedelta(days=2), status=RunStatus.FAILED))
+        uow.runs.save(
+            _run(
+                RUN_ID_2,
+                started_at=BASE_TIME + timedelta(days=1),
+                status=RunStatus.SUCCEEDED,
+                plan_id=SECOND_PLAN_ID,
+            )
+        )
+        uow.runs.save(
+            _run(
+                RUN_ID_3,
+                started_at=BASE_TIME + timedelta(days=2),
+                status=RunStatus.FAILED,
+                plan_id=THIRD_PLAN_ID,
+            )
+        )
         uow.commit()
 
     with SQLiteUnitOfWork(database_file) as uow:
@@ -272,10 +305,10 @@ def _library(library_id: LibraryId) -> Library:
     )
 
 
-def _plan(*, plan_id: PlanId = PLAN_ID) -> Plan:
+def _plan(*, plan_id: PlanId = PLAN_ID, library_id: LibraryId = LIBRARY_ID) -> Plan:
     return Plan(
         plan_id=plan_id,
-        library_id=LIBRARY_ID,
+        library_id=library_id,
         plan_type=PlanType.ADD,
         status=PlanStatus.APPLIED,
         created_at=BASE_TIME,

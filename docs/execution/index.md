@@ -7,6 +7,6 @@ Use this file as the execution router. Read the focused file for the task.
 * [Add Execution](add.md) - Defines add plan creation from an Incoming/source scan against the sole registered Library, including duplicate-hash skips, missing-metadata and target-conflict blocks, and add --apply orchestration.
 * [Organize Execution](organize.md) - Defines organize registration and reconciliation, Plan creation, and the explicit unique-Track size+mtime trust-stat optimization and fallback rules.
 * [Refresh Execution](refresh.md) - Defines refresh target re-evaluation, move versus metadata actions, stable Track identity, and the explicit size+mtime trust-stat optimization and fallback rules.
-* [Apply Execution](apply.md) - Defines atomic Apply acceptance, state transitions, source verification, Track baseline writes, FileEvent ordering, interruption, and Library-root preconditions.
-* [Undo Execution](undo.md) - Defines Undo eligibility and deduplication, reverse FileEvent tracing, Undo Plan provenance, restore conflicts, and external restore Track removal.
+* [Apply Execution](apply.md) - Defines atomic Apply acceptance, descriptor-anchored source and target verification, state transitions, Track baseline writes, FileEvent ordering, interruption, and Library-root preconditions.
+* [Undo Execution](undo.md) - Defines Undo eligibility and deduplication, reverse FileEvent tracing, Undo Plan provenance, source-observation blocks, restore conflicts, and external restore Track removal.
 * [Check Execution](check.md) - Defines exclusive Check execution as a durable Operation, persisted diagnostics, snapshot reuse, trust-stat optimization, and the Track no-mutation boundary.

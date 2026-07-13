@@ -1,17 +1,17 @@
 ---
 type: Execution Spec
 title: Undo Execution
-description: Defines Undo eligibility and deduplication, reverse FileEvent tracing, Undo Plan provenance, restore conflicts, and external restore Track removal.
+description: Defines Undo eligibility and deduplication, reverse FileEvent tracing, Undo Plan provenance, source-observation blocks, restore conflicts, and external restore Track removal.
 tags: [undo, eligibility, deduplication, file-event, plan-creation, restore]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-13T17:28:22+09:00
 ---
 
 # Undo Execution
 
 This document is authoritative for Undo per Run, eligibility, deduplication,
 unsupported `refresh_metadata` history, reverse FileEvent tracing, Undo Plan
-provenance, external restore targets/conflicts, and Track removal for restored
-imports.
+provenance, source-observation blocks, external restore targets/conflicts, and
+Track removal for restored imports.
 
 Common execution rules are in [model.md](model.md). Apply rules are in [apply.md](apply.md). Path exceptions are in [../contracts/path-identity-storage.md](../contracts/path-identity-storage.md#absolute-external-path-exceptions).
 
@@ -99,6 +99,14 @@ If the restore destination is already occupied during undo Plan creation, the
 corresponding PlanAction is `blocked` with reason `target_exists`; it is not
 overwritten automatically. A target that appears later is caught by apply's
 exclusive-create move and fails closed, requiring manual review.
+
+Undo Plan creation converts source-observation failures into reviewed blocked
+actions instead of failing the durable Undo Operation wholesale. A source that
+disappears during snapshot capture is `source_missing`; a rejected
+Library-relative source path is `invalid_path`; and an unstable snapshot,
+metadata-read failure, or other filesystem observation failure is
+`source_changed`. The Operation succeeds with a `plan_created` result so the
+user can inspect the blocked action before deciding what to do next.
 
 When undo restores a file that originally came from outside the Library, such as an add/import source, the undo Plan records the external restore destination as an absolute target path. Applying that undo moves the file out of the Library and marks the managed Track as `removed`; Track paths remain Library-root-relative and do not store the external destination.
 
