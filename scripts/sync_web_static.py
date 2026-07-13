@@ -1,6 +1,6 @@
 """
-Summary: Replaces the packaged Web static tree with the renewed Vite build.
-Why: Prevents stale assets from surviving between clean-room frontend builds.
+Summary: Replaces the packaged Web static tree with the current Vite build.
+Why: Prevents stale assets from surviving between frontend builds.
 """
 # ruff: noqa: INP001, T201 -- Standalone build script reports concise CLI results.
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate the project root."
-DEFAULT_WEB_BUILD_RELATIVE_PATH = Path("web-v2/dist")
+DEFAULT_WEB_BUILD_RELATIVE_PATH = Path("web/dist")
 DEFAULT_PACKAGED_STATIC_RELATIVE_PATH = Path("src/omym2/adapters/web/static_dist")
 STATIC_INDEX_FILE_NAME = "index.html"
 STAGING_DIRECTORY_PREFIX = ".omym2-static-sync-"

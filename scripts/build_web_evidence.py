@@ -1,6 +1,6 @@
 """
 Summary: Builds, audits, rebuilds, installs, and smokes Web package evidence.
-Why: Proves renewal artifacts are complete and require no Node.js at runtime.
+Why: Proves release artifacts are complete and require no Node.js at runtime.
 """
 # ruff: noqa: INP001, T201 -- Standalone evidence script reports concise CLI results.
 
@@ -26,10 +26,10 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate the project root."
-WEB_SOURCE_RELATIVE_PATH = Path("web-v2")
+WEB_SOURCE_RELATIVE_PATH = Path("web")
 WEB_BUILD_RELATIVE_PATH = WEB_SOURCE_RELATIVE_PATH / "dist"
 PACKAGED_STATIC_RELATIVE_PATH = Path("src/omym2/adapters/web/static_dist")
-DEFAULT_EVIDENCE_RELATIVE_PATH = Path("build/web-renewal-evidence")
+DEFAULT_EVIDENCE_RELATIVE_PATH = Path("build/web-package-evidence")
 PYTHON_BUILD_STAGING_RELATIVE_PATH = Path("build")
 REBUILT_WHEEL_DIRECTORY_NAME = "rebuilt-from-sdist"
 PERFORMANCE_BASE_URL_ENVIRONMENT_VARIABLE = "OMYM2_PERFORMANCE_BASE_URL"
@@ -42,7 +42,7 @@ POSIX_PYTHON_EXECUTABLE_NAME = "python"
 
 
 class EvidenceBuildError(RuntimeError):
-    """Raised when renewal package evidence cannot be produced or verified."""
+    """Raised when Web package evidence cannot be produced or verified."""
 
 
 class ParsedArgs(argparse.Namespace):

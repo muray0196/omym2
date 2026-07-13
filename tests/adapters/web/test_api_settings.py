@@ -70,7 +70,7 @@ def test_get_settings_returns_invalid_recovery_data_choices_and_preview(tmp_path
 
 
 def test_app_config_resource_round_trips_complete_hidden_config_fields() -> None:
-    """Settings serialization retains fields hidden by the renewed presentation."""
+    """Settings serialization retains fields hidden by the bundled presentation."""
     config = AppConfig(
         paths=PathsConfig(library=LIBRARY_PATH),
         ui=UiConfig(theme="dark", show_advanced_settings=True),

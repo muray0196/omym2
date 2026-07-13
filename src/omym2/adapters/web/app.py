@@ -1,5 +1,5 @@
 """
-Summary: Builds the local renewed Web application.
+Summary: Builds the local bundled Web application.
 Why: Serves the typed Bootstrap API and packaged Vite SPA with one secure loopback boundary.
 """
 

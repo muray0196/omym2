@@ -1,5 +1,5 @@
 """
-Summary: Defines the renewed Web API Bootstrap resource.
+Summary: Defines the bundled Web API Bootstrap resource.
 Why: Starts the SPA with typed recovery, readiness, and polling policy data.
 """
 
@@ -27,6 +27,7 @@ class RuntimeCapabilities(ApiModel):
     can_read_state: bool
     can_change_settings: bool
     can_start_operations: bool
+    can_start_organize: bool
     disabled_reasons: tuple[ApiError, ...]
 
 

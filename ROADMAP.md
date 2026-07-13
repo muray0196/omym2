@@ -26,17 +26,16 @@ tracked Web frontend contract. Phone, tablet, touch-first, and mobile-specific
 layout support are outside the product and test boundary. It is still not a
 music player: no playback, tag editing, cover art, or cloud features.
 
-The current review-only UI remains the supported `main`/`stable` release until
-cutover and is the clean-room exclusion zone: the new implementation must not
-reference or reuse its code, layout, assets, or copy. M1-M5 stay on an
-unreleased renewal integration line; only its completed M5 tree is
-merged/released, so the breaking SPA/API pair lands atomically.
+The last review-only `main` release remains the pinned rollback anchor. Its
+frontend source was excluded throughout clean-room implementation and deleted
+at M5. Only the completed M5 tree is merged/released, so the breaking SPA/API
+pair lands atomically.
 
 ## Material Decisions
 
-- Clean-room rebuild in `web-v2/`; atomic cutover (mechanical delete of the
-  old frontend, rename to `web/`). No feature flag, no screen-by-screen
-  migration, no comparisons against the old UI during review.
+- Clean-room rebuild completed with an atomic cutover to `web/` after deleting
+  the old frontend. No feature flag, screen-by-screen migration, or comparison
+  against the old UI entered implementation.
 - Backend-authoritative behavior: typed API envelope with structured errors,
   capabilities with disabled reasons, opaque cursors. React never infers
   permitted operations from status values.
@@ -120,7 +119,8 @@ Keep every milestone independently reviewable. Gates: frontend typecheck,
 lint, unit/component tests, and Playwright E2E (keyboard and axe included);
 backend pytest and the architecture gate; generated API types free of
 drift; wheel/sdist content audit and clean-install smoke test. Mutation E2E
-proves that no UI path moves library music files before M4. Keep the
-wheel/sdist of the last pre-cutover commit as rollback artifacts; the
-cutover commit itself is mechanical (delete + rename), so reverting it
-restores the old UI.
+proves Plan-centered Apply and Undo outcomes while non-mutating routes preserve
+unrelated Library files. Keep the final wheel/sdist and a checksummed rollback
+ZIP containing the standardized wheel/sdist of the pinned last pre-cutover
+commit. Rollback code does not provide backward persisted-state compatibility,
+so recovery also requires a pre-cutover state backup.

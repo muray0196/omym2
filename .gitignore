@@ -29,13 +29,11 @@ htmlcov/
 build/
 dist/
 web/node_modules/
-web/out/
-web-v2/node_modules/
-web-v2/dist/
-web-v2/coverage/
-web-v2/playwright-report/
-web-v2/test-results/
-web-v2/.vite/
+web/dist/
+web/coverage/
+web/playwright-report/
+web/test-results/
+web/.vite/
 src/omym2/adapters/web/static_dist/
 
 # OS/editor

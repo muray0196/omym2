@@ -15,6 +15,18 @@ from html.parser import HTMLParser
 from typing import TYPE_CHECKING, cast, override
 from urllib.parse import urljoin, urlsplit
 
+from omym2.config import (
+    WEB_CONTENT_SECURITY_POLICY,
+    WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME,
+    WEB_CONTENT_TYPE_OPTIONS_VALUE,
+    WEB_CORRELATION_HEADER_NAME,
+    WEB_CSP_HEADER_NAME,
+    WEB_FRAME_OPTIONS,
+    WEB_FRAME_OPTIONS_HEADER_NAME,
+    WEB_REFERRER_POLICY,
+    WEB_REFERRER_POLICY_HEADER_NAME,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -28,13 +40,13 @@ HTML_ACCEPT_HEADER = "text/html"
 JSON_ACCEPT_HEADER = "application/json"
 EXPECTED_HTML_CACHE_CONTROL = "no-cache"
 EXPECTED_ASSET_CACHE_CONTROL_PARTS = ("public", "max-age=31536000", "immutable")
-REQUIRED_SECURITY_HEADERS = (
-    "content-security-policy",
-    "referrer-policy",
-    "x-frame-options",
-    "x-content-type-options",
-)
-CORRELATION_HEADER_NAME = "x-omym2-correlation-id"
+EXPECTED_SECURITY_HEADERS = {
+    WEB_CSP_HEADER_NAME.lower(): WEB_CONTENT_SECURITY_POLICY,
+    WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME.lower(): WEB_CONTENT_TYPE_OPTIONS_VALUE,
+    WEB_REFERRER_POLICY_HEADER_NAME.lower(): WEB_REFERRER_POLICY,
+    WEB_FRAME_OPTIONS_HEADER_NAME.lower(): WEB_FRAME_OPTIONS,
+}
+CORRELATION_HEADER_NAME = WEB_CORRELATION_HEADER_NAME.lower()
 
 
 class PackageSmokeError(RuntimeError):
@@ -71,10 +83,11 @@ def smoke_web_package(base_url: str) -> None:
     if root_headers.get("cache-control") != EXPECTED_HTML_CACHE_CONTROL:
         msg = f"{ROOT_ROUTE} must use Cache-Control: {EXPECTED_HTML_CACHE_CONTROL}."
         raise PackageSmokeError(msg)
-    _require_security_headers(ROOT_ROUTE, root_headers)
+    _require_common_headers(ROOT_ROUTE, root_headers)
 
     deep_body, deep_headers = _request(base_url, DEEP_ROUTE, HTML_ACCEPT_HEADER)
     _require_content_type(DEEP_ROUTE, deep_headers, "text/html")
+    _require_common_headers(DEEP_ROUTE, deep_headers)
     if deep_body != root_body:
         msg = "Deep HTML route did not return the installed SPA entry document."
         raise PackageSmokeError(msg)
@@ -85,14 +98,11 @@ def smoke_web_package(base_url: str) -> None:
     if not all(part in cache_control for part in EXPECTED_ASSET_CACHE_CONTROL_PARTS):
         msg = f"Hashed asset has unexpected Cache-Control: {cache_control!r}"
         raise PackageSmokeError(msg)
-    _require_security_headers(asset_reference, asset_headers)
+    _require_common_headers(asset_reference, asset_headers)
 
     bootstrap_body, bootstrap_headers = _request(base_url, BOOTSTRAP_ROUTE, JSON_ACCEPT_HEADER)
     _require_content_type(BOOTSTRAP_ROUTE, bootstrap_headers, "application/json")
-    _require_security_headers(BOOTSTRAP_ROUTE, bootstrap_headers)
-    if not bootstrap_headers.get(CORRELATION_HEADER_NAME):
-        msg = f"{BOOTSTRAP_ROUTE} is missing {CORRELATION_HEADER_NAME}."
-        raise PackageSmokeError(msg)
+    _require_common_headers(BOOTSTRAP_ROUTE, bootstrap_headers)
     try:
         payload = cast("object", json.loads(bootstrap_body))
     except json.JSONDecodeError as exc:
@@ -113,8 +123,20 @@ def _request(base_url: str, route: str, accept: str) -> tuple[str, Mapping[str, 
 
 
 def _request_bytes(base_url: str, route: str, accept: str) -> tuple[bytes, Mapping[str, str]]:
-    request_url = urljoin(f"{base_url.rstrip('/')}/", route.lstrip("/"))
+    request_url = urljoin(f"{base_url.rstrip('/')}/", route)
+    base_url_parts = urlsplit(base_url)
     parsed_url = urlsplit(request_url)
+    if (
+        parsed_url.scheme,
+        parsed_url.hostname,
+        parsed_url.port,
+    ) != (
+        base_url_parts.scheme,
+        base_url_parts.hostname,
+        base_url_parts.port,
+    ):
+        msg = f"Refusing cross-origin package smoke request for {route!r}."
+        raise PackageSmokeError(msg)
     host = parsed_url.hostname
     if host is None:
         msg = f"Unable to determine the loopback host for {route}."
@@ -142,7 +164,11 @@ def _first_asset_reference(index_html: str) -> str:
     parser = _AssetReferenceParser()
     parser.feed(index_html)
     for reference in parser.references:
-        if urlsplit(reference).path.startswith("/assets/") or urlsplit(reference).path.startswith("assets/"):
+        parsed_reference = urlsplit(reference)
+        if parsed_reference.scheme or parsed_reference.netloc:
+            msg = f"Installed index.html contains a non-package-relative asset reference: {reference!r}"
+            raise PackageSmokeError(msg)
+        if parsed_reference.path.startswith("/assets/") or parsed_reference.path.startswith("assets/"):
             return reference
     msg = "Installed index.html does not reference a hashed /assets/ file."
     raise PackageSmokeError(msg)
@@ -155,10 +181,21 @@ def _require_content_type(route: str, headers: Mapping[str, str], expected: str)
         raise PackageSmokeError(msg)
 
 
-def _require_security_headers(route: str, headers: Mapping[str, str]) -> None:
-    missing = [header for header in REQUIRED_SECURITY_HEADERS if not headers.get(header)]
+def _require_common_headers(route: str, headers: Mapping[str, str]) -> None:
+    missing = [header for header in EXPECTED_SECURITY_HEADERS if not headers.get(header)]
     if missing:
         msg = f"{route} is missing security headers: {missing}"
+        raise PackageSmokeError(msg)
+    mismatched = {
+        header: {"expected": expected, "actual": headers.get(header)}
+        for header, expected in EXPECTED_SECURITY_HEADERS.items()
+        if headers.get(header) != expected
+    }
+    if mismatched:
+        msg = f"{route} has unexpected security headers: {mismatched}"
+        raise PackageSmokeError(msg)
+    if not headers.get(CORRELATION_HEADER_NAME):
+        msg = f"{route} is missing {CORRELATION_HEADER_NAME}."
         raise PackageSmokeError(msg)
 
 

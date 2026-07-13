@@ -1,5 +1,5 @@
 """
-Summary: Composes the renewed Web Bootstrap API and packaged SPA.
+Summary: Composes the bundled Web Bootstrap API and packaged SPA.
 Why: Keeps concrete Config and SQLite adapters out of inbound Web modules.
 """
 

@@ -1,5 +1,5 @@
 """
-Summary: Audits renewed Web build content and its synchronized package copy.
+Summary: Audits bundled Web build content and its synchronized package copy.
 Why: Makes ignored generated assets safe and deterministic packaging inputs.
 """
 # ruff: noqa: INP001, T201 -- Standalone audit script reports concise CLI results.
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate the project root."
-DEFAULT_WEB_BUILD_RELATIVE_PATH = Path("web-v2/dist")
+DEFAULT_WEB_BUILD_RELATIVE_PATH = Path("web/dist")
 DEFAULT_PACKAGED_STATIC_RELATIVE_PATH = Path("src/omym2/adapters/web/static_dist")
 STATIC_INDEX_FILE_NAME = "index.html"
 STATIC_ASSET_DIRECTORY_NAME = "assets"

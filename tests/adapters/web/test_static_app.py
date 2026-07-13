@@ -126,6 +126,20 @@ def test_untrusted_host_is_rejected(tmp_path: Path) -> None:
     assert api_response.headers[WEB_CORRELATION_HEADER_NAME]
 
 
+def test_cross_origin_request_receives_no_cors_authorization(tmp_path: Path) -> None:
+    """Loopback responses never authorize an external browser origin."""
+    client = _client(_static_dist(tmp_path))
+
+    response = client.get(
+        WEB_API_BOOTSTRAP_ROUTE,
+        headers={"Origin": "https://example.invalid"},
+    )
+
+    assert response.status_code == HTTP_OK_STATUS
+    assert "Access-Control-Allow-Origin" not in response.headers
+    assert "Access-Control-Allow-Credentials" not in response.headers
+
+
 def test_unexpected_api_error_is_redacted_and_keeps_common_headers(tmp_path: Path) -> None:
     """Outer error handling preserves correlation and security response headers."""
     context = ApiRouteContext(
@@ -174,9 +188,11 @@ def _bootstrap_result() -> BootstrapResult:
             can_read_state=True,
             can_change_settings=True,
             can_start_operations=False,
+            can_start_organize=True,
             read_state_disabled_reasons=(),
             change_settings_disabled_reasons=(),
             start_operations_disabled_reasons=(BootstrapReason.LIBRARY_UNREGISTERED,),
+            start_organize_disabled_reasons=(),
         ),
         active_operation_id=None,
     )

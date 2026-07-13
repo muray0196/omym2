@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies dependency setup, current and renewal-transition quality gates, checks.sh, suppressions, and Python runtime configuration policy.
-tags: [development, tooling, quality-gates, validation, web-renewal]
-timestamp: 2026-07-13T09:49:07+09:00
+description: Specifies dependency setup, current quality gates, release verification, checks.sh, suppressions, and Python runtime configuration policy.
+tags: [development, tooling, quality-gates, validation, web]
+timestamp: 2026-07-13T19:23:00+09:00
 ---
 
 # Development Harness
@@ -21,37 +21,34 @@ Install dependencies after checkout, when a dependency manifest or lockfile chan
 
 ```bash
 uv sync --locked --dev
-cd web-v2
+cd web
 npm ci
 cd ..
 ```
 
 Dependency installation is setup, not a quality check. Reuse `.venv`,
-`web-v2/node_modules/`, and tool caches during ordinary edit loops and
+`web/node_modules/`, and tool caches during ordinary edit loops and
 validation reruns. Do not routinely delete or reinstall them; clean
 installation rewrites the complete dependency tree. Hosted CI performs both
 locked installations before running the quality wrapper.
 
-## Web Renewal Transition
+## Bundled Web Source
 
-M1 through M4 run only the clean-room renewal under `web-v2/`. The excluded
-`web/` source remains untouched and is not a build, dependency, test, fixture,
-or review input on the renewal line. Every npm cache and working directory in
-renewal CI targets `web-v2/`.
+The React and Vite frontend lives under `web/`. It is the only frontend source,
+dependency, test, fixture, and CI working directory.
 
 The generated API boundary is intentional source. After a coordinated
 Pydantic/OpenAPI contract change, regenerate it with:
 
 ```bash
-cd web-v2
+cd web
 npm run api:generate
 cd ..
 ```
 
 Ordinary validation uses `npm run api:check`, which regenerates into temporary
 output and compares it with the committed OpenAPI/client files without using
-the current Git diff as its baseline. M5 changes the documented and scripted
-source path from `web-v2/` to `web/` in the mechanical rename commit.
+the current Git diff as its baseline.
 
 ## Edit-Loop Commands
 
@@ -75,7 +72,7 @@ loop.
 Use this command group after editing the React Web UI:
 
 ```bash
-cd web-v2
+cd web
 npm run api:check
 npm run format:check
 npm run lint
@@ -136,11 +133,12 @@ The mode is required; there is no default. The wrapper does not install dependen
 * `api`: schema-only OpenAPI and generated-client drift gate
 * `web`: API drift, frontend format/lint/typecheck/unit/build, static sync, and
   static audit
-* `e2e`: `web` plus the pinned-Chromium Playwright gate against an isolated
-  source-checkout server. The runner creates a valid temporary Config, SQLite
-  database, and registered/current Library with one deterministic sentinel
-  file, exports their application root to the child, and fails if the Library
-  tree changes anywhere during pre-M4 browser execution.
+* `e2e`: `web` plus two pinned-Chromium Playwright profiles against isolated
+  source-checkout servers. The registered profile covers normal inspection and
+  execution with deterministic state. The first-run profile starts without a
+  Config or registered Library and proves Settings recovery, both Organize
+  outcomes, Add review, Apply, blocked evidence, History, and filesystem state.
+  Every browser context rejects non-loopback runtime requests.
 * `package`: Vite build, complete static replacement/audit, wheel/sdist audit,
   Node-poisoned sdist rebuild, and clean-install smoke
 * `performance`: `package` plus the installed-package frontend performance
@@ -156,15 +154,35 @@ Hosted CI runs independently diagnosable Python, API/client, frontend,
 Playwright, Linux package, Windows package/static-smoke, and installed-package
 performance jobs. Linux measurement uses the pinned `ubuntu-24.04` image;
 Windows package smoke uses `windows-2025`. Frontend jobs install with
-`web-v2/package-lock.json` and pinned Chromium. The Linux package job uploads
-short-lived renewal evidence for the Windows smoke job; no M1-M4 job publishes
-a release.
+`web/package-lock.json` and pinned Chromium. The Linux package job uploads
+short-lived audited package evidence for the Windows smoke job, which also
+runs the real multiprocess lock contention/crash-release test.
 
 CI runs `git diff --exit-code` after tracked generators. The final diff check is
 a clean-checkout guard against validation tools mutating tracked files; it is
 intentionally CI-only because a local implementation worktree normally
 contains intended changes. Ignored `static_dist/` is protected instead by its
 explicit byte-for-byte audit.
+
+## Release And Rollback
+
+`.github/workflows/release.yml` is the only publication path. It is manually
+dispatched against `main`, requires successful push CI for the exact commit,
+and publishes through the GitHub environment named `release`. Configure that
+environment with required reviewers before the first dispatch. The workflow
+refuses an existing release tag instead of overwriting published state.
+
+The release stores the audited final wheel and source distribution directly.
+It also stores one deterministic rollback ZIP built from the pinned last
+pre-cutover commit. The ZIP keeps the standardized wheel and sdist filenames
+and includes integrity-covered checksums, provenance, and a README. Before
+publication, the workflow re-downloads the draft assets, verifies every nested
+artifact, compares the staged and downloaded bytes, and rechecks the tag.
+
+Final and rollback distributions both identify themselves as version `0.1.0`.
+Install rollback into a fresh environment or force a reinstall. Rollback
+changes application code only; restore a pre-cutover persisted-state backup
+first because backward state compatibility is not provided.
 
 ## Pipeline Performance Benchmark
 

@@ -26,9 +26,7 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 
 The wrapper requires an explicit mode and assumes dependencies are already
 installed. Run `uv sync --locked --dev` after checkout or Python dependency
-changes. M1-M4 install and run only the clean-room project in `web-v2/`; the
-excluded `web/` source and dependencies are not validation inputs. M5 changes
-that path to `web/` in the mechanical rename. Do not reinstall dependencies
+changes. Install frontend dependencies in `web/`. Do not reinstall dependencies
 during ordinary edit loops or validation reruns.
 
 ## Triage table
@@ -39,8 +37,8 @@ Fix the first failing gate before looking at later ones.
 | --- | --- | --- |
 | `uv` / `npm` / command not found | environment | Install per README; do not edit product code |
 | `npm ci` fails | lockfile out of sync | Report it; do not hand-edit `package-lock.json` |
-| `ModuleNotFoundError` for a dependency | env not synced | `uv sync` (Python) or `cd web-v2 && npm ci` (frontend) |
-| generated API check fails | Pydantic/OpenAPI or client drift | Run `cd web-v2 && npm run api:generate`, review, and commit the coordinated schema/client change |
+| `ModuleNotFoundError` for a dependency | env not synced | `uv sync` (Python) or `cd web && npm ci` (frontend) |
+| generated API check fails | Pydantic/OpenAPI or client drift | Run `cd web && npm run api:generate`, review, and commit the coordinated schema/client change |
 | static audit fails | stale or unsafe ignored output | Re-run `npm run build`, then `scripts/sync_web_static.py`; do not hand-edit `static_dist/` |
 | package smoke imports `src/` | wrong interpreter or `PYTHONPATH` | Use the clean-install virtual-environment Python outside the checkout and clear `PYTHONPATH` |
 | `ruff check` errors | lint issue in changed code | Fix the code; suppress only per policy below |

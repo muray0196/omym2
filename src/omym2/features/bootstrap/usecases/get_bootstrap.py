@@ -116,13 +116,16 @@ def _runtime_capabilities(
     read_reasons = () if state_storage_available else (BootstrapReason.STORAGE_UNAVAILABLE,)
     change_reasons = () if config_snapshot is not None else (BootstrapReason.CONFIG_IO_FAILED,)
     start_reasons = (() if config_reason is None else (config_reason,)) + library_reasons
+    organize_reasons = (() if config_reason is None else (config_reason,)) + read_reasons
     return BootstrapCapabilities(
         can_read_state=not read_reasons,
         can_change_settings=not change_reasons,
         can_start_operations=not start_reasons,
+        can_start_organize=not organize_reasons,
         read_state_disabled_reasons=read_reasons,
         change_settings_disabled_reasons=change_reasons,
         start_operations_disabled_reasons=start_reasons,
+        start_organize_disabled_reasons=organize_reasons,
     )
 
 

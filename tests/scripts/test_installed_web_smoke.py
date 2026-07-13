@@ -14,6 +14,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar, cast, override
 
+import pytest
+
+from omym2.config import (
+    WEB_CONTENT_SECURITY_POLICY,
+    WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME,
+    WEB_CONTENT_TYPE_OPTIONS_VALUE,
+    WEB_CORRELATION_HEADER_NAME,
+    WEB_CSP_HEADER_NAME,
+    WEB_FRAME_OPTIONS,
+    WEB_FRAME_OPTIONS_HEADER_NAME,
+    WEB_REFERRER_POLICY,
+    WEB_REFERRER_POLICY_HEADER_NAME,
+)
 from scripts.run_web_test_server import CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate project root from test file."
@@ -24,21 +37,31 @@ LOOPBACK_HOST = "127.0.0.1"
 EPHEMERAL_PORT = 0
 SUCCESS_STATUS_CODE = 200
 NOT_FOUND_STATUS_CODE = 404
-INDEX_HTML = b"""<!doctype html>
-<html lang="en"><body><script type="module" src="/assets/app-abcdefgh.js"></script></body></html>
-"""
+LOCAL_ASSET_REFERENCE = "/assets/app-abcdefgh.js"
 ASSET_BODY = b"globalThis.OMYM2 = true;"
 BOOTSTRAP_BODY = json.dumps({"data": {}, "errors": []}).encode()
+EXPECTED_SECURITY_HEADERS = {
+    WEB_CSP_HEADER_NAME: WEB_CONTENT_SECURITY_POLICY,
+    WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME: WEB_CONTENT_TYPE_OPTIONS_VALUE,
+    WEB_REFERRER_POLICY_HEADER_NAME: WEB_REFERRER_POLICY,
+    WEB_FRAME_OPTIONS_HEADER_NAME: WEB_FRAME_OPTIONS,
+}
 
 
 class _SmokeFixtureHandler(BaseHTTPRequestHandler):
     include_security_headers: ClassVar[bool] = True
-    include_correlation_header: ClassVar[bool] = True
+    omitted_correlation_path: ClassVar[str | None] = None
+    security_header_overrides: ClassVar[dict[str, str]] = {}
+    asset_reference: ClassVar[str] = LOCAL_ASSET_REFERENCE
 
     def do_GET(self) -> None:
         if self.path == "/" or self.path.startswith("/plans/"):
-            self._respond(INDEX_HTML, "text/html; charset=utf-8", "no-cache")
-        elif self.path == "/assets/app-abcdefgh.js":
+            index_html = (
+                '<!doctype html><html lang="en"><body><script type="module" '
+                f'src="{self.asset_reference}"></script></body></html>'
+            ).encode()
+            self._respond(index_html, "text/html; charset=utf-8", "no-cache")
+        elif self.path == LOCAL_ASSET_REFERENCE:
             self._respond(
                 ASSET_BODY,
                 "text/javascript; charset=utf-8",
@@ -58,19 +81,32 @@ class _SmokeFixtureHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", cache_control)
         if self.include_security_headers:
-            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'")
-            self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header("X-Frame-Options", "DENY")
-            self.send_header("X-Content-Type-Options", "nosniff")
-            if self.path == "/api/bootstrap" and self.include_correlation_header:
-                self.send_header("X-OMYM2-Correlation-ID", "01912345-6789-7abc-8def-0123456789ab")
+            security_headers = EXPECTED_SECURITY_HEADERS | self.security_header_overrides
+            for header, value in security_headers.items():
+                self.send_header(header, value)
+            if self.path != self.omitted_correlation_path:
+                self.send_header(WEB_CORRELATION_HEADER_NAME, "01912345-6789-7abc-8def-0123456789ab")
         self.end_headers()
         _ = self.wfile.write(body)
 
 
+class _ExternalRequestRecorder(BaseHTTPRequestHandler):
+    request_count: ClassVar[int] = 0
+
+    def do_GET(self) -> None:
+        type(self).request_count += 1
+        self.send_response(SUCCESS_STATUS_CODE)
+        self.end_headers()
+        _ = self.wfile.write(ASSET_BODY)
+
+    @override
+    def log_message(self, format: str, *args: object) -> None:
+        del format, args
+
+
 def test_installed_web_smoke_accepts_contract_responses() -> None:
     """Root, deep fallback, hashed asset, and Bootstrap pass without copy assertions."""
-    result = _run_against_fixture(include_security_headers=True, include_correlation_header=True)
+    result = _run_against_fixture(include_security_headers=True)
 
     assert result.returncode == 0, result.stderr
     assert "package smoke passed" in result.stdout
@@ -78,18 +114,60 @@ def test_installed_web_smoke_accepts_contract_responses() -> None:
 
 def test_installed_web_smoke_rejects_missing_security_headers() -> None:
     """A package missing the production header baseline cannot pass smoke."""
-    result = _run_against_fixture(include_security_headers=False, include_correlation_header=True)
+    result = _run_against_fixture(include_security_headers=False)
 
     assert result.returncode != 0
     assert "missing security headers" in result.stderr
 
 
-def test_installed_web_smoke_rejects_bootstrap_without_correlation_id() -> None:
-    """Every installed API response must retain its diagnostic correlation identifier."""
-    result = _run_against_fixture(include_security_headers=True, include_correlation_header=False)
+def test_installed_web_smoke_rejects_mismatched_security_header() -> None:
+    """Present but weakened headers cannot satisfy the backend-defined baseline."""
+    result = _run_against_fixture(
+        include_security_headers=True,
+        security_header_overrides={WEB_CSP_HEADER_NAME: "default-src 'none'"},
+    )
+
+    assert result.returncode != 0
+    assert "unexpected security headers" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "omitted_correlation_path",
+    ["/", "/plans/01912345-6789-7abc-8def-0123456789ab", LOCAL_ASSET_REFERENCE, "/api/bootstrap"],
+)
+def test_installed_web_smoke_rejects_response_without_correlation_id(omitted_correlation_path: str) -> None:
+    """HTML, deep-link, asset, and API responses all retain diagnostic correlation IDs."""
+    result = _run_against_fixture(
+        include_security_headers=True,
+        omitted_correlation_path=omitted_correlation_path,
+    )
 
     assert result.returncode != 0
     assert "x-omym2-correlation-id" in result.stderr
+
+
+def test_installed_web_smoke_rejects_external_asset_without_requesting_it() -> None:
+    """A discovered absolute asset URL fails before any cross-origin connection."""
+    _ExternalRequestRecorder.request_count = 0
+    external_server = ThreadingHTTPServer((LOOPBACK_HOST, EPHEMERAL_PORT), _ExternalRequestRecorder)
+    external_thread = threading.Thread(target=external_server.serve_forever, daemon=True)
+    external_thread.start()
+    try:
+        external_host, external_port = cast("tuple[str, int]", external_server.server_address)
+        external_reference = f"http://{external_host}:{external_port}{LOCAL_ASSET_REFERENCE}"
+
+        result = _run_against_fixture(
+            include_security_headers=True,
+            asset_reference=external_reference,
+        )
+
+        assert result.returncode != 0
+        assert "non-package-relative asset reference" in result.stderr
+        assert _ExternalRequestRecorder.request_count == 0
+    finally:
+        external_server.shutdown()
+        external_server.server_close()
+        external_thread.join()
 
 
 def test_installed_web_smoke_rejects_non_loopback_url() -> None:
@@ -170,14 +248,18 @@ def test_ephemeral_server_runner_can_restore_node_path_only_for_the_child() -> N
 def _run_against_fixture(
     *,
     include_security_headers: bool,
-    include_correlation_header: bool,
+    omitted_correlation_path: str | None = None,
+    security_header_overrides: dict[str, str] | None = None,
+    asset_reference: str = LOCAL_ASSET_REFERENCE,
 ) -> subprocess.CompletedProcess[str]:
     handler = type(
         "ConfiguredSmokeFixtureHandler",
         (_SmokeFixtureHandler,),
         {
             "include_security_headers": include_security_headers,
-            "include_correlation_header": include_correlation_header,
+            "omitted_correlation_path": omitted_correlation_path,
+            "security_header_overrides": security_header_overrides or {},
+            "asset_reference": asset_reference,
         },
     )
     server = ThreadingHTTPServer((LOOPBACK_HOST, EPHEMERAL_PORT), handler)

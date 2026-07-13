@@ -34,9 +34,11 @@ class BootstrapCapabilities:
     can_read_state: bool
     can_change_settings: bool
     can_start_operations: bool
+    can_start_organize: bool
     read_state_disabled_reasons: tuple[BootstrapReason, ...]
     change_settings_disabled_reasons: tuple[BootstrapReason, ...]
     start_operations_disabled_reasons: tuple[BootstrapReason, ...]
+    start_organize_disabled_reasons: tuple[BootstrapReason, ...]
 
 
 @dataclass(frozen=True, slots=True)

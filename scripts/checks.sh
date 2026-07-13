@@ -52,14 +52,14 @@ run_py() {
 }
 
 run_api() (
-    cd web-v2
+    cd web
     npm run api:check
 )
 
 run_web() {
     run_api
     (
-    cd web-v2
+    cd web
     npm run format:check
     npm run lint
     npm run typecheck
@@ -70,11 +70,19 @@ run_web() {
     uv run python scripts/audit_web_static.py
 }
 
-run_e2e_only() {
+run_e2e_profile() {
+    local fixture_profile="$1"
+    shift
     uv run python scripts/run_web_test_server.py \
         --environment-variable OMYM2_E2E_BASE_URL \
-        --working-directory web-v2 \
-        -- npm run test:e2e
+        --working-directory web \
+        --fixture-profile "$fixture_profile" \
+        -- npm run test:e2e -- "$@"
+}
+
+run_e2e_only() {
+    run_e2e_profile registered --grep-invert "@first-run"
+    run_e2e_profile first-run --grep "@first-run"
 }
 
 run_e2e() {

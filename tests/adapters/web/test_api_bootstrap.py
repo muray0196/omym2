@@ -59,7 +59,11 @@ def test_missing_config_bootstrap_uses_defaults_and_reports_unregistered_library
     assert capabilities["can_read_state"] is True
     assert capabilities["can_change_settings"] is True
     assert capabilities["can_start_operations"] is False
+    assert capabilities["can_start_organize"] is True
     assert _error_codes(data["library_diagnostics"]) == ["library_unregistered"]
+    assert [error["field"] for error in cast("list[dict[str, object]]", capabilities["disabled_reasons"])] == [
+        "runtime_capabilities.can_start_operations"
+    ]
     assert not config_path.exists()
 
 
@@ -82,10 +86,12 @@ def test_invalid_config_bootstrap_returns_recovery_data_and_structured_errors(tm
     assert _error_codes(payload["errors"]) == ["config_invalid"]
     assert capabilities["can_change_settings"] is True
     assert capabilities["can_start_operations"] is False
-    assert any(
-        error["field"] == "runtime_capabilities.can_start_operations"
-        for error in cast("list[dict[str, object]]", capabilities["disabled_reasons"])
-    )
+    assert capabilities["can_start_organize"] is False
+    assert [error["field"] for error in cast("list[dict[str, object]]", capabilities["disabled_reasons"])] == [
+        "runtime_capabilities.can_start_operations",
+        "runtime_capabilities.can_start_operations",
+        "runtime_capabilities.can_start_organize",
+    ]
 
 
 def test_bootstrap_projects_one_current_library_as_ready(tmp_path: Path) -> None:
@@ -112,6 +118,7 @@ def test_bootstrap_projects_one_current_library_as_ready(tmp_path: Path) -> None
     assert library["status"] == "registered"
     assert library["is_path_policy_current"] is True
     assert capabilities["can_start_operations"] is True
+    assert capabilities["can_start_organize"] is True
     assert capabilities["disabled_reasons"] == []
     assert data["status_catalog_version"] == WEB_STATUS_CATALOG_VERSION
     assert polling == {
@@ -159,9 +166,11 @@ def test_bootstrap_degrades_when_database_is_unavailable(tmp_path: Path) -> None
     assert _error_codes(payload["errors"]) == ["storage_unavailable"]
     assert capabilities["can_read_state"] is False
     assert capabilities["can_start_operations"] is False
+    assert capabilities["can_start_organize"] is False
     assert [error["field"] for error in cast("list[dict[str, object]]", capabilities["disabled_reasons"])] == [
         "runtime_capabilities.can_read_state",
         "runtime_capabilities.can_start_operations",
+        "runtime_capabilities.can_start_organize",
     ]
 
 

@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+import pytest
+
 from omym2.adapters.config.default_config import default_app_config
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
@@ -78,6 +80,8 @@ def test_bootstrap_selects_one_current_registered_library() -> None:
     assert result.config_valid is True
     assert result.runtime_capabilities.can_start_operations is True
     assert result.runtime_capabilities.start_operations_disabled_reasons == ()
+    assert result.runtime_capabilities.can_start_organize is True
+    assert result.runtime_capabilities.start_organize_disabled_reasons == ()
 
 
 def test_bootstrap_reports_missing_library_without_invalidating_default_config() -> None:
@@ -90,6 +94,8 @@ def test_bootstrap_reports_missing_library_without_invalidating_default_config()
     assert result.library_reasons == (BootstrapReason.LIBRARY_UNREGISTERED,)
     assert result.runtime_capabilities.can_start_operations is False
     assert result.runtime_capabilities.start_operations_disabled_reasons == (BootstrapReason.LIBRARY_UNREGISTERED,)
+    assert result.runtime_capabilities.can_start_organize is True
+    assert result.runtime_capabilities.start_organize_disabled_reasons == ()
 
 
 def test_bootstrap_reports_invalid_config_and_stale_library() -> None:
@@ -109,6 +115,8 @@ def test_bootstrap_reports_invalid_config_and_stale_library() -> None:
         BootstrapReason.CONFIG_INVALID,
         BootstrapReason.LIBRARY_STALE,
     )
+    assert result.runtime_capabilities.can_start_organize is False
+    assert result.runtime_capabilities.start_organize_disabled_reasons == (BootstrapReason.CONFIG_INVALID,)
 
 
 def test_bootstrap_does_not_guess_between_multiple_libraries() -> None:
@@ -121,6 +129,33 @@ def test_bootstrap_does_not_guess_between_multiple_libraries() -> None:
 
     assert result.active_library is None
     assert result.library_reasons == (BootstrapReason.LIBRARY_SELECTION_AMBIGUOUS,)
+    assert result.runtime_capabilities.can_start_organize is True
+    assert result.runtime_capabilities.start_organize_disabled_reasons == ()
+
+
+@pytest.mark.parametrize(
+    "library_status",
+    [LibraryStatus.UNREGISTERED, LibraryStatus.STALE, LibraryStatus.BLOCKED],
+)
+def test_bootstrap_allows_organize_for_persisted_non_ready_library_status(
+    library_status: LibraryStatus,
+) -> None:
+    """A valid Config keeps reconciliation through Organize available."""
+    config = default_app_config()
+    path_policy_hash = calculate_path_policy_fingerprint(
+        config.path_policy,
+        config.artist_ids,
+        config.metadata.album_year_resolution,
+    )
+
+    result = _execute(
+        _snapshot(config),
+        (_library(LIBRARY_ID, path_policy_hash, status=library_status),),
+    )
+
+    assert result.effective_library_status is library_status
+    assert result.runtime_capabilities.can_start_organize is True
+    assert result.runtime_capabilities.start_organize_disabled_reasons == ()
 
 
 def test_bootstrap_preserves_config_recovery_when_state_storage_is_unavailable() -> None:
@@ -140,6 +175,8 @@ def test_bootstrap_preserves_config_recovery_when_state_storage_is_unavailable()
     assert result.library_reasons == (BootstrapReason.STORAGE_UNAVAILABLE,)
     assert result.runtime_capabilities.can_read_state is False
     assert result.runtime_capabilities.read_state_disabled_reasons == (BootstrapReason.STORAGE_UNAVAILABLE,)
+    assert result.runtime_capabilities.can_start_organize is False
+    assert result.runtime_capabilities.start_organize_disabled_reasons == (BootstrapReason.STORAGE_UNAVAILABLE,)
 
 
 def _execute(snapshot: ConfigSnapshot, libraries: Sequence[Library]):
@@ -158,13 +195,18 @@ def _snapshot(
     return ConfigSnapshot(state=state, config=config, config_revision="v1:test", errors=errors)
 
 
-def _library(library_id: LibraryId, path_policy_hash: str) -> Library:
+def _library(
+    library_id: LibraryId,
+    path_policy_hash: str,
+    *,
+    status: LibraryStatus = LibraryStatus.REGISTERED,
+) -> Library:
     return Library(
         library_id=library_id,
         root_path="/music",
         path_policy_hash=path_policy_hash,
-        registered_at=NOW,
-        status=LibraryStatus.REGISTERED,
+        registered_at=None if status is LibraryStatus.UNREGISTERED else NOW,
+        status=status,
         created_at=NOW,
         updated_at=NOW,
     )

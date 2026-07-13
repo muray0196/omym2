@@ -1,5 +1,5 @@
 """
-Summary: Tests the renewed read-only Plan and Track Web API slices.
+Summary: Tests the bundled read-only Plan and Track Web API slices.
 Why: Locks list, detail, capability, facet, group, and error envelope shapes.
 """
 

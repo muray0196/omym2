@@ -1,5 +1,5 @@
 """
-Summary: Audits wheel and sdist copies of the renewed bundled Web export.
+Summary: Audits wheel and sdist copies of the bundled Web export.
 Why: Proves Python artifacts contain exactly the already-audited static tree.
 """
 # ruff: noqa: INP001, T201 -- Standalone audit script reports concise CLI results.

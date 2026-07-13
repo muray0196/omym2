@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines the bundled local Web API's typed envelopes, errors, bootstrap, settings concurrency, durable-operation routes, capabilities, and preserved browsing semantics.
 tags: [web-api, openapi, operations, concurrency, pagination]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-13T19:17:09+09:00
 ---
 
 # Web API Contract
@@ -314,6 +314,7 @@ type BootstrapData = {
     can_read_state: boolean
     can_change_settings: boolean
     can_start_operations: boolean
+    can_start_organize: boolean
     disabled_reasons: ApiError[]
   }
   operation_polling: {
@@ -337,6 +338,16 @@ available so the client can open Settings and display recovery guidance.
 `status_catalog_version` is exactly `1` for this frozen contract.
 The polling values are serialized from the constants centralized in
 `src/omym2/config.py`; the SPA and its tests do not repeat policy literals.
+
+`can_start_organize` is the explicit capability for
+`POST /api/plans/organize`. It remains true when Library selection is missing,
+unregistered, stale, blocked, or ambiguous because an explicit Library root is
+the registration and reconciliation input. It is false when Config cannot be
+loaded validly or state storage cannot be read. Its disabled reasons use
+`field = "runtime_capabilities.can_start_organize"`. The Organize endpoint
+still revalidates the submitted root and all mutation-time guards; this
+advisory capability does not authorize an unmatched root when another Library
+exists.
 
 ## Libraries
 

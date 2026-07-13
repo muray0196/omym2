@@ -1,0 +1,515 @@
+/**
+ * Summary: Styles Plan browsing, exact review, and capability-driven execution controls.
+ * Why: Keeps dense evidence and high-risk actions scannable in one keyboard-safe surface.
+ */
+.page {
+  display: grid;
+  gap: var(--space-24);
+}
+
+.header {
+  display: grid;
+  gap: var(--space-12);
+  max-width: 760px;
+}
+
+.eyebrow {
+  color: var(--color-blue);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.header h1 {
+  color: var(--color-ink);
+  font-size: clamp(20px, 3vw, 24px);
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.description {
+  color: var(--color-body);
+  font-size: 17px;
+  margin: 0;
+}
+
+.filterPanel,
+.section,
+.executionSection,
+.state {
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-16);
+  padding: var(--space-24);
+}
+
+.filterPanel {
+  display: grid;
+  gap: var(--space-16);
+}
+
+.executionSection {
+  display: grid;
+  gap: var(--space-16);
+}
+
+.executionSection:focus {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 3px;
+}
+
+.executionControls {
+  display: grid;
+  gap: var(--space-16);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.capabilityControl {
+  align-content: start;
+  display: grid;
+  gap: var(--space-8);
+}
+
+.capabilityControl > button {
+  width: 100%;
+}
+
+.capabilityReasons {
+  color: var(--color-body);
+  display: grid;
+  font-size: 14px;
+  gap: var(--space-8);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.executionNotice {
+  border: 1px solid var(--color-yellow);
+  border-radius: var(--radius-10);
+  color: var(--color-body);
+  margin: 0;
+  padding: var(--space-12);
+}
+
+.recoveryLink {
+  align-items: center;
+  color: var(--color-ink);
+  display: inline-flex;
+  font-weight: 700;
+  min-height: var(--target-dense);
+}
+
+.filterGrid {
+  display: grid;
+  gap: var(--space-16);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.field {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.field label,
+.checkboxLabel {
+  color: var(--color-body);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.field input,
+.field select {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-8);
+  color: var(--color-ink);
+  font: inherit;
+  min-height: var(--target-default);
+  padding: var(--space-8) var(--space-12);
+}
+
+.checkboxLabel {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-8);
+  min-height: var(--target-default);
+}
+
+.checkboxLabel input {
+  accent-color: var(--color-blue);
+  height: 18px;
+  width: 18px;
+}
+
+.filterActions,
+.loadMoreArea,
+.backLinkRow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+}
+
+.resultCount,
+.subtle {
+  color: var(--color-mute);
+  font-size: 14px;
+  margin: 0;
+}
+
+.planList,
+.actionList,
+.groupList,
+.facetList,
+.metadataList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.planList,
+.actionList,
+.groupList,
+.facetList {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.cards {
+  display: grid;
+  gap: var(--space-16);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+
+.card {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-10);
+  display: grid;
+  gap: var(--space-12);
+  padding: var(--space-16);
+}
+
+.card h3 {
+  color: var(--color-ink);
+  font-size: 16px;
+  margin: 0;
+}
+
+.planRow,
+.actionRow,
+.groupRow,
+.facetRow {
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-10);
+}
+
+.planRow,
+.actionRow,
+.groupRow {
+  contain-intrinsic-size: auto 112px;
+  content-visibility: auto;
+}
+
+.planLink {
+  color: inherit;
+  display: grid;
+  gap: var(--space-12);
+  padding: var(--space-16);
+  text-decoration: none;
+}
+
+.planLink:hover {
+  background: var(--color-surface-card);
+}
+
+.rowHeader,
+.rowMetadata,
+.actionHeader,
+.groupHeader,
+.facetHeader,
+.sectionHeader {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  justify-content: space-between;
+}
+
+.id,
+.path,
+.metadataValue,
+.facetValue,
+.groupValue {
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.id {
+  font-size: 13px;
+}
+
+.rowMetadata,
+.actionMetadata,
+.metadataList {
+  color: var(--color-mute);
+  font-size: 13px;
+}
+
+.rowMetadata,
+.actionMetadata {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+}
+
+.statusBadge {
+  align-items: center;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-6);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 750;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+}
+
+.statusBadge svg {
+  height: 14px;
+  width: 14px;
+}
+
+.catalogValue {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-4);
+}
+
+.catalogValue svg {
+  height: 14px;
+  width: 14px;
+}
+
+.toneInfo {
+  color: var(--color-blue);
+}
+
+.toneSuccess {
+  color: var(--color-green);
+}
+
+.toneWarning {
+  color: var(--color-yellow);
+}
+
+.toneDanger {
+  color: var(--color-red);
+}
+
+.toneNeutral {
+  color: var(--color-mute);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-16);
+}
+
+.section h2 {
+  color: var(--color-ink);
+  font-size: 18px;
+  margin: 0;
+}
+
+.summaryTableWrap {
+  overflow-x: auto;
+}
+
+.summaryTable {
+  border-collapse: collapse;
+  min-width: 560px;
+  width: 100%;
+}
+
+.summaryTable caption {
+  color: var(--color-mute);
+  font-size: 14px;
+  margin-bottom: var(--space-12);
+  text-align: left;
+}
+
+.summaryTable th,
+.summaryTable td {
+  border-bottom: 1px solid var(--color-hairline);
+  padding: var(--space-12);
+  text-align: left;
+}
+
+.summaryTable th {
+  color: var(--color-body);
+  font-size: 13px;
+}
+
+.summaryTable td {
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+}
+
+.metadataList dt {
+  color: var(--color-mute);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.metadataList dd {
+  color: var(--color-ink);
+  margin: 0;
+}
+
+.metadataList {
+  display: grid;
+  gap: var(--space-12);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.metadataList > div {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.actionRow,
+.groupRow,
+.facetRow {
+  display: grid;
+  gap: var(--space-12);
+  padding: var(--space-16);
+}
+
+.pathList {
+  display: grid;
+  gap: var(--space-8);
+  margin: 0;
+}
+
+.pathItem {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.pathLabel {
+  color: var(--color-mute);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.groupRow,
+.facetRow {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.groupButton {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: var(--space-4);
+  padding: 0;
+  text-align: left;
+}
+
+.groupButton:hover {
+  color: var(--color-ink);
+}
+
+.selectedGroup {
+  color: var(--color-blue);
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.count {
+  color: var(--color-ink);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.state {
+  display: grid;
+  gap: var(--space-12);
+}
+
+.state h2,
+.state p {
+  margin: 0;
+}
+
+.state h2 {
+  color: var(--color-ink);
+  font-size: 18px;
+}
+
+.state p {
+  color: var(--color-body);
+}
+
+.error {
+  border-color: var(--color-red);
+}
+
+.backLink {
+  align-items: center;
+  color: var(--color-ink);
+  display: inline-flex;
+  font-weight: 700;
+  min-height: var(--target-dense);
+}
+
+@media (max-width: 1279px) {
+  .filterGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .field:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 767px) {
+  .filterPanel,
+  .section,
+  .executionSection,
+  .state {
+    padding: var(--space-16);
+  }
+
+  .executionControls {
+    grid-template-columns: 1fr;
+  }
+
+  .filterGrid,
+  .metadataList {
+    grid-template-columns: 1fr;
+  }
+
+  .field:first-child {
+    grid-column: auto;
+  }
+
+  .planLink,
+  .actionRow,
+  .groupRow,
+  .facetRow {
+    padding: var(--space-12);
+  }
+}

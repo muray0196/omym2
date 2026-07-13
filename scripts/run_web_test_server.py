@@ -16,6 +16,7 @@ import sys
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate the project root."
 DEFAULT_BASE_URL_ENVIRONMENT_VARIABLE = "OMYM2_E2E_BASE_URL"
 APPLICATION_ROOT_ENVIRONMENT_VARIABLE = "OMYM2_E2E_APPLICATION_ROOT"
+FIXTURE_PROFILE_ENVIRONMENT_VARIABLE = "OMYM2_E2E_FIXTURE_PROFILE"
 CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE = "OMYM2_TEST_CHILD_PATH"
 LOOPBACK_HOST = "127.0.0.1"
 EPHEMERAL_PORT = 0
@@ -49,6 +51,9 @@ E2E_INCOMING_DIRECTORY_NAME = "incoming"
 E2E_SENTINEL_FILE_NAME = "sentinel.flac"
 E2E_APPLY_SUCCESS_FILE_NAME = "A-Success.flac"
 E2E_APPLY_FAILURE_FILE_NAME = "Z-Failure.flac"
+E2E_FIRST_RUN_ORGANIZE_FILE_NAME = "Needs-Organizing.flac"
+E2E_FIRST_RUN_ADD_SUCCESS_FILE_NAME = "First-Run-Success.flac"
+E2E_FIRST_RUN_ADD_BLOCKED_FILE_NAME = "Blocked-Arrival.flac"
 E2E_LIBRARY_ID = LibraryId(UUID("01912345-6789-7abc-8def-0123456789ab"))
 E2E_FIXED_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 E2E_FLAC_BYTE_ORDER = "big"
@@ -69,12 +74,21 @@ E2E_INDEX_DISPLAY_OFFSET = 1
 E2E_SENTINEL_TITLE = "sentinel"
 E2E_APPLY_SUCCESS_TITLE = "A Success"
 E2E_APPLY_FAILURE_TITLE = "Z Failure"
+E2E_FIRST_RUN_ORGANIZE_TITLE = "Organized Title"
+E2E_FIRST_RUN_ADD_SUCCESS_TITLE = "First Run Success"
+E2E_FIRST_RUN_ADD_BLOCKED_TITLE = "Blocked Arrival"
 E2E_SENTINEL_ARTIST = "Sentinel Artist"
 E2E_SENTINEL_ALBUM = "Sentinel Album"
 E2E_SENTINEL_YEAR = 2026
 E2E_SENTINEL_TRACK_NUMBER = "1/1"
 E2E_SENTINEL_DISC_NUMBER = "1/1"
 E2E_PATH_POLICY_TEMPLATE = "{title}"
+E2E_FIXTURE_PROFILE_REGISTERED = "registered"
+E2E_FIXTURE_PROFILE_FIRST_RUN = "first-run"
+E2E_FIXTURE_PROFILES = (
+    E2E_FIXTURE_PROFILE_REGISTERED,
+    E2E_FIXTURE_PROFILE_FIRST_RUN,
+)
 
 
 class FlacTagWriter(Protocol):
@@ -91,6 +105,17 @@ class WebTestServerError(RuntimeError):
     """Raised when an isolated Web test server cannot run safely."""
 
 
+@dataclass(frozen=True, slots=True)
+class WebTestServerOptions:
+    """Resolved options for one isolated Web server process."""
+
+    environment_variable: str
+    working_directory: Path
+    application_root: Path
+    require_installed: bool
+    fixture_profile: str
+
+
 class ParsedArgs(argparse.Namespace):
     """Typed command-line arguments for the ephemeral server."""
 
@@ -100,34 +125,40 @@ class ParsedArgs(argparse.Namespace):
         self.working_directory: Path = Path.cwd()
         self.application_root: Path | None = None
         self.require_installed: bool = False
+        self.fixture_profile: str = E2E_FIXTURE_PROFILE_REGISTERED
         self.command: list[str] = []
 
 
 def run_with_server(
     command: Sequence[str],
     *,
-    environment_variable: str,
-    working_directory: Path,
-    application_root: Path,
-    require_installed: bool,
+    options: WebTestServerOptions,
 ) -> int:
     """Run command with an ephemeral Web server URL in its environment."""
     if not command:
         msg = "A command is required after --."
         raise WebTestServerError(msg)
-    if not ENVIRONMENT_VARIABLE_PATTERN.fullmatch(environment_variable):
-        msg = f"Invalid environment-variable name: {environment_variable}"
+    if not ENVIRONMENT_VARIABLE_PATTERN.fullmatch(options.environment_variable):
+        msg = f"Invalid environment-variable name: {options.environment_variable}"
         raise WebTestServerError(msg)
-    if require_installed:
+    if options.require_installed:
         _require_installed_package()
+    if options.fixture_profile not in E2E_FIXTURE_PROFILES:
+        msg = f"Unknown E2E fixture profile: {options.fixture_profile}"
+        raise WebTestServerError(msg)
 
-    _require_empty_application_root(application_root)
-    _ = application_root.mkdir(parents=True, exist_ok=True)
-    config_path = application_root / ".config" / "config.toml"
-    database_path = application_root / ".data" / "omym2.sqlite3"
+    _require_empty_application_root(options.application_root)
+    _ = options.application_root.mkdir(parents=True, exist_ok=True)
+    config_path = options.application_root / ".config" / "config.toml"
+    database_path = options.application_root / ".data" / "omym2.sqlite3"
     _ = config_path.parent.mkdir(parents=True, exist_ok=True)
     _ = database_path.parent.mkdir(parents=True, exist_ok=True)
-    _seed_e2e_state(config_path, database_path, application_root)
+    _seed_e2e_state(
+        config_path,
+        database_path,
+        options.application_root,
+        fixture_profile=options.fixture_profile,
+    )
     app = build_web_app(config_path=config_path, database_path=database_path)
 
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -153,16 +184,17 @@ def run_with_server(
     try:
         _wait_until_started(server, thread)
         environment = os.environ.copy()
-        environment[environment_variable] = f"http://{LOOPBACK_HOST}:{port}"
-        environment[APPLICATION_ROOT_ENVIRONMENT_VARIABLE] = str(application_root)
+        environment[options.environment_variable] = f"http://{LOOPBACK_HOST}:{port}"
+        environment[APPLICATION_ROOT_ENVIRONMENT_VARIABLE] = str(options.application_root)
+        environment[FIXTURE_PROFILE_ENVIRONMENT_VARIABLE] = options.fixture_profile
         child_path = environment.pop(CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE, None)
         if child_path is not None:
             environment["PATH"] = child_path
-        if require_installed:
+        if options.require_installed:
             _ = environment.pop("PYTHONPATH", None)
         result = subprocess.run(  # noqa: S603 -- the caller explicitly supplies the test command.
             tuple(command),
-            cwd=working_directory,
+            cwd=options.working_directory,
             env=environment,
             check=False,
         )
@@ -182,7 +214,17 @@ def _require_empty_application_root(application_root: Path) -> None:
         raise WebTestServerError(msg)
 
 
-def _seed_e2e_state(config_path: Path, database_path: Path, application_root: Path) -> None:
+def _seed_e2e_state(
+    config_path: Path,
+    database_path: Path,
+    application_root: Path,
+    *,
+    fixture_profile: str,
+) -> None:
+    if fixture_profile == E2E_FIXTURE_PROFILE_FIRST_RUN:
+        _seed_first_run_audio_state(application_root)
+        return
+
     library_root = application_root / E2E_LIBRARY_DIRECTORY_NAME
     _ = library_root.mkdir(parents=True)
     _write_e2e_audio(library_root / E2E_SENTINEL_FILE_NAME, title=E2E_SENTINEL_TITLE)
@@ -214,6 +256,25 @@ def _seed_e2e_state(config_path: Path, database_path: Path, application_root: Pa
     with SQLiteUnitOfWork(database_path) as unit_of_work:
         unit_of_work.libraries.save(library)
         unit_of_work.commit()
+
+
+def _seed_first_run_audio_state(application_root: Path) -> None:
+    library_root = application_root / E2E_LIBRARY_DIRECTORY_NAME
+    _ = library_root.mkdir(parents=True)
+    _write_e2e_audio(
+        library_root / E2E_FIRST_RUN_ORGANIZE_FILE_NAME,
+        title=E2E_FIRST_RUN_ORGANIZE_TITLE,
+    )
+    incoming_root = application_root / E2E_INCOMING_DIRECTORY_NAME
+    _ = incoming_root.mkdir(parents=True)
+    _write_e2e_audio(
+        incoming_root / E2E_FIRST_RUN_ADD_SUCCESS_FILE_NAME,
+        title=E2E_FIRST_RUN_ADD_SUCCESS_TITLE,
+    )
+    _write_e2e_audio(
+        incoming_root / E2E_FIRST_RUN_ADD_BLOCKED_FILE_NAME,
+        title=E2E_FIRST_RUN_ADD_BLOCKED_TITLE,
+    )
 
 
 def _write_e2e_audio(path: Path, *, title: str) -> None:
@@ -300,6 +361,11 @@ def _parse_args(argv: Sequence[str] | None) -> ParsedArgs:
     _ = parser.add_argument("--working-directory", type=Path, default=Path.cwd())
     _ = parser.add_argument("--application-root", type=Path)
     _ = parser.add_argument("--require-installed", action="store_true")
+    _ = parser.add_argument(
+        "--fixture-profile",
+        choices=E2E_FIXTURE_PROFILES,
+        default=E2E_FIXTURE_PROFILE_REGISTERED,
+    )
     _ = parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv, namespace=ParsedArgs())
     if args.command and args.command[0] == "--":
@@ -314,22 +380,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.application_root is not None:
             return run_with_server(
                 args.command,
-                environment_variable=args.environment_variable,
-                working_directory=args.working_directory,
-                application_root=args.application_root,
-                require_installed=args.require_installed,
+                options=_server_options(args, args.application_root),
             )
         with tempfile.TemporaryDirectory(prefix="omym2-web-test-") as temporary_directory:
             return run_with_server(
                 args.command,
-                environment_variable=args.environment_variable,
-                working_directory=args.working_directory,
-                application_root=Path(temporary_directory),
-                require_installed=args.require_installed,
+                options=_server_options(args, Path(temporary_directory)),
             )
     except (OSError, WebTestServerError) as exc:
         print(f"web test server failed: {exc}", file=sys.stderr)
         return 1
+
+
+def _server_options(args: ParsedArgs, application_root: Path) -> WebTestServerOptions:
+    return WebTestServerOptions(
+        environment_variable=args.environment_variable,
+        working_directory=args.working_directory,
+        application_root=application_root,
+        require_installed=args.require_installed,
+        fixture_profile=args.fixture_profile,
+    )
 
 
 if __name__ == "__main__":

@@ -88,6 +88,7 @@ def _bootstrap_envelope(result: BootstrapResult, csrf_token: str) -> ApiEnvelope
                 can_read_state=capabilities.can_read_state,
                 can_change_settings=capabilities.can_change_settings,
                 can_start_operations=capabilities.can_start_operations,
+                can_start_organize=capabilities.can_start_organize,
                 disabled_reasons=disabled_reasons,
             ),
             operation_polling=OperationPollingPolicy(
@@ -204,6 +205,7 @@ def _capability_disabled_reasons(capabilities: BootstrapCapabilities) -> tuple[A
         (capabilities.read_state_disabled_reasons, "runtime_capabilities.can_read_state"),
         (capabilities.change_settings_disabled_reasons, "runtime_capabilities.can_change_settings"),
         (capabilities.start_operations_disabled_reasons, "runtime_capabilities.can_start_operations"),
+        (capabilities.start_organize_disabled_reasons, "runtime_capabilities.can_start_organize"),
     )
     return tuple(_with_field(_error_for_reason(reason), field) for reasons, field in definitions for reason in reasons)
 

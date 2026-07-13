@@ -1,14 +1,14 @@
 ---
 type: Codebase Reference
 title: Web Frontend
-description: Defines the clean-room desktop React and Vite Web frontend contract, including routes, design rules, API boundaries, layout behavior, production serving, packaging, security, and performance gates.
+description: Defines the bundled desktop React and Vite Web frontend contract, including routes, design rules, API boundaries, layout behavior, production serving, packaging, security, and performance gates.
 tags: [web-frontend, react, vite, clean-room, static-spa, performance]
-timestamp: 2026-07-13T13:24:49+09:00
+timestamp: 2026-07-13T19:23:00+09:00
 ---
 
 # Web Frontend
 
-This document is authoritative for the clean-room desktop Web frontend, its
+This document is authoritative for the bundled desktop Web frontend, its
 route and layout contract, its generated API boundary, its static production
 runtime, its Python-package distribution, and its performance measurement
 conditions.
@@ -22,54 +22,30 @@ and exclusive coordination in
 [Cross-Process Exclusive Operation Lock](../decisions/0003-cross-process-exclusive-operation-lock.md).
 Test categories and fixture policy are authoritative in [Testing](../TESTING.md).
 
-## Clean-Room Boundary
+## Clean-Room Provenance And Current Boundary
 
-The renewed frontend is created from an empty `web-v2/` directory. Until the
-M5 cutover, the existing `web/` directory is an exclusion zone for renewal
-implementation and review.
-
-Renewal work must not read, reference, copy, adapt, or compare any excluded
-frontend source, component, screen structure, navigation, styling, class name,
-DOM structure, copy, asset, icon choice, screenshot, mockup, story, visual
-baseline, dependency choice, or test fixture. The renewed implementation is
-evaluated only against this document, the Web API and product contracts, the
-renewed test fixtures, and accessibility acceptance tests.
+The current `web/` frontend was built from an empty tree and moved into its
+final path only after the legacy frontend was deleted at M5. The legacy source,
+tests, assets, and dependencies are no longer present and do not define a
+compatibility surface. Current work is evaluated against this document, the
+Web API and product contracts, the canonical fixtures, and accessibility
+acceptance tests.
 
 `OMYM2_REACT_WEB_UI_RENEWAL_PLAN.md` is superseded planning provenance, not an
-implementation source for M1-M5. Keep it on the renewal denylist (or outside
-the implementation worktree) so obsolete `DESIGN.md`, packaging, and open-
-decision assumptions cannot re-enter the build.
+implementation source. Keep it on the denylist so obsolete `DESIGN.md`,
+packaging, and open-decision assumptions cannot re-enter the build.
 
-The two frontends do not coexist behind a feature flag and are not migrated
-screen by screen. M5 performs one mechanical cutover:
-
-1. Delete the excluded `web/` directory.
-2. Rename `web-v2/` to `web/`.
-3. Change build, cache, CI, and development working-directory references from
-   `web-v2/` to `web/` in the same commit.
-
-The cutover must not contain a redesign, dependency change, API change, or
-feature implementation.
+There is one frontend under `web/`: no feature flag, parallel tree,
+compatibility implementation, or screen-by-screen migration path is allowed.
 
 ## Initiative Branch And Atomic Release
 
-M1 through M5 are developed and reviewed on one unreleased renewal integration
-line (or stacked changes targeting that line). Individual M1-M4 commits are not
-merged to `main`/`stable`, published, or presented as supported packages. The
-last pre-renewal release therefore keeps serving the excluded UI and its paired
-API until the complete initiative lands.
-
-Beginning in M1, renewal-line CI deliberately builds `web-v2/`, syncs that
-output into the shared generated `static_dist/`, and tests/packages it only
-with the breaking new API. Those milestone artifacts are evaluation evidence,
-not releases. The excluded `web/` source remains untouched but need not run
-against the renewal-line backend.
-
-M5 performs the mechanical source-path delete/rename and final-path clean build.
-Only the completed M5 tree is merged/released to `main`/`stable`, so users
-receive the new SPA and API in one package transition. There is no runtime
+M1-M4 were kept on one unreleased integration line. M5 deleted the legacy tree,
+moved the implementation to `web/`, and established the only releasable source
+path. The SPA and breaking API therefore ship atomically; there is no runtime
 feature flag, dual API mount, compatibility route set, or separately shipped
-staging UI.
+staging UI. The pinned pre-cutover commit remains only as a packaged rollback
+artifact.
 
 ## Stack And Source Layout
 
@@ -100,9 +76,9 @@ define query keys without redefining schema fields.
 
 ## Dark-Only Design Contract
 
-The renewed frontend is dark-only. It must not implement light, system, or OLED
+The frontend is dark-only. It must not implement light, system, or OLED
 rendering modes. Any persisted UI theme field is outside this presentation
-contract and does not alter the renewed frontend.
+contract and does not alter the frontend.
 
 Core color tokens are fixed as follows:
 
@@ -205,7 +181,7 @@ result.
 | `/history/:runId` | Run, FileEvents, failures, and Undo eligibility | Create Undo Plan |
 | `/settings` | Paths, PathPolicy, artist IDs, metadata, and collision policy | Review and save |
 
-Every unmatched browser route renders the renewed React Not Found screen. It
+Every unmatched browser route renders the React Not Found screen. It
 does not trigger a server-side route allowlist or return an API response.
 
 Path fields use text input plus backend validation and preview. The initial Web
@@ -321,15 +297,10 @@ inline scripts.
 
 ## Build And Distribution
 
-Vite writes the staged build to `web-v2/dist/`. The packaging sync performs a
+Vite writes the staged build to `web/dist/`. The packaging sync performs a
 complete replacement of
 `src/omym2/adapters/web/static_dist/`; it never overlays stale output and the
-generated directory is never hand-edited. After M5, the same pipeline reads
-`web/dist/` with no other path change.
-
-Before M5, packages produced from this path are renewal-line CI evidence only
-under the initiative-branch policy above; they are never published as a
-supported release.
+generated directory is never hand-edited.
 
 The export audit requires:
 
@@ -346,21 +317,23 @@ frontend build. Clean-install smoke tests retrieve `/`, a deep route, one
 hashed asset, and `/api/bootstrap` from the installed package.
 
 Python build inclusion is configured through `pyproject.toml` package data.
-The renewal does not assume or require a separate `MANIFEST.in`; add one only
+The build does not assume or require a separate `MANIFEST.in`; add one only
 if an audited sdist build proves the existing build backend cannot satisfy this
 contract.
 
-The official release stores the final wheel and sdist and the last
-pre-cutover wheel and sdist used for rollback. Intermediate milestone evidence
-may use CI artifacts, but expiring CI artifacts are not the sole storage for
-the final or rollback package set.
+The official release stores the final wheel and sdist directly. Its rollback
+ZIP preserves the standardized same-version wheel and sdist from the pinned
+last pre-cutover commit together with checksums, provenance, and recovery
+guidance. Expiring CI artifacts are not the sole storage for either package
+set.
 
 ## Performance Contract
 
 All feature routes are lazy-loaded. The initial app shell must not eagerly load
 feature code that is unnecessary for `/`. Cursor endpoints request batches of
-100 items by default and must never retrieve an unbounded result set. Lists use
-bounded DOM virtualization after additional pages are loaded.
+100 items by default and must never retrieve an unbounded result set. Each
+collection renders one cursor page at a time with Previous/Next controls;
+cached pages remain available without accumulating their rows in the DOM.
 
 `npm run test:performance` is the authoritative frontend performance command.
 It measures an installed production package, not a Vite development server,

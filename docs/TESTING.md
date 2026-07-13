@@ -1,9 +1,9 @@
 ---
 type: Testing Guide
 title: Testing
-description: Defines OMYM2's Python, frontend, desktop-browser, architecture, integration, contract, fixture, and clean-room test policy.
+description: Defines OMYM2's Python, bundled-frontend, desktop-browser, architecture, integration, contract, fixture, and release test policy.
 tags: [testing, pytest, vitest, playwright, architecture-tests, fixtures]
-timestamp: 2026-07-13T13:24:49+09:00
+timestamp: 2026-07-13T19:23:00+09:00
 ---
 
 # Testing
@@ -71,7 +71,7 @@ Use integration tests for:
 
 ## Frontend Unit And Component Tests
 
-Frontend tests cover behavior within the clean-room React application without
+Frontend tests cover behavior within the bundled React application without
 starting a production server. They must use accessible queries and observable
 behavior rather than DOM class names or component internals.
 
@@ -91,11 +91,12 @@ API contract changes.
 
 ## Browser End-To-End Tests
 
-Playwright E2E is a required gate for the renewed Web UI. It uses the pinned
+Playwright E2E is a required gate for the Web UI. It uses the pinned
 Chromium build in CI and must run against a programmatically started FastAPI app
-on an ephemeral loopback port. Every run uses a temporary application root,
-Config, SQLite database, and music-file tree. Tests must not open a user's
-browser, read user state, or access the network.
+on an ephemeral loopback port. The registered and first-run profiles each use
+a temporary application root, Config state, SQLite database, and music-file
+tree. Tests must not open a user's browser, read user state, or access the
+network; an automatic context guard fails every non-loopback runtime request.
 
 Required browser coverage, as the corresponding milestone makes each flow
 available, is:
@@ -110,10 +111,10 @@ available, is:
 8. axe scans of every primary route and operation dialog
 9. Check start, completion, and persisted result after reload
 
-Before M4, an E2E mutation sentinel must prove that no Web route mutates a
-Library music file. From M4 onward, file-moving fixtures are allowed only for
-Apply and Undo flows and remain inside the temporary Library tree or their
-explicit temporary external restore path.
+The non-mutating route sentinel proves that inspection, Settings, planning, and
+Check routes preserve an unrelated Library file. File-moving fixtures are
+allowed only for Apply and Undo flows and remain inside the temporary Library
+tree or their explicit temporary external restore path.
 
 Playwright tests use role locators, accessible names, and ARIA snapshots. They
 must not depend on CSS class names. Keyboard and axe checks run in the required
@@ -157,7 +158,7 @@ Use fixed Clock and IdGenerator ports in tests so time and IDs are deterministic
 
 Filesystem fixtures should be minimal and task-focused. Read-only filesystem fixtures are appropriate for FileScanner, metadata, hashing, and FileSnapshotReader tests. File-moving fixtures should wait until apply behavior is under test because apply is the workflow that mutates Library music files.
 
-### Renewed Web Fixture Catalog
+### Web Fixture Catalog
 
 The clean-room Web test boundary implements these canonical scenarios. Fixture
 IDs and entity IDs are fixed, full UUID values; timestamps, operation progress,
@@ -175,12 +176,11 @@ paths, hashes, counts, and ordering are deterministic.
 | `undo_ineligible_refresh_run` | terminal Run containing `refresh_metadata`, with a backend-provided Undo refusal reason |
 
 Fixtures must be authored from the domain, API, execution, design-token, and
-accessibility contracts. The excluded frontend, its source, screenshots, copy,
-mock data, and visual baselines must not be read or reused to create them.
+accessibility contracts.
 
 ## CI Execution Policy
 
-The renewed frontend requires these independently diagnosable CI gates:
+The bundled frontend requires these independently diagnosable CI gates:
 
 1. Python schema and contract tests
 2. OpenAPI export and generated-client drift check

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 PROJECT_ROOT_NOT_FOUND_MESSAGE = "Unable to locate the project root."
-DEFAULT_OPENAPI_RELATIVE_PATH = Path("web-v2/openapi.json")
+DEFAULT_OPENAPI_RELATIVE_PATH = Path("web/openapi.json")
 OPENAPI_ENCODING = "utf-8"
 OPENAPI_INDENT = 2
 

@@ -1,5 +1,5 @@
 """
-Summary: Tests renewed Web static synchronization and content auditing scripts.
+Summary: Tests bundled Web static synchronization and content auditing scripts.
 Why: Prevents ignored package assets from retaining stale or CSP-unsafe output.
 """
 

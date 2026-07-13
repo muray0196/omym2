@@ -1,5 +1,5 @@
 """
-Summary: Registers the renewed Web JSON API route set.
+Summary: Registers the bundled Web JSON API route set.
 Why: Keeps production and schema-only applications on one exact typed router.
 """
 
