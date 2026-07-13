@@ -6,7 +6,8 @@ Why: Verifies settings storage without touching the user home.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, cast
+from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -31,9 +32,6 @@ from omym2.features.common_ports import (
     ConfigStoreIoError,
     ConfigStoreValidationError,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 CONFIG_FILE_NAME = "config.toml"
 INCOMING_PATH = "/music/incoming"
@@ -380,6 +378,29 @@ def test_config_snapshot_revision_changes_with_raw_content(tmp_path: Path) -> No
     after = store.read_snapshot()
 
     assert after.config_revision != before.config_revision
+
+
+def test_config_snapshot_uses_open_handle_identity_for_path_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Config reads remain stable when pathname stat metadata differs from handle metadata."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(dump_config_toml(AppConfig()), encoding=CONFIG_FILE_ENCODING)
+    real_path_stat = Path.stat
+
+    def _mismatched_path_stat(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        result = real_path_stat(path, follow_symlinks=follow_symlinks)
+        values = list(result)
+        values[1] += 1
+        return os.stat_result(values)
+
+    monkeypatch.setattr(Path, "stat", _mismatched_path_stat)
+
+    snapshot = TomlConfigStore(config_path).read_snapshot()
+
+    assert snapshot.state is ConfigSnapshotState.VALID
+    assert snapshot.config == AppConfig()
 
 
 def test_config_save_creates_missing_file_with_new_valid_revision_and_synced_storage(

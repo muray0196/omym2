@@ -151,7 +151,7 @@ class TomlConfigStore:
                 continue
 
             try:
-                path_identity = _path_stat_identity(self.config_path)
+                path_identity = _path_file_identity(self.config_path)
             except FileNotFoundError:
                 continue
             if before == after == path_identity:
@@ -270,8 +270,9 @@ def _stat_identity(file_descriptor: int) -> tuple[int, ...]:
     return _identity_values(fstat(file_descriptor))
 
 
-def _path_stat_identity(config_path: Path) -> tuple[int, ...]:
-    return _identity_values(config_path.stat())
+def _path_file_identity(config_path: Path) -> tuple[int, ...]:
+    with config_path.open("rb") as config_file:
+        return _stat_identity(config_file.fileno())
 
 
 def _identity_values(stat_result: object) -> tuple[int, ...]:
