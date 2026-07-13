@@ -4,12 +4,12 @@
  */
 .searchRow {
   align-items: center;
-  background: var(--color-surface-card);
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-10);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-hairline);
   display: flex;
-  gap: var(--space-12);
-  padding: 0 var(--space-12);
+  gap: var(--space-8);
+  padding: 0 var(--space-4);
 }
 
 .searchRow:focus-within {
@@ -18,45 +18,55 @@
 
 .searchRow svg {
   color: var(--color-mute);
-  height: 20px;
-  width: 20px;
+  flex: 0 0 auto;
+  height: 16px;
+  width: 16px;
 }
 
 .search {
   background: transparent;
   border: 0;
+  border-radius: 0;
   color: var(--color-ink);
-  min-height: 52px;
+  font-size: 14px;
+  min-height: 44px;
   outline: 0;
+  padding: 0;
   width: 100%;
 }
 
+.search:focus-visible {
+  border: 0;
+  outline: 0;
+}
+
 .search::placeholder {
-  color: var(--color-mute);
+  color: var(--color-ash);
 }
 
 .instruction,
-.empty,
-.groupLabel {
+.empty {
   color: var(--color-mute);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .instruction {
-  margin: var(--space-12) 0 var(--space-20);
+  margin: var(--space-8) 0 var(--space-12);
 }
 
 .groupLabel {
-  font-weight: 700;
+  color: var(--color-mute);
+  font-size: 11px;
+  font-weight: 650;
   letter-spacing: 0.08em;
-  margin: 0 0 var(--space-8);
+  margin: 0 0 var(--space-4);
   text-transform: uppercase;
 }
 
 .results {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 2px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -65,15 +75,19 @@
 .option {
   align-items: center;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-8);
+  border: 0;
+  border-radius: var(--radius-6);
   color: var(--color-body);
   cursor: pointer;
   display: flex;
+  font-size: 13.5px;
   justify-content: space-between;
-  min-height: var(--target-default);
+  min-height: 38px;
   min-width: 0;
-  padding: var(--space-8) var(--space-12);
+  padding: 0 10px;
+  transition:
+    background-color var(--motion-control) ease,
+    color var(--motion-control) ease;
 }
 
 .option span {
@@ -84,14 +98,29 @@
 
 .option[aria-selected="true"] {
   background: var(--color-surface-card);
-  border-color: var(--color-hairline);
   color: var(--color-ink);
 }
 
 .option svg {
+  color: var(--color-mute);
   flex: 0 0 auto;
-  height: 18px;
-  width: 18px;
+  height: 16px;
+  width: 16px;
+}
+
+.option[aria-selected="true"] svg {
+  color: var(--color-ink);
+}
+
+.option kbd,
+.instruction kbd {
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-4);
+  color: var(--color-mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px var(--space-4);
 }
 
 .empty {

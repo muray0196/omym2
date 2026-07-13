@@ -2,6 +2,8 @@
  * Summary: Centralizes product-default-language copy for the application shell.
  * Why: Keeps navigation and shortcut wording consistent without adding localization machinery.
  */
+import type { IconName } from "../../ui/icon";
+
 export const shellCopy = {
   productName: "OMYM2",
   productDescription: "Local music operations",
@@ -29,10 +31,14 @@ export const shellCopy = {
 } as const;
 
 export const navigationItems = [
-  { label: "Overview", to: "/" },
-  { label: "Plans", to: "/plans" },
-  { label: "Library", to: "/library" },
-  { label: "Health", to: "/health" },
-  { label: "History", to: "/history" },
-  { label: "Settings", to: "/settings" },
-] as const;
+  { icon: "overview", label: "Overview", to: "/" },
+  { icon: "plans", label: "Plans", to: "/plans" },
+  { icon: "library", label: "Library", to: "/library" },
+  { icon: "health", label: "Health", to: "/health" },
+  { icon: "history", label: "History", to: "/history" },
+  { icon: "settings", label: "Settings", to: "/settings" },
+] as const satisfies readonly {
+  icon: IconName;
+  label: string;
+  to: string;
+}[];

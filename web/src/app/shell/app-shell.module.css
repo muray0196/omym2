@@ -29,64 +29,102 @@
   display: none;
   flex-direction: column;
   min-height: 100vh;
-  padding: var(--space-24) var(--space-16);
+  padding: var(--space-20) var(--space-12);
   position: fixed;
-  width: 240px;
+  width: 224px;
+}
+
+.rail button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-body);
+  font-size: 13px;
+  justify-content: flex-start;
+  min-height: var(--target-dense);
+  padding: 0 10px;
+}
+
+.rail button:hover:not(:disabled) {
+  background: var(--color-surface-elevated);
+  border-color: transparent;
+  color: var(--color-ink);
+}
+
+.rail button svg {
+  color: var(--color-mute);
+  height: 16px;
+  width: 16px;
 }
 
 .brand {
-  margin-bottom: var(--space-32);
-  padding: 0 var(--space-8);
+  margin-bottom: var(--space-24);
+  padding: 0 10px;
 }
 
 .brandName {
   color: var(--color-ink);
-  font-size: 20px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   margin: 0;
 }
 
 .brandDescription {
   color: var(--color-mute);
-  font-size: 13px;
-  margin: var(--space-4) 0 0;
+  font-size: 12px;
+  margin: 2px 0 0;
 }
 
 .navigation {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 2px;
 }
 
 .navigationLink {
   align-items: center;
-  border: 1px solid transparent;
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-6);
   color: var(--color-body);
   display: flex;
-  min-height: var(--target-default);
-  padding: var(--space-8) var(--space-12);
+  font-size: 13.5px;
+  font-weight: 500;
+  gap: 10px;
+  min-height: 32px;
+  padding: 0 10px;
   text-decoration: none;
+  transition:
+    background-color var(--motion-control) ease,
+    color var(--motion-control) ease;
+}
+
+.navigationLink svg {
+  color: var(--color-mute);
+  flex: 0 0 auto;
+  height: 16px;
+  transition: color var(--motion-control) ease;
+  width: 16px;
 }
 
 .navigationLink:hover {
   background: var(--color-surface-elevated);
-  border-color: var(--color-hairline);
   color: var(--color-ink);
 }
 
 .navigationLink[aria-current="page"] {
   background: var(--color-surface-card);
-  border-color: var(--color-hairline);
-  color: var(--color-primary);
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.navigationLink[aria-current="page"] svg {
+  color: var(--color-ink);
 }
 
 .railFooter {
   color: var(--color-mute);
-  font-size: 12px;
-  margin: var(--space-24) var(--space-8) 0;
+  font-size: 11px;
+  margin: var(--space-16) 10px 0;
 }
 
 .mobileHeader {
@@ -158,7 +196,7 @@
   border-radius: var(--radius-6);
   color: var(--color-ink);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
   padding: var(--space-4) var(--space-8);
 }
 
@@ -188,7 +226,7 @@
   }
 
   .main {
-    margin-left: 240px;
+    margin-left: 224px;
     padding: var(--space-40);
   }
 }

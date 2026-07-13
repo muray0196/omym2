@@ -9,31 +9,33 @@
 
 .header {
   display: grid;
-  gap: var(--space-12);
+  gap: var(--space-8);
   max-width: 760px;
 }
 
 .eyebrow {
   color: var(--color-blue);
-  font-size: 12px;
-  font-weight: 750;
-  letter-spacing: 0.1em;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
   margin: 0;
   text-transform: uppercase;
 }
 
 .header h1 {
   color: var(--color-ink);
-  font-size: clamp(20px, 3vw, 24px);
-  letter-spacing: -0.025em;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   line-height: 1.15;
   margin: 0;
 }
 
 .description {
-  color: var(--color-body);
-  font-size: 17px;
+  color: var(--color-mute);
+  font-size: 14px;
   margin: 0;
+  max-width: 620px;
 }
 
 .filterPanel,
@@ -42,13 +44,18 @@
 .state {
   background: var(--color-surface);
   border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-16);
-  padding: var(--space-24);
+  border-radius: var(--radius-10);
+}
+
+.section,
+.executionSection {
+  padding: var(--space-20);
 }
 
 .filterPanel {
   display: grid;
-  gap: var(--space-16);
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
 }
 
 .executionSection {
@@ -62,9 +69,10 @@
 }
 
 .executionControls {
-  display: grid;
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-16);
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .capabilityControl {
@@ -73,76 +81,84 @@
   gap: var(--space-8);
 }
 
-.capabilityControl > button {
-  width: 100%;
-}
-
 .capabilityReasons {
-  color: var(--color-body);
+  color: var(--color-mute);
   display: grid;
-  font-size: 14px;
+  font-size: 13px;
   gap: var(--space-8);
   list-style: none;
   margin: 0;
+  max-width: 320px;
   padding: 0;
 }
 
 .executionNotice {
-  border: 1px solid var(--color-yellow);
-  border-radius: var(--radius-10);
-  color: var(--color-body);
+  align-items: flex-start;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-8);
+  color: var(--color-mute);
+  display: flex;
+  font-size: 13px;
+  gap: var(--space-8);
   margin: 0;
-  padding: var(--space-12);
+  padding: 10px var(--space-12);
+}
+
+.executionNotice svg {
+  color: var(--color-yellow);
+  flex-shrink: 0;
+  height: 16px;
+  margin-top: 1px;
+  width: 16px;
 }
 
 .recoveryLink {
   align-items: center;
   color: var(--color-ink);
   display: inline-flex;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   min-height: var(--target-dense);
 }
 
 .filterGrid {
   display: grid;
-  gap: var(--space-16);
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-12);
+  grid-template-columns: minmax(220px, 1.4fr) repeat(
+      auto-fit,
+      minmax(140px, 1fr)
+    );
 }
 
 .field {
+  align-content: start;
   display: grid;
-  gap: var(--space-8);
+  gap: 6px;
+  min-width: 0;
 }
 
-.field label,
-.checkboxLabel {
-  color: var(--color-body);
-  font-size: 14px;
-  font-weight: 700;
+.field label {
+  color: var(--color-mute);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .field input,
 .field select {
-  background: var(--color-surface-elevated);
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-8);
-  color: var(--color-ink);
-  font: inherit;
-  min-height: var(--target-default);
-  padding: var(--space-8) var(--space-12);
+  min-width: 0;
+  width: 100%;
 }
 
 .checkboxLabel {
   align-items: center;
+  color: var(--color-body);
   display: inline-flex;
+  font-size: 13px;
+  font-weight: 500;
   gap: var(--space-8);
-  min-height: var(--target-default);
-}
-
-.checkboxLabel input {
-  accent-color: var(--color-blue);
-  height: 18px;
-  width: 18px;
+  min-height: var(--target-dense);
+  width: fit-content;
 }
 
 .filterActions,
@@ -157,13 +173,23 @@
 .resultCount,
 .subtle {
   color: var(--color-mute);
-  font-size: 14px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
   margin: 0;
 }
 
 .planList,
 .actionList,
-.groupList,
+.groupList {
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-10);
+  list-style: none;
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
 .facetList,
 .metadataList {
   list-style: none;
@@ -171,61 +197,60 @@
   padding: 0;
 }
 
-.planList,
-.actionList,
-.groupList,
-.facetList {
-  display: grid;
-  gap: var(--space-8);
+.planRow + .planRow,
+.actionRow + .actionRow,
+.groupRow + .groupRow {
+  border-top: 1px solid var(--color-hairline);
+}
+
+.planRow {
+  contain-intrinsic-size: auto 64px;
+  content-visibility: auto;
+}
+
+.actionRow {
+  contain-intrinsic-size: auto 132px;
+  content-visibility: auto;
+}
+
+.groupRow {
+  contain-intrinsic-size: auto 64px;
+  content-visibility: auto;
 }
 
 .cards {
   display: grid;
-  gap: var(--space-16);
+  gap: var(--space-12);
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
 }
 
 .card {
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-10);
+  border-radius: var(--radius-8);
   display: grid;
-  gap: var(--space-12);
-  padding: var(--space-16);
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-16);
 }
 
 .card h3 {
-  color: var(--color-ink);
-  font-size: 16px;
+  color: var(--color-mute);
+  font-size: 12px;
+  font-weight: 600;
   margin: 0;
-}
-
-.planRow,
-.actionRow,
-.groupRow,
-.facetRow {
-  background: var(--color-surface);
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-10);
-}
-
-.planRow,
-.actionRow,
-.groupRow {
-  contain-intrinsic-size: auto 112px;
-  content-visibility: auto;
 }
 
 .planLink {
   color: inherit;
   display: grid;
-  gap: var(--space-12);
-  padding: var(--space-16);
+  gap: 6px;
+  padding: 10px var(--space-16);
   text-decoration: none;
+  transition: background-color var(--motion-control) ease;
 }
 
 .planLink:hover {
-  background: var(--color-surface-card);
+  background: var(--color-surface-elevated);
 }
 
 .rowHeader,
@@ -241,6 +266,10 @@
   justify-content: space-between;
 }
 
+.sectionHeader {
+  margin-bottom: 0;
+}
+
 .id,
 .path,
 .metadataValue,
@@ -248,11 +277,8 @@
 .groupValue {
   color: var(--color-ink);
   font-family: var(--font-mono);
-  overflow-wrap: anywhere;
-}
-
-.id {
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .rowMetadata,
@@ -260,6 +286,7 @@
 .metadataList {
   color: var(--color-mute);
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .rowMetadata,
@@ -268,31 +295,45 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-12);
+  justify-content: flex-start;
 }
 
 .statusBadge {
   align-items: center;
-  border: 1px solid currentColor;
+  background: color-mix(in srgb, currentcolor 10%, transparent);
+  border: 1px solid color-mix(in srgb, currentcolor 28%, transparent);
   border-radius: var(--radius-6);
   display: inline-flex;
   font-size: 12px;
-  font-weight: 750;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-8);
+  font-weight: 600;
+  gap: 6px;
+  letter-spacing: 0.01em;
+  padding: 2px var(--space-8);
+  white-space: nowrap;
+}
+
+.statusBadge::before {
+  background: currentcolor;
+  border-radius: 50%;
+  content: "";
+  flex-shrink: 0;
+  height: 6px;
+  width: 6px;
 }
 
 .statusBadge svg {
-  height: 14px;
-  width: 14px;
+  display: none;
 }
 
 .catalogValue {
   align-items: center;
   display: inline-flex;
+  font-size: 13px;
   gap: var(--space-4);
 }
 
 .catalogValue svg {
+  flex-shrink: 0;
   height: 14px;
   width: 14px;
 }
@@ -319,12 +360,14 @@
 
 .section {
   display: grid;
-  gap: var(--space-16);
+  gap: var(--space-12);
 }
 
-.section h2 {
+.section h2,
+.executionSection h2 {
   color: var(--color-ink);
-  font-size: 18px;
+  font-size: 15px;
+  font-weight: 650;
   margin: 0;
 }
 
@@ -340,32 +383,46 @@
 
 .summaryTable caption {
   color: var(--color-mute);
-  font-size: 14px;
-  margin-bottom: var(--space-12);
+  font-size: 13px;
+  margin-bottom: var(--space-8);
   text-align: left;
 }
 
 .summaryTable th,
 .summaryTable td {
   border-bottom: 1px solid var(--color-hairline);
-  padding: var(--space-12);
+  padding: var(--space-8) var(--space-12);
   text-align: left;
 }
 
-.summaryTable th {
+.summaryTable thead th {
+  color: var(--color-mute);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.summaryTable tbody th {
   color: var(--color-body);
   font-size: 13px;
+  font-weight: 500;
+}
+
+.summaryTable tbody tr:last-child th,
+.summaryTable tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .summaryTable td {
   color: var(--color-ink);
   font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .metadataList dt {
   color: var(--color-mute);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .metadataList dd {
@@ -384,12 +441,26 @@
   gap: var(--space-4);
 }
 
-.actionRow,
-.groupRow,
+.actionRow {
+  display: grid;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-16);
+}
+
+.groupRow {
+  display: grid;
+  gap: var(--space-12);
+  padding: 10px var(--space-16);
+}
+
 .facetRow {
   display: grid;
   gap: var(--space-12);
-  padding: var(--space-16);
+  padding: var(--space-4) 0;
+}
+
+.facetRow + .facetRow {
+  border-top: 1px solid var(--color-hairline);
 }
 
 .pathList {
@@ -406,7 +477,7 @@
 .pathLabel {
   color: var(--color-mute);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .groupRow,
@@ -425,6 +496,7 @@
   gap: var(--space-4);
   padding: 0;
   text-align: left;
+  transition: color var(--motion-control) ease;
 }
 
 .groupButton:hover {
@@ -433,20 +505,24 @@
 
 .selectedGroup {
   color: var(--color-blue);
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   margin: 0;
 }
 
 .count {
   color: var(--color-ink);
-  font-size: 14px;
-  font-weight: 750;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .state {
   display: grid;
-  gap: var(--space-12);
+  gap: var(--space-8);
+  justify-items: center;
+  padding: 28px var(--space-16);
+  text-align: center;
 }
 
 .state h2,
@@ -456,22 +532,35 @@
 
 .state h2 {
   color: var(--color-ink);
-  font-size: 18px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .state p {
-  color: var(--color-body);
+  color: var(--color-mute);
+  font-size: 13px;
+}
+
+.state ul {
+  color: var(--color-mute);
+  display: grid;
+  font-size: 13px;
+  gap: var(--space-4);
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .error {
-  border-color: var(--color-red);
+  border-color: color-mix(in srgb, var(--color-red) 45%, transparent);
 }
 
 .backLink {
   align-items: center;
   color: var(--color-ink);
   display: inline-flex;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   min-height: var(--target-dense);
 }
 
@@ -488,13 +577,12 @@
 @media (max-width: 767px) {
   .filterPanel,
   .section,
-  .executionSection,
-  .state {
+  .executionSection {
     padding: var(--space-16);
   }
 
   .executionControls {
-    grid-template-columns: 1fr;
+    flex-direction: column;
   }
 
   .filterGrid,
@@ -508,8 +596,8 @@
 
   .planLink,
   .actionRow,
-  .groupRow,
-  .facetRow {
-    padding: var(--space-12);
+  .groupRow {
+    padding-left: var(--space-12);
+    padding-right: var(--space-12);
   }
 }

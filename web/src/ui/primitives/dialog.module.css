@@ -19,9 +19,9 @@
 }
 
 .surface {
-  background: var(--color-surface-elevated);
+  background: var(--color-surface);
   border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-16);
+  border-radius: var(--radius-10);
   display: flex;
   flex-direction: column;
   max-height: inherit;
@@ -34,12 +34,21 @@
   display: flex;
   gap: var(--space-16);
   justify-content: space-between;
-  padding: var(--space-16) var(--space-20);
+  padding: var(--space-12) var(--space-20);
+}
+
+.header button {
+  color: var(--color-mute);
+}
+
+.header button:hover:not(:disabled) {
+  color: var(--color-ink);
 }
 
 .title {
   color: var(--color-ink);
-  font-size: 20px;
+  font-size: 15px;
+  font-weight: 650;
   line-height: 1.25;
   margin: 0;
 }

@@ -11,16 +11,43 @@
   <symbol id="command" viewBox="0 0 24 24">
     <path d="M9 7H6.5A2.5 2.5 0 1 1 9 4.5V19a2.5 2.5 0 1 1-2.5-2.5H17.5A2.5 2.5 0 1 1 15 19V4.5A2.5 2.5 0 1 1 17.5 7H9Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
   </symbol>
+  <symbol id="health" viewBox="0 0 24 24">
+    <path d="M3 12h4l2.5-6 5 12 2.5-6h4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+  </symbol>
+  <symbol id="history" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8" />
+    <path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+  </symbol>
   <symbol id="info" viewBox="0 0 24 24">
     <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" />
     <path d="M12 11v6M12 7.5v.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
   </symbol>
+  <symbol id="library" viewBox="0 0 24 24">
+    <path d="M9 18V6l10-2v12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+    <circle cx="6.5" cy="18" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8" />
+    <circle cx="16.5" cy="16" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8" />
+  </symbol>
   <symbol id="menu" viewBox="0 0 24 24">
     <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
+  </symbol>
+  <symbol id="overview" viewBox="0 0 24 24">
+    <rect height="7" rx="1.5" width="7" x="4" y="4" fill="none" stroke="currentColor" stroke-width="1.8" />
+    <rect height="7" rx="1.5" width="7" x="13" y="4" fill="none" stroke="currentColor" stroke-width="1.8" />
+    <rect height="7" rx="1.5" width="7" x="4" y="13" fill="none" stroke="currentColor" stroke-width="1.8" />
+    <rect height="7" rx="1.5" width="7" x="13" y="13" fill="none" stroke="currentColor" stroke-width="1.8" />
+  </symbol>
+  <symbol id="plans" viewBox="0 0 24 24">
+    <path d="M8 6h12M8 12h12M8 18h12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+    <path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5" />
   </symbol>
   <symbol id="search" viewBox="0 0 24 24">
     <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2" />
     <path d="m15.5 15.5 4 4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
+  </symbol>
+  <symbol id="settings" viewBox="0 0 24 24">
+    <path d="M5 8h6.8M16.2 8H19M5 16h1.8M11.2 16h7.8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
+    <circle cx="14" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8" />
+    <circle cx="9" cy="16" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8" />
   </symbol>
   <symbol id="warning" viewBox="0 0 24 24">
     <path d="M12 4 21 20H3L12 4Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="2" />

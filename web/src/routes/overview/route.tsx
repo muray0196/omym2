@@ -120,7 +120,9 @@ function SnapshotCard({
   return (
     <section className={styles.card}>
       <h2>{title}</h2>
-      <p>{loading ? routeCopy.overview.loading : body}</p>
+      <p className={styles.cardBody}>
+        {loading ? routeCopy.overview.loading : body}
+      </p>
       <Link className={styles.cardLink} data-list-item to={href}>
         {linkLabel}
       </Link>
