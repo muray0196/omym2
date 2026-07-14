@@ -21,7 +21,7 @@ import { planningCopy } from "../../features/planning/planning-copy";
 import { PlanningMutationError } from "../../features/planning/planning-errors";
 import styles from "../../features/planning/planning.module.css";
 import { Button } from "../../ui/primitives/button";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
 
 export function Component() {
   const bootstrap = useContext(BootstrapContext);
@@ -73,11 +73,11 @@ export function Component() {
 
   return (
     <article className={styles.page}>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>{planningCopy.refresh.eyebrow}</p>
-        <RouteHeading>{planningCopy.refresh.title}</RouteHeading>
-        <p className={styles.description}>{planningCopy.refresh.description}</p>
-      </header>
+      <PageHeader
+        description={planningCopy.refresh.description}
+        eyebrow={planningCopy.refresh.eyebrow}
+        title={planningCopy.refresh.title}
+      />
       <form className={styles.form} onSubmit={submit}>
         <OperationAvailability bootstrap={bootstrap} />
         <LibrarySelection value={libraryId} onChange={setSelectedLibraryId} />

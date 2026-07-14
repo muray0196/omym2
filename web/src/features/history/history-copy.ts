@@ -9,7 +9,7 @@ export const historyCopy = {
     description:
       "Browse recorded Runs and durable file-mutation evidence without starting an operation.",
     searchLabel: "Search Runs",
-    searchPlaceholder: "Run ID, Plan ID, Library ID, status, or error",
+    searchPlaceholder: "Run ID, Plan ID, Library ID, status, or error…",
     statusLabel: "Run status",
     planLabel: "Plan ID",
     libraryLabel: "Library ID",

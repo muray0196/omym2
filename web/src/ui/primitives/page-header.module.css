@@ -1,0 +1,100 @@
+/**
+ * Summary: Styles the shared compact route heading and contextual actions.
+ * Why: Recovers vertical space without weakening hierarchy or readable wrapping.
+ */
+.header {
+  align-items: start;
+  display: flex;
+  gap: var(--space-16);
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.context {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.headingLine {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-12);
+  min-width: 0;
+}
+
+.eyebrow {
+  color: var(--color-blue);
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.headingLine h1 {
+  color: var(--color-ink);
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0;
+  min-width: 0;
+  text-wrap: balance;
+}
+
+.description {
+  color: var(--color-mute);
+  font-size: 13px;
+  margin: 0;
+  max-width: 680px;
+  text-wrap: pretty;
+}
+
+.aside {
+  align-items: flex-end;
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.meta {
+  color: var(--color-mute);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  max-width: 420px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.meta p {
+  margin: 0;
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  justify-content: flex-end;
+}
+
+@media (max-width: 767px) {
+  .header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-8);
+  }
+
+  .aside {
+    align-items: flex-start;
+  }
+
+  .meta {
+    text-align: left;
+  }
+}

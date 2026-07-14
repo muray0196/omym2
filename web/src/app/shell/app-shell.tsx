@@ -142,13 +142,23 @@ export function AppShell() {
           onClick={openCommandCenterFromButton}
           onFocus={() => void loadCommandCenter()}
           onMouseEnter={() => void loadCommandCenter()}
+          title={shellCopy.commandCenter}
           variant="secondary"
         >
           <Icon name="command" />
-          {shellCopy.commandCenter}
+          <span className={styles.railActionLabel}>
+            {shellCopy.commandCenter}
+          </span>
         </Button>
-        <Button onClick={openShortcutHelpFromButton} variant="quiet">
-          {shellCopy.shortcutHelp}
+        <Button
+          onClick={openShortcutHelpFromButton}
+          title={shellCopy.shortcutHelp}
+          variant="quiet"
+        >
+          <Icon name="info" />
+          <span className={styles.railActionLabel}>
+            {shellCopy.shortcutHelp}
+          </span>
         </Button>
         <p className={styles.railFooter}>{shellCopy.footer}</p>
       </aside>
@@ -240,7 +250,10 @@ export function AppShell() {
 function Brand() {
   return (
     <div className={styles.brand}>
-      <p className={styles.brandName}>{shellCopy.productName}</p>
+      <p className={styles.brandName}>
+        <span className={styles.brandFull}>{shellCopy.productName}</span>
+        <span className={styles.brandCompact}>O2</span>
+      </p>
       <p className={styles.brandDescription}>{shellCopy.productDescription}</p>
     </div>
   );

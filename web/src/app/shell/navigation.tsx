@@ -17,10 +17,11 @@ export function Navigation({ onNavigate }: { onNavigate?: () => void }) {
           end={item.to === "/"}
           key={item.to}
           onClick={onNavigate}
+          title={item.label}
           to={item.to}
         >
           <Icon name={item.icon} />
-          {item.label}
+          <span className={styles.navigationLabel}>{item.label}</span>
         </NavLink>
       ))}
     </nav>

@@ -79,10 +79,12 @@ export async function validateSettingsDraft(
 
 export async function previewSettingsDraft(
   request: PathPreviewRequest,
+  signal?: AbortSignal,
 ): Promise<PathPreview> {
   const response = await previewSettingsPath({
     baseUrl: globalThis.location.origin,
     body: request,
+    signal,
   });
   if (response.error !== undefined) {
     throwSettingsResponseError(

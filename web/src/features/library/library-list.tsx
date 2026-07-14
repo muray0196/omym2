@@ -10,7 +10,9 @@ import { bootstrapQuery } from "../bootstrap/bootstrap-query";
 import { useCursorPage, type CursorPageNavigation } from "../../ui/cursor-page";
 import { Button } from "../../ui/primitives/button";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
+import { VisuallyHidden } from "../../ui/primitives/visually-hidden";
+import toolbarStyles from "../../ui/primitives/toolbar.module.css";
 import { trackGroupingLabel, trackStatusLabel } from "./library-catalog";
 import { libraryCopy } from "./library-copy";
 import { LibraryErrorState } from "./library-error-state";
@@ -29,6 +31,8 @@ import {
   useLibraryBrowseFilters,
 } from "./library-url-state";
 
+const numberFormatter = new Intl.NumberFormat("en-US");
+
 export function LibraryList() {
   const location = useLocation();
   const browse = useLibraryBrowseFilters();
@@ -36,10 +40,18 @@ export function LibraryList() {
   const libraryId = bootstrap.data?.data?.active_library?.library_id;
   const deferredQuery = useDeferredValue(browse.filters.query);
   const queryFilters = { ...browse.filters, query: deferredQuery };
-  const tracks = useInfiniteQuery(tracksInfiniteQuery(libraryId, queryFilters));
+  const tracks = useInfiniteQuery(
+    tracksInfiniteQuery(
+      browse.filters.view === "tracks" ? libraryId : undefined,
+      queryFilters,
+    ),
+  );
   const facets = useQuery(trackFacetsQuery(libraryId, queryFilters));
   const groups = useInfiniteQuery(
-    trackGroupsInfiniteQuery(libraryId, queryFilters),
+    trackGroupsInfiniteQuery(
+      browse.filters.view === "groups" ? libraryId : undefined,
+      queryFilters,
+    ),
   );
   const resetKey = JSON.stringify({ libraryId, ...queryFilters });
   const trackPage = useCursorPage({
@@ -58,15 +70,21 @@ export function LibraryList() {
   });
   const trackItems = trackPage.page?.items ?? [];
   const groupItems = groupPage.page?.items ?? [];
-  const total = tracks.data?.pages[0]?.page.total ?? 0;
+  const facetTotal =
+    browse.filters.status === undefined
+      ? facets.data?.total
+      : facets.data?.facets.status.find(
+          (facet) => facet.value === browse.filters.status,
+        )?.count;
+  const total = tracks.data?.pages[0]?.page.total ?? facetTotal ?? 0;
 
   return (
     <article className={styles.page}>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>{libraryCopy.list.eyebrow}</p>
-        <RouteHeading>{libraryCopy.list.title}</RouteHeading>
-        <p className={styles.description}>{libraryCopy.list.description}</p>
-      </header>
+      <PageHeader
+        description={libraryCopy.list.description}
+        eyebrow={libraryCopy.list.eyebrow}
+        title={libraryCopy.list.title}
+      />
 
       {bootstrap.isPending ? (
         <LoadingState message={libraryCopy.list.loading} />
@@ -82,8 +100,21 @@ export function LibraryList() {
             facets={facets.data}
             facetsError={facets.isError}
             onRetryFacets={() => void facets.refetch()}
+            total={total}
           />
-          {tracks.isPending ? (
+          {browse.filters.view === "groups" ? (
+            <GroupBrowser
+              browse={browse}
+              groups={groupItems}
+              hasPage={groupPage.page !== undefined}
+              isError={groups.isError}
+              isPending={groups.isPending}
+              onRetry={() => void groups.refetch()}
+              pageSize={groupPage.page?.page.limit}
+              pagination={groupPage}
+              totalItems={groupPage.page?.page.total}
+            />
+          ) : tracks.isPending ? (
             <LoadingState message={libraryCopy.list.loading} />
           ) : tracks.isError ? (
             <LibraryErrorState
@@ -93,25 +124,17 @@ export function LibraryList() {
               title={libraryCopy.list.loadError}
             />
           ) : (
-            <div className={styles.browserGrid}>
-              <GroupBrowser
-                browse={browse}
-                groups={groupItems}
-                hasPage={groupPage.page !== undefined}
-                isError={groups.isError}
-                isPending={groups.isPending}
-                onRetry={() => void groups.refetch()}
-                pagination={groupPage}
-              />
-              <TrackBrowser
-                detailSearch={location.search}
-                hasActiveFilters={browse.hasActiveFilters}
-                hasPage={trackPage.page !== undefined}
-                pagination={trackPage}
-                total={total}
-                tracks={trackItems}
-              />
-            </div>
+            <TrackBrowser
+              detailSearch={location.search}
+              hasActiveFilters={browse.hasActiveFilters}
+              hasPage={trackPage.page !== undefined}
+              hasSelectedGroup={browse.filters.groupKey !== undefined}
+              onClearGroup={browse.clearGroup}
+              pageSize={trackPage.page?.page.limit}
+              pagination={trackPage}
+              totalItems={trackPage.page?.page.total}
+              tracks={trackItems}
+            />
           )}
         </>
       )}
@@ -127,54 +150,81 @@ function LibraryFilters({
   facets,
   facetsError,
   onRetryFacets,
+  total,
 }: {
   browse: BrowseController;
   facets: FacetQueryData;
   facetsError: boolean;
   onRetryFacets: () => void;
+  total: number;
 }) {
   return (
-    <section aria-label="Library browse filters" className={styles.filterPanel}>
-      <div className={styles.filterGrid}>
-        <div className={styles.field}>
-          <label htmlFor="library-search">{libraryCopy.list.searchLabel}</label>
-          <input
-            data-list-search
-            id="library-search"
-            onChange={(event) =>
-              browse.updateFilters({ query: event.target.value })
-            }
-            placeholder={libraryCopy.list.searchPlaceholder}
-            type="search"
-            value={browse.filters.query}
-          />
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="library-status">{libraryCopy.list.statusLabel}</label>
-          <select
-            id="library-status"
-            onChange={(event) => {
-              const selected = trackStatusOptions.find(
-                (option) => option.value === event.target.value,
-              );
-              browse.updateFilters({ status: selected?.value });
-            }}
-            value={browse.filters.status ?? ""}
-          >
-            <option value="">{libraryCopy.list.allStatuses}</option>
-            {trackStatusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="library-grouping">
-            {libraryCopy.list.groupingLabel}
-          </label>
+    <section
+      aria-label="Library browse filters"
+      className={toolbarStyles.toolbar}
+    >
+      <div
+        aria-label={libraryCopy.list.viewLabel}
+        className={styles.viewSwitch}
+        role="group"
+      >
+        <Button
+          aria-pressed={browse.filters.view === "tracks"}
+          onClick={browse.showTracks}
+          variant={browse.filters.view === "tracks" ? "secondary" : "quiet"}
+        >
+          {libraryCopy.list.tracksView}
+        </Button>
+        <Button
+          aria-pressed={browse.filters.view === "groups"}
+          onClick={browse.showGroups}
+          variant={browse.filters.view === "groups" ? "secondary" : "quiet"}
+        >
+          {libraryCopy.list.groupsView}
+        </Button>
+      </div>
+      <label className={toolbarStyles.search} htmlFor="library-search">
+        <VisuallyHidden>{libraryCopy.list.searchLabel}</VisuallyHidden>
+        <input
+          autoComplete="off"
+          data-list-search
+          id="library-search"
+          name="library-search"
+          onChange={(event) =>
+            browse.updateFilters({ query: event.target.value })
+          }
+          placeholder={libraryCopy.list.searchPlaceholder}
+          type="search"
+          value={browse.filters.query}
+        />
+      </label>
+      <label className={toolbarStyles.control} htmlFor="library-status">
+        <VisuallyHidden>{libraryCopy.list.statusLabel}</VisuallyHidden>
+        <select
+          id="library-status"
+          name="library-status"
+          onChange={(event) => {
+            const selected = trackStatusOptions.find(
+              (option) => option.value === event.target.value,
+            );
+            browse.updateFilters({ status: selected?.value });
+          }}
+          value={browse.filters.status ?? ""}
+        >
+          <option value="">{libraryCopy.list.allStatuses}</option>
+          {trackStatusOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {browse.filters.view === "groups" ? (
+        <label className={toolbarStyles.wideControl} htmlFor="library-grouping">
+          <VisuallyHidden>{libraryCopy.list.groupingLabel}</VisuallyHidden>
           <select
             id="library-grouping"
+            name="library-grouping"
             onChange={(event) => {
               const selected = rootGroupingOptions.find(
                 (option) => option.value === event.target.value,
@@ -195,47 +245,53 @@ function LibraryFilters({
               </option>
             ))}
           </select>
-        </div>
-      </div>
+        </label>
+      ) : null}
 
-      <div className={styles.filterActions}>
+      <div className={toolbarStyles.actions}>
         {browse.hasActiveFilters ? (
           <Button onClick={browse.resetFilters} variant="quiet">
             {libraryCopy.list.resetFilters}
           </Button>
         ) : null}
-        {browse.filters.groupKey === undefined ? null : (
-          <Button onClick={browse.clearGroup} variant="quiet">
-            {libraryCopy.list.clearGroup}
-          </Button>
-        )}
+        <p aria-live="polite" className={toolbarStyles.resultCount}>
+          {numberFormatter.format(total)} {libraryCopy.list.resultCount}
+        </p>
       </div>
 
       {facetsError ? (
-        <div className={styles.inlineError} role="alert">
-          <p>{libraryCopy.list.facetsError}</p>
-          <Button onClick={onRetryFacets} variant="quiet">
-            {libraryCopy.list.retry}
-          </Button>
+        <div className={toolbarStyles.secondaryRow}>
+          <div className={styles.inlineError} role="alert">
+            <p>{libraryCopy.list.facetsError}</p>
+            <Button onClick={onRetryFacets} variant="quiet">
+              {libraryCopy.list.retry}
+            </Button>
+          </div>
         </div>
       ) : facets === undefined || facets.facets.status.length === 0 ? null : (
-        <div aria-labelledby="track-status-facets" className={styles.facets}>
-          <h2 id="track-status-facets">{libraryCopy.list.facetsTitle}</h2>
-          <ul className={styles.facetList}>
-            {facets.facets.status.map((facet) => (
-              <li key={facet.value}>
-                <button
-                  aria-pressed={browse.filters.status === facet.value}
-                  className={styles.facetButton}
-                  onClick={() => browse.updateFilters({ status: facet.value })}
-                  type="button"
-                >
-                  <span>{trackStatusLabel(facet.value)}</span>
-                  <span className={styles.count}>{facet.count}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+        <div className={toolbarStyles.secondaryRow}>
+          <div aria-labelledby="track-status-facets" className={styles.facets}>
+            <h2 id="track-status-facets">{libraryCopy.list.facetsTitle}</h2>
+            <ul className={styles.facetList}>
+              {facets.facets.status.map((facet) => (
+                <li key={facet.value}>
+                  <button
+                    aria-pressed={browse.filters.status === facet.value}
+                    className={styles.facetButton}
+                    onClick={() =>
+                      browse.updateFilters({ status: facet.value })
+                    }
+                    type="button"
+                  >
+                    <span>{trackStatusLabel(facet.value)}</span>
+                    <span className={styles.count}>
+                      {numberFormatter.format(facet.count)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
     </section>
@@ -249,7 +305,9 @@ function GroupBrowser({
   isError,
   isPending,
   onRetry,
+  pageSize,
   pagination,
+  totalItems,
 }: {
   browse: BrowseController;
   groups: { count: number; key: string; label: string }[];
@@ -257,7 +315,9 @@ function GroupBrowser({
   isError: boolean;
   isPending: boolean;
   onRetry: () => void;
+  pageSize: number | undefined;
   pagination: CursorPageNavigation;
+  totalItems: number | undefined;
 }) {
   return (
     <section aria-labelledby="track-groups" className={styles.section}>
@@ -279,11 +339,6 @@ function GroupBrowser({
         ) : null}
       </div>
 
-      {browse.filters.groupKey === undefined ? null : (
-        <p className={styles.selectedGroup} role="status">
-          {libraryCopy.list.selectedGroup}
-        </p>
-      )}
       {isPending ? (
         <p className={styles.subtle}>{libraryCopy.list.groupsLoading}</p>
       ) : isError ? (
@@ -302,7 +357,8 @@ function GroupBrowser({
               <div className={styles.groupHeader}>
                 <span className={styles.groupLabel}>{group.label}</span>
                 <span className={styles.count}>
-                  {group.count} {libraryCopy.labels.groupCount}
+                  {numberFormatter.format(group.count)}{" "}
+                  {libraryCopy.labels.groupCount}
                 </span>
               </div>
               <div className={styles.groupActions}>
@@ -334,8 +390,13 @@ function GroupBrowser({
         </ul>
       )}
 
-      {hasPage ? (
-        <CursorPageControls collectionLabel="Library groups" {...pagination} />
+      {hasPage && groups.length > 0 ? (
+        <CursorPageControls
+          collectionLabel="Library groups"
+          pageSize={pageSize}
+          totalItems={totalItems}
+          {...pagination}
+        />
       ) : null}
     </section>
   );
@@ -345,24 +406,39 @@ function TrackBrowser({
   detailSearch,
   hasActiveFilters,
   hasPage,
+  hasSelectedGroup,
+  onClearGroup,
+  pageSize,
   pagination,
-  total,
+  totalItems,
   tracks,
 }: {
   detailSearch: string;
   hasActiveFilters: boolean;
   hasPage: boolean;
+  hasSelectedGroup: boolean;
+  onClearGroup: () => void;
+  pageSize: number | undefined;
   pagination: CursorPageNavigation;
-  total: number;
+  totalItems: number | undefined;
   tracks: LibraryTrack[];
 }) {
   return (
     <section aria-labelledby="track-results" className={styles.section}>
       <div className={styles.sectionHeader}>
-        <h2 id="track-results">{libraryCopy.list.title}</h2>
-        <p className={styles.resultCount}>
-          {total} {libraryCopy.list.resultCount}
-        </p>
+        <div>
+          <h2 id="track-results">{libraryCopy.list.tracksTitle}</h2>
+          {hasSelectedGroup ? (
+            <p className={styles.selectedGroup} role="status">
+              {libraryCopy.list.selectedGroup}
+            </p>
+          ) : null}
+        </div>
+        {hasSelectedGroup ? (
+          <Button onClick={onClearGroup} variant="quiet">
+            {libraryCopy.list.clearGroup}
+          </Button>
+        ) : null}
       </div>
 
       {tracks.length === 0 ? (
@@ -380,6 +456,12 @@ function TrackBrowser({
         />
       ) : (
         <ul className={styles.trackList}>
+          <li aria-hidden="true" className={styles.trackColumnHeader}>
+            <span>Track</span>
+            <span>{libraryCopy.list.albumColumn}</span>
+            <span>{libraryCopy.list.pathColumn}</span>
+            <span>Status</span>
+          </li>
           {tracks.map((track) => (
             <TrackRow
               detailSearch={detailSearch}
@@ -390,8 +472,13 @@ function TrackBrowser({
         </ul>
       )}
 
-      {hasPage ? (
-        <CursorPageControls collectionLabel="Tracks" {...pagination} />
+      {hasPage && tracks.length > 0 ? (
+        <CursorPageControls
+          collectionLabel="Tracks"
+          pageSize={pageSize}
+          totalItems={totalItems}
+          {...pagination}
+        />
       ) : null}
     </section>
   );
@@ -409,6 +496,8 @@ function TrackRow({
     track.metadata.album_artist ??
     track.metadata.artist ??
     libraryCopy.detail.unknownArtist;
+  const album = track.metadata.album ?? libraryCopy.missingValue;
+  const year = track.metadata.year ?? libraryCopy.missingValue;
 
   return (
     <li className={styles.trackRow}>
@@ -417,15 +506,24 @@ function TrackRow({
         data-list-item
         to={{ pathname: `/library/${track.track_id}`, search: detailSearch }}
       >
-        <div className={styles.rowHeader}>
-          <div>
-            <p className={styles.trackTitle}>{title}</p>
-            <p className={styles.trackArtist}>{artist}</p>
-          </div>
-          <TrackStatusBadge value={track.status} />
+        <div className={styles.trackIdentity}>
+          <p className={styles.trackTitle}>{title}</p>
+          <p className={styles.trackArtist}>{artist}</p>
         </div>
-        <p className={styles.path}>{track.current_path}</p>
-        <p className={styles.identifier}>{track.track_id}</p>
+        <div className={styles.trackAlbum}>
+          <p>{album}</p>
+          <p>{year}</p>
+        </div>
+        <p
+          className={`${styles.path} ${styles.trackPath}`}
+          title={track.current_path}
+          translate="no"
+        >
+          {track.current_path}
+        </p>
+        <span className={styles.trackStatus}>
+          <TrackStatusBadge value={track.status} />
+        </span>
       </Link>
     </li>
   );

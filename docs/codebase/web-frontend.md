@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Defines the bundled desktop React and Vite Web frontend contract, including routes, design rules, API boundaries, layout behavior, production serving, packaging, security, and performance gates.
 tags: [web-frontend, react, vite, static-spa, performance]
-timestamp: 2026-07-14T01:47:14+09:00
+timestamp: 2026-07-14T22:01:48+09:00
 ---
 
 # Web Frontend
@@ -116,6 +116,15 @@ Settings, dialogs, and notifications. Routine screens have one white primary
 action per context; risk is communicated with text, icons, and small status
 accents rather than a second competing primary treatment.
 
+Settings uses `Save Settings` as its primary action. One submission performs
+backend validation and revision-safe atomic replacement; `Review changes` is
+an optional, non-writing secondary action for inspecting validation and the
+before/after diff. A successful save appears as a top floating status
+notification without moving the form, while the returned diff remains in the
+normal page flow. Path preview is recalculated by the backend after a short
+editing debounce, keeps the last available result while updating, ignores
+superseded requests, and exposes a manual retry only after failure.
+
 ## Command And Keyboard Contract
 
 The Command Center opens with `Cmd+K` or `Ctrl+K` and searches recommended
@@ -162,7 +171,7 @@ result.
 | `/health` | Latest persisted Check issues, facets, groups, and timestamp | Run Check |
 | `/history` | Run list with status filtering | None |
 | `/history/:runId` | Run, FileEvents, failures, and Undo eligibility | Create Undo Plan |
-| `/settings` | Paths, PathPolicy, artist IDs, metadata, and collision policy | Review and save |
+| `/settings` | Paths, PathPolicy, artist IDs, metadata, and collision policy | Save directly; review changes optionally |
 
 Every unmatched browser route renders the React Not Found screen. It
 does not trigger a server-side route allowlist or return an API response.
@@ -189,6 +198,21 @@ At widths of at least `1280px`, the shell may show a navigation rail, a
 `320px` to `420px` list pane, and one detail pane. No more than three regions
 may appear side by side. From `1024px` through `1279px`, navigation may be
 compact and the route may show either the list or detail view.
+
+List screens use one compact page-header block followed by a filter toolbar
+that stays on one row when space permits and no more than two rows at `1024px`.
+Dense result rows use stable columns, right-align comparable numeric and date
+values with tabular numerals, and fall back to labeled stacked content only
+when zoom or window resizing requires it. Counts use locale-aware formatting,
+and pagination shows “Page N of M” whenever the endpoint supplies a total.
+The normal connected-service strip remains a slim single line; degraded and
+disconnected guidance keeps its expanded alert treatment.
+
+Library browsing uses one full-width result surface. Tracks are the default
+view; group browsing is an alternate URL-owned view, and selecting a group
+returns to the Track list with that group applied. The default Track rows
+prioritize title, artist, album, year, location, and status. Internal Track IDs
+remain available in Track detail instead of occupying a primary list column.
 
 The list-detail surface remains keyboard-operable throughout the supported
 desktop range. Detail

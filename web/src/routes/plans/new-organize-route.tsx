@@ -20,7 +20,7 @@ import { planningCopy } from "../../features/planning/planning-copy";
 import { PlanningMutationError } from "../../features/planning/planning-errors";
 import styles from "../../features/planning/planning.module.css";
 import { Button } from "../../ui/primitives/button";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
 
 export function Component() {
   const bootstrap = useContext(BootstrapContext);
@@ -63,13 +63,11 @@ export function Component() {
 
   return (
     <article className={styles.page}>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>{planningCopy.organize.eyebrow}</p>
-        <RouteHeading>{planningCopy.organize.title}</RouteHeading>
-        <p className={styles.description}>
-          {planningCopy.organize.description}
-        </p>
-      </header>
+      <PageHeader
+        description={planningCopy.organize.description}
+        eyebrow={planningCopy.organize.eyebrow}
+        title={planningCopy.organize.title}
+      />
       <form className={styles.form} onSubmit={submit}>
         <OperationAvailability
           bootstrap={bootstrap}

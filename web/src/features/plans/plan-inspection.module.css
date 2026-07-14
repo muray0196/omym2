@@ -4,38 +4,7 @@
  */
 .page {
   display: grid;
-  gap: var(--space-24);
-}
-
-.header {
-  display: grid;
-  gap: var(--space-8);
-  max-width: 760px;
-}
-
-.eyebrow {
-  color: var(--color-blue);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  margin: 0;
-  text-transform: uppercase;
-}
-
-.header h1 {
-  color: var(--color-ink);
-  font-size: 24px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  margin: 0;
-}
-
-.description {
-  color: var(--color-mute);
-  font-size: 14px;
-  margin: 0;
-  max-width: 620px;
+  gap: var(--space-16);
 }
 
 .filterPanel,
@@ -190,6 +159,37 @@
   padding: 0;
 }
 
+.planColumnHeader,
+.planLink {
+  align-items: center;
+  column-gap: var(--space-12);
+  display: grid;
+  grid-template-columns:
+    minmax(96px, 110px) minmax(150px, 1fr) minmax(64px, 80px)
+    minmax(64px, 80px) minmax(84px, auto) minmax(132px, 150px);
+}
+
+.planColumnHeader {
+  color: var(--color-mute);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  padding: 6px var(--space-16);
+  text-transform: uppercase;
+}
+
+.planColumnHeader span:nth-child(n + 3),
+.planActions,
+.planBlocked,
+.planCreated {
+  text-align: right;
+}
+
+.planColumnHeader span:nth-child(5),
+.planStatus {
+  justify-self: end;
+}
+
 .facetList,
 .metadataList {
   list-style: none;
@@ -203,8 +203,12 @@
   border-top: 1px solid var(--color-hairline);
 }
 
+.planColumnHeader + .planRow {
+  border-top: 1px solid var(--color-hairline);
+}
+
 .planRow {
-  contain-intrinsic-size: auto 64px;
+  contain-intrinsic-size: auto 45px;
   content-visibility: auto;
 }
 
@@ -242,9 +246,8 @@
 
 .planLink {
   color: inherit;
-  display: grid;
-  gap: 6px;
-  padding: 10px var(--space-16);
+  min-height: 44px;
+  padding: var(--space-8) var(--space-16);
   text-decoration: none;
   transition: background-color var(--motion-control) ease;
 }
@@ -287,6 +290,34 @@
   color: var(--color-mute);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+}
+
+.planIdentifier {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planType,
+.planActions,
+.planBlocked,
+.planCreated {
+  color: var(--color-mute);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.planType {
+  color: var(--color-body);
+}
+
+.planCreated {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rowMetadata,
@@ -521,6 +552,7 @@
   display: grid;
   gap: var(--space-8);
   justify-items: center;
+  min-height: 160px;
   padding: 28px var(--space-16);
   text-align: center;
 }
@@ -599,5 +631,56 @@
   .groupRow {
     padding-left: var(--space-12);
     padding-right: var(--space-12);
+  }
+
+  .planColumnHeader {
+    display: none;
+  }
+
+  .planColumnHeader + .planRow {
+    border-top: 0;
+  }
+
+  .planLink {
+    gap: var(--space-4) var(--space-12);
+    grid-template-areas:
+      "identifier status"
+      "type created"
+      "actions blocked";
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 72px;
+  }
+
+  .planType {
+    grid-area: type;
+  }
+
+  .planIdentifier {
+    grid-area: identifier;
+  }
+
+  .planActions {
+    grid-area: actions;
+    text-align: left;
+  }
+
+  .planActions::after {
+    content: " actions";
+  }
+
+  .planBlocked {
+    grid-area: blocked;
+  }
+
+  .planBlocked::after {
+    content: " blocked";
+  }
+
+  .planStatus {
+    grid-area: status;
+  }
+
+  .planCreated {
+    grid-area: created;
   }
 }

@@ -8,13 +8,13 @@ export const settingsCopy = {
   eyebrow: "Configuration",
   title: "Settings",
   description:
-    "Edit paths and planning policy, review the backend validation diff, then save against the revision you opened.",
+    "Edit paths and planning policy. Save applies valid changes; Review changes previews the diff.",
   loading: "Loading Settings…",
   loadError: "Settings could not be loaded",
   retry: "Try again",
   recoveryTitle: "Configuration recovery",
   recoveryBody:
-    "The persisted configuration is invalid. This recovery draft can replace it after backend validation succeeds.",
+    "The saved configuration is invalid. Fix this draft and choose Save Settings; valid changes apply immediately.",
   revisionLabel: "Editing revision",
   pathsTitle: "Paths",
   libraryPath: "Library path",
@@ -32,7 +32,7 @@ export const settingsCopy = {
   discNumberCondition: "Disc number condition",
   artistIdsTitle: "Artist IDs",
   artistIdsHelp:
-    "Generation changes only this draft. Review and save before generated entries become persistent.",
+    "Generation changes only this draft. Save before generated entries become persistent.",
   artistIdMaxLength: "Maximum artist ID length",
   artistIdFallback: "Fallback artist ID",
   entriesTitle: "Saved artist ID entries",
@@ -60,7 +60,7 @@ export const settingsCopy = {
   missingMetadata: "When required metadata is missing",
   previewTitle: "Path preview",
   previewBody:
-    "Preview is self-contained: it uses this draft and the sample metadata below without reading persisted state.",
+    "Preview updates automatically from this draft and the sample metadata below without reading persisted state.",
   sampleArtist: "Sample artist",
   sampleAlbumArtist: "Sample album artist",
   sampleAlbum: "Sample album",
@@ -69,15 +69,18 @@ export const settingsCopy = {
   sampleDisc: "Sample disc number",
   sampleTrack: "Sample track number",
   sampleExtension: "Sample file extension",
-  updatePreview: "Update preview",
   previewing: "Updating preview…",
+  previewError:
+    "Path preview could not be updated. The last available result is still shown.",
+  retryPreview: "Retry preview",
   previewUnavailable: "No path could be rendered.",
   review: "Review changes",
   reviewing: "Reviewing changes…",
-  reviewTitle: "Validation and changes",
-  reviewNeeded: "Review this draft before saving.",
+  reviewTitle: "Changes preview",
+  reviewNeeded:
+    "Review is optional. Save Settings validates and applies this draft in one action.",
   reviewOutdated:
-    "The draft changed after validation. Review it again before saving.",
+    "The draft changed after this preview. Review again to refresh the changes shown here.",
   valid: "Backend validation passed.",
   invalid: "Backend validation found fields that need attention.",
   validationTitle: "Settings validation failed",
@@ -90,17 +93,16 @@ export const settingsCopy = {
   save: "Save Settings",
   saving: "Saving Settings…",
   saved: "Settings saved.",
-  savedBody:
-    "The configuration was atomically replaced at the reviewed revision.",
+  savedBody: "Your changes were validated and applied.",
   saveUnavailable:
-    "Saving is unavailable in the current runtime state. Validation and preview remain available.",
+    "Saving is unavailable in the current runtime state. Change review and path preview remain available.",
   conflictTitle: "Configuration changed elsewhere",
   conflictBody:
-    "This draft was based on an older revision and was not saved. Load the latest Settings, then reapply and review your changes.",
+    "This draft was based on an older revision and was not saved. Load the latest Settings, then reapply your changes.",
   loadLatest: "Load latest Settings",
   lockTitle: "Another exclusive operation is active",
   lockBody:
-    "Settings were not saved. Wait for the active operation to finish, then review and save again.",
+    "Settings were not saved. Wait for the active operation to finish, then save again.",
   ioTitle: "Configuration could not be written",
   ioBody:
     "The backend reported a configuration I/O failure. The current draft remains available.",
@@ -119,16 +121,15 @@ export const settingsCopy = {
 } as const;
 
 export const defaultPreviewSample = {
-  file_extension: ".flac",
+  file_extension: ".FLAC",
   metadata: {
-    album: "Night Signals",
-    album_artist: "North Harbor",
-    artist: "North Harbor",
+    album: "Example Album",
+    album_artist: "Aimer",
+    artist: "Aimer",
     disc_number: 1,
-    disc_total: 1,
-    title: "First Light",
-    track_number: 1,
-    track_total: 10,
-    year: 2026,
+    disc_total: 2,
+    title: "Example Song",
+    track_number: 3,
+    year: 2024,
   },
 } satisfies Pick<PathPreviewRequest, "file_extension" | "metadata">;

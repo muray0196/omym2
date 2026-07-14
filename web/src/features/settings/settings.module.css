@@ -1,44 +1,16 @@
 /**
- * Summary: Styles the responsive Settings draft, review diff, and recovery states.
+ * Summary: Styles the responsive Settings draft, review diff, recovery states, and saved notification.
  * Why: Keeps a dense Config workflow legible, keyboard accessible, and CSP safe.
  */
 .page {
   display: grid;
-  gap: var(--space-24);
-}
-
-.header {
-  max-width: 620px;
-}
-
-.eyebrow {
-  color: var(--color-blue);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  margin: 0 0 var(--space-8);
-  text-transform: uppercase;
-}
-
-.header h1 {
-  color: var(--color-ink);
-  font-size: 24px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  margin: 0;
-}
-
-.description {
-  color: var(--color-mute);
-  font-size: 14px;
-  margin: var(--space-8) 0 0;
+  gap: var(--space-16);
 }
 
 .revision {
   color: var(--color-mute);
   font-size: 12px;
-  margin: var(--space-8) 0 0;
+  margin: 0;
   overflow-wrap: anywhere;
 }
 
@@ -58,8 +30,7 @@
 
 .section,
 .review,
-.notice,
-.success {
+.notice {
   background: var(--color-surface);
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-10);
@@ -70,8 +41,7 @@
 
 .sectionHeader h2,
 .review h2,
-.notice h2,
-.success h2 {
+.notice h2 {
   color: var(--color-ink);
   font-size: 15px;
   font-weight: 650;
@@ -79,8 +49,7 @@
 }
 
 .sectionHeader p,
-.notice p,
-.success p {
+.notice p {
   color: var(--color-mute);
   font-size: 13px;
   margin: var(--space-4) 0 0;
@@ -245,6 +214,27 @@
   margin: 0;
 }
 
+.previewActivity {
+  color: var(--color-mute);
+  display: block;
+  font-size: 12px;
+  margin-top: var(--space-8);
+}
+
+.previewError {
+  align-items: center;
+  color: var(--color-yellow);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: var(--space-8);
+  justify-content: space-between;
+}
+
+.previewError p {
+  margin: 0;
+}
+
 .review:focus,
 .focusRegion:focus {
   outline: 2px solid var(--color-blue);
@@ -329,12 +319,46 @@
   color: var(--color-red);
 }
 
-.success {
-  border-color: color-mix(in srgb, var(--color-green) 45%, transparent);
+.savedNotificationRegion {
+  inset-inline-start: 50%;
+  max-width: calc(100vw - var(--space-32));
+  position: fixed;
+  top: max(var(--space-16), env(safe-area-inset-top));
+  transform: translateX(-50%);
+  width: max-content;
+  z-index: var(--layer-notification);
 }
 
-.success h2 {
+.savedNotificationRegion:focus {
+  outline: none;
+}
+
+.savedNotificationRegion:focus .savedNotification {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 3px;
+}
+
+.savedNotification {
+  background: var(--color-surface-elevated);
+  border: 1px solid color-mix(in srgb, var(--color-green) 55%, transparent);
+  border-radius: var(--radius-10);
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-12) var(--space-16);
+}
+
+.savedNotification h2 {
   color: var(--color-green);
+  font-size: 14px;
+  font-weight: 650;
+  margin: 0;
+}
+
+.savedNotification p {
+  color: var(--color-body);
+  font-size: 13px;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .diagnostics {
@@ -351,8 +375,7 @@
 @media (max-width: 767px) {
   .section,
   .review,
-  .notice,
-  .success {
+  .notice {
     padding: var(--space-16);
   }
 

@@ -13,39 +13,7 @@
 
 .page {
   display: grid;
-  gap: var(--space-24);
-}
-
-.routeHeader {
-  display: grid;
-  gap: var(--space-8);
-  max-width: 620px;
-}
-
-.routeHeader h1,
-.routeHeader p {
-  margin: 0;
-}
-
-.routeHeader h1 {
-  color: var(--color-ink);
-  font-size: 24px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-
-.routeHeader p {
-  color: var(--color-mute);
-  font-size: 14px;
-}
-
-.eyebrow {
-  color: var(--color-blue);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  gap: var(--space-16);
 }
 
 .heading {

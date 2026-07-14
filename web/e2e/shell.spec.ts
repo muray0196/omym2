@@ -5,6 +5,21 @@
 import { expect, test } from "./playwright-fixtures";
 import { deepPlanRoute, notFoundRoute } from "./route-fixtures";
 
+test("serves the OMYM2 favicon from the hashed local bundle", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const iconHref = await page.locator('link[rel="icon"]').getAttribute("href");
+  expect(iconHref).toMatch(/^\/assets\/omym2-mark-[\w-]+\.svg$/);
+  if (iconHref === null) {
+    throw new Error("The OMYM2 favicon reference is missing.");
+  }
+
+  const iconResponse = await page.request.get(iconHref);
+  expect(iconResponse.ok()).toBe(true);
+  expect(iconResponse.headers()["content-type"]).toContain("image/svg+xml");
+});
+
 test("opens Command Center by keyboard and restores route focus", async ({
   page,
 }) => {

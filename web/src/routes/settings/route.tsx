@@ -12,7 +12,7 @@ import {
 import { settingsCopy } from "../../features/settings/settings-copy";
 import styles from "../../features/settings/settings.module.css";
 import { InspectionErrorState } from "../../features/inspection/inspection-error-state";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
 
 export function Component() {
   const settingsQuery = useQuery({
@@ -55,10 +55,10 @@ export function Component() {
 
 function SettingsHeader() {
   return (
-    <header className={styles.header}>
-      <p className={styles.eyebrow}>{settingsCopy.eyebrow}</p>
-      <RouteHeading>{settingsCopy.title}</RouteHeading>
-      <p className={styles.description}>{settingsCopy.description}</p>
-    </header>
+    <PageHeader
+      description={settingsCopy.description}
+      eyebrow={settingsCopy.eyebrow}
+      title={settingsCopy.title}
+    />
   );
 }

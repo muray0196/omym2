@@ -1,5 +1,5 @@
 /**
- * Summary: Covers Settings recovery, draft generation, review, concurrency, and CSRF behavior.
+ * Summary: Covers Settings recovery, draft generation, optional review, direct save, concurrency, and CSRF behavior.
  * Why: Protects the revision-safe Config workflow at its generated API and accessible UI boundary.
  */
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -15,7 +15,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import type {
-  ApiEnvelopeSettingsCandidateData,
+  ApiFailureEnvelope,
   PathPreviewRequest,
   SettingsCandidateRequest,
 } from "../../api/generated";
@@ -28,19 +28,25 @@ import {
   csrfInvalidEnvelope,
   invalidPersistedSettingsEnvelope,
   previewEnvelope,
-  reviewedSettingsEnvelope,
   savedSettingsEnvelope,
 } from "../../test/fixtures/settings";
 import { server } from "../../test/server";
 
 describe("Settings route", () => {
-  it("renders the generated Config draft, backend choices, and default preview", async () => {
+  it("renders the default preview and updates it once after sample editing pauses", async () => {
     const user = userEvent.setup();
-    const captured: { preview?: PathPreviewRequest } = {};
+    const captured: PathPreviewRequest[] = [];
     server.use(
       http.post("*/api/settings/preview", async ({ request }) => {
-        captured.preview = (await request.json()) as PathPreviewRequest;
-        return HttpResponse.json(previewEnvelope);
+        const previewRequest = (await request.json()) as PathPreviewRequest;
+        captured.push(previewRequest);
+        return HttpResponse.json({
+          ...previewEnvelope,
+          data: {
+            ...previewEnvelope.data,
+            path: `automatic/${previewRequest.metadata.title}.flac`,
+          },
+        });
       }),
     );
     renderSettings();
@@ -60,24 +66,145 @@ describe("Settings route", () => {
       "conflict",
     );
     expect(screen.getByText("{artist_id}")).toBeInTheDocument();
+    expect(screen.getByLabelText("Sample artist")).toHaveValue("Aimer");
+    expect(screen.getByLabelText("Sample title")).toHaveValue("Example Song");
+    expect(screen.getByLabelText("Sample file extension")).toHaveValue(".FLAC");
     expect(
-      screen.getByText("North Harbor/2026_Night Signals/1-1_First Light.flac"),
+      screen.getByText("Aimer/2024_Example-Album/1-03_Example-Song.flac"),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Update preview" }),
+    ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Update preview" }));
-    await waitFor(() => expect(captured.preview).toBeDefined());
-    expect(captured.preview).toMatchObject({
+    const sampleTitle = screen.getByLabelText("Sample title");
+    await user.clear(sampleTitle);
+    await user.type(sampleTitle, "Live Preview");
+
+    expect(
+      await screen.findByText("automatic/Live Preview.flac"),
+    ).toBeInTheDocument();
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({
       artist_ids: { fallback_id: "NOART", max_length: 8 },
-      file_extension: ".flac",
-      metadata: { artist: "North Harbor", title: "First Light" },
+      file_extension: ".FLAC",
+      metadata: { artist: "Aimer", title: "Live Preview" },
       path_policy: {
         template: "{album_artist}/{year}_{album}/{disc}-{track}_{title}",
       },
     });
-    expect(captured.preview).not.toHaveProperty("expected_config_revision");
+    expect(captured[0]).not.toHaveProperty("expected_config_revision");
   });
 
-  it("reviews a deterministic diff and saves the complete Config with CSRF", async () => {
+  it("keeps the last preview and offers an explicit retry after automatic failure", async () => {
+    const user = userEvent.setup();
+    let attempts = 0;
+    server.use(
+      http.post("*/api/settings/preview", () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return HttpResponse.json(
+            {
+              data: null,
+              errors: [
+                {
+                  code: "internal_error",
+                  message: "Preview failed.",
+                  retryable: true,
+                },
+              ],
+            } satisfies ApiFailureEnvelope,
+            { status: 500 },
+          );
+        }
+        return HttpResponse.json({
+          ...previewEnvelope,
+          data: { ...previewEnvelope.data, path: "Recovered-Preview.flac" },
+        });
+      }),
+    );
+    renderSettings();
+
+    const sampleTitle = await screen.findByLabelText("Sample title");
+    await user.clear(sampleTitle);
+    await user.type(sampleTitle, "Retry Preview");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Path preview could not be updated",
+    );
+    expect(
+      screen.getByText("Aimer/2024_Example-Album/1-03_Example-Song.flac"),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry preview" }));
+
+    expect(await screen.findByText("Recovered-Preview.flac")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(attempts).toBe(2);
+  });
+
+  it("does not let a superseded preview response overwrite the latest result", async () => {
+    const user = userEvent.setup();
+    const requestedTitles: Array<string | null | undefined> = [];
+    let releaseSlowPreview: () => void = () => undefined;
+    let slowPreviewCompleted = false;
+    const slowPreviewHeld = new Promise<void>((resolve) => {
+      releaseSlowPreview = resolve;
+    });
+    server.use(
+      http.post("*/api/settings/preview", async ({ request }) => {
+        const previewRequest = (await request.json()) as PathPreviewRequest;
+        const title = previewRequest.metadata.title;
+        requestedTitles.push(title);
+        if (title === "Slow Preview") {
+          await slowPreviewHeld;
+          slowPreviewCompleted = true;
+        }
+        return HttpResponse.json({
+          ...previewEnvelope,
+          data: { ...previewEnvelope.data, path: `${title}.flac` },
+        });
+      }),
+    );
+    renderSettings();
+
+    const sampleTitle = await screen.findByLabelText("Sample title");
+    await user.clear(sampleTitle);
+    await user.type(sampleTitle, "Slow Preview");
+    await waitFor(() => expect(requestedTitles).toEqual(["Slow Preview"]));
+
+    await user.clear(sampleTitle);
+    await user.type(sampleTitle, "Latest Preview");
+    expect(await screen.findByText("Latest Preview.flac")).toBeVisible();
+
+    releaseSlowPreview();
+    await waitFor(() => expect(slowPreviewCompleted).toBe(true));
+    expect(screen.getByText("Latest Preview.flac")).toBeVisible();
+    expect(screen.queryByText("Slow Preview.flac")).not.toBeInTheDocument();
+  });
+
+  it("reviews a deterministic diff without saving the draft", async () => {
+    const user = userEvent.setup();
+    let saveCount = 0;
+    server.use(
+      http.put("*/api/settings", () => {
+        saveCount += 1;
+        return HttpResponse.json(savedSettingsEnvelope);
+      }),
+    );
+    renderSettings();
+
+    const libraryPath = await screen.findByLabelText("Library path");
+    await user.clear(libraryPath);
+    await user.type(libraryPath, "/music/new-library");
+    await user.click(screen.getByRole("button", { name: "Review changes" }));
+
+    const diff = await screen.findByRole("table");
+    expect(within(diff).getByText("paths.library")).toBeInTheDocument();
+    expect(within(diff).getByText("/music/library")).toBeInTheDocument();
+    expect(within(diff).getByText("/music/new-library")).toBeInTheDocument();
+    expect(saveCount).toBe(0);
+  });
+
+  it("validates and saves the complete Config in one action with CSRF", async () => {
     const user = userEvent.setup();
     const captured: {
       request?: SettingsCandidateRequest;
@@ -95,23 +222,24 @@ describe("Settings route", () => {
     const libraryPath = await screen.findByLabelText("Library path");
     await user.clear(libraryPath);
     await user.type(libraryPath, "/music/new-library");
-    await user.click(screen.getByRole("button", { name: "Review changes" }));
-
-    const diff = await screen.findByRole("table");
-    expect(within(diff).getByText("paths.library")).toBeInTheDocument();
-    expect(within(diff).getByText("/music/library")).toBeInTheDocument();
-    expect(within(diff).getByText("/music/new-library")).toBeInTheDocument();
-
     await user.click(screen.getByRole("button", { name: "Save Settings" }));
     const savedHeading = await screen.findByRole("heading", {
       name: "Settings saved.",
     });
     expect(savedHeading).toBeInTheDocument();
+    expect(savedHeading.closest('[role="status"]')).toHaveAttribute(
+      "aria-atomic",
+      "true",
+    );
     expect(savedHeading.parentElement?.parentElement).toHaveFocus();
     expect(captured.token).toBe("fixture-csrf-token");
     expect(captured.request?.expected_config_revision).toBe(
       "settings-revision-one",
     );
+    const diff = screen.getByRole("table");
+    expect(within(diff).getByText("paths.library")).toBeInTheDocument();
+    expect(within(diff).getByText("/music/library")).toBeInTheDocument();
+    expect(within(diff).getByText("/music/new-library")).toBeInTheDocument();
   });
 
   it("refreshes Bootstrap and retries the identical save exactly once only for csrf_invalid", async () => {
@@ -143,10 +271,7 @@ describe("Settings route", () => {
     const libraryPath = await screen.findByLabelText("Library path");
     await user.clear(libraryPath);
     await user.type(libraryPath, "/music/new-library");
-    await user.click(screen.getByRole("button", { name: "Review changes" }));
-    await user.click(
-      await screen.findByRole("button", { name: "Save Settings" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Save Settings" }));
 
     expect(
       await screen.findByRole("heading", { name: "Settings saved." }),
@@ -159,55 +284,42 @@ describe("Settings route", () => {
 
   it("supports invalid persisted recovery, linked validation focus, and revision conflict guidance", async () => {
     const user = userEvent.setup();
-    const invalidCandidate = {
-      data: {
-        ...reviewedSettingsEnvelope.data,
-        validation: {
-          errors: [
-            {
-              code: "validation_failed",
-              field: "body.config.path_policy.template",
-              message: "The path template must contain a title placeholder.",
-              retryable: false,
-            },
-          ],
-          valid: false,
+    const invalidSave = {
+      data: null,
+      errors: [
+        {
+          code: "validation_failed",
+          field: "body.config.path_policy.template",
+          message: "The path template must contain a title placeholder.",
+          retryable: false,
         },
-      },
-      errors: [],
-    } satisfies ApiEnvelopeSettingsCandidateData;
-    let validationCount = 0;
+      ],
+    } satisfies ApiFailureEnvelope;
+    let saveCount = 0;
     server.use(
       http.get("*/api/settings", () =>
         HttpResponse.json(invalidPersistedSettingsEnvelope),
       ),
-      http.post("*/api/settings/validate", () => {
-        validationCount += 1;
-        return HttpResponse.json(
-          validationCount === 1 ? invalidCandidate : reviewedSettingsEnvelope,
-        );
+      http.put("*/api/settings", () => {
+        saveCount += 1;
+        return saveCount === 1
+          ? HttpResponse.json(invalidSave, { status: 422 })
+          : HttpResponse.json(configChangedEnvelope, { status: 409 });
       }),
-      http.put("*/api/settings", () =>
-        HttpResponse.json(configChangedEnvelope, { status: 409 }),
-      ),
     );
     renderSettings();
 
     expect(
       await screen.findByRole("heading", { name: "Configuration recovery" }),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Review changes" }));
-    await waitFor(() => expect(validationCount).toBe(1));
+    await user.click(screen.getByRole("button", { name: "Save Settings" }));
     const validationLink = await screen.findByRole("link", {
       name: "The path template must contain a title placeholder.",
     });
     await user.click(validationLink);
     expect(screen.getByLabelText("Path template")).toHaveFocus();
 
-    await user.click(screen.getByRole("button", { name: "Review changes" }));
-    await user.click(
-      await screen.findByRole("button", { name: "Save Settings" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Save Settings" }));
     const conflictHeading = await screen.findByRole("heading", {
       name: "Configuration changed elsewhere",
     });
@@ -237,9 +349,7 @@ describe("Settings route", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Keep editing" }));
     expect(router.state.location.pathname).toBe("/settings");
-    expect(
-      screen.getByRole("button", { name: "Review changes" }),
-    ).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Save Settings" })).toHaveFocus();
 
     await user.click(screen.getByRole("link", { name: "Next route" }));
     await user.click(
