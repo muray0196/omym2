@@ -1106,29 +1106,37 @@ def _browser_snapshot() -> BrowserSnapshot:
 
 
 def _run_powershell(script: str, *arguments: str, timeout: float) -> dict[str, object]:
-    encoded_arguments = tuple(base64.b64encode(argument.encode("utf-8")).decode("ascii") for argument in arguments)
+    encoded_arguments = base64.b64encode(
+        json.dumps(arguments, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii")
+    wrapper = (
+        "param([string]$EncodedArguments)\n"
+        "$ErrorActionPreference = 'Stop'\n"
+        f"{_POWERSHELL_UTF8_PREAMBLE}\n"
+        "$decodedArguments = @([Text.Encoding]::UTF8.GetString("
+        "[Convert]::FromBase64String($EncodedArguments)) | ConvertFrom-Json)\n"
+        f"& {{\n{script}\n}} @decodedArguments\n"
+    )
     try:
-        result = subprocess.run(  # noqa: S603 -- fixed native probes receive only local IDs, paths, and names.
-            (
-                config.DESKTOP_WINDOWS_POWERSHELL_EXECUTABLE_NAME,
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            script_file = Path(temporary_directory) / config.DESKTOP_WINDOWS_POWERSHELL_PROBE_FILENAME
+            _ = script_file.write_text(wrapper, encoding="utf-8-sig", newline="\n")
+            result = subprocess.run(  # noqa: S603 -- fixed probe file receives encoded local test inputs.
                 (
-                    f"{_POWERSHELL_UTF8_PREAMBLE}\n"
-                    "$decodedArguments = @($args | ForEach-Object { "
-                    "[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($_)) })\n"
-                    f"& {{\n{script}\n}} @decodedArguments"
+                    config.DESKTOP_WINDOWS_POWERSHELL_EXECUTABLE_NAME,
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-File",
+                    str(script_file),
+                    encoded_arguments,
                 ),
-                *encoded_arguments,
-            ),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
-            timeout=timeout,
-        )
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+                timeout=timeout,
+            )
     except subprocess.TimeoutExpired as exc:
         msg = f"Native Windows probe timed out after {timeout:g} seconds."
         raise WindowsPackageSmokeError(msg) from exc

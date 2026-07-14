@@ -574,18 +574,23 @@ def test_powershell_timeout_uses_native_smoke_error(monkeypatch: pytest.MonkeyPa
 def test_powershell_probe_forces_utf8_before_localized_json(monkeypatch: pytest.MonkeyPatch) -> None:
     """Japanese Windows inventory values must reach the strict UTF-8 decoder intact."""
     observed_commands: list[tuple[str, ...]] = []
+    observed_scripts: list[str] = []
     structured_argument = '{"route":"/plans","label":"設定"}'
 
     def fake_run(command: tuple[str, ...], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         observed_commands.append(command)
+        observed_scripts.append(Path(command[5]).read_text(encoding="utf-8-sig"))
         return subprocess.CompletedProcess(command, 0, stdout='{"architecture":"64 bit"}\n', stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert _run_powershell("Write-Output '{}'", structured_argument, timeout=1) == {"architecture": "64 bit"}
-    assert observed_commands[0][5].startswith(f"{_POWERSHELL_UTF8_PREAMBLE}\n")
-    assert "FromBase64String" in observed_commands[0][5]
-    assert observed_commands[0][6] == base64.b64encode(structured_argument.encode()).decode()
+    assert observed_commands[0][4] == "-File"
+    assert observed_commands[0][5].endswith(config.DESKTOP_WINDOWS_POWERSHELL_PROBE_FILENAME)
+    assert json.loads(base64.b64decode(observed_commands[0][6])) == [structured_argument]
+    assert observed_scripts[0].startswith("param([string]$EncodedArguments)\n")
+    assert _POWERSHELL_UTF8_PREAMBLE in observed_scripts[0]
+    assert "FromBase64String" in observed_scripts[0]
 
 
 def test_native_ui_plan_evidence_requires_one_new_ready_plan(

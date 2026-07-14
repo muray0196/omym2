@@ -20,6 +20,7 @@ DESKTOP_WINDOWS_ICON_RELATIVE_PATH = "assets/desktop/omym2.ico"  # committed ico
 DESKTOP_WINDOWS_VERSION_RELATIVE_PATH = "assets/desktop/windows_version_info.txt"  # PE metadata, repo-relative path
 DESKTOP_WINDOWS_SPEC_RELATIVE_PATH = "scripts/desktop/omym2_windows.spec"  # PyInstaller spec, repo-relative path
 DESKTOP_WINDOWS_POWERSHELL_EXECUTABLE_NAME = "powershell.exe"  # Windows metadata and native-window probe program
+DESKTOP_WINDOWS_POWERSHELL_PROBE_FILENAME = "omym2-probe.ps1"  # temporary native-probe script filename
 DESKTOP_PYINSTALLER_REQUIREMENT = "pyinstaller==6.21.0"  # isolated build tool requirement, PEP 508 string
 DESKTOP_PYINSTALLER_CONTENTS_DIRECTORY_NAME = "_internal"  # onedir support-file directory, one path component
 DESKTOP_PYINSTALLER_PROVENANCE_FILE_NAME = "omym2-freeze-provenance.json"  # bundled freeze manifest name
