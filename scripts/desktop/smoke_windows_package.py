@@ -56,7 +56,8 @@ else:
     )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from typing import BinaryIO
 
     from scripts.desktop.audit_windows_package import WindowsPackageAudit
 
@@ -433,6 +434,38 @@ class NativeLaunchEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class NativeLaunchContext:
+    """Paths and identity needed to run and diagnose one packaged GUI lifecycle."""
+
+    diagnostic_directory: Path
+    executable: Path
+    launch_name: str
+    launch_working_directory: Path
+    local_app_data: Path
+    log_file: Path
+
+    @property
+    def stdout_file(self) -> Path:
+        """Return the retained standard-output path for this launch."""
+        return self.diagnostic_directory / f"{self.launch_name}-stdout.log"
+
+    @property
+    def stderr_file(self) -> Path:
+        """Return the retained standard-error path for this launch."""
+        return self.diagnostic_directory / f"{self.launch_name}-stderr.log"
+
+    @property
+    def retained_desktop_log(self) -> Path:
+        """Return the retained application-log path for this launch."""
+        return self.diagnostic_directory / f"{self.launch_name}-desktop.log"
+
+    @property
+    def failure_summary_file(self) -> Path:
+        """Return the human-readable failure-summary path for this launch."""
+        return self.diagnostic_directory / f"{self.launch_name}-failure.txt"
+
+
+@dataclass(frozen=True, slots=True)
 class WindowsArtifactInput:
     """Paths required to audit and launch one frozen Windows artifact."""
 
@@ -505,7 +538,10 @@ def smoke_windows_package(
         require_distinct=require_distinct_artifacts,
     )
     host_evidence = _windows_host_evidence()
-    with tempfile.TemporaryDirectory(prefix="omym2-native-smoke-") as temporary_directory:
+    with (
+        _native_diagnostic_directory(evidence_path) as diagnostic_directory,
+        tempfile.TemporaryDirectory(prefix="omym2-native-smoke-") as temporary_directory,
+    ):
         workspace = Path(temporary_directory).resolve()
         launch_working_directory = _create_launch_working_directory(workspace)
         launch_working_directory_snapshot = _tree_snapshot(launch_working_directory)
@@ -525,10 +561,14 @@ def smoke_windows_package(
         executable_a = bundle_a / config.DESKTOP_WINDOWS_EXECUTABLE_NAME
         log_file = local_app_data / config.DESKTOP_WINDOWS_LOG_RELATIVE_PATH
         first_launch, planning_created = _run_native_launch(
-            executable_a,
-            launch_working_directory,
-            local_app_data,
-            log_file,
+            NativeLaunchContext(
+                diagnostic_directory=diagnostic_directory,
+                executable=executable_a,
+                launch_name="first-launch",
+                launch_working_directory=launch_working_directory,
+                local_app_data=local_app_data,
+                log_file=log_file,
+            ),
             lambda base_url, _window_handle: _create_safe_add_plan(
                 base_url,
                 library_root,
@@ -558,10 +598,14 @@ def smoke_windows_package(
         bundle_b = extract_windows_archive(candidate.archive, extraction_b)
         executable_b = bundle_b / config.DESKTOP_WINDOWS_EXECUTABLE_NAME
         second_launch, planning_persisted = _run_native_launch(
-            executable_b,
-            launch_working_directory,
-            local_app_data,
-            log_file,
+            NativeLaunchContext(
+                diagnostic_directory=diagnostic_directory,
+                executable=executable_b,
+                launch_name="second-launch",
+                launch_working_directory=launch_working_directory,
+                local_app_data=local_app_data,
+                log_file=log_file,
+            ),
             lambda base_url, window_handle: _verify_persisted_plan_and_create_through_native_ui(
                 base_url,
                 window_handle,
@@ -665,6 +709,22 @@ def smoke_windows_package(
         _write_json_atomically(evidence_path, evidence)
 
 
+@contextlib.contextmanager
+def _native_diagnostic_directory(evidence_path: Path) -> Iterator[Path]:
+    """Remove stale diagnostics, retain failures, and discard successful launch captures."""
+    diagnostic_directory = evidence_path.with_name(f"{evidence_path.stem}-diagnostics")
+    if diagnostic_directory.exists():
+        shutil.rmtree(diagnostic_directory)
+    diagnostic_directory.mkdir(parents=True)
+    completed = False
+    try:
+        yield diagnostic_directory
+        completed = True
+    finally:
+        if completed:
+            shutil.rmtree(diagnostic_directory)
+
+
 def _first_artifact(
     candidate: AuditedWindowsArtifact,
     previous_artifact: WindowsArtifactInput | None,
@@ -763,22 +823,44 @@ def _artifact_identity(
 
 
 def _run_native_launch(
-    executable: Path,
-    launch_working_directory: Path,
-    local_app_data: Path,
-    log_file: Path,
+    context: NativeLaunchContext,
     packaged_probe: Callable[[str, int], dict[str, object]],
 ) -> tuple[NativeLaunchEvidence, dict[str, object]]:
+    try:
+        with context.stdout_file.open("wb") as stdout_stream, context.stderr_file.open("wb") as stderr_stream:
+            return _run_captured_native_launch(
+                context,
+                (stdout_stream, stderr_stream),
+                packaged_probe,
+            )
+    except Exception as exc:
+        diagnostic_message = _retain_native_launch_failure(exc, context)
+        raise WindowsPackageSmokeError(diagnostic_message) from exc
+
+
+def _run_captured_native_launch(
+    context: NativeLaunchContext,
+    output_streams: tuple[BinaryIO, BinaryIO],
+    packaged_probe: Callable[[str, int], dict[str, object]],
+) -> tuple[NativeLaunchEvidence, dict[str, object]]:
+    """Exercise one native launch while retaining otherwise invisible GUI diagnostics."""
     baseline = _browser_snapshot()
-    log_offset = log_file.stat().st_size if log_file.is_file() else 0
-    environment = _packaged_environment(local_app_data)
+    log_offset = context.log_file.stat().st_size if context.log_file.is_file() else 0
+    environment = _packaged_environment(context.local_app_data)
     started_at = time.perf_counter()
-    process = _start_native_process(executable, launch_working_directory, environment)
+    stdout_stream, stderr_stream = output_streams
+    process = _start_native_process(
+        context.executable,
+        context.launch_working_directory,
+        environment,
+        stdout_stream,
+        stderr_stream,
+    )
     window_handle: int | None = None
     try:
-        base_url = _wait_for_ready_url(process, log_file, log_offset)
+        base_url = _wait_for_ready_url(process, context.log_file, log_offset)
         window_handle = _wait_for_one_window(process.pid)
-        webview_backend = _wait_for_loaded_webview(process, log_file, log_offset)
+        webview_backend = _wait_for_loaded_webview(process, context.log_file, log_offset)
         startup_milliseconds = round((time.perf_counter() - started_at) * 1000)
         smoke_web_package(base_url)
         routes = _smoke_primary_routes(base_url)
@@ -833,6 +915,8 @@ def _start_native_process(
     executable: Path,
     launch_working_directory: Path,
     environment: Mapping[str, str],
+    stdout_stream: BinaryIO,
+    stderr_stream: BinaryIO,
 ) -> subprocess.Popen[bytes]:
     """Launch the long-path executable without imposing a long child current directory."""
     executable_path = str(executable.resolve())
@@ -852,8 +936,8 @@ def _start_native_process(
         executable=executable_path,
         cwd=working_directory_path,
         env=environment,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=stdout_stream,
+        stderr=stderr_stream,
     )
 
 
@@ -862,12 +946,56 @@ def _wait_for_ready_url(process: subprocess.Popen[bytes], log_file: Path, offset
     while time.monotonic() < deadline:
         _require_process_running(process, "loopback readiness")
         appended = _read_appended_log(log_file, offset)
+        if config.DESKTOP_WINDOWS_FAILURE_LOG_MARKER.encode() in appended:
+            msg = "Packaged GUI reported a fatal startup failure before loopback readiness."
+            raise WindowsPackageSmokeError(msg)
         matches = tuple(_READY_URL_PATTERN.finditer(appended))
         if matches:
             return matches[-1].group(1).decode("ascii")
         time.sleep(config.DESKTOP_WINDOWS_SMOKE_POLL_INTERVAL_SECONDS)
     msg = f"Timed out waiting for packaged server URL in {log_file}."
     raise WindowsPackageSmokeError(msg)
+
+
+def _retain_native_launch_failure(
+    failure: Exception,
+    context: NativeLaunchContext,
+) -> str:
+    """Persist and summarize the logs needed to diagnose a packaged GUI startup failure."""
+    desktop_log_error: str | None = None
+    try:
+        shutil.copyfile(context.log_file, context.retained_desktop_log)
+    except FileNotFoundError:
+        desktop_log_error = "not created"
+    except OSError as exc:
+        desktop_log_error = f"could not be retained: {exc}"
+
+    lines = [
+        str(failure),
+        f"Native launch diagnostics retained at {context.diagnostic_directory}.",
+    ]
+    for label, path, unavailable_reason in (
+        ("desktop log", context.retained_desktop_log, desktop_log_error),
+        ("stdout", context.stdout_file, None),
+        ("stderr", context.stderr_file, None),
+    ):
+        if unavailable_reason is not None:
+            lines.append(f"{label}: <{unavailable_reason}>")
+            continue
+        try:
+            payload = path.read_bytes()
+        except OSError as exc:
+            lines.append(f"{label}: <could not be read: {exc}>")
+            continue
+        tail = payload[-config.DESKTOP_WINDOWS_SMOKE_DIAGNOSTIC_TAIL_BYTES :]
+        decoded_tail = tail.decode("utf-8", errors="replace").strip()
+        lines.append(f"{label} tail:\n{decoded_tail or '<empty>'}")
+    message = "\n".join(lines)
+    try:
+        _ = context.failure_summary_file.write_text(message + "\n", encoding="utf-8", newline="\n")
+    except OSError as exc:
+        message += f"\nFailure summary could not be retained at {context.failure_summary_file}: {exc}"
+    return message
 
 
 def _wait_for_loaded_webview(process: subprocess.Popen[bytes], log_file: Path, offset: int) -> str:

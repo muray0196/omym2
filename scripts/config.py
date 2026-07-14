@@ -64,6 +64,7 @@ DESKTOP_WINDOWS_METADATA_TIMEOUT_SECONDS = 30  # PE metadata inspection timeout,
 DESKTOP_WINDOWS_SMOKE_STARTUP_TIMEOUT_SECONDS = 60  # native window startup timeout, seconds, >= 1
 DESKTOP_WINDOWS_SMOKE_SHUTDOWN_TIMEOUT_SECONDS = 30  # graceful process shutdown timeout, seconds, >= 1
 DESKTOP_WINDOWS_SMOKE_POLL_INTERVAL_SECONDS = 0.1  # log and process polling interval, seconds, > 0
+DESKTOP_WINDOWS_SMOKE_DIAGNOSTIC_TAIL_BYTES = 8_000  # maximum printed bytes per native failure stream, >= 1
 DESKTOP_WINDOWS_SMOKE_UI_AUTOMATION_TIMEOUT_SECONDS = 300  # complete native UI evidence timeout, seconds, >= startup
 DESKTOP_WINDOWS_SMOKE_AUDIO_FILE_BYTES = 4_096  # synthetic tagged FLAC input size, bytes, >= metadata size
 DESKTOP_WINDOWS_SMOKE_UNICODE_DIRECTORY_NAME = "音楽-パッケージ"  # Unicode segment used by native path smoke
@@ -77,6 +78,7 @@ DESKTOP_WINDOWS_WEBVIEW_INITIALIZED_LOG_MARKER = (  # exact successful EdgeChrom
     "Desktop WebView initialized backend=edgechromium"
 )
 DESKTOP_WINDOWS_WEBVIEW_LOADED_LOG_MARKER = "Desktop WebView content loaded"  # post-navigation loaded log text
+DESKTOP_WINDOWS_FAILURE_LOG_MARKER = "Desktop process failed"  # fatal desktop startup log text, exact substring
 DESKTOP_WINDOWS_LOG_RELATIVE_PATH = "OMYM2/.data/logs/omym2-desktop.log"  # LOCALAPPDATA-relative desktop log
 DESKTOP_WINDOWS_CONFIG_RELATIVE_PATH = "OMYM2/.config/config.toml"  # LOCALAPPDATA-relative mutable Config file
 DESKTOP_WINDOWS_DATABASE_RELATIVE_PATH = "OMYM2/.data/omym2.sqlite3"  # LOCALAPPDATA-relative mutable SQLite file

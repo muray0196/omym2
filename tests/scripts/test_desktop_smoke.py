@@ -9,7 +9,8 @@ import hashlib
 import json
 import subprocess
 import tomllib
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -21,6 +22,7 @@ from scripts.desktop.audit_windows_package import WindowsPackageAudit
 from scripts.desktop.smoke_windows_package import (
     _POWERSHELL_UTF8_PREAMBLE,  # pyright: ignore[reportPrivateUsage] -- protects localized output decoding.
     AuditedWindowsArtifact,
+    NativeLaunchContext,
     WindowsPackageSmokeError,
     _artifact_transition_evidence,  # pyright: ignore[reportPrivateUsage] -- verifies retained artifact identity.
     _bootstrap_data,  # pyright: ignore[reportPrivateUsage] -- simulates the UI-backed request boundary.
@@ -31,18 +33,19 @@ from scripts.desktop.smoke_windows_package import (
     _require_long_unicode_paths,  # pyright: ignore[reportPrivateUsage] -- verifies native path inputs.
     _require_mutable_state_outside_bundle,  # pyright: ignore[reportPrivateUsage] -- verifies state isolation.
     _require_tree_unchanged,  # pyright: ignore[reportPrivateUsage] -- protects the dedicated launch cwd.
+    _retain_native_launch_failure,  # pyright: ignore[reportPrivateUsage] -- verifies retained failure evidence.
     _run_native_ui_automation,  # pyright: ignore[reportPrivateUsage] -- verifies the PowerShell contract boundary.
     _run_powershell,  # pyright: ignore[reportPrivateUsage] -- verifies timeout error translation.
     _start_and_poll_operation,  # pyright: ignore[reportPrivateUsage] -- simulates a successful native UI action.
     _start_native_process,  # pyright: ignore[reportPrivateUsage] -- verifies long-path process creation.
     _tree_snapshot,  # pyright: ignore[reportPrivateUsage] -- snapshots the protected launch cwd.
     _verify_persisted_plan_and_create_through_native_ui,  # pyright: ignore[reportPrivateUsage] -- checks evidence.
+    _wait_for_ready_url,  # pyright: ignore[reportPrivateUsage] -- verifies fatal startup detection.
     _write_tagged_smoke_flac,  # pyright: ignore[reportPrivateUsage] -- verifies the packaged planning fixture.
 )
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from pathlib import Path
 
 
 def _native_ui_payload() -> dict[str, object]:
@@ -245,13 +248,27 @@ def test_native_process_launch_does_not_force_long_child_working_directory(
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
-    assert _start_native_process(executable, tmp_path, {"LOCALAPPDATA": str(tmp_path)}) is sentinel
+    stdout_file = tmp_path / "stdout.log"
+    stderr_file = tmp_path / "stderr.log"
+    with stdout_file.open("wb") as stdout_stream, stderr_file.open("wb") as stderr_stream:
+        assert (
+            _start_native_process(
+                executable,
+                tmp_path,
+                {"LOCALAPPDATA": str(tmp_path)},
+                stdout_stream,
+                stderr_stream,
+            )
+            is sentinel
+        )
     arguments, keywords = observed[0]
     executable_path = str(executable.resolve())
     assert len(executable_path) > config.DESKTOP_WINDOWS_SMOKE_MINIMUM_PATH_CHARACTERS
     assert arguments == ((executable_path,),)
     assert keywords["executable"] == executable_path
     assert keywords["cwd"] == str(tmp_path.resolve())
+    assert keywords["stdout"] is stdout_stream
+    assert keywords["stderr"] is stderr_stream
 
 
 def test_native_smoke_rejects_relative_state_in_launch_working_directory(tmp_path: Path) -> None:
@@ -281,8 +298,80 @@ def test_native_process_launch_rejects_overlong_child_working_directory(tmp_path
         component_index += 1
     working_directory.mkdir(parents=True)
 
-    with pytest.raises(WindowsPackageSmokeError, match="exceeds the safe CreateProcessW limit"):
-        _ = _start_native_process(executable, working_directory, {})
+    stdout_file = tmp_path / "stdout.log"
+    stderr_file = tmp_path / "stderr.log"
+    with (
+        stdout_file.open("wb") as stdout_stream,
+        stderr_file.open("wb") as stderr_stream,
+        pytest.raises(WindowsPackageSmokeError, match="exceeds the safe CreateProcessW limit"),
+    ):
+        _ = _start_native_process(executable, working_directory, {}, stdout_stream, stderr_stream)
+
+
+def test_native_readiness_fails_immediately_on_desktop_fatal_log(tmp_path: Path) -> None:
+    """A modal startup failure is reported from its log instead of becoming a readiness timeout."""
+
+    class RunningProcess:
+        def poll(self) -> None:
+            return None
+
+    log_file = tmp_path / "omym2-desktop.log"
+    _ = log_file.write_text(
+        f"level=ERROR {config.DESKTOP_WINDOWS_FAILURE_LOG_MARKER}\ntraceback",
+        encoding="utf-8",
+    )
+    process = cast("subprocess.Popen[bytes]", cast("object", RunningProcess()))
+
+    with pytest.raises(WindowsPackageSmokeError, match="fatal startup failure"):
+        _ = _wait_for_ready_url(process, log_file, 0)
+
+
+def test_native_launch_failure_retains_bounded_process_and_desktop_logs(tmp_path: Path) -> None:
+    """A failing GUI leaves an artifact summary containing each otherwise hidden diagnostic stream."""
+    diagnostics = tmp_path / "diagnostics"
+    diagnostics.mkdir()
+    desktop_log = tmp_path / "desktop.log"
+    stdout_file = diagnostics / "first-launch-stdout.log"
+    stderr_file = diagnostics / "first-launch-stderr.log"
+    prefix = "x" * config.DESKTOP_WINDOWS_SMOKE_DIAGNOSTIC_TAIL_BYTES
+    _ = desktop_log.write_text(prefix + "desktop-tail", encoding="utf-8")
+    _ = stdout_file.write_text("stdout-tail", encoding="utf-8")
+    _ = stderr_file.write_text("stderr-tail", encoding="utf-8")
+
+    message = _retain_native_launch_failure(
+        WindowsPackageSmokeError("startup failed"),
+        NativeLaunchContext(
+            diagnostic_directory=diagnostics,
+            executable=tmp_path / config.DESKTOP_WINDOWS_EXECUTABLE_NAME,
+            launch_name="first-launch",
+            launch_working_directory=tmp_path,
+            local_app_data=tmp_path,
+            log_file=desktop_log,
+        ),
+    )
+
+    assert "startup failed" in message
+    assert "desktop-tail" in message
+    assert "stdout-tail" in message
+    assert "stderr-tail" in message
+    assert prefix not in message
+    assert (diagnostics / "first-launch-desktop.log").read_text(encoding="utf-8").endswith("desktop-tail")
+    assert (diagnostics / "first-launch-failure.txt").read_text(encoding="utf-8") == message + "\n"
+
+
+def test_windows_desktop_workflow_propagates_smoke_failure_and_uploads_diagnostics() -> None:
+    """The Windows job preserves the smoke exit code and still uploads retained diagnostics."""
+    workflow = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    native_step = workflow.split("- name: Build and smoke native desktop archive", maxsplit=1)[1].split(
+        "- name: Upload native desktop evidence and diagnostics", maxsplit=1
+    )[0]
+    upload_step = workflow.split("- name: Upload native desktop evidence and diagnostics", maxsplit=1)[1]
+
+    expected_native_failure_checks = 2
+    assert native_step.count("if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }") == expected_native_failure_checks
+    assert "if: ${{ !cancelled() }}" in upload_step
+    assert "build/desktop/*-diagnostics/**" in upload_step
+    assert "if-no-files-found: warn" in upload_step
 
 
 def test_native_smoke_rejects_mutable_database_inside_replaceable_bundle(tmp_path: Path) -> None:

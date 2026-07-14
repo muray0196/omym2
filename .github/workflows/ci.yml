@@ -277,20 +277,24 @@ jobs:
           $wheel = Get-ChildItem build/web-package-evidence -Filter *.whl -File | Select-Object -First 1
           if ($null -eq $wheel) { throw "Audited wheel was not downloaded." }
           uv run python scripts/desktop/build_windows.py --wheel $wheel.FullName --output-directory build/desktop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $archive = Get-ChildItem build/desktop -Filter OMYM2-*-windows-x86_64.zip -File | Select-Object -First 1
           if ($null -eq $archive) { throw "Desktop archive was not produced." }
           uv run python scripts/desktop/smoke_windows_package.py --archive $archive.FullName --wheel $wheel.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $smoke = Get-ChildItem build/desktop -Filter OMYM2-*-windows-x86_64-smoke.json -File | Select-Object -First 1
           if ($null -eq $smoke) { throw "Desktop native-smoke evidence was not produced." }
 
-      - name: Upload native desktop measurements
+      - name: Upload native desktop evidence and diagnostics
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: omym2-desktop-windows-x86_64-evidence-${{ github.sha }}
           path: |
             build/desktop/*.json
             build/desktop/*.sha256
-          if-no-files-found: error
+            build/desktop/*-diagnostics/**
+          if-no-files-found: warn
           retention-days: 14
 
   performance-budget:
