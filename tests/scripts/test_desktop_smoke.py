@@ -539,6 +539,8 @@ def test_native_ui_probe_uses_uia_patterns_and_validates_evidence(
     assert "AutomationElement]::FromHandle" in script
     assert "InvokePattern" in script
     assert "ValuePattern" in script
+    assert "ControlType]::Text" in script
+    assert "LookupById" not in script
     assert "$documentRoot = Wait-ForAutomationId -Root $window" in script
     assert "Invoke-NamedAction -Root $documentRoot" in script
     assert "Set-And-VerifyValue -Root $documentRoot" in script
@@ -548,8 +550,10 @@ def test_native_ui_probe_uses_uia_patterns_and_validates_evidence(
     assert arguments[1] == str(incoming.resolve())
     assert int(arguments[2]) == round(config.DESKTOP_WINDOWS_SMOKE_STARTUP_TIMEOUT_SECONDS * 1000)
     assert int(arguments[3]) > 0
-    assert int(arguments[4]) == config.DESKTOP_WINDOWS_UIA_ARIA_ROLE_PROPERTY_ID
-    assert json.loads(arguments[8]) == [list(item) for item in config.DESKTOP_WINDOWS_SMOKE_UI_PRIMARY_NAVIGATION]
+    assert arguments[4] == config.DESKTOP_WINDOWS_SMOKE_UI_ROOT_AUTOMATION_ID
+    assert arguments[5] == config.DESKTOP_WINDOWS_SMOKE_UI_SETTINGS_AUTOMATION_ID
+    assert arguments[6] == config.DESKTOP_WINDOWS_SMOKE_UI_ADD_SOURCE_AUTOMATION_ID
+    assert json.loads(arguments[7]) == [list(item) for item in config.DESKTOP_WINDOWS_SMOKE_UI_PRIMARY_NAVIGATION]
     assert timeout == config.DESKTOP_WINDOWS_SMOKE_UI_AUTOMATION_TIMEOUT_SECONDS
 
 

@@ -103,7 +103,6 @@ DESKTOP_WINDOWS_SMOKE_PRIMARY_ROUTES = (  # production SPA routes exercised thro
     "/history",
     "/settings",
 )
-DESKTOP_WINDOWS_UIA_ARIA_ROLE_PROPERTY_ID = 30_101  # UIA AriaRole property identifier, integer, exact
 DESKTOP_WINDOWS_SMOKE_UI_ROOT_AUTOMATION_ID = "RootWebArea"  # Edge document UIA identifier, text, exact
 DESKTOP_WINDOWS_SMOKE_UI_SETTINGS_AUTOMATION_ID = (  # loaded Settings field UIA identifier, text, exact
     "settings-paths-library"

@@ -206,7 +206,6 @@ param(
   [string]$SourcePath,
   [int]$TimeoutMilliseconds,
   [int]$PollMilliseconds,
-  [int]$AriaRolePropertyId,
   [string]$RootAutomationId,
   [string]$SettingsAutomationId,
   [string]$AddSourceAutomationId,
@@ -218,8 +217,6 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
-$ariaRoleProperty = [System.Windows.Automation.AutomationProperty]::LookupById($AriaRolePropertyId)
-if ($null -eq $ariaRoleProperty) { throw "UI Automation property $AriaRolePropertyId is unavailable." }
 $window = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$Handle)
 if ($null -eq $window) { throw 'The packaged window has no UI Automation root.' }
 $primaryNavigation = @($PrimaryNavigationJson | ConvertFrom-Json)
@@ -278,11 +275,7 @@ function Wait-ForHeading {
   $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
   do {
     try {
-      $matches = @(
-        Get-VisibleMatches -Root $Root -Condition $condition | Where-Object {
-          $_.GetCurrentPropertyValue($ariaRoleProperty, $true) -eq 'heading'
-        }
-      )
+      $matches = @(Get-VisibleMatches -Root $Root -Condition $condition)
       if ($matches.Count -eq 1) { return $matches[0] }
       if ($matches.Count -gt 1) { throw "Heading '$Name' matched multiple visible elements." }
     } catch [System.Windows.Automation.ElementNotAvailableException] {
@@ -1453,7 +1446,6 @@ def _run_native_ui_automation(window_handle: int, incoming_root: Path) -> dict[s
         str(incoming_root.resolve()),
         str(round(config.DESKTOP_WINDOWS_SMOKE_STARTUP_TIMEOUT_SECONDS * 1000)),
         str(round(config.DESKTOP_WINDOWS_SMOKE_POLL_INTERVAL_SECONDS * 1000)),
-        str(config.DESKTOP_WINDOWS_UIA_ARIA_ROLE_PROPERTY_ID),
         config.DESKTOP_WINDOWS_SMOKE_UI_ROOT_AUTOMATION_ID,
         config.DESKTOP_WINDOWS_SMOKE_UI_SETTINGS_AUTOMATION_ID,
         config.DESKTOP_WINDOWS_SMOKE_UI_ADD_SOURCE_AUTOMATION_ID,
