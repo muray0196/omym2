@@ -130,11 +130,8 @@ export function Component() {
           ) : null}
         </div>
         {facetsQuery.data ? (
-          <div
-            aria-label="Run status counts"
-            className={toolbarStyles.secondaryRow}
-          >
-            <ul className={styles.facetStrip}>
+          <div className={toolbarStyles.secondaryRow}>
+            <ul aria-label="Run status counts" className={styles.facetStrip}>
               {facetsQuery.data.facets.status.map((facet) => (
                 <li className={styles.facetCompact} key={facet.value}>
                   <RunStatusBadge value={facet.value} />
