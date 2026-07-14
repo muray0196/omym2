@@ -56,7 +56,7 @@ else:
     )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Generator, Mapping, Sequence
     from typing import BinaryIO
 
     from scripts.desktop.audit_windows_package import WindowsPackageAudit
@@ -710,7 +710,7 @@ def smoke_windows_package(
 
 
 @contextlib.contextmanager
-def _native_diagnostic_directory(evidence_path: Path) -> Iterator[Path]:
+def _native_diagnostic_directory(evidence_path: Path) -> Generator[Path]:
     """Remove stale diagnostics, retain failures, and discard successful launch captures."""
     diagnostic_directory = evidence_path.with_name(f"{evidence_path.stem}-diagnostics")
     if diagnostic_directory.exists():
@@ -964,7 +964,7 @@ def _retain_native_launch_failure(
     """Persist and summarize the logs needed to diagnose a packaged GUI startup failure."""
     desktop_log_error: str | None = None
     try:
-        shutil.copyfile(context.log_file, context.retained_desktop_log)
+        _ = shutil.copyfile(context.log_file, context.retained_desktop_log)
     except FileNotFoundError:
         desktop_log_error = "not created"
     except OSError as exc:
