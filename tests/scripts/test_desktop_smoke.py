@@ -439,12 +439,12 @@ def test_packaged_security_probe_accepts_non_revealing_hostile_api_response(
     def fake_request(*_args: object, **_kwargs: object) -> desktop_smoke.HttpResponse:
         return next(responses)
 
+    def fake_bootstrap(_base_url: str, *, require_valid_config: bool) -> dict[str, object]:
+        assert require_valid_config is True
+        return {"csrf_token": "csrf-test"}
+
     monkeypatch.setattr(desktop_smoke, "_request_loopback", fake_request)
-    monkeypatch.setattr(
-        desktop_smoke,
-        "_bootstrap_data",
-        lambda *_args, **_kwargs: {"csrf_token": "csrf-test"},
-    )
+    monkeypatch.setattr(desktop_smoke, "_bootstrap_data", fake_bootstrap)
 
     evidence = _smoke_security_boundaries("http://127.0.0.1:12345/")
 
