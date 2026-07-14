@@ -5,6 +5,7 @@ Why: Keeps upgrade, Unicode, long-path, and external-state assertions platform-i
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import subprocess
@@ -573,6 +574,7 @@ def test_powershell_timeout_uses_native_smoke_error(monkeypatch: pytest.MonkeyPa
 def test_powershell_probe_forces_utf8_before_localized_json(monkeypatch: pytest.MonkeyPatch) -> None:
     """Japanese Windows inventory values must reach the strict UTF-8 decoder intact."""
     observed_commands: list[tuple[str, ...]] = []
+    structured_argument = '{"route":"/plans","label":"設定"}'
 
     def fake_run(command: tuple[str, ...], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         observed_commands.append(command)
@@ -580,8 +582,10 @@ def test_powershell_probe_forces_utf8_before_localized_json(monkeypatch: pytest.
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    assert _run_powershell("Write-Output '{}'", timeout=1) == {"architecture": "64 bit"}
-    assert observed_commands[0][5].startswith(f"{_POWERSHELL_UTF8_PREAMBLE}\n& {{\n")
+    assert _run_powershell("Write-Output '{}'", structured_argument, timeout=1) == {"architecture": "64 bit"}
+    assert observed_commands[0][5].startswith(f"{_POWERSHELL_UTF8_PREAMBLE}\n")
+    assert "FromBase64String" in observed_commands[0][5]
+    assert observed_commands[0][6] == base64.b64encode(structured_argument.encode()).decode()
 
 
 def test_native_ui_plan_evidence_requires_one_new_ready_plan(

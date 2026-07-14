@@ -7,6 +7,7 @@ Why: Proves native WebView, HTTP, shutdown, path, browser, and persisted-state b
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import hashlib
 import http.client
@@ -1105,6 +1106,7 @@ def _browser_snapshot() -> BrowserSnapshot:
 
 
 def _run_powershell(script: str, *arguments: str, timeout: float) -> dict[str, object]:
+    encoded_arguments = tuple(base64.b64encode(argument.encode("utf-8")).decode("ascii") for argument in arguments)
     try:
         result = subprocess.run(  # noqa: S603 -- fixed native probes receive only local IDs, paths, and names.
             (
@@ -1113,8 +1115,13 @@ def _run_powershell(script: str, *arguments: str, timeout: float) -> dict[str, o
                 "-NoProfile",
                 "-NonInteractive",
                 "-Command",
-                f"{_POWERSHELL_UTF8_PREAMBLE}\n& {{\n{script}\n}}",
-                *arguments,
+                (
+                    f"{_POWERSHELL_UTF8_PREAMBLE}\n"
+                    "$decodedArguments = @($args | ForEach-Object { "
+                    "[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($_)) })\n"
+                    f"& {{\n{script}\n}} @decodedArguments"
+                ),
+                *encoded_arguments,
             ),
             capture_output=True,
             text=True,
