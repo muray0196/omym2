@@ -9,7 +9,9 @@ import { Link, useLocation } from "react-router-dom";
 import { useCursorPage } from "../../ui/cursor-page";
 import { Button } from "../../ui/primitives/button";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
+import { VisuallyHidden } from "../../ui/primitives/visually-hidden";
+import toolbarStyles from "../../ui/primitives/toolbar.module.css";
 import { planCopy } from "./plan-copy";
 import { PlanErrorState } from "./plan-error-state";
 import { PlanStatusBadge, PlanTypeValue } from "./plan-presentation";
@@ -25,6 +27,7 @@ const timestampFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeStyle: "short",
 });
+const numberFormatter = new Intl.NumberFormat("en-US");
 
 export function PlanList() {
   const location = useLocation();
@@ -45,74 +48,78 @@ export function PlanList() {
 
   return (
     <article className={styles.page}>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>{planCopy.list.eyebrow}</p>
-        <RouteHeading>{planCopy.list.title}</RouteHeading>
-        <p className={styles.description}>{planCopy.list.description}</p>
-      </header>
+      <PageHeader
+        description={planCopy.list.description}
+        eyebrow={planCopy.list.eyebrow}
+        title={planCopy.list.title}
+      />
 
       <form
-        className={styles.filterPanel}
+        aria-label="Plan filters"
+        className={toolbarStyles.toolbar}
         onSubmit={(event) => event.preventDefault()}
       >
-        <div className={styles.filterGrid}>
-          <div className={styles.field}>
-            <label htmlFor="plan-search">{planCopy.list.searchLabel}</label>
-            <input
-              data-list-search
-              id="plan-search"
-              onChange={(event) => updateFilters({ query: event.target.value })}
-              placeholder={planCopy.list.searchPlaceholder}
-              type="search"
-              value={filters.query}
-            />
-          </div>
-          <div className={styles.field}>
-            <label htmlFor="plan-status">{planCopy.list.statusLabel}</label>
-            <select
-              id="plan-status"
-              onChange={(event) =>
-                updateFilters({
-                  status: planStatusOptions.find(
-                    (option) => option.value === event.target.value,
-                  )?.value,
-                })
-              }
-              value={filters.status ?? ""}
-            >
-              <option value="">{planCopy.list.allStatuses}</option>
-              {planStatusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className={styles.field}>
-            <label htmlFor="plan-type">{planCopy.list.typeLabel}</label>
-            <select
-              id="plan-type"
-              onChange={(event) =>
-                updateFilters({
-                  type: planTypeOptions.find(
-                    (option) => option.value === event.target.value,
-                  )?.value,
-                })
-              }
-              value={filters.type ?? ""}
-            >
-              <option value="">{planCopy.list.allTypes}</option>
-              {planTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <label className={styles.checkboxLabel}>
+        <label className={toolbarStyles.search} htmlFor="plan-search">
+          <VisuallyHidden>{planCopy.list.searchLabel}</VisuallyHidden>
+          <input
+            autoComplete="off"
+            data-list-search
+            id="plan-search"
+            name="plan-search"
+            onChange={(event) => updateFilters({ query: event.target.value })}
+            placeholder={planCopy.list.searchPlaceholder}
+            type="search"
+            value={filters.query}
+          />
+        </label>
+        <label className={toolbarStyles.control} htmlFor="plan-status">
+          <VisuallyHidden>{planCopy.list.statusLabel}</VisuallyHidden>
+          <select
+            id="plan-status"
+            name="plan-status"
+            onChange={(event) =>
+              updateFilters({
+                status: planStatusOptions.find(
+                  (option) => option.value === event.target.value,
+                )?.value,
+              })
+            }
+            value={filters.status ?? ""}
+          >
+            <option value="">{planCopy.list.allStatuses}</option>
+            {planStatusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={toolbarStyles.control} htmlFor="plan-type">
+          <VisuallyHidden>{planCopy.list.typeLabel}</VisuallyHidden>
+          <select
+            id="plan-type"
+            name="plan-type"
+            onChange={(event) =>
+              updateFilters({
+                type: planTypeOptions.find(
+                  (option) => option.value === event.target.value,
+                )?.value,
+              })
+            }
+            value={filters.type ?? ""}
+          >
+            <option value="">{planCopy.list.allTypes}</option>
+            {planTypeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={toolbarStyles.checkbox}>
           <input
             checked={filters.blocked}
+            name="plan-blocked"
             onChange={(event) =>
               updateFilters({ blocked: event.target.checked })
             }
@@ -120,15 +127,15 @@ export function PlanList() {
           />
           {planCopy.list.blockedLabel}
         </label>
-        <div className={styles.filterActions}>
+        <div className={toolbarStyles.actions}>
           {hasActiveFilters ? (
             <Button onClick={resetFilters} variant="quiet">
               {planCopy.list.resetFilters}
             </Button>
           ) : null}
           {query.data !== undefined ? (
-            <p aria-live="polite" className={styles.resultCount}>
-              {total} {planCopy.list.resultCount}
+            <p aria-live="polite" className={toolbarStyles.resultCount}>
+              {numberFormatter.format(total)} {planCopy.list.resultCount}
             </p>
           ) : null}
         </div>
@@ -148,13 +155,26 @@ export function PlanList() {
       ) : null}
       {query.isSuccess && plans.length > 0 ? (
         <ul aria-label={planCopy.list.title} className={styles.planList}>
+          <li aria-hidden="true" className={styles.planColumnHeader}>
+            <span>Type</span>
+            <span>Plan ID</span>
+            <span>Actions</span>
+            <span>Blocked</span>
+            <span>Status</span>
+            <span>Created</span>
+          </li>
           {plans.map((plan) => (
             <PlanRow key={plan.plan_id} plan={plan} search={location.search} />
           ))}
         </ul>
       ) : null}
-      {query.isSuccess && cursorPage.page !== undefined ? (
-        <CursorPageControls collectionLabel="Plans" {...cursorPage} />
+      {query.isSuccess && plans.length > 0 && cursorPage.page !== undefined ? (
+        <CursorPageControls
+          collectionLabel="Plans"
+          pageSize={cursorPage.page.page.limit}
+          totalItems={cursorPage.page.page.total}
+          {...cursorPage}
+        />
       ) : null}
     </article>
   );
@@ -170,22 +190,34 @@ function PlanRow({ plan, search }: { plan: PlanSummary; search: string }) {
         data-list-item
         to={{ pathname: `/plans/${plan.plan_id}`, search }}
       >
-        <div className={styles.rowHeader}>
-          <code className={styles.id}>{plan.plan_id}</code>
-          <PlanStatusBadge value={plan.status} />
-        </div>
-        <div className={styles.rowMetadata}>
+        <span className={styles.planType}>
           <PlanTypeValue value={plan.plan_type} />
-          <span>
-            {plan.summary.total} {planCopy.detail.actionCount}
-          </span>
-          <span>
-            {blockedCount} {planCopy.labels.blocked}
-          </span>
-          <time dateTime={plan.created_at}>
-            {formatTimestamp(plan.created_at)}
-          </time>
-        </div>
+        </span>
+        <code
+          className={`${styles.id} ${styles.planIdentifier}`}
+          title={plan.plan_id}
+          translate="no"
+        >
+          {plan.plan_id}
+        </code>
+        <span className={styles.planActions}>
+          <VisuallyHidden>{planCopy.detail.actionCount}: </VisuallyHidden>
+          {numberFormatter.format(plan.summary.total)}
+        </span>
+        <span className={styles.planBlocked}>
+          <VisuallyHidden>{planCopy.labels.blocked}: </VisuallyHidden>
+          {numberFormatter.format(blockedCount)}
+        </span>
+        <span className={styles.planStatus}>
+          <PlanStatusBadge value={plan.status} />
+        </span>
+        <time
+          className={styles.planCreated}
+          dateTime={plan.created_at}
+          title={formatTimestamp(plan.created_at)}
+        >
+          {formatTimestamp(plan.created_at)}
+        </time>
       </Link>
     </li>
   );

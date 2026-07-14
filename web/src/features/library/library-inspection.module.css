@@ -4,85 +4,29 @@
  */
 .page {
   display: grid;
-  gap: var(--space-24);
+  gap: var(--space-16);
 }
 
-.header {
-  display: grid;
-  gap: var(--space-8);
-  max-width: 620px;
-}
-
-.eyebrow {
-  color: var(--color-blue);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  margin: 0;
-  text-transform: uppercase;
-}
-
-.header h1,
-.state h1 {
-  color: var(--color-ink);
-  font-size: 24px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  margin: 0;
-}
-
-.description {
-  color: var(--color-mute);
-  font-size: 14px;
-  margin: 0;
-  max-width: 620px;
-}
-
-.filterPanel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-10);
-  display: grid;
-  gap: var(--space-12);
-  padding: var(--space-12) var(--space-16);
-}
-
-.filterGrid {
-  display: grid;
-  gap: var(--space-12);
-  grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(140px, 1fr));
-}
-
-.filterGrid > .field {
-  min-width: 0;
-}
-
-.field {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.field label {
-  color: var(--color-mute);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.field input,
-.field select {
-  min-width: 0;
-  width: 100%;
-}
-
-.filterActions,
 .groupActions,
 .backLinkRow {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-8);
+}
+
+.viewSwitch {
+  align-items: center;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-6);
+  display: inline-flex;
+  padding: 2px;
+}
+
+.viewSwitch button {
+  min-height: calc(var(--target-dense) - 4px);
+  white-space: nowrap;
 }
 
 .facets {
@@ -103,6 +47,30 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.trackColumnHeader,
+.trackLink {
+  align-items: center;
+  column-gap: var(--space-12);
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1.15fr) minmax(150px, 0.8fr) minmax(200px, 1.25fr)
+    auto;
+}
+
+.trackColumnHeader {
+  color: var(--color-mute);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  padding: 6px var(--space-16);
+  text-transform: uppercase;
+}
+
+.trackColumnHeader span:last-child,
+.trackStatus {
+  justify-self: end;
 }
 
 .facetList {
@@ -140,13 +108,6 @@
   color: var(--color-ink);
 }
 
-.browserGrid {
-  align-items: start;
-  display: grid;
-  gap: var(--space-16);
-  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.28fr);
-}
-
 .section {
   background: var(--color-surface);
   border: 1px solid var(--color-hairline);
@@ -182,8 +143,11 @@
 }
 
 .groupRow {
+  align-items: center;
   display: grid;
-  gap: var(--space-8);
+  gap: var(--space-12);
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 56px;
   padding: var(--space-8) var(--space-16);
   transition: background-color var(--motion-control) ease;
 }
@@ -199,17 +163,53 @@
 
 .groupRow,
 .trackRow {
-  contain-intrinsic-size: auto 96px;
+  contain-intrinsic-size: auto 56px;
   content-visibility: auto;
 }
 
 .trackLink {
   color: inherit;
-  display: grid;
-  gap: var(--space-4);
+  min-height: 56px;
   padding: var(--space-8) var(--space-16);
   text-decoration: none;
   transition: background-color var(--motion-control) ease;
+}
+
+.trackColumnHeader + .trackRow {
+  border-top: 1px solid var(--color-hairline);
+}
+
+.trackIdentity,
+.trackAlbum,
+.trackPath,
+.groupHeader {
+  min-width: 0;
+}
+
+.trackTitle,
+.trackArtist,
+.trackPath,
+.trackAlbum p {
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trackAlbum p {
+  margin: 0;
+}
+
+.trackAlbum p:first-child {
+  color: var(--color-body);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.trackAlbum p:last-child {
+  color: var(--color-mute);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .trackLink:hover {
@@ -383,6 +383,7 @@
   display: grid;
   gap: var(--space-8);
   justify-items: center;
+  min-height: 160px;
   padding: 28px var(--space-16);
   text-align: center;
 }
@@ -427,18 +428,59 @@
   padding-left: var(--space-16);
 }
 
-@media (max-width: 1023px) {
-  .browserGrid {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (max-width: 767px) {
-  .filterGrid {
-    grid-template-columns: 1fr;
-  }
-
   .definitionList > div {
     grid-template-columns: 1fr;
+  }
+
+  .trackColumnHeader {
+    display: none;
+  }
+
+  .trackColumnHeader + .trackRow {
+    border-top: 0;
+  }
+
+  .trackLink {
+    gap: var(--space-4) var(--space-12);
+    grid-template-areas:
+      "identity status"
+      "album album"
+      "path path";
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 76px;
+  }
+
+  .trackIdentity {
+    grid-area: identity;
+  }
+
+  .trackPath {
+    grid-area: path;
+  }
+
+  .trackAlbum {
+    grid-area: album;
+  }
+
+  .trackStatus {
+    grid-area: status;
+  }
+
+  .groupRow {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .groupActions {
+    justify-content: flex-start;
+  }
+
+  .viewSwitch {
+    width: 100%;
+  }
+
+  .viewSwitch button {
+    flex: 1;
   }
 }

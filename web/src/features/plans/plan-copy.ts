@@ -9,7 +9,7 @@ export const planCopy = {
     description:
       "Browse recorded Plans and inspect their stored actions without changing library files.",
     searchLabel: "Search Plans",
-    searchPlaceholder: "Plan ID, Library ID, type, or status",
+    searchPlaceholder: "Plan ID, Library ID, type, or status…",
     statusLabel: "Plan status",
     typeLabel: "Plan type",
     blockedLabel: "Has blocked actions",
@@ -45,7 +45,7 @@ export const planCopy = {
     actionGroups: "Action groups",
     facets: "Action facets",
     actionSearchLabel: "Search recorded actions",
-    actionSearchPlaceholder: "Action ID, Track ID, path, or recorded hash",
+    actionSearchPlaceholder: "Action ID, Track ID, path, or recorded hash…",
     actionStatusLabel: "Action status",
     actionTypeLabel: "Action type",
     reasonLabel: "Recorded reason",

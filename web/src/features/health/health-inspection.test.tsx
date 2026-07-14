@@ -160,7 +160,7 @@ describe("Health inspection", () => {
     expect(
       screen.queryByText("Unknown issue type: second-group"),
     ).not.toBeInTheDocument();
-    expect(screen.getAllByText("Page 1")).toHaveLength(2);
+    expect(screen.getAllByText("Page 1 of 2")).toHaveLength(2);
   });
 
   it("runs Check with safe headers and refreshes persisted findings", async () => {

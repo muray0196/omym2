@@ -4,18 +4,18 @@
  */
 import { Link } from "react-router-dom";
 
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
 import { routeCopy } from "../route-copy";
 import styles from "../route.module.css";
 
 export function Component() {
   return (
     <article className={styles.page}>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>{routeCopy.notFound.eyebrow}</p>
-        <RouteHeading>{routeCopy.notFound.title}</RouteHeading>
-        <p className={styles.description}>{routeCopy.notFound.description}</p>
-      </header>
+      <PageHeader
+        description={routeCopy.notFound.description}
+        eyebrow={routeCopy.notFound.eyebrow}
+        title={routeCopy.notFound.title}
+      />
       <Link className={styles.homeLink} to="/">
         {routeCopy.notFound.action}
       </Link>

@@ -31,7 +31,11 @@ import styles from "../../features/inspection/inspection.module.css";
 import { InspectionApiError } from "../../features/inspection/query-errors";
 import { useCursorPage } from "../../ui/cursor-page";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
+import { VisuallyHidden } from "../../ui/primitives/visually-hidden";
+import toolbarStyles from "../../ui/primitives/toolbar.module.css";
+
+const numberFormatter = new Intl.NumberFormat("en-US");
 
 export function Component() {
   const { runId = "" } = useParams();
@@ -68,22 +72,24 @@ export function Component() {
 
   return (
     <article className={styles.page}>
-      <header className={styles.header}>
-        <Link
-          className={styles.backLink}
-          data-detail-back
-          to={{ pathname: "/history", search: location.search }}
-        >
-          {historyCopy.detail.back}
-        </Link>
-        {detailQuery.isSuccess ? (
-          <p className={styles.eyebrow}>{historyCopy.detail.eyebrow}</p>
-        ) : null}
-        <RouteHeading>{historyCopy.detail.title}</RouteHeading>
-        {detailQuery.isSuccess ? (
-          <span className={styles.id}>{detailQuery.data.run.run_id}</span>
-        ) : null}
-      </header>
+      <Link
+        className={styles.backLink}
+        data-detail-back
+        to={{ pathname: "/history", search: location.search }}
+      >
+        {historyCopy.detail.back}
+      </Link>
+      <PageHeader
+        description={
+          detailQuery.isSuccess ? (
+            <code className={styles.id} translate="no">
+              {detailQuery.data.run.run_id}
+            </code>
+          ) : undefined
+        }
+        eyebrow={historyCopy.detail.eyebrow}
+        title={historyCopy.detail.title}
+      />
       {detailQuery.isPending ? (
         <section className={styles.state} role="status">
           {historyCopy.detail.loading}
@@ -133,10 +139,14 @@ export function Component() {
             ) : null}
           </section>
           <UndoPlanControl detail={detail} />
-          <section className={styles.filters} aria-label="FileEvent filters">
-            <label className={styles.field}>
-              Event status
+          <section
+            className={toolbarStyles.toolbar}
+            aria-label="FileEvent filters"
+          >
+            <label className={toolbarStyles.control}>
+              <VisuallyHidden>Event status</VisuallyHidden>
               <select
+                name="event-status"
                 value={filters.status ?? ""}
                 onChange={(event) =>
                   updateFilters({
@@ -163,7 +173,9 @@ export function Component() {
                 {facetsQuery.data.facets.status.map((facet) => (
                   <li className={styles.facet} key={facet.value}>
                     <EventStatusBadge value={facet.value} />
-                    <span className={styles.count}>{facet.count}</span>
+                    <span className={styles.count}>
+                      {numberFormatter.format(facet.count)}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -179,15 +191,21 @@ export function Component() {
                   {groups.map((group) => (
                     <li className={styles.group} key={group.key}>
                       <span className={styles.path}>{group.label}</span>
-                      <span className={styles.count}>{group.count}</span>
+                      <span className={styles.count}>
+                        {numberFormatter.format(group.count)}
+                      </span>
                     </li>
                   ))}
                 </ul>
               )}
-              <CursorPageControls
-                collectionLabel="FileEvent groups"
-                {...groupPage}
-              />
+              {groups.length > 0 ? (
+                <CursorPageControls
+                  collectionLabel="FileEvent groups"
+                  pageSize={groupPage.page?.page.limit}
+                  totalItems={groupPage.page?.page.total}
+                  {...groupPage}
+                />
+              ) : null}
             </section>
           ) : null}
           <section className={styles.section}>
@@ -215,7 +233,7 @@ export function Component() {
                     </div>
                     <p>
                       <EventTypeValue value={event.event_type} /> · sequence{" "}
-                      {event.sequence_no}
+                      {numberFormatter.format(event.sequence_no)}
                     </p>
                     <dl className={styles.metadataList}>
                       <div>
@@ -247,8 +265,15 @@ export function Component() {
                 ))}
               </ol>
             ) : null}
-            {eventsQuery.isSuccess && eventPage.page !== undefined ? (
-              <CursorPageControls collectionLabel="FileEvents" {...eventPage} />
+            {eventsQuery.isSuccess &&
+            events.length > 0 &&
+            eventPage.page !== undefined ? (
+              <CursorPageControls
+                collectionLabel="FileEvents"
+                pageSize={eventPage.page.page.limit}
+                totalItems={eventPage.page.page.total}
+                {...eventPage}
+              />
             ) : null}
           </section>
         </>

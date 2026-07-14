@@ -46,7 +46,7 @@ describe("PlanList", () => {
     );
     await screen.findByText(HISTORIC_PLAN_ID);
     expect(screen.queryByText(READY_PLAN_ID)).not.toBeInTheDocument();
-    expect(screen.getByText("Page 2")).toBeVisible();
+    expect(screen.getByText("Page 2 of 2")).toBeVisible();
     expect(
       observedRequests.some(
         (parameters) => parameters.get("cursor") === OPAQUE_PLAN_CURSOR,
@@ -87,7 +87,7 @@ describe("PlanList", () => {
       expect(parameters.get("type")).toBe("refresh");
       expect(parameters.get("blocked")).toBe("true");
       expect(observedRequests.at(-1)?.get("cursor")).toBeNull();
-      expect(screen.getByText("Page 1")).toBeVisible();
+      expect(screen.getByText("Page 1 of 2")).toBeVisible();
       expect(screen.queryByText(HISTORIC_PLAN_ID)).not.toBeInTheDocument();
     });
 
@@ -106,6 +106,9 @@ describe("PlanList", () => {
         name: "No Plans match these filters",
       }),
     ).toBeVisible();
+    expect(
+      screen.queryByRole("navigation", { name: "Plans pagination" }),
+    ).not.toBeInTheDocument();
     await user.click(
       screen.getAllByRole("button", { name: "Reset filters" })[0]!,
     );

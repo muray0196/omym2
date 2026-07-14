@@ -103,6 +103,42 @@ describe("Library inspection", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows one tracks-first Library surface and switches into group browsing", async () => {
+    useDefaultLibraryHandlers();
+    const { router, user } = renderLibrary();
+
+    expect(
+      await screen.findByRole("heading", { name: "Tracks" }),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: /So What/ })).toBeVisible();
+    expect(screen.getByText("Kind of Blue")).toBeVisible();
+    expect(screen.getByText("1959")).toBeVisible();
+    expect(screen.queryByText("Track ID")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Browse Library" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Browse groups" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Browse Library" }),
+    ).toBeVisible();
+    expect(screen.getByText("Miles Davis")).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: /So What/ }),
+    ).not.toBeInTheDocument();
+    expect(new URLSearchParams(router.state.location.search).get("view")).toBe(
+      "groups",
+    );
+
+    await user.click(screen.getByRole("button", { name: "View Tracks" }));
+
+    expect(await screen.findByRole("link", { name: /So What/ })).toBeVisible();
+    const parameters = new URLSearchParams(router.state.location.search);
+    expect(parameters.get("view")).toBeNull();
+    expect(parameters.get("group_key")).toBe(OPAQUE_ARTIST_KEY);
+  });
+
   it("bounds Track cursor pages and resets paging for a changed filter", async () => {
     const cursors: Array<string | null> = [];
     useDefaultLibraryHandlers({
@@ -125,7 +161,7 @@ describe("Library inspection", () => {
 
     expect(await screen.findByText("Freddie Freeloader")).toBeVisible();
     expect(screen.queryByText("So What")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Page 2").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Page 2 of 2").length).toBeGreaterThan(0);
     expect(cursors).toEqual([null, OPAQUE_CURSOR]);
 
     await user.selectOptions(
@@ -135,7 +171,7 @@ describe("Library inspection", () => {
 
     expect(await screen.findByText("So What")).toBeVisible();
     expect(screen.queryByText("Freddie Freeloader")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Page 1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Page 1 of 2").length).toBeGreaterThan(0);
   });
 
   it("renders only the selected Library group cursor page", async () => {
@@ -159,7 +195,7 @@ describe("Library inspection", () => {
         );
       },
     });
-    const { user } = renderLibrary();
+    const { user } = renderLibrary("/library?view=groups");
 
     expect(await screen.findByText("First artist group")).toBeVisible();
     await user.click(
@@ -191,7 +227,7 @@ describe("Library inspection", () => {
         );
       },
     });
-    const { router, user } = renderLibrary();
+    const { router, user } = renderLibrary("/library?view=groups");
 
     await user.click(
       await screen.findByRole("button", { name: "Browse albums" }),
@@ -285,6 +321,9 @@ describe("Library inspection", () => {
         name: "No Tracks have been recorded",
       }),
     ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Browse Library" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -368,7 +407,11 @@ function paginatedTracks(
   return {
     data: {
       items,
-      page: { limit: 100, next_cursor: nextCursor, total },
+      page: {
+        limit: total > items.length ? Math.max(items.length, 1) : 100,
+        next_cursor: nextCursor,
+        total,
+      },
     },
     errors: [],
   } satisfies ApiEnvelopePaginatedDataTrackResource;
@@ -384,7 +427,11 @@ function groupedTracks(
     data: {
       group_by: groupBy,
       items,
-      page: { limit: 100, next_cursor: nextCursor, total },
+      page: {
+        limit: total > items.length ? Math.max(items.length, 1) : 100,
+        next_cursor: nextCursor,
+        total,
+      },
     },
     errors: [],
   } satisfies ApiEnvelopeTrackGroupsData;

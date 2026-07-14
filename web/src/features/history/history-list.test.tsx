@@ -43,7 +43,7 @@ describe("History list", () => {
 
     expect(await screen.findByText(SECOND_RUN_ID)).toBeVisible();
     expect(screen.queryByText(FIRST_RUN_ID)).not.toBeInTheDocument();
-    expect(screen.getByText("Page 2")).toBeVisible();
+    expect(screen.getByText("Page 2 of 2")).toBeVisible();
     expect(cursors).toEqual([null, HISTORY_CURSOR]);
 
     await user.type(
@@ -53,14 +53,14 @@ describe("History list", () => {
 
     expect(await screen.findByText(FIRST_RUN_ID)).toBeVisible();
     expect(screen.queryByText(SECOND_RUN_ID)).not.toBeInTheDocument();
-    expect(screen.getByText("Page 1")).toBeVisible();
+    expect(screen.getByText("Page 1 of 2")).toBeVisible();
     await waitFor(() => expect(cursors.at(-1)).toBeNull());
 
     await user.clear(screen.getByRole("searchbox", { name: "Search Runs" }));
 
     expect(await screen.findByText(FIRST_RUN_ID)).toBeVisible();
     expect(screen.queryByText(SECOND_RUN_ID)).not.toBeInTheDocument();
-    expect(screen.getByText("Page 1")).toBeVisible();
+    expect(screen.getByText("Page 1 of 2")).toBeVisible();
   });
 });
 

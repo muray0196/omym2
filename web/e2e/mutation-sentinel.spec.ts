@@ -35,7 +35,7 @@ test("non-mutating routes preserve an unrelated Library file", async ({
     .toEqual(DESKTOP_ZOOM_EXPECTED_METRICS);
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Review changes" }),
+    page.getByRole("button", { name: "Save Settings" }),
   ).toBeVisible();
   await zoomSession.detach();
 

@@ -24,21 +24,31 @@ import { snapshotIsolatedLibrary } from "./library-snapshot";
 
 test.describe.configure({ mode: "serial", retries: 0 });
 
-test("previews and atomically saves Settings by keyboard", async ({ page }) => {
+test("saves Settings directly and shows applied changes by keyboard", async ({
+  page,
+}) => {
   const libraryBefore = await snapshotIsolatedLibrary();
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeFocused();
 
+  const previewHeading = page.getByRole("heading", { name: "Path preview" });
+  const previewSection = page.locator("section").filter({
+    has: previewHeading,
+  });
+  const previewPath = previewSection.getByRole("status").locator("code");
+  const initialPreviewPath = await previewPath.innerText();
+  expect(initialPreviewPath).not.toBe("");
+
   const sampleTitle = page.getByRole("textbox", { name: "Sample title" });
   await sampleTitle.focus();
   await page.keyboard.press("Control+A");
+  const previewResponse = page.waitForResponse(/\/api\/settings\/preview$/);
   await page.keyboard.type("Browser Preview");
-  const updatePreview = page.getByRole("button", { name: "Update preview" });
-  await updatePreview.focus();
-  await page.keyboard.press("Enter");
+  await previewResponse;
   await expect(
     page.getByRole("status").filter({ hasText: /Browser-Preview/ }),
   ).toBeVisible();
+  await expect(previewPath).not.toHaveText(initialPreviewPath);
 
   const requireAlbum = page.getByRole("checkbox", { name: "Require album" });
   const originalRequireAlbum = await requireAlbum.isChecked();
@@ -46,18 +56,20 @@ test("previews and atomically saves Settings by keyboard", async ({ page }) => {
   await page.keyboard.press("Space");
   expect(await requireAlbum.isChecked()).toBe(!originalRequireAlbum);
 
-  const review = page.getByRole("button", { name: "Review changes" });
-  await review.focus();
-  await page.keyboard.press("Enter");
-  await expect(
-    page.getByText("Backend validation passed.").first(),
-  ).toBeVisible();
   const save = page.getByRole("button", { name: "Save Settings" });
   await save.focus();
   await page.keyboard.press("Enter");
-  await expect(
-    page.getByRole("heading", { name: "Settings saved." }),
-  ).toBeVisible();
+  const savedHeading = page.getByRole("heading", { name: "Settings saved." });
+  await expect(savedHeading).toBeVisible();
+  const savedNotification = page.getByRole("status").filter({
+    has: savedHeading,
+  });
+  const savedNotificationRegion = savedNotification.locator("..");
+  await expect(savedNotificationRegion).toHaveCSS("position", "fixed");
+  const notificationBox = await savedNotification.boundingBox();
+  expect(notificationBox).not.toBeNull();
+  expect(notificationBox?.y).toBeLessThan(notificationBox?.height ?? 0);
+  await expect(page.getByRole("table")).toContainText("metadata.require_album");
 
   expect(await snapshotIsolatedLibrary()).toEqual(libraryBefore);
 });

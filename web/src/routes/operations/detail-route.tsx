@@ -15,7 +15,7 @@ import { OperationApiError } from "../../features/operations/operation-start";
 import { OperationStatus } from "../../features/operations/operation-status";
 import styles from "../../features/operations/operation.module.css";
 import { Button } from "../../ui/primitives/button";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
 
 export function Component() {
   const { operationId = "" } = useParams();
@@ -28,11 +28,11 @@ export function Component() {
 
   return (
     <article className={styles.page}>
-      <header className={styles.routeHeader}>
-        <p className={styles.eyebrow}>{operationCopy.recoveryEyebrow}</p>
-        <RouteHeading>{operationCopy.recoveryTitle}</RouteHeading>
-        <p>{operationCopy.recoveryDescription}</p>
-      </header>
+      <PageHeader
+        description={operationCopy.recoveryDescription}
+        eyebrow={operationCopy.recoveryEyebrow}
+        title={operationCopy.recoveryTitle}
+      />
       {query.isPending ? <p role="status">{operationCopy.loading}</p> : null}
       {query.isError ? (
         <OperationRecoveryError

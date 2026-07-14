@@ -199,10 +199,6 @@ async function recoverSettings(
   await page
     .getByRole("textbox", { name: "Path template" })
     .fill(PATH_POLICY_TEMPLATE);
-  await page.getByRole("button", { name: "Review changes" }).click();
-  await expect(
-    page.getByText("Backend validation passed.").first(),
-  ).toBeVisible();
   await page.getByRole("button", { name: "Save Settings" }).click();
   await expect(
     page.getByRole("heading", { name: "Settings saved." }),

@@ -73,7 +73,7 @@ export const settingsEnvelope = {
     config_revision: "settings-revision-one",
     preview: {
       errors: [],
-      path: "North Harbor/2026_Night Signals/1-1_First Light.flac",
+      path: "Aimer/2024_Example-Album/1-03_Example-Song.flac",
     },
     validation: { errors: [], valid: true },
   },
@@ -111,7 +111,7 @@ export const savedSettingsEnvelope = {
 export const previewEnvelope = {
   data: {
     errors: [],
-    path: "North Harbor/2026_Night Signals/1-1_First Light.flac",
+    path: "Aimer/2024_Example-Album/1-03_Example-Song.flac",
   },
   errors: [],
 } satisfies ApiEnvelopePathPreview;

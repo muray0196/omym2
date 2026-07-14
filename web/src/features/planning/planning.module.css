@@ -4,42 +4,12 @@
  */
 .page {
   display: grid;
-  gap: var(--space-24);
+  gap: var(--space-16);
 }
 
-.header {
-  display: grid;
-  gap: var(--space-8);
-  max-width: 760px;
-}
-
-.header h1,
-.header p,
 .field p,
 .error p {
   margin: 0;
-}
-
-.header h1 {
-  color: var(--color-ink);
-  font-size: 24px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-
-.eyebrow {
-  color: var(--color-blue);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.description {
-  color: var(--color-mute);
-  font-size: 14px;
-  max-width: 620px;
 }
 
 .hint {

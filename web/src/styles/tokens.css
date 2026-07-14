@@ -38,6 +38,7 @@
 
   --target-default: 44px;
   --target-dense: 36px;
+  --layer-notification: 30;
   --motion-control: 120ms;
   --motion-reduced: 0.01ms;
   --font-body: "Inter Variable", sans-serif;

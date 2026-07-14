@@ -8,7 +8,11 @@ import styles from "./cursor-page-controls.module.css";
 
 type CursorPageControlsProps = CursorPageNavigation & {
   collectionLabel: string;
+  pageSize?: number;
+  totalItems?: number;
 };
+
+const numberFormatter = new Intl.NumberFormat("en-US");
 
 export function CursorPageControls({
   collectionLabel,
@@ -17,8 +21,19 @@ export function CursorPageControls({
   hasNextPage,
   hasPreviousPage,
   isFetchingNextPage,
+  pageSize,
   pageNumber,
+  totalItems,
 }: CursorPageControlsProps) {
+  const totalPages =
+    totalItems === undefined || pageSize === undefined || pageSize < 1
+      ? undefined
+      : Math.max(1, Math.ceil(totalItems / pageSize));
+  const position =
+    totalPages === undefined
+      ? `Page ${numberFormatter.format(pageNumber)}`
+      : `Page ${numberFormatter.format(pageNumber)} of ${numberFormatter.format(totalPages)}`;
+
   return (
     <nav
       aria-label={`${collectionLabel} pagination`}
@@ -33,7 +48,7 @@ export function CursorPageControls({
         Previous
       </Button>
       <p aria-atomic="true" aria-live="polite" className={styles.position}>
-        Page {pageNumber}
+        {position}
       </p>
       <Button
         aria-label={

@@ -60,7 +60,7 @@ export const planListFirstPage = {
   data: {
     items: [readyPlanMixedActions, blockedOnlyPlan],
     page: {
-      limit: 100,
+      limit: 2,
       next_cursor: OPAQUE_PLAN_CURSOR,
       total: 3,
     },
@@ -89,7 +89,7 @@ export const planListSecondPage = {
       },
     ],
     page: {
-      limit: 100,
+      limit: 2,
       next_cursor: null,
       total: 3,
     },

@@ -10,7 +10,7 @@ export const healthCopy = {
   freshness: "Findings checked",
   neverChecked: "No completed Check has been persisted for this scope.",
   searchLabel: "Search findings",
-  searchPlaceholder: "Library ID, path, Track ID, Plan ID, or detail",
+  searchPlaceholder: "Library ID, path, Track ID, Plan ID, or detail…",
   issueTypeLabel: "Issue type",
   groupingLabel: "Group findings by",
   libraryLabel: "Library ID",

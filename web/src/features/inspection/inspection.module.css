@@ -4,30 +4,8 @@
  */
 .page {
   display: grid;
-  gap: var(--space-24);
+  gap: var(--space-16);
 }
-.header {
-  display: grid;
-  gap: var(--space-8);
-  max-width: 620px;
-}
-.header h1 {
-  color: var(--color-ink);
-  font-size: 24px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  margin: 0;
-}
-.eyebrow {
-  color: var(--color-blue);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  margin: 0;
-  text-transform: uppercase;
-}
-.description,
 .subtle {
   color: var(--color-mute);
   font-size: 14px;
@@ -50,6 +28,9 @@
 .state {
   display: grid;
   gap: var(--space-12);
+}
+.state {
+  min-height: 160px;
 }
 .filterGrid {
   display: grid;
@@ -86,6 +67,7 @@
 }
 .list,
 .facetList,
+.facetStrip,
 .groupList,
 .metadataList,
 .diagnostics {
@@ -94,6 +76,23 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+.facetStrip {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+.facetCompact {
+  align-items: center;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-6);
+  display: inline-flex;
+  font-size: 12px;
+  gap: var(--space-8);
+  min-height: 28px;
+  padding: 2px var(--space-8);
 }
 .list,
 .groupList {
@@ -132,6 +131,118 @@
 .group {
   contain-intrinsic-size: auto 96px;
   content-visibility: auto;
+}
+.historyColumnHeader,
+.historyRow .rowLink {
+  align-items: center;
+  column-gap: var(--space-12);
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(150px, 1fr) auto 150px;
+}
+.historyColumnHeader {
+  color: var(--color-mute);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  padding: 6px var(--space-16);
+  text-transform: uppercase;
+}
+.historyColumnHeader span:nth-child(n + 3),
+.historyStatus,
+.historyStarted {
+  justify-self: end;
+  text-align: right;
+}
+.historyColumnHeader + .historyRow {
+  border-top: 1px solid var(--color-hairline);
+}
+.historyRow {
+  contain-intrinsic-size: auto 45px;
+  padding: 0;
+}
+.historyRow .rowLink {
+  min-height: 44px;
+  padding: var(--space-8) var(--space-16);
+}
+.historyIdentifier,
+.historyPlan,
+.historyStarted {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.historyStarted {
+  color: var(--color-mute);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.historyError {
+  color: var(--color-red);
+  font-size: 12px;
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.healthColumnHeader,
+.healthRow {
+  align-items: start;
+  column-gap: var(--space-12);
+  display: grid;
+  grid-template-columns:
+    minmax(150px, 0.8fr) minmax(180px, 1.5fr) minmax(130px, 1fr)
+    minmax(130px, 0.9fr);
+}
+.healthColumnHeader {
+  color: var(--color-mute);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  padding: 6px var(--space-16);
+  text-transform: uppercase;
+}
+.healthColumnHeader + .healthRow {
+  border-top: 1px solid var(--color-hairline);
+}
+.healthRow {
+  contain-intrinsic-size: auto 56px;
+  gap: var(--space-4) var(--space-12);
+  padding: var(--space-8) var(--space-16);
+}
+.healthIssue {
+  color: var(--color-ink);
+  font-size: 13px;
+  min-width: 0;
+}
+.healthPath,
+.healthLibrary {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.healthReferences {
+  color: var(--color-mute);
+  display: grid;
+  font-size: 12px;
+  gap: 2px;
+  min-width: 0;
+}
+.healthReferences span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.healthDetail,
+.healthWarning {
+  grid-column: 1 / -1;
+}
+.healthDetail {
+  color: var(--color-mute);
+  font-size: 12px;
+  margin: 0;
 }
 .rowLink {
   color: inherit;
@@ -309,5 +420,64 @@
   .filterGrid,
   .metadataList {
     grid-template-columns: 1fr;
+  }
+  .historyColumnHeader,
+  .healthColumnHeader {
+    display: none;
+  }
+  .historyColumnHeader + .historyRow,
+  .healthColumnHeader + .healthRow {
+    border-top: 0;
+  }
+  .historyRow .rowLink {
+    gap: var(--space-4) var(--space-12);
+    grid-template-areas:
+      "run status"
+      "plan started"
+      "error error";
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 68px;
+  }
+  .historyIdentifier {
+    grid-area: run;
+  }
+  .historyPlan {
+    grid-area: plan;
+  }
+  .historyStatus {
+    grid-area: status;
+  }
+  .historyStarted {
+    grid-area: started;
+  }
+  .historyError {
+    grid-area: error;
+  }
+  .healthRow {
+    grid-template-areas:
+      "issue library"
+      "path path"
+      "references references"
+      "detail detail"
+      "warning warning";
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .healthIssue {
+    grid-area: issue;
+  }
+  .healthPath {
+    grid-area: path;
+  }
+  .healthReferences {
+    grid-area: references;
+  }
+  .healthLibrary {
+    grid-area: library;
+  }
+  .healthDetail {
+    grid-area: detail;
+  }
+  .healthWarning {
+    grid-area: warning;
   }
 }

@@ -17,9 +17,15 @@ import {
 import { BootstrapContext } from "../../features/bootstrap/bootstrap-context";
 import { runStatusLabel } from "../../features/history/history-catalog";
 import { LibraryStatusBadge } from "../../features/library/library-presentation";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
 import { routeCopy } from "../route-copy";
 import styles from "../route.module.css";
+
+const numberFormatter = new Intl.NumberFormat("en-US");
+const timestampFormatter = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 export function Component() {
   const bootstrap = useContext(BootstrapContext);
@@ -30,11 +36,11 @@ export function Component() {
 
   return (
     <article className={styles.page}>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>{routeCopy.overview.eyebrow}</p>
-        <RouteHeading>{routeCopy.overview.title}</RouteHeading>
-        <p className={styles.description}>{routeCopy.overview.description}</p>
-      </header>
+      <PageHeader
+        description={routeCopy.overview.description}
+        eyebrow={routeCopy.overview.eyebrow}
+        title={routeCopy.overview.title}
+      />
       <div className={styles.cards}>
         <ReadinessCard bootstrap={bootstrap} />
         <SnapshotCard
@@ -169,19 +175,26 @@ function planSummary(data: PaginatedDataPlanSummary | undefined) {
   if (data === undefined || data.page.total === 0) {
     return routeCopy.overview.noReadyPlans;
   }
-  return `${String(data.page.total)} ${routeCopy.overview.readyPlans}`;
+  return `${numberFormatter.format(data.page.total)} ${routeCopy.overview.readyPlans}`;
 }
 
 function historySummary(data: PaginatedDataRunHeader | undefined) {
   const run = data?.items[0];
   return run === undefined
     ? routeCopy.overview.noRuns
-    : `${runStatusLabel(run.status)} · ${new Date(run.started_at).toLocaleString()}`;
+    : `${runStatusLabel(run.status)} · ${formatTimestamp(run.started_at)}`;
 }
 
 function healthSummary(data: CheckIssuesData | undefined) {
   if (data === undefined || data.page.total === 0) {
     return routeCopy.overview.noHealthIssues;
   }
-  return `${String(data.page.total)} ${routeCopy.overview.healthIssues}`;
+  return `${numberFormatter.format(data.page.total)} ${routeCopy.overview.healthIssues}`;
+}
+
+function formatTimestamp(value: string) {
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.valueOf())
+    ? value
+    : timestampFormatter.format(timestamp);
 }

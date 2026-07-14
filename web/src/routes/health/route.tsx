@@ -28,7 +28,15 @@ import styles from "../../features/inspection/inspection.module.css";
 import { useCursorPage } from "../../ui/cursor-page";
 import { Button } from "../../ui/primitives/button";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
+import { VisuallyHidden } from "../../ui/primitives/visually-hidden";
+import toolbarStyles from "../../ui/primitives/toolbar.module.css";
+
+const numberFormatter = new Intl.NumberFormat("en-US");
+const timestampFormatter = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 export function Component() {
   const { clearGroup, filters, hasActiveFilters, resetFilters, updateFilters } =
@@ -61,123 +69,139 @@ export function Component() {
     issuesQuery.data?.pages[0]?.checked_at ??
     facetsQuery.data?.checked_at ??
     null;
+  const total = issuesQuery.data?.pages[0]?.page.total ?? 0;
 
   return (
     <article className={styles.page}>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>{healthCopy.eyebrow}</p>
-        <RouteHeading>{healthCopy.title}</RouteHeading>
-        <p className={styles.description}>{healthCopy.description}</p>
-        <p className={styles.subtle}>
-          {checkedAt
-            ? `${healthCopy.freshness} ${formatTimestamp(checkedAt)}`
-            : healthCopy.neverChecked}
-        </p>
-      </header>
+      <PageHeader
+        description={healthCopy.description}
+        eyebrow={healthCopy.eyebrow}
+        meta={
+          <p>
+            {checkedAt
+              ? `${healthCopy.freshness} ${formatTimestamp(checkedAt)}`
+              : healthCopy.neverChecked}
+          </p>
+        }
+        title={healthCopy.title}
+      />
       <CheckRunControl />
-      <section className={styles.filters} aria-label="Health filters">
-        <div className={styles.filterGrid}>
-          <label className={styles.field}>
-            {healthCopy.searchLabel}
-            <input
-              data-list-search
-              type="search"
-              placeholder={healthCopy.searchPlaceholder}
-              value={filters.query}
-              onChange={(event) =>
-                updateFilters({ query: event.currentTarget.value })
-              }
-            />
-          </label>
-          <label className={styles.field}>
-            {healthCopy.issueTypeLabel}
-            <select
-              value={filters.issueType ?? ""}
-              onChange={(event) =>
-                updateFilters({
-                  issueType:
-                    event.currentTarget.value === ""
-                      ? undefined
-                      : (event.currentTarget.value as typeof filters.issueType),
-                  groupKey: undefined,
-                })
-              }
-            >
-              <option value="">{healthCopy.allIssueTypes}</option>
-              {issueTypeOptions.map((type) => (
-                <option key={type} value={type}>
-                  {issueTypeLabel(type)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className={styles.field}>
-            {healthCopy.groupingLabel}
-            <select
-              value={filters.groupBy}
-              onChange={(event) =>
-                updateFilters({
-                  groupBy: event.currentTarget.value as typeof filters.groupBy,
-                  groupKey: undefined,
-                })
-              }
-            >
-              {groupingOptions.map((grouping) => (
-                <option key={grouping} value={grouping}>
-                  {groupingLabel(grouping)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className={styles.field}>
-            {healthCopy.libraryLabel}
-            <input
-              value={filters.libraryId}
-              onChange={(event) =>
-                updateFilters({
-                  libraryId: event.currentTarget.value,
-                  groupKey: undefined,
-                })
-              }
-            />
-          </label>
-        </div>
-        <div className={styles.actions}>
-          {filters.groupKey ? (
-            <p className={styles.selected}>
-              {healthCopy.selectedGroup}:{" "}
-              {healthGroupValueLabel(
-                filters.groupBy,
-                filters.groupKey,
-                filters.groupKey,
-              )}
-            </p>
-          ) : null}
-          {filters.groupKey ? (
-            <Button onClick={clearGroup} variant="quiet">
-              {healthCopy.clearGroup}
-            </Button>
-          ) : null}
+      <section className={toolbarStyles.toolbar} aria-label="Health filters">
+        <label className={toolbarStyles.search}>
+          <VisuallyHidden>{healthCopy.searchLabel}</VisuallyHidden>
+          <input
+            autoComplete="off"
+            data-list-search
+            name="health-search"
+            type="search"
+            placeholder={healthCopy.searchPlaceholder}
+            value={filters.query}
+            onChange={(event) =>
+              updateFilters({ query: event.currentTarget.value })
+            }
+          />
+        </label>
+        <label className={toolbarStyles.control}>
+          <VisuallyHidden>{healthCopy.issueTypeLabel}</VisuallyHidden>
+          <select
+            name="health-issue-type"
+            value={filters.issueType ?? ""}
+            onChange={(event) =>
+              updateFilters({
+                issueType:
+                  event.currentTarget.value === ""
+                    ? undefined
+                    : (event.currentTarget.value as typeof filters.issueType),
+                groupKey: undefined,
+              })
+            }
+          >
+            <option value="">{healthCopy.allIssueTypes}</option>
+            {issueTypeOptions.map((type) => (
+              <option key={type} value={type}>
+                {issueTypeLabel(type)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={toolbarStyles.wideControl}>
+          <VisuallyHidden>{healthCopy.groupingLabel}</VisuallyHidden>
+          <select
+            name="health-grouping"
+            value={filters.groupBy}
+            onChange={(event) =>
+              updateFilters({
+                groupBy: event.currentTarget.value as typeof filters.groupBy,
+                groupKey: undefined,
+              })
+            }
+          >
+            {groupingOptions.map((grouping) => (
+              <option key={grouping} value={grouping}>
+                {groupingLabel(grouping)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={toolbarStyles.wideControl}>
+          <VisuallyHidden>{healthCopy.libraryLabel}</VisuallyHidden>
+          <input
+            autoComplete="off"
+            name="health-library-id"
+            placeholder={`${healthCopy.libraryLabel}…`}
+            value={filters.libraryId}
+            onChange={(event) =>
+              updateFilters({
+                libraryId: event.currentTarget.value,
+                groupKey: undefined,
+              })
+            }
+          />
+        </label>
+        <div className={toolbarStyles.actions}>
           {hasActiveFilters ? (
             <Button onClick={resetFilters} variant="quiet">
               {healthCopy.reset}
             </Button>
           ) : null}
+          {issuesQuery.data !== undefined ? (
+            <p aria-live="polite" className={toolbarStyles.resultCount}>
+              {numberFormatter.format(total)} findings
+            </p>
+          ) : null}
         </div>
+        {filters.groupKey || facetsQuery.data ? (
+          <div className={toolbarStyles.secondaryRow}>
+            {filters.groupKey ? (
+              <p className={toolbarStyles.selected}>
+                {healthCopy.selectedGroup}:{" "}
+                {healthGroupValueLabel(
+                  filters.groupBy,
+                  filters.groupKey,
+                  filters.groupKey,
+                )}
+              </p>
+            ) : null}
+            {filters.groupKey ? (
+              <Button onClick={clearGroup} variant="quiet">
+                {healthCopy.clearGroup}
+              </Button>
+            ) : null}
+            {facetsQuery.data ? (
+              <ul aria-label={healthCopy.facets} className={styles.facetStrip}>
+                {facetsQuery.data.facets.issue_type.map((facet) => (
+                  <li className={styles.facetCompact} key={facet.value}>
+                    <IssueTypeValue value={facet.value} />
+                    <span className={styles.count}>
+                      {numberFormatter.format(facet.count)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
       </section>
-      {facetsQuery.data ? (
-        <section className={styles.section}>
-          <h2>{healthCopy.facets}</h2>
-          <ul className={styles.facetList}>
-            {facetsQuery.data.facets.issue_type.map((facet) => (
-              <li className={styles.facet} key={facet.value}>
-                <IssueTypeValue value={facet.value} />
-                <span className={styles.count}>{facet.count}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
       <section className={styles.section}>
         <h2>{healthCopy.groups}</h2>
         {groupsQuery.isPending ? (
@@ -217,13 +241,22 @@ export function Component() {
                     </span>
                   ) : null}
                 </button>
-                <span className={styles.count}>{group.count}</span>
+                <span className={styles.count}>
+                  {numberFormatter.format(group.count)}
+                </span>
               </li>
             ))}
           </ul>
         ) : null}
-        {groupsQuery.isSuccess && groupPage.page !== undefined ? (
-          <CursorPageControls collectionLabel="Health groups" {...groupPage} />
+        {groupsQuery.isSuccess &&
+        groups.length > 0 &&
+        groupPage.page !== undefined ? (
+          <CursorPageControls
+            collectionLabel="Health groups"
+            pageSize={groupPage.page.page.limit}
+            totalItems={groupPage.page.page.total}
+            {...groupPage}
+          />
         ) : null}
       </section>
       <section className={styles.section}>
@@ -243,35 +276,58 @@ export function Component() {
         ) : null}
         {issues.length > 0 ? (
           <ul className={styles.list}>
+            <li aria-hidden="true" className={styles.healthColumnHeader}>
+              <span>Issue</span>
+              <span>Path</span>
+              <span>Evidence</span>
+              <span>Library</span>
+            </li>
             {issues.map((issue, index) => (
               <li
-                className={styles.row}
+                className={`${styles.row} ${styles.healthRow}`}
                 key={`${issue.library_id}:${issue.issue_type}:${issue.path ?? index}`}
               >
-                <div className={styles.rowHeader}>
-                  <strong>
-                    <IssueTypeValue value={issue.issue_type} />
-                  </strong>
-                  <span className={styles.id}>{issue.library_id}</span>
-                </div>
-                {issue.path ? (
-                  <p className={styles.path}>{issue.path}</p>
-                ) : null}
-                {issue.detail ? <p>{issue.detail}</p> : null}
-                <div className={styles.metadata}>
+                <strong className={styles.healthIssue}>
+                  <IssueTypeValue value={issue.issue_type} />
+                </strong>
+                <span
+                  className={`${styles.path} ${styles.healthPath}`}
+                  title={issue.path ?? undefined}
+                  translate="no"
+                >
+                  {issue.path ?? "—"}
+                </span>
+                <div className={styles.healthReferences}>
                   {issue.track_id ? (
                     <span>
-                      Track <span className={styles.id}>{issue.track_id}</span>
+                      Track{" "}
+                      <span className={styles.id} translate="no">
+                        {issue.track_id}
+                      </span>
                     </span>
                   ) : null}
                   {issue.plan_id ? (
                     <span>
-                      Plan <span className={styles.id}>{issue.plan_id}</span>
+                      Plan{" "}
+                      <span className={styles.id} translate="no">
+                        {issue.plan_id}
+                      </span>
                     </span>
                   ) : null}
+                  {issue.track_id || issue.plan_id ? null : <span>—</span>}
                 </div>
+                <span
+                  className={`${styles.id} ${styles.healthLibrary}`}
+                  title={issue.library_id}
+                  translate="no"
+                >
+                  {issue.library_id}
+                </span>
+                {issue.detail ? (
+                  <p className={styles.healthDetail}>{issue.detail}</p>
+                ) : null}
                 {issue.issue_type === "pending_file_event_exists" ? (
-                  <div className={styles.warning}>
+                  <div className={`${styles.warning} ${styles.healthWarning}`}>
                     <strong>Manual review required</strong>
                     <p>{healthCopy.pending}</p>
                   </div>
@@ -280,8 +336,15 @@ export function Component() {
             ))}
           </ul>
         ) : null}
-        {issuesQuery.isSuccess && issuePage.page !== undefined ? (
-          <CursorPageControls collectionLabel="Findings" {...issuePage} />
+        {issuesQuery.isSuccess &&
+        issues.length > 0 &&
+        issuePage.page !== undefined ? (
+          <CursorPageControls
+            collectionLabel="Findings"
+            pageSize={issuePage.page.page.limit}
+            totalItems={issuePage.page.page.total}
+            {...issuePage}
+          />
         ) : null}
       </section>
     </article>
@@ -290,5 +353,5 @@ export function Component() {
 
 function formatTimestamp(value: string) {
   const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
+  return Number.isNaN(date.valueOf()) ? value : timestampFormatter.format(date);
 }

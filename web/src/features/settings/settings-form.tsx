@@ -5,11 +5,13 @@
 import {
   useCallback,
   useContext,
+  useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
 } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useBeforeUnload, useBlocker } from "react-router-dom";
 
@@ -27,7 +29,7 @@ import { BootstrapContext } from "../bootstrap/bootstrap-context";
 import { Button } from "../../ui/primitives/button";
 import { Dialog } from "../../ui/primitives/dialog";
 import { LiveRegion } from "../../ui/primitives/live-region";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
 import {
   generateArtistIds,
   hasSettingsErrorCode,
@@ -43,6 +45,8 @@ import { defaultPreviewSample, settingsCopy } from "./settings-copy";
 import styles from "./settings.module.css";
 
 type PreviewSample = Pick<PathPreviewRequest, "file_extension" | "metadata">;
+
+const PREVIEW_DEBOUNCE_MS = 250;
 
 type SettingsEditorProps = {
   initial: SettingsData;
@@ -63,13 +67,14 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
     setValue,
   } = form;
   const draft = useWatch({ control });
+  const previewArtistIds = useWatch({ control, name: "artist_ids" });
+  const previewPathPolicy = useWatch({ control, name: "path_policy" });
   const draftFingerprint = stableFingerprint(draft);
   const [baseRevision, setBaseRevision] = useState(initial.config_revision);
   const [review, setReview] = useState<SettingsCandidateData | null>(null);
   const [reviewedFingerprint, setReviewedFingerprint] = useState<string | null>(
     null,
   );
-  const [preview, setPreview] = useState<PathPreview>(initial.preview);
   const [previewSample, setPreviewSample] =
     useState<PreviewSample>(defaultPreviewSample);
   const [artistNames, setArtistNames] = useState("");
@@ -77,15 +82,51 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
   const [actionError, setActionError] = useState<unknown>(null);
   const [savedRevision, setSavedRevision] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  const reviewButtonRef = useRef<HTMLButtonElement>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
   const stayButtonRef = useRef<HTMLButtonElement>(null);
   const reviewRegionRef = useRef<HTMLElement>(null);
   const errorRegionRef = useRef<HTMLDivElement>(null);
-  const savedRegionRef = useRef<HTMLDivElement>(null);
+  const savedNotificationRef = useRef<HTMLDivElement>(null);
   const blocker = useBlocker(formState.isDirty);
   const reviewIsCurrent =
     review !== null && reviewedFingerprint === draftFingerprint;
   const canSave = bootstrap?.runtime_capabilities.can_change_settings ?? false;
+  const previewRequest = useMemo(
+    () => ({
+      artist_ids: previewArtistIds,
+      file_extension: previewSample.file_extension,
+      metadata: previewSample.metadata,
+      path_policy: previewPathPolicy,
+    }),
+    [previewArtistIds, previewPathPolicy, previewSample],
+  );
+  const debouncedPreviewRequest = useDebouncedValue(
+    previewRequest,
+    PREVIEW_DEBOUNCE_MS,
+  );
+  const debouncedPreviewFingerprint = stableFingerprint(
+    debouncedPreviewRequest,
+  );
+  const initialPreviewFingerprint = useMemo(
+    () =>
+      stableFingerprint(
+        createPreviewRequest(initial.config, defaultPreviewSample),
+      ),
+    [initial.config],
+  );
+  const previewQuery = useQuery<PathPreview>({
+    enabled: debouncedPreviewFingerprint !== initialPreviewFingerprint,
+    placeholderData: (previousPreview) => previousPreview,
+    queryFn: ({ signal }) =>
+      previewSettingsDraft(debouncedPreviewRequest, signal),
+    queryKey: [
+      ...settingsQueryKey,
+      "path-preview",
+      debouncedPreviewFingerprint,
+    ],
+    retry: false,
+  });
+  const preview = previewQuery.data ?? initial.preview;
 
   useBeforeUnload(
     useCallback(
@@ -101,10 +142,6 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
 
   const validateMutation = useMutation({
     mutationFn: validateSettingsDraft,
-    retry: false,
-  });
-  const previewMutation = useMutation({
-    mutationFn: previewSettingsDraft,
     retry: false,
   });
   const artistIdMutation = useMutation({
@@ -152,32 +189,10 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
       });
       setReview(result);
       setReviewedFingerprint(fingerprint);
-      setPreview(result.preview);
       setAnnouncement(
         result.validation.valid ? settingsCopy.valid : settingsCopy.invalid,
       );
       reviewRegionRef.current?.focus();
-    } catch (error) {
-      presentActionError(error);
-    }
-  }
-
-  async function handlePreview() {
-    setActionError(null);
-    const config = getValues();
-    try {
-      const result = await previewMutation.mutateAsync({
-        artist_ids: config.artist_ids,
-        file_extension: previewSample.file_extension,
-        metadata: previewSample.metadata,
-        path_policy: config.path_policy,
-      });
-      setPreview(result);
-      setAnnouncement(
-        result.path === null
-          ? settingsCopy.previewUnavailable
-          : `Preview updated to ${result.path}`,
-      );
     } catch (error) {
       presentActionError(error);
     }
@@ -211,26 +226,22 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
     }
   }
 
-  async function handleSave() {
-    if (!reviewIsCurrent || review === null || !review.validation.valid) {
-      return;
-    }
+  async function handleSave(config: AppConfigResource) {
     setActionError(null);
     setSavedRevision(null);
     try {
       const result = await saveMutation.mutateAsync({
-        config: review.config,
+        config,
         expected_config_revision: baseRevision,
       });
       setBaseRevision(result.config_revision);
       setReview(result);
       const savedFingerprint = stableFingerprint(result.config);
       setReviewedFingerprint(savedFingerprint);
-      setPreview(result.preview);
       setSavedRevision(result.config_revision);
       reset(result.config);
       setAnnouncement(settingsCopy.saved);
-      savedRegionRef.current?.focus();
+      savedNotificationRef.current?.focus();
       void Promise.all([
         queryClient.invalidateQueries({
           queryKey: settingsQueryKey,
@@ -253,14 +264,36 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
 
   return (
     <article className={styles.page}>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>{settingsCopy.eyebrow}</p>
-        <RouteHeading>{settingsCopy.title}</RouteHeading>
-        <p className={styles.description}>{settingsCopy.description}</p>
-        <p className={styles.revision}>
-          {settingsCopy.revisionLabel}: <code>{baseRevision}</code>
-        </p>
-      </header>
+      <div
+        className={styles.savedNotificationRegion}
+        ref={savedNotificationRef}
+        tabIndex={-1}
+      >
+        {savedRevision === null ? null : (
+          <section
+            aria-atomic="true"
+            className={styles.savedNotification}
+            role="status"
+          >
+            <h2>{settingsCopy.saved}</h2>
+            <p>{settingsCopy.savedBody}</p>
+            <p className={styles.revision}>
+              {settingsCopy.revisionLabel}: <code>{savedRevision}</code>
+            </p>
+          </section>
+        )}
+      </div>
+
+      <PageHeader
+        description={settingsCopy.description}
+        eyebrow={settingsCopy.eyebrow}
+        meta={
+          <span className={styles.revision}>
+            {settingsCopy.revisionLabel}: <code>{baseRevision}</code>
+          </span>
+        }
+        title={settingsCopy.title}
+      />
 
       {!initial.validation.valid ? (
         <ValidationPanel
@@ -282,7 +315,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
 
       <form
         className={styles.form}
-        onSubmit={(event) => void handleSubmit(handleReview)(event)}
+        onSubmit={(event) => void handleSubmit(handleSave)(event)}
       >
         <SettingsSection
           description={settingsCopy.pathHelp}
@@ -522,7 +555,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
           description={settingsCopy.previewBody}
           title={settingsCopy.previewTitle}
         >
-          <PreviewResult preview={preview} />
+          <PreviewResult preview={preview} updating={previewQuery.isFetching} />
           <div className={styles.fieldGrid}>
             <SampleTextField
               id="settings-sample-artist"
@@ -613,15 +646,17 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
               value={previewSample.file_extension}
             />
           </div>
-          <Button
-            disabled={previewMutation.isPending}
-            onClick={() => void handlePreview()}
-            variant="secondary"
-          >
-            {previewMutation.isPending
-              ? settingsCopy.previewing
-              : settingsCopy.updatePreview}
-          </Button>
+          {previewQuery.isError ? (
+            <div className={styles.previewError} role="alert">
+              <p>{settingsCopy.previewError}</p>
+              <Button
+                onClick={() => void previewQuery.refetch()}
+                variant="secondary"
+              >
+                {settingsCopy.retryPreview}
+              </Button>
+            </div>
+          ) : null}
         </SettingsSection>
 
         <section className={styles.review} ref={reviewRegionRef} tabIndex={-1}>
@@ -635,26 +670,25 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
           ) : null}
           <div className={styles.reviewActions}>
             <Button
-              disabled={validateMutation.isPending}
-              ref={reviewButtonRef}
-              type="submit"
-              variant={reviewIsCurrent ? "secondary" : "primary"}
+              disabled={validateMutation.isPending || saveMutation.isPending}
+              onClick={() => void handleSubmit(handleReview)()}
+              type="button"
+              variant="secondary"
             >
               {validateMutation.isPending
                 ? settingsCopy.reviewing
                 : settingsCopy.review}
             </Button>
-            {reviewIsCurrent && review.validation.valid ? (
-              <Button
-                disabled={!canSave || saveMutation.isPending}
-                onClick={() => void handleSave()}
-                variant="primary"
-              >
-                {saveMutation.isPending
-                  ? settingsCopy.saving
-                  : settingsCopy.save}
-              </Button>
-            ) : null}
+            <Button
+              disabled={
+                !canSave || saveMutation.isPending || validateMutation.isPending
+              }
+              ref={saveButtonRef}
+              type="submit"
+              variant="primary"
+            >
+              {saveMutation.isPending ? settingsCopy.saving : settingsCopy.save}
+            </Button>
           </div>
         </section>
       </form>
@@ -662,18 +696,6 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
       <div className={styles.focusRegion} ref={errorRegionRef} tabIndex={-1}>
         {actionError === null ? null : (
           <ActionError error={actionError} onLoadLatest={onLoadLatest} />
-        )}
-      </div>
-
-      <div className={styles.focusRegion} ref={savedRegionRef} tabIndex={-1}>
-        {savedRevision === null ? null : (
-          <section className={styles.success} role="status">
-            <h2>{settingsCopy.saved}</h2>
-            <p>{settingsCopy.savedBody}</p>
-            <p className={styles.revision}>
-              {settingsCopy.revisionLabel}: <code>{savedRevision}</code>
-            </p>
-          </section>
         )}
       </div>
 
@@ -685,7 +707,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
         label={settingsCopy.unsavedTitle}
         onRequestClose={() => blocker.reset?.()}
         open={blocker.state === "blocked"}
-        returnFocusRef={reviewButtonRef}
+        returnFocusRef={saveButtonRef}
       >
         <p>{settingsCopy.unsavedBody}</p>
         <div className={styles.dialogActions}>
@@ -863,17 +885,53 @@ function ArtistIdEntries({
   );
 }
 
-function PreviewResult({ preview }: { preview: PathPreview }) {
+function PreviewResult({
+  preview,
+  updating,
+}: {
+  preview: PathPreview;
+  updating: boolean;
+}) {
   return (
-    <div className={styles.preview} role="status">
+    <div aria-busy={updating} className={styles.preview} role="status">
       {preview.path === null ? (
         <p>{settingsCopy.previewUnavailable}</p>
       ) : (
         <code>{preview.path}</code>
       )}
+      {updating ? (
+        <span className={styles.previewActivity}>
+          {settingsCopy.previewing}
+        </span>
+      ) : null}
       <DiagnosticList diagnostics={preview.errors} />
     </div>
   );
+}
+
+function createPreviewRequest(
+  config: AppConfigResource,
+  sample: PreviewSample,
+): PathPreviewRequest {
+  return {
+    artist_ids: config.artist_ids,
+    file_extension: sample.file_extension,
+    metadata: sample.metadata,
+    path_policy: config.path_policy,
+  };
+}
+
+function useDebouncedValue<Value>(value: Value, delayMs: number): Value {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = globalThis.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+    return () => globalThis.clearTimeout(timer);
+  }, [delayMs, value]);
+
+  return debouncedValue;
 }
 
 function ReviewResult({ result }: { result: SettingsCandidateData }) {

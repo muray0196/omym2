@@ -15,7 +15,9 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { useCursorPage } from "../../ui/cursor-page";
 import { Button } from "../../ui/primitives/button";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
+import { VisuallyHidden } from "../../ui/primitives/visually-hidden";
+import toolbarStyles from "../../ui/primitives/toolbar.module.css";
 import { planCopy } from "./plan-copy";
 import { PlanErrorState } from "./plan-error-state";
 import { PlanExecutionControls } from "./plan-execution-controls";
@@ -101,17 +103,13 @@ export function PlanDetail() {
           {planCopy.detail.back}
         </Link>
       </div>
-      <header className={styles.header}>
-        {exactPlan.isSuccess ? (
-          <p className={styles.eyebrow}>{planCopy.detail.eyebrow}</p>
-        ) : null}
-        <RouteHeading>
-          {planNotFound ? planCopy.detail.notFoundTitle : planCopy.detail.title}
-        </RouteHeading>
-        {exactPlan.isSuccess ? (
-          <PlanMetadata plan={exactPlan.data.plan} />
-        ) : null}
-      </header>
+      <PageHeader
+        eyebrow={planCopy.detail.eyebrow}
+        title={
+          planNotFound ? planCopy.detail.notFoundTitle : planCopy.detail.title
+        }
+      />
+      {exactPlan.isSuccess ? <PlanMetadata plan={exactPlan.data.plan} /> : null}
 
       {exactPlan.isPending ? (
         <section className={styles.state}>
@@ -250,103 +248,100 @@ function ActionFilters({
 }) {
   return (
     <form
-      className={styles.filterPanel}
+      aria-label="Plan action filters"
+      className={toolbarStyles.toolbar}
       onSubmit={(event) => event.preventDefault()}
     >
-      <div className={styles.filterGrid}>
-        <div className={styles.field}>
-          <label htmlFor="action-search">
-            {planCopy.detail.actionSearchLabel}
-          </label>
-          <input
-            data-list-search
-            id="action-search"
-            onChange={(event) => onUpdate({ query: event.target.value })}
-            placeholder={planCopy.detail.actionSearchPlaceholder}
-            type="search"
-            value={filters.query}
-          />
-        </div>
-        <SelectField
-          id="action-status"
-          label={planCopy.detail.actionStatusLabel}
-          onChange={(value) =>
-            onUpdate({
-              status: actionStatusOptions.find(
-                (option) => option.value === value,
-              )?.value,
-            })
-          }
-          options={actionStatusOptions}
-          placeholder={planCopy.detail.allActionStatuses}
-          value={filters.status ?? ""}
+      <label className={toolbarStyles.search} htmlFor="action-search">
+        <VisuallyHidden>{planCopy.detail.actionSearchLabel}</VisuallyHidden>
+        <input
+          autoComplete="off"
+          data-list-search
+          id="action-search"
+          name="action-search"
+          onChange={(event) => onUpdate({ query: event.target.value })}
+          placeholder={planCopy.detail.actionSearchPlaceholder}
+          type="search"
+          value={filters.query}
         />
-        <SelectField
-          id="action-type"
-          label={planCopy.detail.actionTypeLabel}
-          onChange={(value) =>
-            onUpdate({
-              actionType: actionTypeOptions.find(
-                (option) => option.value === value,
-              )?.value,
-            })
-          }
-          options={actionTypeOptions}
-          placeholder={planCopy.detail.allActionTypes}
-          value={filters.actionType ?? ""}
-        />
-        <SelectField
-          id="action-reason"
-          label={planCopy.detail.reasonLabel}
-          onChange={(value) =>
-            onUpdate({
-              reason: actionReasonOptions.find(
-                (option) => option.value === value,
-              )?.value,
-            })
-          }
-          options={actionReasonOptions}
-          placeholder={planCopy.detail.allReasons}
-          value={filters.reason ?? ""}
-        />
-        <SelectField
-          id="action-grouping"
-          label={planCopy.detail.groupingLabel}
-          onChange={(value) =>
-            onUpdate({
-              groupBy: actionGroupingOptions.find(
-                (option) => option.value === value,
-              )?.value,
-              groupKey: undefined,
-            })
-          }
-          options={actionGroupingOptions}
-          placeholder={planCopy.detail.groupingLabel}
-          value={filters.groupBy}
-        />
-      </div>
-      <div className={styles.filterActions}>
+      </label>
+      <SelectField
+        id="action-status"
+        label={planCopy.detail.actionStatusLabel}
+        onChange={(value) =>
+          onUpdate({
+            status: actionStatusOptions.find((option) => option.value === value)
+              ?.value,
+          })
+        }
+        options={actionStatusOptions}
+        placeholder={planCopy.detail.allActionStatuses}
+        value={filters.status ?? ""}
+      />
+      <SelectField
+        id="action-type"
+        label={planCopy.detail.actionTypeLabel}
+        onChange={(value) =>
+          onUpdate({
+            actionType: actionTypeOptions.find(
+              (option) => option.value === value,
+            )?.value,
+          })
+        }
+        options={actionTypeOptions}
+        placeholder={planCopy.detail.allActionTypes}
+        value={filters.actionType ?? ""}
+      />
+      <SelectField
+        id="action-reason"
+        label={planCopy.detail.reasonLabel}
+        onChange={(value) =>
+          onUpdate({
+            reason: actionReasonOptions.find((option) => option.value === value)
+              ?.value,
+          })
+        }
+        options={actionReasonOptions}
+        placeholder={planCopy.detail.allReasons}
+        value={filters.reason ?? ""}
+      />
+      <SelectField
+        id="action-grouping"
+        label={planCopy.detail.groupingLabel}
+        onChange={(value) =>
+          onUpdate({
+            groupBy: actionGroupingOptions.find(
+              (option) => option.value === value,
+            )?.value,
+            groupKey: undefined,
+          })
+        }
+        options={actionGroupingOptions}
+        placeholder={planCopy.detail.groupingLabel}
+        value={filters.groupBy}
+      />
+      <div className={toolbarStyles.actions}>
         {hasActiveFilters ? (
           <Button onClick={onReset} variant="quiet">
             {planCopy.detail.clearActionFilters}
           </Button>
         ) : null}
-        {filters.groupKey !== undefined ? (
-          <>
-            <p className={styles.selectedGroup}>
-              {planCopy.detail.selectedGroup}:{" "}
-              {actionGroupValueLabel(
-                filters.groupBy,
-                filters.groupKey,
-                filters.groupKey,
-              )}
-            </p>
-            <Button onClick={clearGroup} variant="quiet">
-              {planCopy.detail.clearGroup}
-            </Button>
-          </>
-        ) : null}
       </div>
+      {filters.groupKey !== undefined ? (
+        <div className={toolbarStyles.secondaryRow}>
+          <p className={toolbarStyles.selected}>
+            {planCopy.detail.selectedGroup}:{" "}
+            {actionGroupValueLabel(
+              filters.groupBy,
+              filters.groupKey,
+              filters.groupKey,
+            )}
+          </p>
+          <Button onClick={clearGroup} variant="quiet">
+            {planCopy.detail.clearGroup}
+          </Button>
+        </div>
+      ) : null}
     </form>
   );
 }
@@ -367,10 +362,11 @@ function SelectField({
   value: string;
 }) {
   return (
-    <div className={styles.field}>
-      <label htmlFor={id}>{label}</label>
+    <label className={toolbarStyles.control} htmlFor={id}>
+      <VisuallyHidden>{label}</VisuallyHidden>
       <select
         id={id}
+        name={id}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -381,7 +377,7 @@ function SelectField({
           </option>
         ))}
       </select>
-    </div>
+    </label>
   );
 }
 
@@ -439,7 +435,12 @@ function ActionListSection({
               <ActionRow action={action} key={action.action_id} />
             ))}
           </ul>
-          <CursorPageControls collectionLabel="Plan actions" {...actionPage} />
+          <CursorPageControls
+            collectionLabel="Plan actions"
+            pageSize={actionPage.page?.page.limit}
+            totalItems={actionPage.page?.page.total}
+            {...actionPage}
+          />
         </>
       ) : null}
     </section>
@@ -634,6 +635,8 @@ function GroupSection({
           </ul>
           <CursorPageControls
             collectionLabel="Plan action groups"
+            pageSize={groupPage.page?.page.limit}
+            totalItems={groupPage.page?.page.total}
             {...groupPage}
           />
         </>
@@ -650,8 +653,11 @@ function NotFoundState() {
           {planCopy.detail.back}
         </Link>
       </div>
+      <PageHeader
+        eyebrow={planCopy.detail.eyebrow}
+        title={planCopy.detail.notFoundTitle}
+      />
       <section className={styles.state}>
-        <RouteHeading>{planCopy.detail.notFoundTitle}</RouteHeading>
         <p>{planCopy.detail.notFoundBody}</p>
       </section>
     </article>

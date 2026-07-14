@@ -5,7 +5,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useParams } from "react-router-dom";
 
-import { RouteHeading } from "../../ui/primitives/route-heading";
+import { PageHeader } from "../../ui/primitives/page-header";
 import { libraryCopy } from "./library-copy";
 import { LibraryErrorState } from "./library-error-state";
 import styles from "./library-inspection.module.css";
@@ -50,15 +50,11 @@ export function TrackDetail() {
           {libraryCopy.detail.back}
         </Link>
       </div>
-      <header className={styles.header}>
-        {query.isSuccess || isNotFound ? (
-          <p className={styles.eyebrow}>{libraryCopy.detail.eyebrow}</p>
-        ) : null}
-        <RouteHeading>{heading}</RouteHeading>
-        {artist === null ? null : (
-          <p className={styles.description}>{artist}</p>
-        )}
-      </header>
+      <PageHeader
+        description={artist ?? undefined}
+        eyebrow={libraryCopy.detail.eyebrow}
+        title={heading}
+      />
 
       {query.isPending ? (
         <section className={styles.state} role="status">

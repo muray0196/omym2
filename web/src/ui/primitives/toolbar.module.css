@@ -1,0 +1,113 @@
+/**
+ * Summary: Defines the shared dense filter-toolbar layout for inspection screens.
+ * Why: Keeps filters scan-friendly, responsive, and consistently labeled.
+ */
+.toolbar {
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-10);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+}
+
+.search,
+.control,
+.wideControl {
+  display: block;
+  min-width: 0;
+}
+
+.search {
+  flex: 1 1 240px;
+  min-width: min(220px, 100%);
+}
+
+.control {
+  flex: 0 1 156px;
+}
+
+.wideControl {
+  flex: 0 1 190px;
+}
+
+.search input,
+.control input,
+.control select,
+.wideControl input,
+.wideControl select {
+  min-width: 0;
+  width: 100%;
+}
+
+.checkbox {
+  align-items: center;
+  color: var(--color-body);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 500;
+  gap: var(--space-8);
+  min-height: var(--target-dense);
+  padding: 0 var(--space-4);
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  justify-content: flex-end;
+  margin-left: auto;
+  min-height: var(--target-dense);
+}
+
+.resultCount {
+  color: var(--color-mute);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.secondaryRow {
+  align-items: center;
+  border-top: 1px solid var(--color-hairline);
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  min-width: 0;
+  padding-top: var(--space-8);
+}
+
+.selected {
+  color: var(--color-blue);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .toolbar {
+    align-items: stretch;
+  }
+
+  .search,
+  .control,
+  .wideControl {
+    flex-basis: 100%;
+  }
+
+  .actions {
+    flex-basis: 100%;
+    justify-content: space-between;
+    margin-left: 0;
+  }
+}
