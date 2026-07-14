@@ -550,12 +550,12 @@ def smoke_windows_package(
         library_root = path_root / "empty-library"
         incoming_root = path_root / "incoming"
         source_file = incoming_root / "smoke-track.flac"
-        extraction_a = path_root / "application-build-a"
-        extraction_b = path_root / "application-build-b"
+        extraction_a = workspace / "application-build-a"
+        extraction_b = workspace / "application-build-b"
         local_app_data.mkdir(parents=True)
         library_root.mkdir()
         _write_tagged_smoke_flac(source_file)
-        _require_long_unicode_paths(local_app_data, extraction_a, extraction_b)
+        _require_long_unicode_paths(local_app_data, library_root, incoming_root)
 
         bundle_a = extract_windows_archive(first_artifact.archive, extraction_a)
         executable_a = bundle_a / config.DESKTOP_WINDOWS_EXECUTABLE_NAME
@@ -699,6 +699,13 @@ def smoke_windows_package(
                 "launch_working_directory_characters": len(str(launch_working_directory.resolve())),
                 "launch_working_directory_manifest_sha256": _tree_snapshot_sha256(launch_working_directory_snapshot),
                 "launch_working_directory_unchanged": True,
+                "maximum_application_executable_characters": max(
+                    len(str(path.resolve())) for path in (executable_a, executable_b)
+                ),
+                "application_executables_below_legacy_max_path": all(
+                    len(str(path.resolve())) < config.DESKTOP_WINDOWS_LEGACY_MAX_PATH_CHARACTERS
+                    for path in (executable_a, executable_b)
+                ),
                 "maximum_characters": max(
                     len(str(path.resolve())) for path in (executable_a, executable_b, database_file)
                 ),

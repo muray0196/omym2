@@ -208,18 +208,18 @@ def test_previous_build_inputs_accept_complete_or_absent_pair(tmp_path: Path) ->
 
 
 def test_native_smoke_accepts_unicode_paths_beyond_legacy_max_path(tmp_path: Path) -> None:
-    """Both application generations and LOCALAPPDATA exceed legacy MAX_PATH with Unicode."""
+    """Mutable state and user-selected music roots exceed legacy MAX_PATH with Unicode."""
     component = "x" * config.DESKTOP_WINDOWS_SMOKE_LONG_COMPONENT_CHARACTERS
     root = tmp_path / config.DESKTOP_WINDOWS_SMOKE_UNICODE_DIRECTORY_NAME
     for index in range(config.DESKTOP_WINDOWS_SMOKE_LONG_COMPONENT_COUNT):
         root /= f"{index}-{component}"
     local_app_data = root / "local-app-data"
-    extraction_a = root / "application-build-a"
-    extraction_b = root / "application-build-b"
+    library_root = root / "empty-library"
+    incoming_root = root / "incoming"
 
-    _require_long_unicode_paths(local_app_data, extraction_a, extraction_b)
+    _require_long_unicode_paths(local_app_data, library_root, incoming_root)
 
-    assert min(len(str(path.resolve())) for path in (local_app_data, extraction_a, extraction_b)) >= (
+    assert min(len(str(path.resolve())) for path in (local_app_data, library_root, incoming_root)) >= (
         config.DESKTOP_WINDOWS_SMOKE_MINIMUM_PATH_CHARACTERS
     )
 
@@ -228,16 +228,12 @@ def test_native_process_launch_does_not_force_long_child_working_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A fully qualified long executable is explicit while the child cwd remains short."""
-    executable_directory = tmp_path
-    component_index = 0
-    while len(str((executable_directory / config.DESKTOP_WINDOWS_EXECUTABLE_NAME).resolve())) <= (
-        config.DESKTOP_WINDOWS_SMOKE_MINIMUM_PATH_CHARACTERS
-    ):
-        executable_directory /= f"component-{component_index:02d}-xxxxxxxxxxxxxxxx"
-        component_index += 1
+    """The replaceable application path is explicit while the child cwd remains isolated."""
+    executable_directory = tmp_path / "application"
     executable = executable_directory / config.DESKTOP_WINDOWS_EXECUTABLE_NAME
     executable.parent.mkdir(parents=True)
+    launch_working_directory = tmp_path / config.DESKTOP_WINDOWS_SMOKE_LAUNCH_CWD_DIRECTORY_NAME
+    launch_working_directory.mkdir()
     _ = executable.write_bytes(b"native executable")
     observed: list[tuple[tuple[object, ...], dict[str, object]]] = []
     sentinel = object()
@@ -254,7 +250,7 @@ def test_native_process_launch_does_not_force_long_child_working_directory(
         assert (
             _start_native_process(
                 executable,
-                tmp_path,
+                launch_working_directory,
                 {"LOCALAPPDATA": str(tmp_path)},
                 stdout_stream,
                 stderr_stream,
@@ -263,10 +259,10 @@ def test_native_process_launch_does_not_force_long_child_working_directory(
         )
     arguments, keywords = observed[0]
     executable_path = str(executable.resolve())
-    assert len(executable_path) > config.DESKTOP_WINDOWS_SMOKE_MINIMUM_PATH_CHARACTERS
+    assert len(executable_path) < config.DESKTOP_WINDOWS_LEGACY_MAX_PATH_CHARACTERS
     assert arguments == ((executable_path,),)
     assert keywords["executable"] == executable_path
-    assert keywords["cwd"] == str(tmp_path.resolve())
+    assert keywords["cwd"] == str(launch_working_directory.resolve())
     assert keywords["stdout"] is stdout_stream
     assert keywords["stderr"] is stderr_stream
 

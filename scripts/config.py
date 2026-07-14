@@ -71,6 +71,7 @@ DESKTOP_WINDOWS_SMOKE_UNICODE_DIRECTORY_NAME = "音楽-パッケージ"  # Unico
 DESKTOP_WINDOWS_SMOKE_LONG_COMPONENT_CHARACTERS = 110  # long-path smoke segment length, characters, 32..240
 DESKTOP_WINDOWS_SMOKE_LONG_COMPONENT_COUNT = 2  # nested long-path smoke components, components, >= 2
 DESKTOP_WINDOWS_SMOKE_LAUNCH_CWD_DIRECTORY_NAME = "launch-cwd"  # isolated short child cwd, one path component
+DESKTOP_WINDOWS_LEGACY_MAX_PATH_CHARACTERS = 260  # Win32 MAX_PATH boundary including terminator, characters
 DESKTOP_WINDOWS_SMOKE_MAXIMUM_LAUNCH_CWD_CHARACTERS = 258  # CreateProcessW child cwd limit, characters, 1..258
 DESKTOP_WINDOWS_SMOKE_MINIMUM_PATH_CHARACTERS = 280  # minimum observed smoke path length, characters, > 260
 DESKTOP_WINDOWS_SMOKE_MAXIMUM_PATH_CHARACTERS = 480  # bounded smoke path ceiling, characters, >= minimum
