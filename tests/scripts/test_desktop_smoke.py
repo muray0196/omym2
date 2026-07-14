@@ -20,6 +20,7 @@ from scripts import config
 from scripts.desktop import smoke_windows_package as desktop_smoke
 from scripts.desktop.audit_windows_package import WindowsPackageAudit
 from scripts.desktop.smoke_windows_package import (
+    _HTTP_NOT_FOUND_STATUS,  # pyright: ignore[reportPrivateUsage] -- shares the smoke contract status.
     _POWERSHELL_UTF8_PREAMBLE,  # pyright: ignore[reportPrivateUsage] -- protects localized output decoding.
     AuditedWindowsArtifact,
     NativeLaunchContext,
@@ -36,6 +37,7 @@ from scripts.desktop.smoke_windows_package import (
     _retain_native_launch_failure,  # pyright: ignore[reportPrivateUsage] -- verifies retained failure evidence.
     _run_native_ui_automation,  # pyright: ignore[reportPrivateUsage] -- verifies the PowerShell contract boundary.
     _run_powershell,  # pyright: ignore[reportPrivateUsage] -- verifies timeout error translation.
+    _smoke_security_boundaries,  # pyright: ignore[reportPrivateUsage] -- verifies package security evidence.
     _start_and_poll_operation,  # pyright: ignore[reportPrivateUsage] -- simulates a successful native UI action.
     _start_native_process,  # pyright: ignore[reportPrivateUsage] -- verifies long-path process creation.
     _tree_snapshot,  # pyright: ignore[reportPrivateUsage] -- snapshots the protected launch cwd.
@@ -408,6 +410,46 @@ def test_native_smoke_requires_edgechromium_initialization_before_content_loaded
     assert _loaded_webview_backend(initialized) is None
     with pytest.raises(WindowsPackageSmokeError, match="without exact prior EdgeChromium"):
         _ = _loaded_webview_backend(loaded)
+
+
+def test_packaged_security_probe_accepts_non_revealing_hostile_api_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The native smoke follows the API host guard's typed route-hiding contract."""
+    responses = iter(
+        (
+            desktop_smoke.HttpResponse(
+                body=b'{"errors":[{"code":"csrf_invalid"}]}',
+                headers={},
+                status=403,
+            ),
+            desktop_smoke.HttpResponse(
+                body=b'{"errors":[{"code":"api_not_found"}]}',
+                headers={},
+                status=404,
+            ),
+            desktop_smoke.HttpResponse(
+                body=b'{"errors":[{"code":"invalid_json"}]}',
+                headers={},
+                status=400,
+            ),
+        )
+    )
+
+    def fake_request(*_args: object, **_kwargs: object) -> desktop_smoke.HttpResponse:
+        return next(responses)
+
+    monkeypatch.setattr(desktop_smoke, "_request_loopback", fake_request)
+    monkeypatch.setattr(
+        desktop_smoke,
+        "_bootstrap_data",
+        lambda *_args, **_kwargs: {"csrf_token": "csrf-test"},
+    )
+
+    evidence = _smoke_security_boundaries("http://127.0.0.1:12345/")
+
+    assert evidence["hostile_host_status"] == _HTTP_NOT_FOUND_STATUS
+    assert evidence["hostile_host_error_code"] == "api_not_found"
 
 
 def test_packaged_api_probe_creates_non_destructive_add_plan(tmp_path: Path) -> None:

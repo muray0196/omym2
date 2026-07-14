@@ -65,6 +65,7 @@ _READY_URL_PATTERN = re.compile(rb"Desktop server ready url=(http://127\.0\.0\.1
 _HTTP_ACCEPTED_STATUS = 202
 _HTTP_BAD_REQUEST_STATUS = 400
 _HTTP_FORBIDDEN_STATUS = 403
+_HTTP_NOT_FOUND_STATUS = 404
 _SUCCESS_STATUS_CODE = 200
 _API_BOOTSTRAP_ROUTE = "/api/bootstrap"
 _API_ADD_ROUTE = "/api/plans/add"
@@ -1227,7 +1228,11 @@ def _smoke_security_boundaries(base_url: str) -> dict[str, object]:
         _API_BOOTSTRAP_ROUTE,
         headers={"Host": _HOSTILE_HOST_HEADER},
     )
-    _require_status(hostile_host, _HTTP_BAD_REQUEST_STATUS, context="hostile Host request")
+    _require_status(hostile_host, _HTTP_NOT_FOUND_STATUS, context="hostile API Host request")
+    hostile_host_error_code = _first_error_code(hostile_host, context="hostile API Host request")
+    if hostile_host_error_code != "api_not_found":
+        msg = f"Hostile API Host request returned unexpected error code {hostile_host_error_code!r}."
+        raise WindowsPackageSmokeError(msg)
 
     bootstrap = _bootstrap_data(base_url, require_valid_config=True)
     csrf_token = _required_string(bootstrap, "csrf_token", context="Bootstrap")
@@ -1254,6 +1259,7 @@ def _smoke_security_boundaries(base_url: str) -> dict[str, object]:
         raise WindowsPackageSmokeError(msg)
     return {
         "hostile_host_rejected": True,
+        "hostile_host_error_code": hostile_host_error_code,
         "hostile_host_status": hostile_host.status,
         "malformed_json_error_code": malformed_error_code,
         "malformed_json_internal_detail_absent": True,
