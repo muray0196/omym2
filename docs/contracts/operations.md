@@ -2,8 +2,8 @@
 type: Contract
 title: Durable Operation Contract
 description: Defines durable background Operation identity, lifecycle, idempotency, progress, polling, retention, Operation-level restart recovery, and cancellation policy.
-tags: [operations, idempotency, polling, progress, recovery]
-timestamp: 2026-07-13T00:31:39+09:00
+tags: [operations, idempotency, polling, progress, recovery, desktop]
+timestamp: 2026-07-15T00:13:25+09:00
 ---
 
 # Durable Operation Contract
@@ -235,8 +235,10 @@ reconciliation rules immediately. It is not safe to roll the Plan back to
 ## Cancellation
 
 The initial Operation contract has no user-triggered cancellation for queued or
-running Operations. Closing a browser, losing a polling connection, or sending
-another request does not cancel work.
+running Operations. Closing a browser or the packaged desktop window, losing a
+polling connection, or sending another request does not cancel work. Desktop
+shutdown waits for accepted work to finish and release the shared operation
+lock before process exit.
 
 Ready-Plan cancellation is a separate synchronous Plan transition. It is
 permitted only before Apply claims the Plan and is serialized by the shared

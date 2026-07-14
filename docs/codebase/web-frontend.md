@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Web Frontend
-description: Defines the bundled desktop React and Vite Web frontend contract, including routes, design rules, API boundaries, layout behavior, production serving, packaging, security, and performance gates.
-tags: [web-frontend, react, vite, static-spa, performance]
-timestamp: 2026-07-14T22:01:48+09:00
+description: Defines the bundled desktop React and Vite Web frontend contract, including routes, design rules, API boundaries, browser and native-window serving, packaging, security, and performance gates.
+tags: [web-frontend, react, vite, static-spa, desktop, windows, performance]
+timestamp: 2026-07-15T00:13:25+09:00
 ---
 
 # Web Frontend
@@ -20,6 +20,8 @@ durable transport in
 [Durable Operations Over Polling](../decisions/0002-durable-operations-over-polling.md),
 and exclusive coordination in
 [Cross-Process Exclusive Operation Lock](../decisions/0003-cross-process-exclusive-operation-lock.md).
+The native Windows host is recorded in
+[ADR 0004](../decisions/0004-windows-desktop-application.md).
 Test categories and fixture policy are authoritative in [Testing](../development/testing.md).
 
 ## Current Boundary
@@ -280,6 +282,21 @@ Requests are classified before SPA fallback:
 If the packaged build is missing, UI routes return 503 while the JSON API
 remains operational.
 
+### Native Windows Host
+
+The Windows 11 x64 desktop application displays this same production surface
+inside one pywebview EdgeChromium window. It does not fork the React tree,
+change React Router or the generated client, add native navigation chrome, or
+register a pywebview `js_api` object. Path entry remains an ordinary Web form;
+a native picker is outside this boundary.
+
+The desktop process passes the existing FastAPI application to Uvicorn through
+an exclusively retained socket bound to dynamic port `0` on `127.0.0.1`. The
+same socket remains owned through server startup, so no release-and-rebind port
+race exists. The native window is created only after `/api/bootstrap` proves
+the server ready, and it navigates to the resulting same-origin loopback URL.
+The production HTTP protections in this section remain unchanged.
+
 `index.html` and HTML fallback responses use `Cache-Control: no-cache`.
 Content-hashed assets use
 `Cache-Control: public, max-age=31536000, immutable`. No unhashed file receives
@@ -327,6 +344,10 @@ Python build inclusion is configured through `pyproject.toml` package data.
 The build does not assume or require a separate `MANIFEST.in`; add one only
 if an audited sdist build proves the existing build backend cannot satisfy this
 contract.
+
+The Windows native ZIP freezes this same audited wheel rather than rebuilding
+the frontend or reading a source checkout. Its build and smoke contract is in
+[Windows Desktop Packaging](../development/desktop-packaging.md).
 
 ## Performance Contract
 

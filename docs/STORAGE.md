@@ -1,9 +1,9 @@
 ---
 type: Storage Design
 title: Storage
-description: Defines TOML raw-revision and atomic-save ownership plus SQLite managed-state, durable Operation/FileEvent, consistency, reproducibility, and path responsibilities.
-tags: [storage, sqlite, toml, persistence]
-timestamp: 2026-07-13T00:31:39+09:00
+description: Defines application-root selection, TOML raw-revision and atomic-save ownership, SQLite managed state, durable Operation and FileEvent storage, consistency, reproducibility, and path responsibilities.
+tags: [storage, sqlite, toml, persistence, desktop]
+timestamp: 2026-07-15T00:13:25+09:00
 ---
 
 # Storage
@@ -39,9 +39,43 @@ and persisted check diagnostics.
 | CheckRuns and CheckIssues | SQLite |
 | Actual music files | Filesystem, not DB |
 
-Config files, DB files, and internal directories are created lazily when commands need them. Missing config or DB is not an error by itself; missing required paths are errors only for commands that need those paths.
+Config and DB files are created lazily when an operation needs them. Desktop
+startup creates its log directory and current log file. Missing Config or DB is
+not an error by itself; missing required paths are errors only for operations
+that need those paths.
 
-Config files and internal DB files must stay under the application root so OMYM2 remains portable, excluding user-selected Library and Incoming paths.
+Config files, internal DB files, and desktop logs stay under the selected
+application root, excluding user-selected Library and Incoming paths.
+
+## Application Root Selection
+
+The CLI and packaged desktop application deliberately select different default
+application roots:
+
+| Surface | Default application root |
+| --- | --- |
+| CLI, including `omym2 settings` | Current working directory |
+| Windows 11 x64 desktop application | `%LOCALAPPDATA%\OMYM2` |
+
+The desktop root is stable and independent of the extracted PyInstaller
+application directory. Its primary files are:
+
+```text
+%LOCALAPPDATA%\OMYM2\.config\config.toml
+%LOCALAPPDATA%\OMYM2\.data\omym2.sqlite3
+%LOCALAPPDATA%\OMYM2\.data\logs\omym2-desktop.log
+```
+
+Replacing, moving, or deleting an extracted desktop archive does not migrate,
+replace, or delete this root. A later archive therefore reuses the same desktop
+Config and SQLite state. Removing desktop state is a separate, explicit act of
+deleting `%LOCALAPPDATA%\OMYM2`; package removal must not do it implicitly.
+
+The CLI remains current-working-directory rooted. It does not automatically
+discover or redirect to the desktop root, and the desktop application does not
+adopt the CLI's working directory. A caller that needs one state set must use
+the same explicit application-root selection rather than relying on package
+location.
 
 ## TOML Responsibility
 

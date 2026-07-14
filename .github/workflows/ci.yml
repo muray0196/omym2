@@ -226,10 +226,10 @@ jobs:
           retention-days: 14
 
   windows-package-smoke:
-    name: Windows Package And Static Smoke
+    name: Windows Desktop Package And Native Smoke
     needs: package-evidence
     runs-on: windows-2025
-    timeout-minutes: 25
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
@@ -249,8 +249,14 @@ jobs:
       - name: Install locked test dependencies
         run: uv sync --locked --dev
 
-      - name: Test real Windows lock contention and crash release
-        run: uv run pytest tests/adapters/fs/test_exclusive_operation_lock.py -q
+      - name: Test Windows lock and desktop runtime boundaries
+        run: >-
+          uv run pytest
+          tests/adapters/fs/test_exclusive_operation_lock.py
+          tests/adapters/desktop
+          tests/platform/test_desktop_entry_point.py
+          tests/platform/test_desktop_runtime.py
+          -q
 
       - name: Download audited package evidence
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
@@ -264,6 +270,28 @@ jobs:
           $wheel = Get-ChildItem build/web-package-evidence -Filter *.whl -File | Select-Object -First 1
           if ($null -eq $wheel) { throw "Audited wheel was not downloaded." }
           python scripts/web/smoke_web_wheel.py --wheel $wheel.FullName
+
+      - name: Build and smoke native desktop archive
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem build/web-package-evidence -Filter *.whl -File | Select-Object -First 1
+          if ($null -eq $wheel) { throw "Audited wheel was not downloaded." }
+          uv run python scripts/desktop/build_windows.py --wheel $wheel.FullName --output-directory build/desktop
+          $archive = Get-ChildItem build/desktop -Filter OMYM2-*-windows-x86_64.zip -File | Select-Object -First 1
+          if ($null -eq $archive) { throw "Desktop archive was not produced." }
+          uv run python scripts/desktop/smoke_windows_package.py --archive $archive.FullName --wheel $wheel.FullName
+          $smoke = Get-ChildItem build/desktop -Filter OMYM2-*-windows-x86_64-smoke.json -File | Select-Object -First 1
+          if ($null -eq $smoke) { throw "Desktop native-smoke evidence was not produced." }
+
+      - name: Upload native desktop measurements
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: omym2-desktop-windows-x86_64-evidence-${{ github.sha }}
+          path: |
+            build/desktop/*.json
+            build/desktop/*.sha256
+          if-no-files-found: error
+          retention-days: 14
 
   performance-budget:
     name: Installed Package Performance Budgets

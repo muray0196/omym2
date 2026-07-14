@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Testing
-description: Defines OMYM2's Python, bundled-frontend, desktop-browser, architecture, integration, contract, fixture, and CI test policy.
-tags: [testing, pytest, vitest, playwright, architecture-tests, fixtures]
-timestamp: 2026-07-14T01:47:14+09:00
+description: Defines OMYM2's Python, frontend, browser, native Windows UI Automation package, architecture, integration, contract, fixture, and CI test policy.
+tags: [testing, pytest, vitest, playwright, desktop, windows, architecture-tests, fixtures]
+timestamp: 2026-07-15T01:07:35+09:00
 ---
 
 # Testing
@@ -39,8 +39,10 @@ Required architecture test coverage:
 * shared does not import upper layers
 * forbidden dependencies remain forbidden
 * adapters do not import platform
-* CLI and Web adapters do not import concrete outbound adapters (`db`, `fs`,
-  `metadata`, `config`, `artist_ids`), except the documented CLI-only pair
+* CLI, Web, and desktop adapters do not import concrete outbound adapters
+  (`db`, `fs`, `metadata`, `config`, `artist_ids`), except the documented
+  CLI-only pair
+* the desktop adapter does not import the Web adapter or expose a native bridge
 
 ## Unit Tests
 
@@ -68,6 +70,8 @@ Use integration tests for:
 * vertical flows that combine usecases with real adapters
 * exclusive-operation contention and crash release through independent
   processes on both Unix and Windows once the lock adapter exists
+* the desktop server adapter serving root, deep route, hashed asset, and
+  Bootstrap through one retained ephemeral loopback listener
 
 ## Frontend Unit And Component Tests
 
@@ -117,8 +121,39 @@ tree or their explicit temporary external restore path.
 
 Playwright tests use role locators, accessible names, and ARIA snapshots. They
 must not depend on CSS class names. Keyboard and axe checks run in the required
-pull-request Chromium job. Cross-platform package/static smoke runs on Windows;
+pull-request Chromium job. Native desktop package smoke runs on Windows;
 browser behavior is not duplicated across browser engines without measured need.
+
+## Native Windows Package Smoke
+
+Native package acceptance runs against the frozen ZIP on Windows x64; it is not
+simulated on Linux and does not duplicate the Playwright product-flow suite. It
+must verify the shared Evergreen WebView2 prerequisite, one visible OMYM2
+window, no external browser, an exact HTTP-200 root document with successful
+pywebview injection, the primary SPA routes, deep route, hashed asset, Bootstrap
+and Settings endpoints, and production HTTP security. It creates one
+non-applied reviewable Plan through the packaged API as persisted-state setup.
+After relaunch, Microsoft UI Automation must remain scoped to WebView2's
+document while it exercises the interactive Overview, all six shell routes,
+Settings, and Add form submission through a ready Plan detail. API readback may
+verify the result but must not substitute for that second Plan's native UI
+creation. The smoke must then prove graceful close, process and listener
+termination, deletion of extracted copy A, and Config/SQLite/Plan persistence
+when extracted copy B runs from a different directory against the same isolated
+`%LOCALAPPDATA%` root.
+
+The smoke run records machine-readable JSON evidence for startup timing,
+graceful shutdown, relaunch, archive and unpacked package size, selected
+loopback behavior, and exact audited wheel/archive identities. Its paired
+package-audit evidence also rejects bundled Node.js, Chromium, alternate
+renderers, source trees, and resources that differ from that wheel. Exact
+commands and artifact ownership are in
+[Windows Desktop Packaging](desktop-packaging.md). The native UI flow proves the
+core packaged interactions but does not replace the browser-hosted Playwright
+suite, which remains authoritative for broader behavior, accessibility, and
+edge cases. Windows 11 release validation must repeat the complete smoke on the
+supported workstation target and retain its evidence; hosted Windows Server
+results cannot be relabeled as that target run.
 
 ## Visual Regression
 
@@ -187,12 +222,17 @@ The bundled frontend requires these independently diagnosable CI gates:
 4. pinned-Chromium Playwright E2E with keyboard and axe checks
 5. installed-package performance budget measurement (`npm run test:performance`)
 6. wheel/sdist content audit, clean install, installed-package smoke, and sdist-to-wheel rebuild without Node
-7. Windows package/static smoke and real multiprocess exclusive-lock
-   contention/crash-release tests
+7. Windows desktop build, audit, native-window smoke with JSON evidence, and
+   real multiprocess exclusive-lock contention/crash-release tests
 
 Pull requests and protected branches run gates 1–6 on Linux. Windows CI runs
-the package/static smoke and real multiprocess lock tests from gate 7. Completed
+the native desktop package smoke and real multiprocess lock tests from gate 7. Completed
 product-flow gates must not be weakened or silently skipped.
+
+The hosted `windows-2025` job is a native Windows Server 2025 x64 development
+proxy. It does not establish support for that server edition or replace release
+validation on the supported Windows 11 x64 target. A release candidate must run
+the same packaged smoke on Windows 11 x64 and retain its JSON evidence.
 
 ## Test Commands
 

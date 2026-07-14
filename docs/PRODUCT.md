@@ -1,9 +1,9 @@
 ---
 type: Product Overview
 title: Product
-description: Defines OMYM2 as a Plan-centered local music operations core with peer CLI and desktop Web surfaces, including the Web execution boundary and non-goals.
-tags: [product, overview, cli, web-ui, operations-console]
-timestamp: 2026-07-14T01:47:14+09:00
+description: Defines OMYM2 as a Plan-centered local music application with CLI, browser-hosted Web, and supported Windows desktop surfaces, including their execution boundary and non-goals.
+tags: [product, overview, cli, web-ui, desktop, windows, operations-console]
+timestamp: 2026-07-15T00:13:25+09:00
 ---
 
 # Product
@@ -21,7 +21,7 @@ not a separate implementation of path, conflict, or mutation rules.
 OMYM2 is not a full music-management application. Its shape is:
 
 ```text
-Headless domain/usecase core + CLI runner + local Web operations console
+Headless domain/usecase core + CLI runner + local Web operations console + thin native window
 ```
 
 The main value is not moving files quickly. The value is moving files through a reviewed Plan while keeping enough state and history to diagnose failures and recover safely.
@@ -32,6 +32,9 @@ This is a product-level summary. Execution rules are authoritative in [execution
 
 * CLI and Web operations use the same feature usecases, persisted state, and
   cross-process exclusion protocol.
+* The packaged desktop application is a thin host for the existing local Web
+  application. It adds no second frontend, native business logic, or direct
+  data-access boundary.
 * The Web UI covers Settings, Plan creation and review, Check, Apply, ready-Plan
   Cancel, History, and Undo-through-Plan.
 * No Web control moves a Library music file directly. Apply is the only Web
@@ -115,6 +118,27 @@ retries a mutation.
 Apply, Cancel, and Undo controls use the durable Operation, shared lock, atomic
 Apply claim, crash reconciliation, and mutation contracts together.
 
+## Windows Desktop Application
+
+The packaged desktop v1 supports Windows 11 x64 only. It opens the unchanged
+React application in one pywebview window using the `edgechromium` backend and
+the shared Evergreen Microsoft Edge WebView2 Runtime. OMYM2 does not claim a
+packaged macOS or Linux application until each target has its own native build
+and smoke evidence.
+
+The shell starts the existing FastAPI application on an exclusively retained,
+dynamically assigned `127.0.0.1` listener and waits for Bootstrap readiness
+before opening the window. The React application continues to use relative,
+same-origin JSON API requests with the existing host, CSRF, CSP, framing, and
+error-redaction protections. The shell does not register `js_api` or any other
+JavaScript-to-Python bridge.
+
+Closing the window requests graceful server shutdown. Work already accepted as
+a durable Operation is not cancelled; the process allows it to finish and
+release the shared operation lock before shutdown completes. The architecture
+decision is recorded in
+[ADR 0004](decisions/0004-windows-desktop-application.md).
+
 ## Product Non-Goals
 
 The Web UI does not add:
@@ -131,11 +155,16 @@ The application remains localhost-only, offline-first, and telemetry-free.
 Unknown or interrupted mutation state is surfaced for Check and manual review,
 never hidden behind automatic repair.
 
-The Web UI supports desktop browsers only. Accessibility requirements such as
-keyboard operation, browser zoom, and reflow on a supported desktop viewport
-do not establish phone or tablet support. The supported viewport and test
-conditions are defined in [codebase/web-frontend.md](codebase/web-frontend.md)
-and [development/testing.md](development/testing.md).
+The browser-hosted Web UI supports desktop browsers only. Accessibility
+requirements such as keyboard operation, browser zoom, and reflow on a
+supported desktop viewport do not establish phone or tablet support. The
+supported viewport and test conditions are defined in
+[codebase/web-frontend.md](codebase/web-frontend.md) and
+[development/testing.md](development/testing.md).
+
+The initial packaged application does not support macOS, Linux, mobile or
+tablet operating systems, bundled Chromium, native file pickers, multiple
+windows, background startup, automatic updates, or a native API bridge.
 
 ## Product-Facing Technical Policy
 
@@ -148,6 +177,7 @@ Language: Python
 DB: SQLite
 Config: TOML
 Web: FastAPI serving a React + TypeScript + Vite static SPA
+Desktop: pywebview 6.2.1 using EdgeChromium on Windows 11 x64
 CLI: hand-written command dispatch on the standard library (no CLI framework)
 Python test: pytest + pytest-mock
 Frontend test: Vitest + React Testing Library + MSW
@@ -159,6 +189,12 @@ Metadata extractor: mutagen
 The SPA is bundled in the Python wheel and sdist and runs without Node.js in
 production. It is served on loopback by `omym2 settings`. Presentation is
 dark-only.
+
+The Windows desktop ZIP is a PyInstaller 6.21.0 `onedir` application built from
+the audited wheel. It carries its frozen Python runtime and the same audited SPA
+but no Node.js or Chromium runtime; Windows supplies the shared Evergreen
+WebView2 runtime. Packaging and native-smoke commands are authoritative in
+[Windows Desktop Packaging](development/desktop-packaging.md).
 
 The implementation, route map, presentation tokens, and distribution contract
 are authoritative in

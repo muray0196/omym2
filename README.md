@@ -8,8 +8,15 @@ recorded actions.
 
 ## Requirements
 
-- Python 3.14 or newer
 - Local music files with readable metadata
+
+The packaged desktop application supports Windows 11 x64 and requires the
+[shared Evergreen Microsoft Edge WebView2 Runtime](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution).
+It does not require a separate Python or Node.js installation and does not
+bundle Chromium. Windows desktop archives are currently unsigned development
+builds rather than public releases; use only an artifact you trust.
+
+The command-line application requires Python 3.14 or newer.
 
 From a source checkout, run commands with `uv run`:
 
@@ -51,6 +58,10 @@ omym2 add /path/to/incoming --apply
 
 ## Usage
 
+For the Windows desktop application, extract the complete ZIP and run
+`OMYM2.exe`. It opens the same OMYM2 interface in one native window; no browser
+or server startup is required.
+
 Most common commands:
 
 ```bash
@@ -80,19 +91,32 @@ OMYM2 is not a tag editor and does not manage playback. Edit tags with your
 preferred tool, then use `omym2 refresh` when existing library files need to be
 re-evaluated after tag changes.
 
-OMYM2 stores editable settings in TOML and managed state in SQLite under the
-application root:
+The Windows desktop application stores editable settings and managed state
+under `%LOCALAPPDATA%\OMYM2`:
+
+```text
+%LOCALAPPDATA%\OMYM2\.config\config.toml
+%LOCALAPPDATA%\OMYM2\.data\omym2.sqlite3
+```
+
+Replacing or deleting the extracted application directory does not delete this
+state. Delete `%LOCALAPPDATA%\OMYM2` separately only when you intentionally want
+to erase OMYM2's desktop settings, database, and logs.
+
+The CLI instead stores them under its current application root:
 
 ```text
 .config/config.toml
 .data/omym2.sqlite3
 ```
 
-Run OMYM2 from the same application root when you want to use the same settings,
-plans, history, and library state.
+Run the CLI from the same application root when you want to use the same
+settings, plans, history, and library state. The desktop and CLI do not
+implicitly share roots.
 
 ## More Information
 
 - Product overview: [docs/PRODUCT.md](docs/PRODUCT.md)
 - Command reference: [docs/COMMANDS.md](docs/COMMANDS.md)
 - Settings contract: [docs/contracts/config.md](docs/contracts/config.md)
+- Windows package development: [docs/development/desktop-packaging.md](docs/development/desktop-packaging.md)

@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Source Layout
-description: Defines OMYM2's feature-oriented source layout, including Bootstrap and durable Operation placement, dependency layers, composition, and directory rules.
-tags: [source-layout, architecture, operations, hexagonal-architecture, python]
-timestamp: 2026-07-13T01:34:09+09:00
+description: Defines OMYM2's feature-oriented source layout, including Bootstrap, durable Operation, desktop-shell placement, dependency layers, composition, and directory rules.
+tags: [source-layout, architecture, operations, desktop, hexagonal-architecture, python]
+timestamp: 2026-07-15T00:13:25+09:00
 ---
 
 # Source Layout
@@ -36,9 +36,10 @@ Features are divided by user goal, such as `bootstrap`, `settings`,
 `artist_ids`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`,
 `operations`, `plans`, `history`, `tracks`, and `inspect`.
 
-CLI and Web call feature usecases as inbound adapters. DB, filesystem, metadata
-reader, config loader, and artist-ID integrations implement ports as outbound
-adapters.
+CLI and Web call feature usecases as inbound adapters. The desktop shell is a
+presentation adapter around the platform-composed Web application; it does not
+call features directly. DB, filesystem, metadata reader, config loader, and
+artist-ID integrations implement ports as outbound adapters.
 
 ## Representative Package Structure
 
@@ -70,6 +71,7 @@ src/
 
     adapters/
       cli/
+      desktop/
       web/
       db/
       fs/
@@ -145,6 +147,8 @@ When a usecase needs files from a directory, it uses FileScanner only to discove
 * `adapters/artist_ids`: fastText Japanese-name detection and MusicBrainz artist name lookup
 * `adapters/config`: TOML config store / validator / defaults
 * `adapters/cli`: CLI commands
+* `adapters/desktop`: the retained loopback Uvicorn server and one pywebview
+  window; it owns native-window and server-lifecycle mechanics only
 * `adapters/web`: typed local JSON routes, the schema-only FastAPI factory, and
   packaged SPA serving. `schema_app.py` registers the production route/model
   set without constructing Config, SQLite, filesystem, metadata, network, or
@@ -162,6 +166,11 @@ Adapters may create and restore domain models. They must not contain business ru
 * `cli_composition.py`: `build_command_dependencies(...)`, which builds the full `CommandDependencies` bundle for one CLI invocation.
 * `cli_path_normalization.py`: `normalize_cli_path(...)`, injected into add, organize, and refresh command dependencies so their handlers do not resolve filesystem paths directly.
 * `cli_entry_point.py`: `main()` / `run_cli(...)`, the process entry point that both the `omym2` console script and `python -m omym2` route through.
+* `desktop_entry_point.py`: the Windows GUI-script entry point; it selects the
+  stable desktop application root, configures desktop logging, and composes the
+  existing Web app with the desktop runtime.
+* `desktop_runtime.py`: coordinates server readiness, the blocking native
+  window, and graceful shutdown without implementing feature behavior.
 * `web_composition.py`: `build_api_route_context(...)` composes the Bootstrap
   usecase from Config and Library snapshot ports, and `build_web_app(...)`
   supplies that typed context to the FastAPI app. Schema generation instead
