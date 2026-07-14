@@ -3,7 +3,7 @@ type: Contract
 title: DB Schema Contract
 description: Defines OMYM2's SQLite tables, durable Operation schema, atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
 tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-13T15:55:03+09:00
+timestamp: 2026-07-14T20:03:54+09:00
 ---
 
 # DB Schema Contract
@@ -329,6 +329,13 @@ Every schema change needs tests for:
 `plans.source_run_id` and `plan_actions.reverses_event_id` columns. Their
 foreign keys use `ON DELETE RESTRICT` against `runs.run_id` and
 `file_events.event_id`, respectively.
+
+`202607140001_operation_retention_tombstones.sql` forward-rebuilds the
+`operations` table for databases created with the original terminal-row
+constraint. It copies every column verbatim and recreates the same indexes,
+while permitting the result or error discriminant and JSON payload to be
+cleared together after result expiry. The terminal status, timestamps,
+associations, idempotency identity, and tombstone expiry remain unchanged.
 
 Before adding those columns to a database that already contains Undo Plans,
 `202607130002_undo_provenance_and_apply_claim.sql` proves the legacy provenance
