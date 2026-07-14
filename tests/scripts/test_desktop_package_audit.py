@@ -389,6 +389,7 @@ def _freeze_provenance(wheel_sha256: str) -> dict[str, object]:
         "format": "onedir",
         "hidden_imports": sorted(config.DESKTOP_PYINSTALLER_HIDDEN_IMPORTS),
         "omym2_module_count": 1,
+        "runtime_hook_policy": config.DESKTOP_PYINSTALLER_RUNTIME_HOOK_POLICY,
         "source_imports": "isolated-wheel-only",
         "webview_modules": list(config.DESKTOP_PYINSTALLER_REQUIRED_WEBVIEW_MODULES),
         "wheel_sha256": wheel_sha256,

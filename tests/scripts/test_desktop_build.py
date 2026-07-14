@@ -12,6 +12,7 @@ import pytest
 
 from scripts import config
 from scripts.desktop.build_windows import (
+    _PYWEBVIEW_X64_RUNTIME_HOOK_SOURCE,  # pyright: ignore[reportPrivateUsage] -- verifies frozen hook policy.
     InstalledWheelProbe,
     WindowsPackageBuildError,
     _isolated_environment,  # pyright: ignore[reportPrivateUsage] -- directly verifies build isolation.
@@ -139,6 +140,8 @@ def test_pyinstaller_spec_forces_desktop_resources_and_gui_mode() -> None:
     assert 'os.environ["OMYM2_DESKTOP_HIDDEN_IMPORTS"]' in source
     assert "analysis.graph.is_a_builtin(module_name)" in source
     assert 'os.environ["OMYM2_DESKTOP_REQUIRED_WEBVIEW_MODULES"]' in source
+    assert "runtime_hooks=[str(runtime_hook)]" in source
+    assert '"runtime_hook_policy": runtime_hook_policy' in source
     assert 'os.environ["OMYM2_DESKTOP_WHEEL_SHA256"]' in source
     assert 'module_name.startswith("webview.")' in source
     assert '"wheel_sha256": wheel_sha256' in source
@@ -152,6 +155,17 @@ def test_pyinstaller_spec_forces_desktop_resources_and_gui_mode() -> None:
     assert "console=False" in source
     assert "icon=str(icon)" in source
     assert "version=str(version_info)" in source
+
+
+def test_pywebview_runtime_hook_aliases_only_unused_architecture_probes_to_x64() -> None:
+    """The frozen hook satisfies pywebview's broad directory probe without bundling non-x64 DLLs."""
+    source = _PYWEBVIEW_X64_RUNTIME_HOOK_SOURCE
+
+    _ = compile(source, "omym2_pywebview_x64_runtime_hook.py", "exec")
+    assert repr(config.DESKTOP_PYWEBVIEW_UNUSED_RUNTIME_DIRECTORY_NAMES) in source
+    assert repr(config.DESKTOP_PYWEBVIEW_X64_RUNTIME_DIRECTORY_NAME) in source
+    assert "webview_util.interop_dll_path = _x64_interop_dll_path" in source
+    assert "from webview import util as webview_util" in source
 
 
 def test_all_desktop_python_and_spec_files_have_exact_file_header() -> None:

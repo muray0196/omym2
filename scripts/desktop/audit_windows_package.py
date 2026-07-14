@@ -260,6 +260,7 @@ def validate_freeze_provenance(
         ),
         "format": "onedir",
         "hidden_imports": sorted(config.DESKTOP_PYINSTALLER_HIDDEN_IMPORTS),
+        "runtime_hook_policy": config.DESKTOP_PYINSTALLER_RUNTIME_HOOK_POLICY,
         "source_imports": "isolated-wheel-only",
     }
     mismatches = {

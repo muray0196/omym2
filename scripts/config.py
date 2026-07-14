@@ -23,6 +23,7 @@ DESKTOP_WINDOWS_POWERSHELL_EXECUTABLE_NAME = "powershell.exe"  # Windows metadat
 DESKTOP_PYINSTALLER_REQUIREMENT = "pyinstaller==6.21.0"  # isolated build tool requirement, PEP 508 string
 DESKTOP_PYINSTALLER_CONTENTS_DIRECTORY_NAME = "_internal"  # onedir support-file directory, one path component
 DESKTOP_PYINSTALLER_PROVENANCE_FILE_NAME = "omym2-freeze-provenance.json"  # bundled freeze manifest name
+DESKTOP_PYINSTALLER_RUNTIME_HOOK_POLICY = "pywebview-x64-resource-alias"  # exact frozen runtime hook policy
 DESKTOP_RUNTIME_INVENTORY_FILE_NAME = "omym2-third-party-inventory.json"  # bundled runtime license inventory name
 DESKTOP_PYTHON_RUNTIME_LICENSE_FILE_NAME = "PYTHON-LICENSE.txt"  # bundled CPython runtime license file name
 DESKTOP_PYINSTALLER_SOURCE_DATE_EPOCH = "315532800"  # reproducible build epoch, Unix seconds, 1980-01-01 UTC
@@ -55,6 +56,11 @@ DESKTOP_PYINSTALLER_REQUIRED_WEBVIEW_MODULES = (  # required modules observed in
     "webview",
     "webview.platforms.edgechromium",
     "webview.platforms.winforms",
+)
+DESKTOP_PYWEBVIEW_X64_RUNTIME_DIRECTORY_NAME = "win-x64"  # retained pywebview native loader directory name
+DESKTOP_PYWEBVIEW_UNUSED_RUNTIME_DIRECTORY_NAMES = (  # pywebview probes aliased to retained x64 loader
+    "win-arm64",
+    "win-x86",
 )
 DESKTOP_WINDOWS_ICON_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)  # committed ICO images, pixels, ascending
 DESKTOP_ARCHIVE_TIMESTAMP = (1980, 1, 1, 0, 0, 0)  # deterministic ZIP member timestamp, local date-time tuple

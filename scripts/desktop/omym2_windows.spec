@@ -24,6 +24,7 @@ def _is_allowed_webview_resource(entry):
 
 
 launcher = _required_environment_path("OMYM2_DESKTOP_LAUNCHER")
+runtime_hook = _required_environment_path("OMYM2_DESKTOP_RUNTIME_HOOK")
 icon = _required_environment_path("OMYM2_DESKTOP_ICON")
 version_info = _required_environment_path("OMYM2_DESKTOP_VERSION_INFO")
 allowed_package_root = _required_environment_path("OMYM2_DESKTOP_ALLOWED_PACKAGE_ROOT")
@@ -37,6 +38,7 @@ hiddenimports = sorted(json.loads(os.environ["OMYM2_DESKTOP_HIDDEN_IMPORTS"]))
 required_builtin_modules = set(json.loads(os.environ["OMYM2_DESKTOP_REQUIRED_BUILTIN_MODULES"]))
 required_webview_modules = set(json.loads(os.environ["OMYM2_DESKTOP_REQUIRED_WEBVIEW_MODULES"]))
 runtime_distributions = json.loads(os.environ["OMYM2_DESKTOP_RUNTIME_DISTRIBUTIONS"])
+runtime_hook_policy = os.environ["OMYM2_DESKTOP_RUNTIME_HOOK_POLICY"]
 wheel_sha256 = os.environ["OMYM2_DESKTOP_WHEEL_SHA256"]
 
 datas = collect_data_files(
@@ -64,7 +66,7 @@ analysis = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(runtime_hook)],
     excludes=excluded_modules,
     noarchive=False,
     optimize=0,
@@ -125,6 +127,7 @@ provenance_path.write_text(
             "format": "onedir",
             "hidden_imports": hiddenimports,
             "omym2_module_count": len(verified_modules),
+            "runtime_hook_policy": runtime_hook_policy,
             "source_imports": "isolated-wheel-only",
             "webview_modules": collected_webview_modules,
             "wheel_sha256": wheel_sha256,

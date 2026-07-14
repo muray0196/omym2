@@ -63,6 +63,25 @@ from omym2.platform.desktop_entry_point import main
 
 raise SystemExit(main())
 '''
+_PYWEBVIEW_X64_RUNTIME_HOOK_SOURCE = f'''"""
+Summary: Restricts pywebview's frozen native-loader lookup to the packaged x64 resource.
+Why: pywebview probes every architecture directory even though OMYM2 ships only the audited x64 loader.
+"""
+
+from webview import util as webview_util
+
+_original_interop_dll_path = webview_util.interop_dll_path
+_unused_runtime_directories = frozenset({config.DESKTOP_PYWEBVIEW_UNUSED_RUNTIME_DIRECTORY_NAMES!r})
+
+
+def _x64_interop_dll_path(dll_name: str) -> str:
+    if dll_name in _unused_runtime_directories:
+        dll_name = {config.DESKTOP_PYWEBVIEW_X64_RUNTIME_DIRECTORY_NAME!r}
+    return _original_interop_dll_path(dll_name)
+
+
+webview_util.interop_dll_path = _x64_interop_dll_path
+'''
 _INSTALL_PROBE_SOURCE = """
 import importlib.metadata, importlib.util, json, pathlib, sysconfig
 package = importlib.util.find_spec("omym2")
@@ -286,6 +305,8 @@ def _freeze_and_publish(
 ) -> WindowsBuildOutputs:
     launcher = workspace / "omym2_desktop_launcher.py"
     _ = launcher.write_text(_LAUNCHER_SOURCE, encoding="utf-8", newline="\n")
+    runtime_hook = workspace / "omym2_pywebview_x64_runtime_hook.py"
+    _ = runtime_hook.write_text(_PYWEBVIEW_X64_RUNTIME_HOOK_SOURCE, encoding="utf-8", newline="\n")
     provenance = workspace / config.DESKTOP_PYINSTALLER_PROVENANCE_FILE_NAME
     isolated.environment.update(
         {
@@ -303,6 +324,8 @@ def _freeze_and_publish(
             "OMYM2_DESKTOP_RUNTIME_INVENTORY": str(isolated.runtime_inventory_path),
             "OMYM2_DESKTOP_REQUIRED_WEBVIEW_MODULES": json.dumps(config.DESKTOP_PYINSTALLER_REQUIRED_WEBVIEW_MODULES),
             "OMYM2_DESKTOP_REQUIRED_BUILTIN_MODULES": json.dumps(config.DESKTOP_PYINSTALLER_REQUIRED_BUILTIN_MODULES),
+            "OMYM2_DESKTOP_RUNTIME_HOOK": str(runtime_hook),
+            "OMYM2_DESKTOP_RUNTIME_HOOK_POLICY": config.DESKTOP_PYINSTALLER_RUNTIME_HOOK_POLICY,
             "OMYM2_DESKTOP_VERSION_INFO": str(inputs.version_info),
             "OMYM2_DESKTOP_WHEEL_SHA256": _file_sha256(inputs.wheel),
         }
