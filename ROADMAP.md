@@ -4,10 +4,14 @@
 
 This is an active, multi-session initiative with cross-cutting changes to configuration, metadata naming, Plan execution, persistence, Web/CLI settings, and desktop packaging.
 
+Stage 1 is complete. Stage 2 automatic resolution is the next delivery target;
+runtime and packaging controls remain ordered after the resolver behavior is
+proven.
+
 The rollout order is intentional:
 
-1. Establish deterministic artist display-name preferences and the runtime configuration foundation.
-2. Deliver fastText-gated MusicBrainz English/Latin name resolution in normal Plan creation.
+1. Established deterministic artist display-name preferences and the persistence foundation.
+2. Next: deliver fastText-gated MusicBrainz English/Latin name resolution in normal Plan creation.
 3. Harden runtime controls, packaging, and operational behavior.
 4. Add companion lyrics and artwork handling.
 5. Add reviewed collection of unprocessed files.
@@ -78,15 +82,23 @@ The initiative does not add tag editing, playback, remote lyrics or artwork down
 
 **Outcome:** OMYM2 has a shared naming projection, editable display-name preferences, and persistent provider-result storage, with no automatic path behavior change while the feature is disabled.
 
+**Status:** Complete. Empty preferences preserve prior path identity and local
+operation requires neither a fastText model nor MusicBrainz access.
+
 The stage establishes the separation between raw tag metadata, preferred display names, accepted provider results, and compact artist IDs. It also establishes the config and SQLite contracts needed by CLI, Web, desktop, `add`, `organize`, and `refresh` without allowing adapters to bypass feature usecases.
 
-**Release gate:** Existing config files load unchanged; preference changes are atomic and revision-safe; raw metadata remains unchanged; path fingerprints react only when the active path template can consume the changed naming value; and disabling the feature preserves current OMYM2 behavior.
+**Release gate met:** Existing config files load unchanged; preference changes are atomic and revision-safe; raw metadata remains unchanged; path fingerprints react only when the active path template can consume the changed naming value; and disabling the feature preserves current OMYM2 behavior.
 
 ### Stage 2 — Automatic MusicBrainz English/Latin naming
 
 **Outcome:** Eligible Japanese artist and album-artist values are resolved during normal Plan creation and appear as reviewable canonical target paths.
 
 `add`, `organize`, and `refresh` use one shared resolver and cache contract. `organize` can reconcile existing paths after a preference or accepted resolution changes. `add` may use a resolved name for a new artist, but it must refuse mixed naming when an existing Library artist requires reconciliation. The existing `artist-ids generate` flow should reuse the shared naming result where appropriate while keeping display-name preferences and compact IDs separate.
+
+Before the accepted-name cache is read or written, Stage 2 must define one
+pure whole-string source-key function, including its Unicode normalization and
+whitespace rules. Lookup and insertion must use that same function; it must not
+silently reuse PathPolicy sanitization or split multi-artist text.
 
 Plan review surfaces the source value, resolved value, provenance, and unresolved/ambiguous state. Provider failure is non-fatal and falls back to the original value.
 

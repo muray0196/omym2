@@ -24,7 +24,14 @@ from omym2.config import (
     WEB_API_SETTINGS_VALIDATE_ROUTE,
     WEB_CSRF_HEADER_NAME,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, CommandConfig, PathsConfig
+from omym2.domain.models.app_config import (
+    AppConfig,
+    ArtistIdConfig,
+    ArtistNameConfig,
+    CommandConfig,
+    PathPolicyConfig,
+    PathsConfig,
+)
 from omym2.features.artist_ids.usecases.generate_artist_id_draft import GenerateArtistIdDraftUseCase
 from omym2.features.common_ports import ConfigRevisionMismatchError, ConfigSnapshot, ConfigSnapshotState
 from omym2.features.settings.ports import SettingsPorts
@@ -47,6 +54,7 @@ UNSUPPORTED_COMMAND_MODE = "unsafe"
 LIBRARY_PATH = "/music/library"
 SOURCE_ARTIST = "Existing Artist"
 SOURCE_ARTIST_ID = "EXST"
+PREFERRED_ARTIST = "Preferred Artist"
 NEW_ARTIST = "New Artist"
 UNRELATED_BOOTSTRAP_EXECUTION_MESSAGE = "Unrelated Bootstrap handler must not execute."
 
@@ -71,7 +79,10 @@ def test_get_settings_returns_invalid_recovery_data_choices_and_preview(tmp_path
 
 def test_app_config_resource_round_trips_complete_config() -> None:
     """Settings serialization retains every supported Config field."""
-    config = AppConfig(paths=PathsConfig(library=LIBRARY_PATH))
+    config = AppConfig(
+        paths=PathsConfig(library=LIBRARY_PATH),
+        artist_names=ArtistNameConfig(preferences={SOURCE_ARTIST: PREFERRED_ARTIST}),
+    )
 
     resource = AppConfigResource.from_domain(config)
 
@@ -121,6 +132,7 @@ def test_preview_returns_domain_errors_as_data_without_config_writes(tmp_path: P
         json={
             "path_policy": path_policy,
             "artist_ids": config_resource["artist_ids"],
+            "artist_names": config_resource["artist_names"],
             "metadata": {"title": "Song", "artist": "Artist"},
             "file_extension": ".flac",
         },
@@ -133,11 +145,40 @@ def test_preview_returns_domain_errors_as_data_without_config_writes(tmp_path: P
     assert store.save_count == 0
 
 
+def test_preview_applies_artist_display_name_preferences_without_config_writes(tmp_path: Path) -> None:
+    """Self-contained preview uses the supplied display-name draft and never reads or writes Config."""
+    store = FakeConfigStore()
+    client = _client(tmp_path, store)
+    config = AppConfig(
+        path_policy=PathPolicyConfig(template="{artist}/{title}"),
+        artist_names=ArtistNameConfig(preferences={SOURCE_ARTIST: PREFERRED_ARTIST}),
+    )
+    config_resource = AppConfigResource.from_domain(config).model_dump(mode="json")
+
+    response = client.post(
+        WEB_API_SETTINGS_PREVIEW_ROUTE,
+        json={
+            "path_policy": config_resource["path_policy"],
+            "artist_ids": config_resource["artist_ids"],
+            "artist_names": config_resource["artist_names"],
+            "metadata": {"title": "Song", "artist": SOURCE_ARTIST},
+            "file_extension": ".flac",
+        },
+    )
+
+    assert response.status_code == HTTP_OK_STATUS
+    assert _data(response)["path"] == "Preferred-Artist/Song.flac"
+    assert store.save_count == 0
+
+
 def test_save_settings_returns_new_revision_and_rejects_invalid_or_stale_candidates(tmp_path: Path) -> None:
     """PUT reports successful CAS, 422 invalid candidates, and 409 stale revisions without extra writes."""
     store = FakeConfigStore()
     client = _client(tmp_path, store)
-    valid = AppConfig(paths=PathsConfig(library=LIBRARY_PATH))
+    valid = AppConfig(
+        paths=PathsConfig(library=LIBRARY_PATH),
+        artist_names=ArtistNameConfig(preferences={SOURCE_ARTIST: PREFERRED_ARTIST}),
+    )
 
     saved = client.put(
         WEB_API_SETTINGS_ROUTE,
@@ -160,7 +201,10 @@ def test_save_settings_returns_new_revision_and_rejects_invalid_or_stale_candida
 
     assert saved.status_code == HTTP_OK_STATUS
     assert _data(saved)["config_revision"] == SAVED_CONFIG_REVISION
-    assert [change["field"] for change in _list(_data(saved), "changes")] == ["paths.library"]
+    assert [change["field"] for change in _list(_data(saved), "changes")] == [
+        "paths.library",
+        f"artist_names.preferences.{SOURCE_ARTIST}",
+    ]
     assert invalid.status_code == HTTP_UNPROCESSABLE_CONTENT_STATUS
     assert _first_error(_response_object(invalid))["field"] == "add.default_mode"
     assert stale.status_code == HTTP_CONFLICT_STATUS

@@ -1,9 +1,9 @@
 ---
 type: Command Reference
 title: Commands
-description: Lists the OMYM2 CLI surface, including Plan workflows, diagnostics, settings, and the explicit organize/refresh/check trust-stat optimization flags.
+description: Lists the OMYM2 CLI surface, including Plan workflows, artist-name settings, diagnostics, and the explicit organize/refresh/check trust-stat optimization flags.
 tags: [cli, commands, reference]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-15T20:47:24+09:00
 ---
 
 # Commands
@@ -193,4 +193,6 @@ SQLite state.
 
 ## settings
 
-`settings` opens the local Web UI in a browser.
+`settings` opens the local Web UI in a browser. The Settings surface edits full
+artist display-name preferences separately from compact artist IDs and saves
+both through the same revision-safe Config boundary.

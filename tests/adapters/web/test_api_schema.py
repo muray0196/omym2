@@ -133,6 +133,11 @@ def test_settings_operations_have_stable_ids_and_declared_typed_errors() -> None
     assert "SettingsData" in schemas
     assert "SettingsCandidateData" in schemas
     assert "ArtistIdDraftData" in schemas
+    assert "ArtistNameConfigResource" in schemas
+    app_config_properties = _mapping(_mapping(schemas, "AppConfigResource"), "properties")
+    preview_properties = _mapping(_mapping(schemas, "PathPreviewRequest"), "properties")
+    assert "artist_names" in app_config_properties
+    assert "artist_names" in preview_properties
 
 
 def test_plan_read_operations_have_stable_ids_and_declared_typed_errors() -> None:

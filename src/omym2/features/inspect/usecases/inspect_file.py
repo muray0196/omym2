@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from omym2.domain.services.artist_name import ArtistNameProjector
 from omym2.domain.services.path_policy import PathPolicy
 from omym2.features.inspect.dto import InspectFileResult
 
@@ -26,11 +27,13 @@ class InspectFileUseCase:
         """Capture metadata, hashes, and current canonical-path projection."""
         config = self.ports.config_store.load()
         snapshot = self.ports.file_snapshot_reader.capture(request.path)
+        artist_names = ArtistNameProjector(config.artist_names.preferences).project(snapshot.metadata)
 
         try:
             canonical_path = PathPolicy.from_app_config(config).canonical_path(
                 snapshot.metadata,
                 snapshot.file_extension,
+                artist_names=artist_names,
             )
         except ValueError as exc:
             # Missing title or bad suffix is inspection data, not a mutation-time

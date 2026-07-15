@@ -11,6 +11,7 @@ from omym2.adapters.web.schemas.api_errors import ApiError, ApiModel
 from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
+    ArtistNameConfig,
     CollisionConfig,
     CommandConfig,
     MetadataConfig,
@@ -77,6 +78,16 @@ class ArtistIdConfigResource(ApiModel):
         )
 
 
+class ArtistNameConfigResource(ApiModel):
+    """Editable full artist display-name preferences."""
+
+    preferences: dict[str, str]
+
+    def to_domain(self) -> ArtistNameConfig:
+        """Validate and convert the self-contained display-name draft."""
+        return ArtistNameConfig(preferences=self.preferences)
+
+
 class MetadataConfigResource(ApiModel):
     """Editable metadata requirements and album-year policy."""
 
@@ -105,6 +116,7 @@ class AppConfigResource(ApiModel):
     refresh: CommandConfigResource
     path_policy: PathPolicyConfigResource
     artist_ids: ArtistIdConfigResource
+    artist_names: ArtistNameConfigResource
     metadata: MetadataConfigResource
     collision: CollisionConfigResource
 
@@ -130,6 +142,9 @@ class AppConfigResource(ApiModel):
                 max_length=config.artist_ids.max_length,
                 fallback_id=config.artist_ids.fallback_id,
                 entries=dict(config.artist_ids.entries or {}),
+            ),
+            artist_names=ArtistNameConfigResource(
+                preferences=dict(config.artist_names.preferences or {}),
             ),
             metadata=MetadataConfigResource(
                 prefer_album_artist=config.metadata.prefer_album_artist,
@@ -161,6 +176,7 @@ class AppConfigResource(ApiModel):
             ),
             path_policy=self.path_policy.to_domain(),
             artist_ids=self.artist_ids.to_domain(),
+            artist_names=self.artist_names.to_domain(),
             metadata=MetadataConfig(
                 prefer_album_artist=self.metadata.prefer_album_artist,
                 require_title=self.metadata.require_title,
@@ -284,6 +300,7 @@ class PathPreviewRequest(ApiModel):
 
     path_policy: PathPolicyConfigResource
     artist_ids: ArtistIdConfigResource
+    artist_names: ArtistNameConfigResource
     metadata: TrackMetadataResource
     file_extension: str
 

@@ -43,6 +43,7 @@ from omym2.config import (
 from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
+    ArtistNameConfig,
     CollisionConfig,
     CommandConfig,
     MetadataConfig,
@@ -68,6 +69,7 @@ class ChoiceRule:
 ADD_SECTION = "add"
 ALBUM_YEAR_RESOLUTION_KEY = "album_year_resolution"
 ARTIST_IDS_SECTION = "artist_ids"
+ARTIST_NAMES_SECTION = "artist_names"
 AUTO_APPLY_KEY = "auto_apply"
 COLLISION_SECTION = "collision"
 DEFAULT_MODE_KEY = "default_mode"
@@ -87,6 +89,7 @@ ORGANIZE_SECTION = "organize"
 PATH_POLICY_SECTION = "path_policy"
 PATHS_SECTION = "paths"
 PREFER_ALBUM_ARTIST_KEY = "prefer_album_artist"
+PREFERENCES_KEY = "preferences"
 REFRESH_SECTION = "refresh"
 REQUIRE_ALBUM_KEY = "require_album"
 REQUIRE_ARTIST_KEY = "require_artist"
@@ -106,12 +109,14 @@ ROOT_KEYS = frozenset(
         REFRESH_SECTION,
         PATH_POLICY_SECTION,
         ARTIST_IDS_SECTION,
+        ARTIST_NAMES_SECTION,
         METADATA_SECTION,
         COLLISION_SECTION,
     }
 )
 PATHS_KEYS = frozenset({LIBRARY_KEY, INCOMING_KEY})
 ARTIST_IDS_KEYS = frozenset({MAX_LENGTH_KEY, FALLBACK_ID_KEY, ENTRIES_KEY})
+ARTIST_NAMES_KEYS = frozenset({PREFERENCES_KEY})
 COMMAND_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY})
 ORGANIZE_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY})
 PATH_POLICY_KEYS = frozenset(
@@ -168,6 +173,11 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
     except ValueError as exc:
         errors.append(str(exc))
         artist_id_config = ArtistIdConfig()
+    try:
+        artist_name_config = _artist_name_config(_section(raw_config, ARTIST_NAMES_SECTION, errors), errors)
+    except ValueError as exc:
+        errors.append(str(exc))
+        artist_name_config = ArtistNameConfig()
     metadata_config = _metadata_config(_section(raw_config, METADATA_SECTION, errors), errors)
     collision_config = _collision_config(_section(raw_config, COLLISION_SECTION, errors), errors)
 
@@ -183,6 +193,7 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
             refresh=refresh_config,
             path_policy=path_policy_config,
             artist_ids=artist_id_config,
+            artist_names=artist_name_config,
             metadata=metadata_config,
             collision=collision_config,
         )
@@ -298,7 +309,22 @@ def _artist_id_config(table: ConfigTable, errors: list[str]) -> ArtistIdConfig:
             DEFAULT_ARTIST_ID_FALLBACK,
             errors,
         ),
-        entries=_string_mapping(_section(table, ENTRIES_KEY, errors, parent_section=ARTIST_IDS_SECTION), errors),
+        entries=_string_mapping(
+            _section(table, ENTRIES_KEY, errors, parent_section=ARTIST_IDS_SECTION),
+            _path(ARTIST_IDS_SECTION, ENTRIES_KEY),
+            errors,
+        ),
+    )
+
+
+def _artist_name_config(table: ConfigTable, errors: list[str]) -> ArtistNameConfig:
+    _reject_unknown_keys(table, ARTIST_NAMES_KEYS, ARTIST_NAMES_SECTION, errors)
+    return ArtistNameConfig(
+        preferences=_string_mapping(
+            _section(table, PREFERENCES_KEY, errors, parent_section=ARTIST_NAMES_SECTION),
+            _path(ARTIST_NAMES_SECTION, PREFERENCES_KEY),
+            errors,
+        )
     )
 
 
@@ -390,10 +416,10 @@ def _section(
     return {}
 
 
-def _string_mapping(table: ConfigTable, errors: list[str]) -> dict[str, str]:
+def _string_mapping(table: ConfigTable, mapping_path: str, errors: list[str]) -> dict[str, str]:
     values: dict[str, str] = {}
     for key, value in table.items():
-        path = _path(_path(ARTIST_IDS_SECTION, ENTRIES_KEY), key)
+        path = _path(mapping_path, key)
         if not isinstance(value, str):
             errors.append(_type_error(path, STRING_TYPE_NAME))
             continue

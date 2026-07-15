@@ -13,6 +13,7 @@ from omym2.config import DEFAULT_COMMAND_MODE
 from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
+    ArtistNameConfig,
     CollisionConfig,
     CommandConfig,
     OrganizeConfig,
@@ -71,6 +72,8 @@ def test_get_settings_edit_preserves_invalid_recovery_revision_and_backend_choic
 
 def test_validate_settings_candidate_reports_every_unchecked_closed_choice_in_field_order() -> None:
     """Feature validation covers closed values and non-empty strings outside nested domain checks."""
+    artist_names = ArtistNameConfig()
+    object.__setattr__(artist_names, "preferences", {"": "Display Name"})
     candidate = AppConfig(
         paths=PathsConfig(library=" "),
         add=CommandConfig(default_mode=UNSUPPORTED_CHOICE),
@@ -78,6 +81,7 @@ def test_validate_settings_candidate_reports_every_unchecked_closed_choice_in_fi
         refresh=CommandConfig(default_mode=UNSUPPORTED_CHOICE),
         path_policy=PathPolicyConfig(template=" "),
         artist_ids=ArtistIdConfig(entries={"": "EMPTY"}),
+        artist_names=artist_names,
         collision=CollisionConfig(
             on_target_exists=UNSUPPORTED_CHOICE,
             on_duplicate_hash=UNSUPPORTED_CHOICE,
@@ -100,6 +104,7 @@ def test_validate_settings_candidate_reports_every_unchecked_closed_choice_in_fi
         "collision.on_duplicate_hash",
         "collision.on_missing_metadata",
         "artist_ids.entries",
+        "artist_names.preferences",
     ]
 
 
@@ -108,10 +113,12 @@ def test_settings_field_changes_are_scalar_and_deterministic_for_artist_entries(
     before = AppConfig(
         paths=PathsConfig(library="/music/before"),
         artist_ids=ArtistIdConfig(entries={"Zulu": "Z", "Alpha": "A"}),
+        artist_names=ArtistNameConfig(preferences={"Zulu": "Zulu Before", "Alpha": "Alpha"}),
     )
     after = AppConfig(
         paths=PathsConfig(library="/music/after"),
         artist_ids=ArtistIdConfig(entries={"Beta": "B", "Alpha": "A2"}),
+        artist_names=ArtistNameConfig(preferences={"Beta": "Beta Display", "Alpha": "Alpha Display"}),
     )
 
     changes = settings_field_changes(before, after)
@@ -121,6 +128,9 @@ def test_settings_field_changes_are_scalar_and_deterministic_for_artist_entries(
         ("artist_ids.entries.Alpha", "A", "A2"),
         ("artist_ids.entries.Beta", None, "B"),
         ("artist_ids.entries.Zulu", "Z", None),
+        ("artist_names.preferences.Alpha", "Alpha", "Alpha Display"),
+        ("artist_names.preferences.Beta", None, "Beta Display"),
+        ("artist_names.preferences.Zulu", "Zulu Before", None),
     ]
 
 

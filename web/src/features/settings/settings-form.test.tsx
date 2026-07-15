@@ -61,6 +61,12 @@ describe("Settings route", () => {
       "{album_artist}/{year}_{album}/{disc}-{track}_{title}",
     );
     expect(screen.getByLabelText("Maximum artist ID length")).toHaveValue(8);
+    expect(
+      screen.getByRole("heading", { name: "Artist display names" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("No artist display-name preferences are in this draft."),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Require title")).toBeChecked();
     expect(screen.getByLabelText("When a target exists")).toHaveValue(
       "conflict",
@@ -86,6 +92,7 @@ describe("Settings route", () => {
     expect(captured).toHaveLength(1);
     expect(captured[0]).toMatchObject({
       artist_ids: { fallback_id: "NOART", max_length: 8 },
+      artist_names: { preferences: {} },
       file_extension: ".FLAC",
       metadata: { artist: "Aimer", title: "Live Preview" },
       path_policy: {
@@ -93,6 +100,55 @@ describe("Settings route", () => {
       },
     });
     expect(captured[0]).not.toHaveProperty("expected_config_revision");
+  });
+
+  it("edits full display-name preferences independently from compact artist IDs", async () => {
+    const user = userEvent.setup();
+    const captured: PathPreviewRequest[] = [];
+    server.use(
+      http.post("*/api/settings/preview", async ({ request }) => {
+        captured.push((await request.json()) as PathPreviewRequest);
+        return HttpResponse.json(previewEnvelope);
+      }),
+    );
+    renderSettings();
+
+    await user.type(
+      await screen.findByLabelText("New display-name source artist"),
+      "宇多田ヒカル",
+    );
+    await user.type(
+      screen.getByLabelText("New full display name"),
+      "Hikaru Utada",
+    );
+    await user.click(screen.getByRole("button", { name: "Add display name" }));
+
+    const displayName = await screen.findByDisplayValue("Hikaru Utada");
+    expect(screen.getByDisplayValue("NORTH")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(captured.at(-1)?.artist_names.preferences).toEqual({
+        宇多田ヒカル: "Hikaru Utada",
+      }),
+    );
+
+    await user.clear(displayName);
+    await user.type(displayName, "Utada Hikaru");
+    await waitFor(() =>
+      expect(captured.at(-1)?.artist_names.preferences).toEqual({
+        宇多田ヒカル: "Utada Hikaru",
+      }),
+    );
+
+    const preferenceRow = displayName.closest("li");
+    expect(preferenceRow).not.toBeNull();
+    await user.click(
+      within(preferenceRow as HTMLElement).getByRole("button", {
+        name: "Remove",
+      }),
+    );
+    expect(
+      screen.getByText("No artist display-name preferences are in this draft."),
+    ).toBeInTheDocument();
   });
 
   it("keeps the last preview and offers an explicit retry after automatic failure", async () => {
@@ -214,11 +270,26 @@ describe("Settings route", () => {
       http.put("*/api/settings", async ({ request }) => {
         captured.token = request.headers.get("X-OMYM2-CSRF-Token");
         captured.request = (await request.json()) as SettingsCandidateRequest;
-        return HttpResponse.json(savedSettingsEnvelope);
+        return HttpResponse.json({
+          ...savedSettingsEnvelope,
+          data: {
+            ...savedSettingsEnvelope.data,
+            config: captured.request.config,
+          },
+        });
       }),
     );
     renderSettings();
 
+    await user.type(
+      await screen.findByLabelText("New display-name source artist"),
+      "宇多田ヒカル",
+    );
+    await user.type(
+      screen.getByLabelText("New full display name"),
+      "Hikaru Utada",
+    );
+    await user.click(screen.getByRole("button", { name: "Add display name" }));
     const libraryPath = await screen.findByLabelText("Library path");
     await user.clear(libraryPath);
     await user.type(libraryPath, "/music/new-library");
@@ -236,6 +307,9 @@ describe("Settings route", () => {
     expect(captured.request?.expected_config_revision).toBe(
       "settings-revision-one",
     );
+    expect(captured.request?.config.artist_names.preferences).toEqual({
+      宇多田ヒカル: "Hikaru Utada",
+    });
     const diff = screen.getByRole("table");
     expect(within(diff).getByText("paths.library")).toBeInTheDocument();
     expect(within(diff).getByText("/music/library")).toBeInTheDocument();

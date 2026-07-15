@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Self
 from omym2.adapters.db.sqlite.connection import open_sqlite_connection
 from omym2.adapters.db.sqlite.migration_runner import ensure_database_migrated
 from omym2.adapters.db.sqlite.repositories import (
+    SQLiteAcceptedArtistNameRepository,
     SQLiteCheckIssueRepository,
     SQLiteCheckRunRepository,
     SQLiteFileEventRepository,
@@ -44,6 +45,7 @@ class SQLiteUnitOfWork:
 
     database_path: str | PathLike[str]
     _connection: sqlite3.Connection | None = field(default=None, init=False)
+    _accepted_artist_names: SQLiteAcceptedArtistNameRepository | None = field(default=None, init=False)
     _libraries: SQLiteLibraryRepository | None = field(default=None, init=False)
     _check_runs: SQLiteCheckRunRepository | None = field(default=None, init=False)
     _check_issues: SQLiteCheckIssueRepository | None = field(default=None, init=False)
@@ -69,6 +71,13 @@ class SQLiteUnitOfWork:
         finally:
             self._is_usecase_scope_open = False
             self._close_connection()
+
+    @property
+    def accepted_artist_names(self) -> SQLiteAcceptedArtistNameRepository:
+        """Repository for sticky accepted provider artist names."""
+        if self._accepted_artist_names is None:
+            raise RuntimeError(UNIT_OF_WORK_NOT_OPEN_MESSAGE)
+        return self._accepted_artist_names
 
     @property
     def libraries(self) -> SQLiteLibraryRepository:
@@ -149,6 +158,7 @@ class SQLiteUnitOfWork:
             self._close_connection()
             raise
 
+        self._accepted_artist_names = SQLiteAcceptedArtistNameRepository(connection)
         self._libraries = SQLiteLibraryRepository(connection)
         self._check_runs = SQLiteCheckRunRepository(connection)
         self._check_issues = SQLiteCheckIssueRepository(connection)
@@ -214,6 +224,7 @@ class SQLiteUnitOfWork:
         return connection
 
     def _reset_transaction(self) -> None:
+        self._accepted_artist_names = None
         self._libraries = None
         self._check_runs = None
         self._check_issues = None

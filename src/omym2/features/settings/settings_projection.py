@@ -39,6 +39,7 @@ from omym2.features.settings.usecases.preview_path_policy import PreviewPathPoli
 EMPTY_PATH_MESSAGE = "Configured paths must be non-empty when present."
 EMPTY_PATH_POLICY_TEMPLATE_MESSAGE = "PathPolicy template must be non-empty."
 EMPTY_ARTIST_NAME_MESSAGE = "Artist ID entry names must be non-empty."
+EMPTY_ARTIST_DISPLAY_NAME_MESSAGE = "Artist display-name preference keys and values must be non-empty."
 UNSUPPORTED_CHOICE_MESSAGE = "Value is not one of the backend-supported choices."
 
 
@@ -111,6 +112,11 @@ def validate_settings_config(config: AppConfig) -> tuple[SettingsValidationIssue
         SettingsValidationIssue(field="artist_ids.entries", message=EMPTY_ARTIST_NAME_MESSAGE)
         for source_artist in sorted(config.artist_ids.entries or {})
         if source_artist.strip() == ""
+    )
+    issues.extend(
+        SettingsValidationIssue(field="artist_names.preferences", message=EMPTY_ARTIST_DISPLAY_NAME_MESSAGE)
+        for source_artist, display_name in sorted((config.artist_names.preferences or {}).items())
+        if source_artist.strip() == "" or display_name.strip() == ""
     )
     return tuple(issues)
 
@@ -195,6 +201,19 @@ def settings_field_changes(before: AppConfig, after: AppConfig) -> tuple[Setting
                     after=after_value,
                 )
             )
+    before_preferences = before.artist_names.preferences or {}
+    after_preferences = after.artist_names.preferences or {}
+    for source_artist in sorted(set(before_preferences) | set(after_preferences)):
+        before_value = before_preferences.get(source_artist)
+        after_value = after_preferences.get(source_artist)
+        if before_value != after_value:
+            changes.append(
+                SettingsFieldChange(
+                    field=f"artist_names.preferences.{source_artist}",
+                    before=before_value,
+                    after=after_value,
+                )
+            )
     return tuple(changes)
 
 
@@ -204,6 +223,7 @@ def default_settings_preview(config: AppConfig) -> PathPolicyPreviewResult:
         PathPolicyPreviewRequest(
             path_policy=config.path_policy,
             artist_ids=config.artist_ids,
+            artist_names=config.artist_names,
             metadata=TrackMetadata(
                 title=PATH_POLICY_PREVIEW_TITLE,
                 artist=PATH_POLICY_PREVIEW_ARTIST,

@@ -18,6 +18,7 @@ export const settingsConfig = {
     fallback_id: "NOART",
     max_length: 8,
   },
+  artist_names: { preferences: {} },
   collision: {
     on_duplicate_hash: "skip",
     on_missing_metadata: "block",

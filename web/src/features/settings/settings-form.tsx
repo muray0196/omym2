@@ -68,6 +68,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
   } = form;
   const draft = useWatch({ control });
   const previewArtistIds = useWatch({ control, name: "artist_ids" });
+  const previewArtistNames = useWatch({ control, name: "artist_names" });
   const previewPathPolicy = useWatch({ control, name: "path_policy" });
   const draftFingerprint = stableFingerprint(draft);
   const [baseRevision, setBaseRevision] = useState(initial.config_revision);
@@ -94,11 +95,12 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
   const previewRequest = useMemo(
     () => ({
       artist_ids: previewArtistIds,
+      artist_names: previewArtistNames,
       file_extension: previewSample.file_extension,
       metadata: previewSample.metadata,
       path_policy: previewPathPolicy,
     }),
-    [previewArtistIds, previewPathPolicy, previewSample],
+    [previewArtistIds, previewArtistNames, previewPathPolicy, previewSample],
   );
   const debouncedPreviewRequest = useDebouncedValue(
     previewRequest,
@@ -412,6 +414,23 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
             />
             <span>{settingsCopy.sanitize}</span>
           </label>
+        </SettingsSection>
+
+        <SettingsSection
+          description={settingsCopy.artistDisplayNamesHelp}
+          id="settings-artist-name-preferences"
+          title={settingsCopy.artistDisplayNamesTitle}
+        >
+          <Controller
+            control={control}
+            name="artist_names.preferences"
+            render={({ field }) => (
+              <ArtistNamePreferences
+                preferences={field.value}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </SettingsSection>
 
         <SettingsSection
@@ -802,8 +821,76 @@ function ArtistIdEntries({
   entries: Record<string, string>;
   onChange: (entries: Record<string, string>) => void;
 }) {
+  return (
+    <StringMappingEntries
+      addLabel={settingsCopy.addEntry}
+      entries={entries}
+      entriesTitle={settingsCopy.entriesTitle}
+      idPrefix="settings-artist-id"
+      manualSourceLabel={settingsCopy.manualSource}
+      manualValueLabel={settingsCopy.manualId}
+      monospaceValue
+      noEntriesLabel={settingsCopy.noEntries}
+      onChange={onChange}
+      sourceLabel={settingsCopy.sourceArtist}
+      valueLabel={settingsCopy.artistId}
+    />
+  );
+}
+
+function ArtistNamePreferences({
+  preferences,
+  onChange,
+}: {
+  preferences: Record<string, string>;
+  onChange: (preferences: Record<string, string>) => void;
+}) {
+  return (
+    <StringMappingEntries
+      addLabel={settingsCopy.addDisplayName}
+      entries={preferences}
+      entriesTitle={settingsCopy.displayNameEntriesTitle}
+      idPrefix="settings-artist-name"
+      manualSourceLabel={settingsCopy.manualDisplayNameSource}
+      manualValueLabel={settingsCopy.manualDisplayName}
+      noEntriesLabel={settingsCopy.noDisplayNameEntries}
+      onChange={onChange}
+      requireValue
+      sourceLabel={settingsCopy.sourceArtist}
+      valueLabel={settingsCopy.displayName}
+    />
+  );
+}
+
+function StringMappingEntries({
+  addLabel,
+  entries,
+  entriesTitle,
+  idPrefix,
+  manualSourceLabel,
+  manualValueLabel,
+  monospaceValue = false,
+  noEntriesLabel,
+  onChange,
+  requireValue = false,
+  sourceLabel,
+  valueLabel,
+}: {
+  addLabel: string;
+  entries: Record<string, string>;
+  entriesTitle: string;
+  idPrefix: string;
+  manualSourceLabel: string;
+  manualValueLabel: string;
+  monospaceValue?: boolean;
+  noEntriesLabel: string;
+  onChange: (entries: Record<string, string>) => void;
+  requireValue?: boolean;
+  sourceLabel: string;
+  valueLabel: string;
+}) {
   const [newSource, setNewSource] = useState("");
-  const [newArtistId, setNewArtistId] = useState("");
+  const [newValue, setNewValue] = useState("");
   const sortedEntries = Object.entries(entries).sort(([left], [right]) =>
     left.localeCompare(right),
   );
@@ -813,36 +900,37 @@ function ArtistIdEntries({
     if (source.length === 0) {
       return;
     }
-    onChange({ ...entries, [source]: newArtistId });
+    if (requireValue && newValue.trim().length === 0) {
+      return;
+    }
+    onChange({ ...entries, [source]: newValue });
     setNewSource("");
-    setNewArtistId("");
+    setNewValue("");
   }
 
   return (
     <div className={styles.entries}>
-      <h3>{settingsCopy.entriesTitle}</h3>
-      {sortedEntries.length === 0 ? <p>{settingsCopy.noEntries}</p> : null}
+      <h3>{entriesTitle}</h3>
+      {sortedEntries.length === 0 ? <p>{noEntriesLabel}</p> : null}
       {sortedEntries.length > 0 ? (
         <ul className={styles.entryList}>
-          {sortedEntries.map(([source, artistId]) => (
+          {sortedEntries.map(([source, value]) => (
             <li className={styles.entry} key={source}>
               <div>
-                <span className={styles.entryLabel}>
-                  {settingsCopy.sourceArtist}
-                </span>
+                <span className={styles.entryLabel}>{sourceLabel}</span>
                 <code>{source}</code>
               </div>
               <label className={styles.field}>
-                {settingsCopy.artistId}
+                {valueLabel}
                 <input
-                  className={styles.monoInput}
+                  className={monospaceValue ? styles.monoInput : undefined}
                   onChange={(event) =>
                     onChange({
                       ...entries,
                       [source]: event.currentTarget.value,
                     })
                   }
-                  value={artistId}
+                  value={value}
                 />
               </label>
               <Button
@@ -860,25 +948,31 @@ function ArtistIdEntries({
         </ul>
       ) : null}
       <div className={styles.entryComposer}>
-        <label className={styles.field} htmlFor="settings-new-source-artist">
-          {settingsCopy.manualSource}
+        <label className={styles.field} htmlFor={`${idPrefix}-new-source`}>
+          {manualSourceLabel}
           <input
-            id="settings-new-source-artist"
+            id={`${idPrefix}-new-source`}
             onChange={(event) => setNewSource(event.currentTarget.value)}
             value={newSource}
           />
         </label>
-        <label className={styles.field} htmlFor="settings-new-artist-id">
-          {settingsCopy.manualId}
+        <label className={styles.field} htmlFor={`${idPrefix}-new-value`}>
+          {manualValueLabel}
           <input
-            className={styles.monoInput}
-            id="settings-new-artist-id"
-            onChange={(event) => setNewArtistId(event.currentTarget.value)}
-            value={newArtistId}
+            className={monospaceValue ? styles.monoInput : undefined}
+            id={`${idPrefix}-new-value`}
+            onChange={(event) => setNewValue(event.currentTarget.value)}
+            value={newValue}
           />
         </label>
-        <Button disabled={newSource.trim().length === 0} onClick={addEntry}>
-          {settingsCopy.addEntry}
+        <Button
+          disabled={
+            newSource.trim().length === 0 ||
+            (requireValue && newValue.trim().length === 0)
+          }
+          onClick={addEntry}
+        >
+          {addLabel}
         </Button>
       </div>
     </div>
@@ -915,6 +1009,7 @@ function createPreviewRequest(
 ): PathPreviewRequest {
   return {
     artist_ids: config.artist_ids,
+    artist_names: config.artist_names,
     file_extension: sample.file_extension,
     metadata: sample.metadata,
     path_policy: config.path_policy,
@@ -1256,6 +1351,7 @@ function errorFieldTarget(field: string | undefined): string | null {
     ["artist_ids.entries", "settings-artist-id-entries"],
     ["artist_ids.max_length", "settings-artist-max-length"],
     ["artist_ids.fallback_id", "settings-artist-fallback"],
+    ["artist_names.preferences", "settings-artist-name-preferences"],
     ["metadata.prefer_album_artist", "settings-prefer-album-artist"],
     ["metadata.require_title", "settings-require-title"],
     ["metadata.require_artist", "settings-require-artist"],

@@ -20,7 +20,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig, PathsConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, ArtistNameConfig, PathPolicyConfig, PathsConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
@@ -64,6 +64,7 @@ CONTENT = b"audio"
 CONTENT_HASH = calculate_content_fingerprint(CONTENT)
 EXPECTED_CANONICAL_PATH = "Artist/2026_Album/1-02_Title.flac"
 EXPECTED_D_PREFIXED_PATH = "Artist/2026_Album/D1-02_Title.flac"
+EXPECTED_PREFERRED_ARTIST_PATH = "Preferred-Artist/2026_Album/1-02_Title.flac"
 FILE_EXTENSION = ".flac"
 FILE_SIZE = 5
 INCOMING_FILE = "/music/incoming/Title.flac"
@@ -331,6 +332,33 @@ def test_add_uses_configured_incoming_and_persists_move_action() -> None:
     assert uow.plan_actions.get(ACTION_ID) == action
     assert uow.tracks.list_by_library(LIBRARY_ID) == ()
     assert uow.commit_count == 1
+
+
+def test_add_projects_artist_preferences_only_into_the_recorded_target() -> None:
+    """Add keeps snapshot metadata raw while recording the preferred display path."""
+    config = AppConfig(artist_names=ArtistNameConfig(preferences={"Artist": "Preferred Artist"}))
+    path_policy_hash = calculate_path_policy_fingerprint(
+        config.path_policy,
+        config.artist_ids,
+        config.metadata.album_year_resolution,
+        config.artist_names,
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=path_policy_hash))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(config=config),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    action = plan.actions[0]
+    assert action.target_path == EXPECTED_PREFERRED_ARTIST_PATH
+    assert action.metadata_hash_at_plan == calculate_metadata_fingerprint(METADATA)
+    assert METADATA.artist == "Artist"
 
 
 def test_add_plan_resolves_latest_album_year_across_incoming_album_group() -> None:

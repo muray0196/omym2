@@ -18,7 +18,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig, PathsConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, ArtistNameConfig, PathPolicyConfig, PathsConfig
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 
 LIBRARY_PATH = "/music/library"
@@ -36,6 +36,16 @@ def test_config_fingerprint_changes_when_config_changes() -> None:
     """Different AppConfig values produce different fingerprints."""
     default_hash = calculate_config_fingerprint(AppConfig())
     changed_hash = calculate_config_fingerprint(AppConfig(paths=PathsConfig(library=LIBRARY_PATH)))
+
+    assert changed_hash != default_hash
+
+
+def test_config_fingerprint_changes_when_artist_name_preferences_change() -> None:
+    """Full config identity includes editable display-name preferences."""
+    default_hash = calculate_config_fingerprint(AppConfig())
+    changed_hash = calculate_config_fingerprint(
+        AppConfig(artist_names=ArtistNameConfig(preferences={"宇多田ヒカル": "Hikaru Utada"}))
+    )
 
     assert changed_hash != default_hash
 
@@ -71,6 +81,40 @@ def test_path_policy_fingerprint_changes_when_used_artist_ids_change() -> None:
     )
 
     assert changed_hash != default_hash
+
+
+def test_path_policy_fingerprint_changes_when_used_artist_name_preferences_change() -> None:
+    """Display-name preferences stale registration for artist placeholders."""
+    path_policy = PathPolicyConfig(template="{album_artist}/{title}")
+    default_hash = calculate_path_policy_fingerprint(path_policy, artist_name_config=ArtistNameConfig())
+    changed_hash = calculate_path_policy_fingerprint(
+        path_policy,
+        artist_name_config=ArtistNameConfig(preferences={"宇多田ヒカル": "Hikaru Utada"}),
+    )
+
+    assert changed_hash != default_hash
+
+
+def test_path_policy_fingerprint_ignores_artist_name_preferences_when_template_cannot_use_them() -> None:
+    """Display-name preferences do not stale templates without artist text."""
+    path_policy = PathPolicyConfig(template="{album}/{title}")
+    default_hash = calculate_path_policy_fingerprint(path_policy, artist_name_config=ArtistNameConfig())
+    changed_hash = calculate_path_policy_fingerprint(
+        path_policy,
+        artist_name_config=ArtistNameConfig(preferences={"宇多田ヒカル": "Hikaru Utada"}),
+    )
+
+    assert changed_hash == default_hash
+
+
+def test_path_policy_fingerprint_ignores_empty_artist_name_preferences() -> None:
+    """The optional empty preference mapping preserves the existing path identity."""
+    path_policy = PathPolicyConfig(template="{artist}/{title}")
+
+    assert calculate_path_policy_fingerprint(path_policy) == calculate_path_policy_fingerprint(
+        path_policy,
+        artist_name_config=ArtistNameConfig(),
+    )
 
 
 def test_path_policy_fingerprint_changes_when_used_album_year_resolution_changes() -> None:

@@ -13,7 +13,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
+from omym2.domain.models.app_config import AppConfig, ArtistNameConfig, PathPolicyConfig
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
@@ -32,6 +32,7 @@ CONTENT = b"audio"
 CONTENT_HASH = calculate_content_fingerprint(CONTENT)
 EXPECTED_CANONICAL_PATH = "Artist/2026_Album/1-02_Title.flac"
 EXPECTED_D_PREFIXED_CANONICAL_PATH = "Artist/2026_Album/D1-02_Title.flac"
+EXPECTED_PREFERRED_ARTIST_PATH = "Preferred-Artist/2026_Album/1-02_Title.flac"
 FILE_EXTENSION = ".flac"
 FILE_PATH = "/incoming/title.flac"
 FILE_SIZE = 5
@@ -69,6 +70,19 @@ def test_inspect_file_usecase_returns_snapshot_and_canonical_path() -> None:
     assert result.snapshot == snapshot
     assert result.canonical_path == EXPECTED_CANONICAL_PATH
     assert result.canonical_path_error is None
+
+
+def test_inspect_file_usecase_projects_artist_preferences_without_changing_snapshot() -> None:
+    """Inspect reports the preferred canonical path and returns raw metadata."""
+    snapshot = _snapshot(METADATA)
+    config = AppConfig(artist_names=ArtistNameConfig(preferences={"Artist": "Preferred Artist"}))
+
+    result = InspectFileUseCase(InspectFilePorts(StaticSnapshotReader(snapshot), StaticConfigStore(config))).execute(
+        InspectFileRequest(FILE_PATH)
+    )
+
+    assert result.canonical_path == EXPECTED_PREFERRED_ARTIST_PATH
+    assert result.snapshot.metadata == METADATA
 
 
 def test_inspect_file_usecase_uses_metadata_disc_total_for_multiple_disc_paths() -> None:

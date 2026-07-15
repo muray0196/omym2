@@ -273,16 +273,18 @@ SANITIZER_HYPHEN_RUN_PATTERN: Final = r"-+"  # repeated hyphens collapsed after 
 SANITIZER_REPLACEMENT: Final = "-"  # replacement for sanitizer characters outside [\w-]
 SANITIZER_UNSAFE_PATTERN: Final = r"[^\w-]"  # characters converted to sanitizer replacement
 SANITIZER_UTF8_ENCODING: Final = "utf-8"  # encoding used for sanitizer byte limits
+PATH_POLICY_ALBUM_ARTIST_PLACEHOLDER: Final = "album_artist"  # template field using album-artist display naming
+PATH_POLICY_ARTIST_PLACEHOLDER: Final = "artist"  # template field using track-artist display naming
 PATH_POLICY_DISC_NUMBER_PLACEHOLDER: Final = "disc"  # template field controlled by disc rendering settings
 PATH_POLICY_ARTIST_ID_PLACEHOLDER: Final = "artist_id"  # template field resolved from editable artist ID config
 PATH_POLICY_YEAR_PLACEHOLDER: Final = "year"  # template field resolved from album-year metadata
 PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
-    "album_artist",
+    PATH_POLICY_ALBUM_ARTIST_PLACEHOLDER,
     "album",
     PATH_POLICY_DISC_NUMBER_PLACEHOLDER,
     "track",
     "title",
-    "artist",
+    PATH_POLICY_ARTIST_PLACEHOLDER,
     PATH_POLICY_YEAR_PLACEHOLDER,
     PATH_POLICY_ARTIST_ID_PLACEHOLDER,
 )  # placeholders allowed in path policy stem templates

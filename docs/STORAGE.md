@@ -1,9 +1,9 @@
 ---
 type: Storage Design
 title: Storage
-description: Defines application-root selection, TOML raw-revision and atomic-save ownership, SQLite managed state, durable Operation and FileEvent storage, consistency, reproducibility, and path responsibilities.
-tags: [storage, sqlite, toml, persistence, desktop]
-timestamp: 2026-07-15T00:13:25+09:00
+description: Defines application-root selection, TOML raw-revision and atomic-save ownership, artist-name storage boundaries, SQLite managed state, durable Operation and FileEvent storage, consistency, reproducibility, and path responsibilities.
+tags: [storage, sqlite, toml, persistence, artist-names, desktop]
+timestamp: 2026-07-15T20:47:24+09:00
 ---
 
 # Storage
@@ -30,6 +30,7 @@ and persisted check diagnostics.
 | --- | --- |
 | Editable settings | TOML |
 | Editable artist ID entries | TOML |
+| Editable full artist display-name preferences | TOML |
 | Config defaults and validation results | Config adapter / AppConfig |
 | Raw Config revision and atomic replacement | Config adapter / TOML file |
 | Managed Library and Track state | SQLite |
@@ -37,6 +38,7 @@ and persisted check diagnostics.
 | Runs and FileEvents | SQLite |
 | Durable background Operations | SQLite |
 | CheckRuns and CheckIssues | SQLite |
+| Accepted provider artist names and provenance | SQLite |
 | Actual music files | Filesystem, not DB |
 
 Config and DB files are created lazily when an operation needs them. Desktop
@@ -96,6 +98,11 @@ its shared lock is recorded in
 Artist ID entries are application config. They are stored in TOML because they
 are user-editable path/config values, not managed Library state.
 
+Full artist display-name preferences are also application config and remain
+separate from compact artist IDs. Positive automatic provider results are not
+editable config: accepted names and their provenance are stored in SQLite so
+the same source key resolves deterministically across later Plans.
+
 ## SQLite Responsibility
 
 OMYM2 uses a single application database.
@@ -120,7 +127,12 @@ file_events
 operations
 check_runs
 check_issues
+accepted_artist_names
 ```
+
+`accepted_artist_names` is a global sticky provider cache rather than a
+Library-managed table. It does not carry `library_id`, does not replace raw
+Track metadata, and does not authorize a repository to recalculate paths.
 
 `check` replaces each Library's prior CheckRun and CheckIssues with its latest
 diagnostics. It does not change Tracks, Plans, Runs, or Library music files.
@@ -148,6 +160,11 @@ the persistence and polling decision is recorded in
 The DB adapter persists and restores domain models. It must not contain business rules such as conflict judgment, duplicate judgment, canonical path calculation, metadata validation, or PlanAction status decisions.
 
 Repositories must preserve `library_id` on Library-managed records and restore path fields according to [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
+
+Accepted artist-name persistence exposes exact lookup by an already-derived
+source key and insert-if-absent semantics. Key derivation, lookup eligibility, provider
+matching, precedence over raw metadata, and any decision to surface an
+ambiguous result remain naming-feature rules above the repository.
 
 ## Track Stat Baselines
 

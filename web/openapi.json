@@ -940,6 +940,9 @@
           "artist_ids": {
             "$ref": "#/components/schemas/ArtistIdConfigResource"
           },
+          "artist_names": {
+            "$ref": "#/components/schemas/ArtistNameConfigResource"
+          },
           "collision": {
             "$ref": "#/components/schemas/CollisionConfigResource"
           },
@@ -971,6 +974,7 @@
           "refresh",
           "path_policy",
           "artist_ids",
+          "artist_names",
           "metadata",
           "collision"
         ],
@@ -1078,6 +1082,24 @@
           "artist_ids"
         ],
         "title": "ArtistIdDraftRequest",
+        "type": "object"
+      },
+      "ArtistNameConfigResource": {
+        "additionalProperties": false,
+        "description": "Editable full artist display-name preferences.",
+        "properties": {
+          "preferences": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Preferences",
+            "type": "object"
+          }
+        },
+        "required": [
+          "preferences"
+        ],
+        "title": "ArtistNameConfigResource",
         "type": "object"
       },
       "BootstrapData": {
@@ -2500,6 +2522,9 @@
           "artist_ids": {
             "$ref": "#/components/schemas/ArtistIdConfigResource"
           },
+          "artist_names": {
+            "$ref": "#/components/schemas/ArtistNameConfigResource"
+          },
           "file_extension": {
             "title": "File Extension",
             "type": "string"
@@ -2514,6 +2539,7 @@
         "required": [
           "path_policy",
           "artist_ids",
+          "artist_names",
           "metadata",
           "file_extension"
         ],

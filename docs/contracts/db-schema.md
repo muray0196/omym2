@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines OMYM2's SQLite tables, durable Operation schema, atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
-tags: [database, sqlite, schema, migrations]
-timestamp: 2026-07-14T20:03:54+09:00
+description: Defines OMYM2's SQLite tables, accepted artist-name provenance, durable Operation schema, atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
+tags: [database, sqlite, schema, migrations, artist-names, provenance]
+timestamp: 2026-07-15T20:47:24+09:00
 ---
 
 # DB Schema Contract
@@ -63,6 +63,7 @@ file_events
 operations
 check_runs
 check_issues
+accepted_artist_names
 ```
 
 ### libraries
@@ -104,6 +105,35 @@ The DB stores OMYM2's last known Library-root-relative paths and hashes. Nullabl
 existing rows without a baseline retain `NULL` in both columns. A non-null
 `size` is constrained to be nonnegative. These values are optimization hints,
 not Track identity or proof that the file still exists or remains unchanged.
+
+### accepted_artist_names
+
+Stores positive external-provider artist display names that the naming feature
+has accepted, including the provider identity and selected-field provenance.
+This is a global provider cache rather than a Library-managed record, so it has
+no `library_id` and does not duplicate the editable preference mapping stored
+in TOML.
+
+Fields:
+
+* `source_key`, the non-empty exact lookup key and primary key
+* `source_name`, the non-empty original metadata text associated with that key
+* `resolved_name`, the non-empty accepted display name
+* `provider`, currently `musicbrainz`
+* `provider_artist_id`, the canonical UUID MusicBrainz artist identity
+* `selected_name_kind`, either `alias` or `name`
+* `selected_locale`, nullable and permitted only for an alias selection
+* `accepted_at`, the UTC acceptance timestamp
+
+The naming feature owns source-key derivation before repository access; the
+repository compares the supplied key exactly. Before Stage 2 writes any rows,
+the feature must define its Unicode normalization and whitespace contract.
+Insertion is sticky:
+`insert_if_absent` does nothing and returns false when `source_key` already
+exists. Ordinary Plan creation must not overwrite an accepted row merely
+because MusicBrainz later returns different data. More than one source key may
+refer to the same provider artist identity, so `provider_artist_id` is not
+unique.
 
 ### plans
 
@@ -337,6 +367,10 @@ while permitting the result or error discriminant and JSON payload to be
 cleared together after result expiry. The terminal status, timestamps,
 associations, idempotency identity, and tombstone expiry remain unchanged.
 
+`202607150001_accepted_artist_names.sql` additively creates the global
+`accepted_artist_names` table. It has no legacy backfill and does not modify
+Library, Track, Plan, or execution rows.
+
 Before adding those columns to a database that already contains Undo Plans,
 `202607130002_undo_provenance_and_apply_claim.sql` proves the legacy provenance
 from durable records. A candidate for an Undo move action must be a succeeded
@@ -460,6 +494,6 @@ is not a stored JSON field.
 
 ## Timestamp Policy
 
-Timestamps are persisted to support history, inspection, retention, and deterministic tests through the `Clock` port. A non-null Track `mtime` baseline follows the same UTC timestamp serialization as other persisted timestamps. Operation expiry timestamps are derived from its terminal `completed_at` through that same clock boundary.
+Timestamps are persisted to support history, inspection, retention, and deterministic tests through the `Clock` port. A non-null Track `mtime` baseline follows the same UTC timestamp serialization as other persisted timestamps. Operation expiry timestamps are derived from its terminal `completed_at` through that same clock boundary. Accepted artist-name `accepted_at` values use the same UTC serialization.
 
 Adapters may serialize timestamps, but usecases decide when state transitions occur.

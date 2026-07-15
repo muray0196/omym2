@@ -20,7 +20,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
+from omym2.domain.models.app_config import AppConfig, ArtistNameConfig, PathPolicyConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
@@ -62,6 +62,7 @@ CONTENT = b"audio"
 CONTENT_HASH = calculate_content_fingerprint(CONTENT)
 EXPECTED_CANONICAL_PATH = "Artist/2026_Album/1-02_Title.flac"
 EXPECTED_D_PREFIXED_PATH = "Artist/2026_Album/D1-02_Title.flac"
+EXPECTED_PREFERRED_ARTIST_PATH = "Preferred-Artist/2026_Album/1-02_Title.flac"
 EXPECTED_SECOND_D_PREFIXED_PATH = "Artist/2026_Album/D2-03_Second-Title.flac"
 FILE_EXTENSION = ".flac"
 FILE_SIZE = 5
@@ -323,6 +324,34 @@ def test_organize_operation_success_records_created_plan_result() -> None:
     assert terminal.status is OperationStatus.SUCCEEDED
     assert terminal.result == PlanCreatedResult(result.plan.plan_id)
     assert terminal.plan_id == result.plan.plan_id
+
+
+def test_organize_projects_artist_preferences_while_storing_raw_metadata() -> None:
+    """Organize reconciles display paths without replacing persisted tag metadata."""
+    config = AppConfig(artist_names=ArtistNameConfig(preferences={"Artist": "Preferred Artist"}))
+    uow = InMemoryUnitOfWork()
+    ports, _, _ = _ports(
+        uow,
+        (_entry(MISPLACED_ABSOLUTE_PATH),),
+        {MISPLACED_ABSOLUTE_PATH: _snapshot(MISPLACED_ABSOLUTE_PATH, METADATA)},
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            track_ids=deque((TRACK_ID,)),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID,)),
+        ),
+        options=PortOptions(config=config),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT)
+    )
+
+    assert result.actions[0].target_path == EXPECTED_PREFERRED_ARTIST_PATH
+    track = uow.tracks.get(TRACK_ID)
+    assert track is not None
+    assert track.canonical_path == EXPECTED_PREFERRED_ARTIST_PATH
+    assert track.metadata == METADATA
 
 
 def test_organize_resolves_latest_album_year_across_scanned_album_group() -> None:

@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Web API Contract
-description: Defines the bundled local Web API's typed envelopes, errors, bootstrap, settings concurrency, durable-operation routes, capabilities, and preserved browsing semantics.
-tags: [web-api, openapi, operations, concurrency, pagination]
-timestamp: 2026-07-13T19:17:09+09:00
+description: Defines the bundled local Web API's typed envelopes, errors, artist-name settings, settings concurrency, bootstrap, durable-operation routes, capabilities, and preserved browsing semantics.
+tags: [web-api, openapi, artist-names, operations, concurrency, pagination]
+timestamp: 2026-07-15T20:47:24+09:00
 ---
 
 # Web API Contract
@@ -389,6 +389,10 @@ The Config schema and revision algorithm are authoritative in
 [config.md](config.md). The Web API never reads or writes TOML directly; it
 calls Settings usecases through ports.
 
+`AppConfigResource` contains `artist_names.preferences`, an object mapping
+exact source artist strings to full display names. It is distinct from
+`artist_ids.entries`; editing one does not rewrite the other.
+
 ### `GET /api/settings`
 
 Returns `200` with:
@@ -421,8 +425,8 @@ result, not an unexpected server error.
 
 ### `POST /api/settings/preview`
 
-Accepts a self-contained PathPolicy/Artist-ID draft, sample Track metadata,
-and file extension. It returns `200` with `PathPreview`. It performs no Config
+Accepts a self-contained PathPolicy/Artist-ID/artist-display-name draft, sample
+Track metadata, and file extension. It returns `200` with `PathPreview`. It performs no Config
 or DB write and requires no revision because every input affecting the preview
 is in the request.
 

@@ -23,6 +23,11 @@ from omym2.adapters.db.sqlite.migration_runner import (
     migrate_database,
 )
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
+from omym2.domain.models.accepted_artist_name import (
+    AcceptedArtistName,
+    ArtistNameProvider,
+    SelectedArtistNameKind,
+)
 from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
 from omym2.domain.models.check_run import CheckRun
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
@@ -42,6 +47,11 @@ if TYPE_CHECKING:
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+ACCEPTED_ARTIST_SOURCE_KEY = "宇多田ヒカル"
+ACCEPTED_ARTIST_SOURCE_NAME = "宇多田ヒカル"
+ACCEPTED_ARTIST_RESOLVED_NAME = "Hikaru Utada"
+MUSICBRAINZ_ARTIST_ID = "db2f4f3a-f0c2-4c96-bea3-636f4b44f57b"
+ACCEPTED_ARTIST_NAMES_MIGRATION_NAME = "202607150001_accepted_artist_names.sql"
 CHECK_ISSUE_COUNT = 1
 CHECK_RUN_ID = CheckRunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345684"))
 CONFIG_HASH = "config-hash"
@@ -88,6 +98,7 @@ TRACK_SIZE = 1024
 TRACK_TITLE = "Title"
 
 REQUIRED_TABLES = {
+    "accepted_artist_names",
     "file_events",
     "libraries",
     "operations",
@@ -142,6 +153,160 @@ def test_sqlite_migrations_create_required_tables(tmp_path: Path) -> None:
     migrate_database(database_file)
 
     assert _table_names(database_file) >= REQUIRED_TABLES
+
+
+def test_accepted_artist_name_migration_preserves_existing_managed_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Applying the additive cache migration leaves populated Library and Track rows intact."""
+    database_file = default_application_paths(tmp_path).database_file
+    packaged_migrations = migration_runner.load_packaged_migrations()
+    prior_migrations = tuple(
+        migration for migration in packaged_migrations if migration.name < ACCEPTED_ARTIST_NAMES_MIGRATION_NAME
+    )
+
+    with monkeypatch.context() as patched:
+        patched.setattr(migration_runner, "load_packaged_migrations", lambda: prior_migrations)
+        with SQLiteUnitOfWork(database_file) as uow:
+            uow.libraries.save(_library())
+            uow.tracks.save(_track())
+            uow.commit()
+
+    migrate_database(database_file)
+
+    assert ACCEPTED_ARTIST_NAMES_MIGRATION_NAME in _applied_migrations(database_file)
+    assert "accepted_artist_names" in _table_names(database_file)
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.libraries.get(LIBRARY_ID) == _library()
+        assert uow.tracks.get(TRACK_ID) == _track()
+
+
+def test_sqlite_accepted_artist_names_are_sticky_and_round_trip_provenance(tmp_path: Path) -> None:
+    """Accepted artist-name persistence keeps the first result and restores all provenance."""
+    database_file = default_application_paths(tmp_path).database_file
+    accepted_name = _accepted_artist_name()
+    replacement = replace(accepted_name, resolved_name="Utada Hikaru")
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.find_by_source_key(ACCEPTED_ARTIST_SOURCE_KEY) is None
+        assert uow.accepted_artist_names.insert_if_absent(accepted_name) is True
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.insert_if_absent(replacement) is False
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.find_by_source_key(ACCEPTED_ARTIST_SOURCE_KEY) == accepted_name
+
+
+def test_sqlite_accepted_artist_names_allow_multiple_sources_for_one_provider_identity(tmp_path: Path) -> None:
+    """Distinct source spellings may select the same MusicBrainz artist identity."""
+    database_file = default_application_paths(tmp_path).database_file
+    first = _accepted_artist_name()
+    second = replace(first, source_key="Utada Hikaru", source_name="Utada Hikaru")
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.insert_if_absent(first) is True
+        assert uow.accepted_artist_names.insert_if_absent(second) is True
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.find_by_source_key(first.source_key) == first
+        assert uow.accepted_artist_names.find_by_source_key(second.source_key) == second
+
+
+@pytest.mark.parametrize(
+    ("provider", "selected_name_kind", "selected_locale"),
+    [
+        ("other", "alias", "en"),
+        ("musicbrainz", "unsupported", None),
+        ("musicbrainz", "sort_name", None),
+        ("musicbrainz", "name", "en"),
+    ],
+    ids=["provider", "selection-kind", "sort-name", "non-alias-locale"],
+)
+def test_sqlite_accepted_artist_name_migration_rejects_invalid_provenance(
+    tmp_path: Path,
+    provider: str,
+    selected_name_kind: str,
+    selected_locale: str | None,
+) -> None:
+    """Schema constraints reject provider provenance outside the closed contract."""
+    database_file = default_application_paths(tmp_path).database_file
+    migrate_database(database_file)
+
+    with sqlite3.connect(database_file) as connection, pytest.raises(sqlite3.IntegrityError):
+        _ = connection.execute(
+            """
+            INSERT INTO accepted_artist_names (
+                source_key,
+                source_name,
+                resolved_name,
+                provider,
+                provider_artist_id,
+                selected_name_kind,
+                selected_locale,
+                accepted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ACCEPTED_ARTIST_SOURCE_KEY,
+                ACCEPTED_ARTIST_SOURCE_NAME,
+                ACCEPTED_ARTIST_RESOLVED_NAME,
+                provider,
+                MUSICBRAINZ_ARTIST_ID,
+                selected_name_kind,
+                selected_locale,
+                BASE_TIME.isoformat(),
+            ),
+        )
+
+
+def test_sqlite_accepted_artist_name_migration_rejects_null_source_key(tmp_path: Path) -> None:
+    """The text primary key explicitly rejects SQLite's otherwise-permitted NULL values."""
+    database_file = default_application_paths(tmp_path).database_file
+    migrate_database(database_file)
+
+    with sqlite3.connect(database_file) as connection, pytest.raises(sqlite3.IntegrityError):
+        _ = connection.execute(
+            """
+            INSERT INTO accepted_artist_names (
+                source_key,
+                source_name,
+                resolved_name,
+                provider,
+                provider_artist_id,
+                selected_name_kind,
+                selected_locale,
+                accepted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                None,
+                ACCEPTED_ARTIST_SOURCE_NAME,
+                ACCEPTED_ARTIST_RESOLVED_NAME,
+                ArtistNameProvider.MUSICBRAINZ.value,
+                MUSICBRAINZ_ARTIST_ID,
+                SelectedArtistNameKind.ALIAS.value,
+                "en",
+                BASE_TIME.isoformat(),
+            ),
+        )
+
+
+def test_sqlite_accepted_artist_name_insert_rolls_back_without_commit(tmp_path: Path) -> None:
+    """Accepted artist-name inserts obey the surrounding UnitOfWork transaction."""
+    database_file = default_application_paths(tmp_path).database_file
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.insert_if_absent(_accepted_artist_name()) is True
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.find_by_source_key(ACCEPTED_ARTIST_SOURCE_KEY) is None
 
 
 def test_sqlite_migrations_create_browsing_indexes(tmp_path: Path) -> None:
@@ -724,6 +889,19 @@ def _table_names(database_file: Path) -> set[str]:
             """
         ).fetchall()
     return {str(row[0]) for row in cast("list[tuple[object, ...]]", rows)}
+
+
+def _accepted_artist_name() -> AcceptedArtistName:
+    return AcceptedArtistName(
+        source_key=ACCEPTED_ARTIST_SOURCE_KEY,
+        source_name=ACCEPTED_ARTIST_SOURCE_NAME,
+        resolved_name=ACCEPTED_ARTIST_RESOLVED_NAME,
+        provider=ArtistNameProvider.MUSICBRAINZ,
+        provider_artist_id=MUSICBRAINZ_ARTIST_ID,
+        selected_name_kind=SelectedArtistNameKind.ALIAS,
+        selected_locale="en",
+        accepted_at=BASE_TIME,
+    )
 
 
 def _index_names(database_file: Path) -> set[str]:
