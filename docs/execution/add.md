@@ -3,7 +3,7 @@ type: Execution Spec
 title: Add Execution
 description: Defines add plan creation from an Incoming/source scan against the sole registered Library, including artist-name resolution, duplicate-hash skips, missing-metadata and target-conflict blocks, and add --apply orchestration.
 tags: [add, plan-creation, library-registration, artist-names, apply]
-timestamp: 2026-07-15T23:22:18+09:00
+timestamp: 2026-07-16T00:25:03+09:00
 ---
 
 # Add Execution
@@ -21,6 +21,22 @@ In the MVP, `add` targets the sole registered Library. If no registered Library 
 `add` must not perform existing-Library organization and must not mix Incoming import actions with existing Library organization actions. It must not register, reconcile, or relink a Library.
 
 `add` should not perform a full Library-wide organizedness check every time. Its gate is Library registration, not repeated canonical path validation across the entire Library.
+
+Add does perform one narrow artist-name reconciliation guard. When an
+otherwise executable incoming move uses a changed resolved source key, Add
+recalculates the affected active Library Tracks from their already-loaded raw
+metadata, honoring exact display-name preferences before shared accepted-name
+results. Album-year and disc inference use active Library Tracks plus otherwise
+executable incoming moves; duplicate skips and blocked actions do not influence
+this reconciliation context. If the resolved name would change an existing
+Track's canonical path and that Track has not already been reconciled to the
+resolved current and canonical path, Add stops without creating a Plan and
+directs the user to run `organize`.
+
+The guard ignores removed Tracks, duplicate skips, blocked incoming actions,
+and name changes that the active path template does not consume. It does not
+resolve unrelated Library artists, scan Library files, or replace Organize's
+full reconciliation responsibility.
 
 ```text
 Incoming folder
@@ -46,6 +62,7 @@ The add plan creation behavior includes:
 * check duplicate hashes against known active Library tracks and skip duplicates with `duplicate_hash`
 * block missing required metadata for incoming files
 * block target conflicts according to [Target Collision Safety](#target-collision-safety)
+* refuse mixed artist naming when an executable incoming move proves that an active existing Track requires Organize reconciliation
 * persist Plan and PlanActions
 
 REMOVED Library tracks are excluded from duplicate-hash and target-conflict judgment, matching refresh, check, and album-year resolution.
@@ -56,6 +73,9 @@ PathPolicy receives the aligned resolved projection; raw snapshot metadata and
 artist-ID lookup keys remain unchanged. The Library/Track read transaction is
 closed before resolution begins, and the Plan is persisted in a later
 transaction, so fastText or provider work cannot extend a Plan DB transaction.
+A positive accepted-name cache write may commit before the reconciliation guard
+refuses Add; that sticky provider state is intentional, and the required
+Organize run consumes it when calculating the Library-wide reconciliation.
 
 ## Target Collision Safety
 

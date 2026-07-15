@@ -4,14 +4,17 @@
 
 This is an active, multi-session initiative with cross-cutting changes to configuration, metadata naming, Plan execution, persistence, Web/CLI settings, and desktop packaging.
 
-Stage 1 is complete. Stage 2 automatic resolution is the next delivery target;
-runtime and packaging controls remain ordered after the resolver behavior is
-proven.
+Stage 1 is complete. Stage 2 is in progress: the shared resolver now feeds
+normal Plan target calculation, and Add refuses an import that would mix a new
+resolved name with unreconciled active Library paths. Opt-in activation of new
+fastText/MusicBrainz lookups and durable Plan-review naming diagnostics remain
+the next delivery targets; runtime and packaging hardening remains ordered
+after those behaviors are proven.
 
 The rollout order is intentional:
 
 1. Established deterministic artist display-name preferences and the persistence foundation.
-2. Next: deliver fastText-gated MusicBrainz English/Latin name resolution in normal Plan creation.
+2. In progress: finish opt-in fastText-gated MusicBrainz English/Latin name resolution and review diagnostics in normal Plan creation.
 3. Harden runtime controls, packaging, and operational behavior.
 4. Add companion lyrics and artwork handling.
 5. Add reviewed collection of unprocessed files.
@@ -92,6 +95,14 @@ The stage establishes the separation between raw tag metadata, preferred display
 ### Stage 2 — Automatic MusicBrainz English/Latin naming
 
 **Outcome:** Eligible Japanese artist and album-artist values are resolved during normal Plan creation and appear as reviewable canonical target paths.
+
+**Status:** In progress. Add, Organize, and Refresh share the resolver and
+sticky cache projection, and Add now requires Organize before an executable
+incoming move could introduce mixed resolved naming. Normal composition still
+disables new provider lookup, and Plan review does not yet persist resolution
+provenance or unresolved/ambiguous diagnostics. The available `lid.176.ftz`
+file remains a local development input; a CPython 3.14 and Windows-compatible
+prediction runtime has not yet passed the distribution gate.
 
 `add`, `organize`, and `refresh` use one shared resolver and cache contract. `organize` can reconcile existing paths after a preference or accepted resolution changes. `add` may use a resolved name for a new artist, but it must refuse mixed naming when an existing Library artist requires reconciliation. The existing `artist-ids generate` flow should reuse the shared naming result where appropriate while keeping display-name preferences and compact IDs separate.
 

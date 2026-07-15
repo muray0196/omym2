@@ -20,7 +20,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig, PathsConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, ArtistNameConfig, PathPolicyConfig, PathsConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
@@ -36,9 +36,11 @@ from omym2.features.add.dto import CreateAddPlanRequest
 from omym2.features.add.ports import CreateAddPlanPorts
 from omym2.features.add.usecases.create_add_plan import (
     AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE,
+    ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE,
     NO_REGISTERED_LIBRARY_MESSAGE,
     SELECTED_LIBRARY_NOT_FOUND_MESSAGE,
     STALE_LIBRARY_MESSAGE,
+    AddLibraryReconciliationRequiredError,
     AddLibrarySelectionError,
     CreateAddPlanUseCase,
 )
@@ -361,6 +363,340 @@ def test_add_projects_shared_artist_name_resolution_only_into_the_recorded_targe
     assert METADATA.artist == "Artist"
     assert isinstance(ports.artist_name_resolver, MappingArtistNameResolver)
     assert ports.artist_name_resolver.calls == [("Artist", None)]
+
+
+def test_add_refuses_resolved_source_key_that_would_mix_existing_library_paths() -> None:
+    """Add normalizes source keys before deciding that an active Track needs organize."""
+    existing_metadata = TrackMetadata(
+        title="Existing",
+        artist=" Artist ",
+        album="Album",
+        year=2026,
+        track_number=1,
+        disc_number=1,
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(
+        _track(
+            OTHER_CONTENT_HASH,
+            "Artist/2026_Album/1-01_Existing.flac",
+            metadata=existing_metadata,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(),
+        options=PortOptions(resolved_names={"Artist": "Preferred Artist"}),
+    )
+
+    with pytest.raises(
+        AddLibraryReconciliationRequiredError,
+        match=ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE,
+    ):
+        _ = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert uow.plans.records == {}
+    assert uow.plan_actions.records == {}
+    assert isinstance(ports.artist_name_resolver, MappingArtistNameResolver)
+    assert ports.artist_name_resolver.calls == [("Artist", None)]
+
+
+def test_add_allows_resolved_artist_name_after_existing_tracks_are_reconciled() -> None:
+    """A matching active Track already at its resolved target does not block Add."""
+    existing_metadata = TrackMetadata(
+        title="Existing",
+        artist="Artist",
+        album="Album",
+        year=2026,
+        track_number=1,
+        disc_number=1,
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(
+        _track(
+            OTHER_CONTENT_HASH,
+            "Preferred-Artist/2026_Album/1-01_Existing.flac",
+            metadata=existing_metadata,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(resolved_names={"Artist": "Preferred Artist"}),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert plan.actions[0].target_path == EXPECTED_PREFERRED_ARTIST_PATH
+
+
+def test_add_honors_an_existing_tracks_exact_artist_name_preference() -> None:
+    """An exact preference outranks a provider result shared by normalized source key."""
+    existing_metadata = TrackMetadata(
+        title="Existing",
+        artist=" Artist ",
+        album="Album",
+        year=2026,
+        track_number=1,
+        disc_number=1,
+    )
+    config = AppConfig(
+        artist_names=ArtistNameConfig(preferences={" Artist ": "Existing Preferred"}),
+    )
+    path_policy_hash = calculate_path_policy_fingerprint(
+        config.path_policy,
+        config.artist_ids,
+        config.metadata.album_year_resolution,
+        config.artist_names,
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=path_policy_hash))
+    uow.tracks.save(
+        _track(
+            OTHER_CONTENT_HASH,
+            "Existing-Preferred/2026_Album/1-01_Existing.flac",
+            metadata=existing_metadata,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(
+            config=config,
+            resolved_names={"Artist": "Provider Preferred"},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert plan.actions[0].target_path == "Provider-Preferred/2026_Album/1-02_Title.flac"
+
+
+def test_add_does_not_spread_an_incoming_exact_preference_across_a_normalized_key() -> None:
+    """An exact incoming preference does not rename a distinct existing raw value."""
+    existing_metadata = TrackMetadata(
+        title="Existing",
+        artist=" Artist ",
+        album="Album",
+        year=2026,
+        track_number=1,
+        disc_number=1,
+    )
+    config = AppConfig(
+        artist_names=ArtistNameConfig(preferences={"Artist": "Incoming Preferred"}),
+    )
+    path_policy_hash = calculate_path_policy_fingerprint(
+        config.path_policy,
+        config.artist_ids,
+        config.metadata.album_year_resolution,
+        config.artist_names,
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=path_policy_hash))
+    uow.tracks.save(
+        _track(
+            OTHER_CONTENT_HASH,
+            "Artist/2026_Album/1-01_Existing.flac",
+            metadata=existing_metadata,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(config=config),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert plan.actions[0].target_path == "Incoming-Preferred/2026_Album/1-02_Title.flac"
+
+
+def test_add_does_not_require_reconciliation_for_a_duplicate_skip() -> None:
+    """A resolved duplicate is not imported and therefore cannot create mixed naming."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track(CONTENT_HASH, EXPECTED_CANONICAL_PATH))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(resolved_names={"Artist": "Preferred Artist"}),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    action = plan.actions[0]
+    assert action.action_type is ActionType.SKIP
+    assert action.reason is PlanActionReason.DUPLICATE_HASH
+
+
+def test_add_excludes_duplicate_skip_from_reconciliation_disc_context() -> None:
+    """A skipped disc-two duplicate cannot make a reconciled Track appear stale."""
+    config = AppConfig(
+        path_policy=PathPolicyConfig(
+            disc_number_style=PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
+            disc_number_condition=PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
+        )
+    )
+    existing_metadata = TrackMetadata(
+        title="Existing",
+        artist="Artist",
+        album="Album",
+        year=2026,
+        track_number=1,
+        disc_number=1,
+    )
+    known_duplicate_metadata = TrackMetadata(
+        title="Known duplicate",
+        artist="Other Artist",
+        album="Other Album",
+        year=YEAR_2002,
+        track_number=1,
+        disc_number=1,
+    )
+    skipped_duplicate_metadata = TrackMetadata(
+        title="Skipped duplicate",
+        artist="Artist",
+        album="Album",
+        year=2026,
+        track_number=3,
+        disc_number=2,
+    )
+    duplicate_content_hash = calculate_content_fingerprint(b"duplicate audio")
+    path_policy_hash = calculate_path_policy_fingerprint(
+        config.path_policy,
+        config.artist_ids,
+        config.metadata.album_year_resolution,
+        config.artist_names,
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=path_policy_hash))
+    uow.tracks.save(
+        _track(
+            OTHER_CONTENT_HASH,
+            "Preferred-Artist/2026_Album/01_Existing.flac",
+            metadata=existing_metadata,
+        )
+    )
+    uow.tracks.save(
+        _track(
+            duplicate_content_hash,
+            "Other-Artist/2002_Other-Album/01_Known-duplicate.flac",
+            track_id=SECOND_TRACK_ID,
+            metadata=known_duplicate_metadata,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE), _entry(SECOND_INCOMING_FILE)),
+        {
+            INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH),
+            SECOND_INCOMING_FILE: _snapshot(
+                SECOND_INCOMING_FILE,
+                skipped_duplicate_metadata,
+                duplicate_content_hash,
+            ),
+        },
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID)),
+        ),
+        options=PortOptions(
+            config=config,
+            resolved_names={"Artist": "Preferred Artist"},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    move_action, duplicate_action = plan.actions
+    assert move_action.action_type is ActionType.MOVE
+    assert move_action.reason is None
+    assert duplicate_action.action_type is ActionType.SKIP
+    assert duplicate_action.reason is PlanActionReason.DUPLICATE_HASH
+
+
+def test_add_does_not_require_reconciliation_for_a_blocked_target() -> None:
+    """A blocked resolved move cannot introduce mixed naming into the Library."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track(OTHER_CONTENT_HASH, EXPECTED_CANONICAL_PATH))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(
+            existing_files={f"{LIBRARY_ROOT}/{EXPECTED_PREFERRED_ARTIST_PATH}"},
+            resolved_names={"Artist": "Preferred Artist"},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    action = plan.actions[0]
+    assert action.status is ActionStatus.BLOCKED
+    assert action.reason is PlanActionReason.TARGET_EXISTS
+
+
+def test_add_does_not_reconcile_names_against_removed_tracks() -> None:
+    """Removed Track naming does not constrain a new active import path."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(
+        _track(
+            OTHER_CONTENT_HASH,
+            EXPECTED_CANONICAL_PATH,
+            status=TrackStatus.REMOVED,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(resolved_names={"Artist": "Preferred Artist"}),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert plan.actions[0].target_path == EXPECTED_PREFERRED_ARTIST_PATH
+
+
+def test_add_does_not_reconcile_names_when_the_template_ignores_artist_fields() -> None:
+    """Resolved names do not gate Add when they cannot change managed paths."""
+    config = AppConfig(path_policy=PathPolicyConfig(template="{album}/{track}_{title}"))
+    path_policy_hash = calculate_path_policy_fingerprint(
+        config.path_policy,
+        config.artist_ids,
+        config.metadata.album_year_resolution,
+        config.artist_names,
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=path_policy_hash))
+    uow.tracks.save(_track(OTHER_CONTENT_HASH, "unrelated/current.flac"))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(config=config, resolved_names={"Artist": "Preferred Artist"}),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
+
+    assert plan.actions[0].target_path == "Album/02_Title.flac"
 
 
 def test_add_plan_resolves_latest_album_year_across_incoming_album_group() -> None:
