@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
     from omym2.domain.models.accepted_artist_name import AcceptedArtistName
     from omym2.domain.models.app_config import AppConfig
+    from omym2.domain.models.artist_name_resolution import ArtistNameResolution
     from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
     from omym2.domain.models.check_run import CheckRun
     from omym2.domain.models.file_event import FileEvent, FileEventStatus
@@ -165,6 +166,19 @@ class AcceptedArtistNameRepository(Protocol):
 
     def insert_if_absent(self, accepted_name: AcceptedArtistName) -> bool:
         """Insert one accepted name without replacing an existing sticky result."""
+        ...
+
+
+class ArtistNameResolutionReader(Protocol):
+    """Resolve artist display names through the shared naming feature."""
+
+    def resolve_many(
+        self,
+        source_names: Sequence[str | None],
+        *,
+        preferences: Mapping[str, str] | None = None,
+    ) -> tuple[ArtistNameResolution, ...]:
+        """Resolve one ordered batch without changing source metadata."""
         ...
 
 

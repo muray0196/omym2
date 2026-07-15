@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from omym2.features.common_ports import (
+        ArtistNameResolutionReader,
         BatchFileSnapshotReader,
         Clock,
         ConfigReader,
@@ -30,6 +31,7 @@ class CreateAddPlanPorts:
     file_snapshot_reader: BatchFileSnapshotReader
     file_presence: FilePresence
     config_store: ConfigReader
+    artist_name_resolver: ArtistNameResolutionReader
     path_resolver: PathResolver
     clock: Clock
     id_generator: IdGenerator

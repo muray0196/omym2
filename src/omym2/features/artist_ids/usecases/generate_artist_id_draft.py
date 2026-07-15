@@ -14,7 +14,6 @@ from omym2.features.artist_ids.dto import ArtistIdDraftEntryResult, GenerateArti
 
 if TYPE_CHECKING:
     from omym2.features.artist_ids.dto import GenerateArtistIdDraftRequest
-    from omym2.features.artist_ids.ports import ArtistLanguageDetector, ArtistNameResolver
 
 
 class ArtistIdDraftValidationError(ValueError):
@@ -25,14 +24,12 @@ class ArtistIdDraftValidationError(ValueError):
 class GenerateArtistIdDraftUseCase:
     """Generate or preserve artist IDs without a ConfigStore dependency."""
 
-    language_detector: ArtistLanguageDetector
-    artist_resolver: ArtistNameResolver
-
     def execute(self, request: GenerateArtistIdDraftRequest) -> GenerateArtistIdDraftResult:
         """Return deterministic entries derived only from the supplied form draft."""
         draft_entries = dict(request.artist_ids.entries or {})
+        source_artists = _normalized_artist_names(request.artist_names)
         results: list[ArtistIdDraftEntryResult] = []
-        for source_artist in _normalized_artist_names(request.artist_names):
+        for source_artist in source_artists:
             existing_artist_id = draft_entries.get(source_artist)
             if existing_artist_id is not None and not request.overwrite:
                 results.append(
@@ -45,7 +42,7 @@ class GenerateArtistIdDraftUseCase:
                 )
                 continue
 
-            generation_artist = self._generation_artist(source_artist)
+            generation_artist = source_artist
             artist_id = generate_artist_id(
                 generation_artist,
                 max_length=request.artist_ids.max_length,
@@ -70,13 +67,6 @@ class GenerateArtistIdDraftUseCase:
         except ValueError as exc:
             raise ArtistIdDraftValidationError(str(exc)) from exc
         return GenerateArtistIdDraftResult(entries=tuple(results))
-
-    def _generation_artist(self, source_artist: str) -> str:
-        if self.language_detector.is_japanese(source_artist):
-            resolved_artist = self.artist_resolver.english_or_latin_name(source_artist)
-            if resolved_artist is not None and resolved_artist.strip() != "":
-                return resolved_artist
-        return source_artist
 
 
 def _normalized_artist_names(artist_names: tuple[str, ...]) -> tuple[str, ...]:

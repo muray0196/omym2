@@ -20,7 +20,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistNameConfig, PathPolicyConfig
+from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
@@ -45,7 +45,7 @@ from omym2.features.refresh.usecases.create_refresh_plan import (
 )
 from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
-from tests.fakes.runtime import FixedClock, SequenceIdGenerator
+from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -174,9 +174,9 @@ def test_refresh_operation_success_commits_the_created_plan_result() -> None:
     assert uow.plans.get(plan.plan_id) == plan
 
 
-def test_refresh_projects_artist_preferences_without_updating_raw_track_state() -> None:
-    """Refresh records a preferred target while leaving the managed Track untouched."""
-    config = AppConfig(artist_names=ArtistNameConfig(preferences={"Artist": "Preferred Artist"}))
+def test_refresh_projects_shared_artist_name_resolution_without_updating_raw_track_state() -> None:
+    """Refresh records resolver output while leaving the managed Track untouched."""
+    config = AppConfig()
     path_policy_hash = calculate_path_policy_fingerprint(
         config.path_policy,
         config.artist_ids,
@@ -192,7 +192,7 @@ def test_refresh_projects_artist_preferences_without_updating_raw_track_state() 
         uow,
         {source_path: _snapshot(source_path, NEW_METADATA)},
         SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
-        options=PortOptions(config=config),
+        options=PortOptions(config=config, resolved_names={"Artist": "Preferred Artist"}),
     )
 
     plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
@@ -200,6 +200,8 @@ def test_refresh_projects_artist_preferences_without_updating_raw_track_state() 
     assert plan.actions[0].target_path == NEW_PREFERRED_ARTIST_PATH
     assert plan.actions[0].metadata_hash_at_plan == calculate_metadata_fingerprint(NEW_METADATA)
     assert uow.tracks.get(TRACK_ID) == track
+    assert isinstance(ports.artist_name_resolver, MappingArtistNameResolver)
+    assert ports.artist_name_resolver.calls == [("Artist", None)]
 
 
 def test_refresh_renders_disc_number_from_active_peer_context() -> None:
@@ -681,6 +683,7 @@ class PortOptions:
     existing_files: set[str] | None = None
     missing_paths: set[str] | None = None
     stat_entries: dict[str, FileScanEntry] | None = None
+    resolved_names: dict[str, str] | None = None
 
 
 def _ports(
@@ -698,6 +701,7 @@ def _ports(
         file_stat_reader=StaticFileStatReader(port_options.stat_entries),
         file_presence=StaticFilePresence(port_options.existing_files),
         config_store=StaticConfigStore(port_options.config),
+        artist_name_resolver=MappingArtistNameResolver(port_options.resolved_names or {}),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=id_generator,

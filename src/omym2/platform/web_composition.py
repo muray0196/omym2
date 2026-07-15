@@ -71,7 +71,6 @@ from omym2.features.tracks.usecases.get_track_status_facets import GetTrackStatu
 from omym2.features.tracks.usecases.group_tracks import GroupTracksUseCase
 from omym2.features.tracks.usecases.list_tracks import ListTracksUseCase
 from omym2.features.undo.usecases.create_undo_plan import CreateUndoPlanUseCase
-from omym2.platform.artist_ids_composition import web_artist_language_detector, web_artist_name_resolver
 from omym2.platform.cli_path_normalization import normalize_cli_path
 from omym2.platform.feature_composition import (
     build_apply_plan_ports,
@@ -186,10 +185,7 @@ def build_api_route_context(config_path: Path | None = None, database_path: Path
             validate_settings=ValidateSettingsCandidateUseCase(build_settings_ports(runtime)).execute,
             preview_path_policy=PreviewPathPolicyUseCase().execute,
             save_settings=lambda request: _save_settings(runtime, operation_runtime, request),
-            generate_artist_id_draft=GenerateArtistIdDraftUseCase(
-                language_detector=web_artist_language_detector(),
-                artist_resolver=web_artist_name_resolver(),
-            ).execute,
+            generate_artist_id_draft=GenerateArtistIdDraftUseCase().execute,
         ),
         operations=OperationsRouteContext(
             get_operation=operation_runtime.get,

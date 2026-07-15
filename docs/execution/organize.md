@@ -1,9 +1,9 @@
 ---
 type: Execution Spec
 title: Organize Execution
-description: Defines organize registration and reconciliation, Plan creation, and the explicit unique-Track size+mtime trust-stat optimization and fallback rules.
-tags: [organize, library-registration, plan-creation, path-policy]
-timestamp: 2026-07-11T16:53:36+09:00
+description: Defines organize registration and artist-name reconciliation, Plan creation, and the explicit unique-Track size+mtime trust-stat optimization and fallback rules.
+tags: [organize, library-registration, plan-creation, artist-names, path-policy]
+timestamp: 2026-07-15T23:22:18+09:00
 ---
 
 # Organize Execution
@@ -44,6 +44,13 @@ Relink rules are defined in [../contracts/path-identity-storage.md](../contracts
 ## Organize Behavior
 
 `organize --library PATH` scans the specified Library read-only and computes canonical paths under the current PathPolicy.
+
+For every otherwise valid snapshot, organize batches raw artist and
+album-artist values through the shared `ArtistNameResolutionReader` before
+canonical path generation. This lets organize reconcile paths after either an
+exact preference or accepted provider name changes without rewriting stored
+Track metadata. Library selection and Track reads finish before resolver work;
+result persistence begins only after resolver work has completed.
 
 The scan always covers the whole Library and only ever plans misplaced (current path differs from the canonical target path) or blocked files; already-correctly-placed files never become Plan actions.
 

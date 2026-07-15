@@ -51,7 +51,7 @@ from omym2.features.inspect.dto import InspectFileRequest
 from omym2.features.inspect.ports import InspectFilePorts
 from omym2.features.inspect.usecases.inspect_file import InspectFileUseCase
 from omym2.shared.ids import ActionId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
-from tests.fakes.runtime import FixedClock, SequenceIdGenerator
+from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -619,6 +619,7 @@ def _create_mixed_plan(setup: MixedIncomingSetup):
         file_snapshot_reader=setup.snapshot_reader,
         file_presence=FilesystemFilePresence(),
         config_store=setup.config_store,
+        artist_name_resolver=MappingArtistNameResolver(),
         path_resolver=FilesystemPathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(
@@ -682,6 +683,7 @@ def _add_ports(
         file_snapshot_reader=snapshot_reader,
         file_presence=FilesystemFilePresence(),
         config_store=config_store,
+        artist_name_resolver=MappingArtistNameResolver(),
         path_resolver=FilesystemPathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(

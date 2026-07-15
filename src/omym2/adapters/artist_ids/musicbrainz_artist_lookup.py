@@ -1,6 +1,6 @@
 """
-Summary: Resolves English or Latin artist names through MusicBrainz.
-Why: Keeps HTTP, parsing, and rate limiting behind a feature port.
+Summary: Adapts MusicBrainz artist searches to raw naming-provider facts.
+Why: Keeps HTTP, schema parsing, and rate limiting outside naming decisions.
 """
 
 from __future__ import annotations
@@ -9,9 +9,11 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from http.client import HTTPException
 from typing import Protocol, Self, cast
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from uuid import UUID
 
 from omym2.config import (
     MUSICBRAINZ_API_BASE_URL,
@@ -20,10 +22,17 @@ from omym2.config import (
     MUSICBRAINZ_TIMEOUT_SECONDS,
     MUSICBRAINZ_USER_AGENT,
 )
+from omym2.features.artist_names.dto import (
+    ArtistNameAliasCandidate,
+    ArtistNameProviderCandidate,
+    ArtistNameSearchResult,
+)
 
 type UrlOpen = Callable[[Request, float], "_HttpResponse"]
 type Clock = Callable[[], float]
 type Sleeper = Callable[[float], None]
+
+RATE_LIMIT_BELOW_PROVIDER_MINIMUM_MESSAGE = "MusicBrainz rate limiting must be at least the provider minimum."
 
 
 class _HttpResponse(Protocol):
@@ -48,7 +57,7 @@ def _urlopen(request: Request, timeout: float) -> _HttpResponse:
 
 @dataclass(slots=True)
 class MusicBrainzArtistLookup:
-    """Look up artist names using the MusicBrainz web service."""
+    """Return raw MusicBrainz artist candidates without accepting a match."""
 
     base_url: str = MUSICBRAINZ_API_BASE_URL
     user_agent: str = MUSICBRAINZ_USER_AGENT
@@ -60,16 +69,24 @@ class MusicBrainzArtistLookup:
     sleeper: Sleeper = time.sleep
     _last_request_at: float | None = field(default=None, init=False)
 
-    def english_or_latin_name(self, source_artist: str) -> str | None:
-        """Return the best English or Latin artist name MusicBrainz provides."""
-        query = source_artist.strip()
+    def __post_init__(self) -> None:
+        """Reject throttling intervals below MusicBrainz's provider minimum."""
+        if self.rate_limit_seconds < MUSICBRAINZ_RATE_LIMIT_SECONDS:
+            raise ValueError(RATE_LIMIT_BELOW_PROVIDER_MINIMUM_MESSAGE)
+
+    def search_artists(self, source_name: str) -> ArtistNameSearchResult:
+        """Return ordered raw artist candidates or an unavailable observation."""
+        query = source_name.strip()
         if query == "":
-            return None
+            return ArtistNameSearchResult(available=True)
         try:
             payload = self._request_artist_search(query)
-        except OSError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError:
-            return None
-        return _select_artist_name(payload)
+        except OSError, TimeoutError, HTTPException, json.JSONDecodeError, UnicodeDecodeError:
+            return _unavailable_search_result()
+        candidates = _parse_artist_candidates(payload)
+        if candidates is None:
+            return _unavailable_search_result()
+        return ArtistNameSearchResult(available=True, candidates=candidates)
 
     def _request_artist_search(self, source_artist: str) -> object:
         self._rate_limit()
@@ -78,9 +95,11 @@ class MusicBrainzArtistLookup:
             f"{self.base_url.rstrip('/')}/artist?{query}",
             headers={"User-Agent": self.user_agent, "Accept": "application/json"},
         )
-        with self.url_open(request, self.timeout_seconds) as response:
-            raw_payload = response.read()
-        self._last_request_at = self.clock()
+        try:
+            with self.url_open(request, self.timeout_seconds) as response:
+                raw_payload = response.read()
+        finally:
+            self._last_request_at = self.clock()
         return cast("object", json.loads(raw_payload.decode("utf-8")))
 
     def _rate_limit(self) -> None:
@@ -92,7 +111,7 @@ class MusicBrainzArtistLookup:
             self.sleeper(remaining)
 
 
-def _select_artist_name(payload: object) -> str | None:
+def _parse_artist_candidates(payload: object) -> tuple[ArtistNameProviderCandidate, ...] | None:
     if not isinstance(payload, dict):
         return None
     payload_mapping = cast("dict[str, object]", payload)
@@ -100,41 +119,89 @@ def _select_artist_name(payload: object) -> str | None:
     if not isinstance(artists, list):
         return None
     artist_items = cast("list[object]", artists)
+    candidates: list[ArtistNameProviderCandidate] = []
     for artist_item in artist_items:
-        if not isinstance(artist_item, dict):
-            continue
-        artist = cast("dict[str, object]", artist_item)
-        alias_name = _select_alias_name(artist.get("aliases"))
-        if alias_name is not None:
-            return alias_name
-        for key in ("name", "sort-name"):
-            value = artist.get(key)
-            if _is_latin_name(value):
-                return cast("str", value)
-    return None
+        candidate = _parse_artist_candidate(artist_item)
+        if candidate is None:
+            return None
+        candidates.append(candidate)
+    return tuple(candidates)
 
 
-def _select_alias_name(aliases: object) -> str | None:
-    if not isinstance(aliases, list):
+def _parse_artist_candidate(value: object) -> ArtistNameProviderCandidate | None:
+    if not isinstance(value, dict):
         return None
-    alias_items = cast("list[object]", aliases)
-    for alias_item in alias_items:
-        if not isinstance(alias_item, dict):
-            continue
-        alias = cast("dict[str, object]", alias_item)
-        name = alias.get("name")
-        locale = alias.get("locale")
-        if isinstance(locale, str) and locale.lower().startswith("en") and _is_latin_name(name):
-            return cast("str", name)
-    for alias_item in alias_items:
-        if not isinstance(alias_item, dict):
-            continue
-        alias = cast("dict[str, object]", alias_item)
-        name = alias.get("name")
-        if _is_latin_name(name):
-            return cast("str", name)
-    return None
+    artist = cast("dict[str, object]", value)
+    provider_artist_id = _canonical_uuid(artist.get("id"))
+    score = _parse_score(artist.get("score"))
+    name = _non_empty_text(artist.get("name"))
+    aliases = _parse_aliases(artist.get("aliases"))
+    if provider_artist_id is None or score is None or name is None or aliases is None:
+        return None
+    return ArtistNameProviderCandidate(
+        provider_artist_id=provider_artist_id,
+        score=score,
+        name=name,
+        aliases=aliases,
+    )
 
 
-def _is_latin_name(value: object) -> bool:
-    return isinstance(value, str) and value.strip() != "" and value.isascii()
+def _parse_aliases(value: object) -> tuple[ArtistNameAliasCandidate, ...] | None:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        return None
+    alias_items = cast("list[object]", value)
+    aliases: list[ArtistNameAliasCandidate] = []
+    for alias_item in alias_items:
+        alias = _parse_alias(alias_item)
+        if alias is None:
+            return None
+        aliases.append(alias)
+    return tuple(aliases)
+
+
+def _parse_alias(value: object) -> ArtistNameAliasCandidate | None:
+    if not isinstance(value, dict):
+        return None
+    alias = cast("dict[str, object]", value)
+    name = _non_empty_text(alias.get("name"))
+    locale = alias.get("locale")
+    raw_primary = alias.get("primary", False)
+    if (
+        name is None
+        or (locale is not None and not isinstance(locale, str))
+        or (raw_primary is not None and not isinstance(raw_primary, bool))
+    ):
+        return None
+    return ArtistNameAliasCandidate(name=name, locale=locale, primary=raw_primary is True)
+
+
+def _canonical_uuid(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return str(UUID(value))
+    except ValueError:
+        return None
+
+
+def _parse_score(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _non_empty_text(value: object) -> str | None:
+    return value if isinstance(value, str) and value.strip() != "" else None
+
+
+def _unavailable_search_result() -> ArtistNameSearchResult:
+    return ArtistNameSearchResult(available=False)

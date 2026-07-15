@@ -20,7 +20,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistNameConfig, PathPolicyConfig
+from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
@@ -49,7 +49,7 @@ from omym2.features.organize.usecases.create_organize_plan import (
 )
 from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
-from tests.fakes.runtime import FixedClock, SequenceIdGenerator
+from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -326,9 +326,9 @@ def test_organize_operation_success_records_created_plan_result() -> None:
     assert terminal.plan_id == result.plan.plan_id
 
 
-def test_organize_projects_artist_preferences_while_storing_raw_metadata() -> None:
-    """Organize reconciles display paths without replacing persisted tag metadata."""
-    config = AppConfig(artist_names=ArtistNameConfig(preferences={"Artist": "Preferred Artist"}))
+def test_organize_projects_shared_artist_name_resolution_while_storing_raw_metadata() -> None:
+    """Organize reconciles resolver output without replacing persisted tag metadata."""
+    config = AppConfig()
     uow = InMemoryUnitOfWork()
     ports, _, _ = _ports(
         uow,
@@ -340,7 +340,7 @@ def test_organize_projects_artist_preferences_while_storing_raw_metadata() -> No
             plan_ids=deque((PLAN_ID,)),
             action_ids=deque((ACTION_ID,)),
         ),
-        options=PortOptions(config=config),
+        options=PortOptions(config=config, resolved_names={"Artist": "Preferred Artist"}),
     )
 
     result = CreateOrganizePlanUseCase(ports).execute(
@@ -352,6 +352,8 @@ def test_organize_projects_artist_preferences_while_storing_raw_metadata() -> No
     assert track is not None
     assert track.canonical_path == EXPECTED_PREFERRED_ARTIST_PATH
     assert track.metadata == METADATA
+    assert isinstance(ports.artist_name_resolver, MappingArtistNameResolver)
+    assert ports.artist_name_resolver.calls == [("Artist", None)]
 
 
 def test_organize_resolves_latest_album_year_across_scanned_album_group() -> None:
@@ -672,6 +674,7 @@ class PortOptions:
 
     config: AppConfig | None = None
     missing_paths: set[str] | None = None
+    resolved_names: dict[str, str] | None = None
 
 
 def _ports(
@@ -690,6 +693,7 @@ def _ports(
         file_scanner=scanner,
         file_snapshot_reader=snapshot_reader,
         config_store=StaticConfigStore(port_options.config),
+        artist_name_resolver=MappingArtistNameResolver(port_options.resolved_names or {}),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=id_generator,

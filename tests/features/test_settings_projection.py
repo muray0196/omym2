@@ -155,10 +155,7 @@ def test_save_settings_candidate_checks_revision_then_validation_before_writing(
 
 def test_generate_artist_id_draft_preserves_and_generates_without_config_store() -> None:
     """Draft generation uses supplied entries and never has a persistence collaborator."""
-    usecase = GenerateArtistIdDraftUseCase(
-        language_detector=StaticLanguageDetector(),
-        artist_resolver=StaticArtistNameResolver(),
-    )
+    usecase = GenerateArtistIdDraftUseCase()
 
     result = usecase.execute(
         GenerateArtistIdDraftRequest(
@@ -176,10 +173,7 @@ def test_generate_artist_id_draft_preserves_and_generates_without_config_store()
 
 def test_generate_artist_id_draft_honors_overwrite_and_rejects_unsafe_generated_entries() -> None:
     """Overwrite intent is explicit and an invalid truncated fallback never reaches the draft."""
-    usecase = GenerateArtistIdDraftUseCase(
-        language_detector=StaticLanguageDetector(),
-        artist_resolver=StaticArtistNameResolver(),
-    )
+    usecase = GenerateArtistIdDraftUseCase()
 
     overwritten = usecase.execute(
         GenerateArtistIdDraftRequest(
@@ -234,23 +228,3 @@ class FakeConfigStore:
         self.state = ConfigSnapshotState.VALID
         self.errors = ()
         return self.read_snapshot()
-
-
-@dataclass(frozen=True, slots=True)
-class StaticLanguageDetector:
-    """Treat every test artist as directly generation-ready."""
-
-    def is_japanese(self, text: str) -> bool:
-        """Return false without loading a language model."""
-        _ = text
-        return False
-
-
-@dataclass(frozen=True, slots=True)
-class StaticArtistNameResolver:
-    """Resolver fake unused for generation-ready names."""
-
-    def english_or_latin_name(self, source_artist: str) -> str | None:
-        """Return no alternate name."""
-        _ = source_artist
-        return None

@@ -25,7 +25,7 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
-from omym2.domain.services.artist_name import ArtistNameProjector
+from omym2.domain.services.artist_name import artist_name_projections, artist_name_sources
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
@@ -88,46 +88,41 @@ class CreateRefreshPlanUseCase:
             config.artist_names,
         )
         path_policy = PathPolicy.from_app_config(config)
-        artist_name_projector = ArtistNameProjector(config.artist_names.preferences)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
-            operation = _running_operation(uow, request.operation_id)
+            _ = _running_operation(uow, request.operation_id)
             library = _select_registered_library(uow, request, path_policy_hash)
             active_tracks = tuple(
                 track for track in uow.tracks.list_by_library(library.library_id) if track.status == TrackStatus.ACTIVE
             )
             selected_tracks = self._selected_tracks(request, library, active_tracks)
-            trust_eligible_paths = {
-                path for path, count in Counter(track.current_path for track in active_tracks).items() if count == 1
-            }
-            source_paths = tuple(
-                self.ports.path_resolver.resolve_library_path(library.root_path, track.current_path)
-                for track in selected_tracks
-            )
-            snapshots = self._capture_snapshots(
-                selected_tracks,
-                source_paths,
-                trust_eligible_paths,
-                timestamp,
-                trust_stat=request.trust_stat,
-            )
-            candidates = tuple(
-                self._candidate(track, snapshot, config)
-                for track, snapshot in zip(selected_tracks, snapshots, strict=True)
-            )
-            candidates = self._with_target_paths(
-                candidates,
-                active_tracks,
-                config,
-                path_policy,
-                artist_name_projector,
-            )
-            candidates = self._with_target_conflicts(library, candidates, active_tracks)
-            plan_id = self.ports.id_generator.new_plan_id()
-            actions = self._actions(plan_id, library, candidates)
-            plan = _plan(plan_id, library, actions, config_hash, timestamp)
 
+        trust_eligible_paths = {
+            path for path, count in Counter(track.current_path for track in active_tracks).items() if count == 1
+        }
+        source_paths = tuple(
+            self.ports.path_resolver.resolve_library_path(library.root_path, track.current_path)
+            for track in selected_tracks
+        )
+        snapshots = self._capture_snapshots(
+            selected_tracks,
+            source_paths,
+            trust_eligible_paths,
+            timestamp,
+            trust_stat=request.trust_stat,
+        )
+        candidates = tuple(
+            self._candidate(track, snapshot, config) for track, snapshot in zip(selected_tracks, snapshots, strict=True)
+        )
+        candidates = self._with_target_paths(candidates, active_tracks, config, path_policy)
+        candidates = self._with_target_conflicts(library, candidates, active_tracks)
+        plan_id = self.ports.id_generator.new_plan_id()
+        actions = self._actions(plan_id, library, candidates)
+        plan = _plan(plan_id, library, actions, config_hash, timestamp)
+
+        with self.ports.uow as uow:
+            operation = _running_operation(uow, request.operation_id)
             uow.plans.save(plan)
             for action in actions:
                 uow.plan_actions.save(action)
@@ -237,14 +232,23 @@ class CreateRefreshPlanUseCase:
         active_tracks: Sequence[Track],
         config: AppConfig,
         path_policy: PathPolicy,
-        artist_name_projector: ArtistNameProjector,
     ) -> tuple[_RefreshCandidate, ...]:
         selected_track_ids = {candidate.track.track_id for candidate in candidates}
-        metadata_batch = tuple(
+        candidate_metadata = tuple(
             candidate.snapshot.metadata
             for candidate in candidates
             if candidate.snapshot is not None and candidate.reason is None
-        ) + tuple(track.metadata for track in active_tracks if track.track_id not in selected_track_ids)
+        )
+        metadata_batch = candidate_metadata + tuple(
+            track.metadata for track in active_tracks if track.track_id not in selected_track_ids
+        )
+        resolutions = self.ports.artist_name_resolver.resolve_many(
+            artist_name_sources(candidate_metadata),
+            preferences=config.artist_names.preferences,
+        )
+        projections = iter(
+            artist_name_projections(candidate_metadata, tuple(resolution.resolved_name for resolution in resolutions))
+        )
         resolved_years = resolve_album_years(
             metadata_batch,
             config.path_policy,
@@ -267,6 +271,7 @@ class CreateRefreshPlanUseCase:
                 judged_candidates.append(candidate)
                 continue
 
+            artist_names = next(projections)
             try:
                 resolved_metadata = metadata_with_resolved_album_year(
                     snapshot.metadata,
@@ -277,7 +282,7 @@ class CreateRefreshPlanUseCase:
                     resolved_metadata,
                     snapshot.file_extension,
                     album_disc_total=album_disc_totals.for_metadata(resolved_metadata),
-                    artist_names=artist_name_projector.project(snapshot.metadata),
+                    artist_names=artist_names,
                 )
             except ValueError as exc:
                 judged_candidates.append(

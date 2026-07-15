@@ -11,11 +11,12 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from omym2.domain.models.track_metadata import TrackMetadata
 
 _ARTIST_NAME_SOURCE_KEY_NORMALIZATION_FORM = "NFC"
+ARTIST_NAME_RESOLUTION_CARDINALITY_MESSAGE = "Resolved artist names must align with artist and album-artist sources."
 
 
 def derive_artist_name_source_key(source_name: str | None) -> str | None:
@@ -59,3 +60,24 @@ class ArtistNameProjector:
         if preferences is None:
             return source_name
         return preferences.get(source_name, source_name)
+
+
+def artist_name_sources(metadata_batch: Sequence[TrackMetadata]) -> tuple[str | None, ...]:
+    """Flatten artist and album-artist values in metadata order."""
+    return tuple(source for metadata in metadata_batch for source in (metadata.artist, metadata.album_artist))
+
+
+def artist_name_projections(
+    metadata_batch: Sequence[TrackMetadata],
+    resolved_names: Sequence[str | None],
+) -> tuple[ArtistNameProjection, ...]:
+    """Restore aligned resolver output into one projection per metadata value."""
+    if len(resolved_names) != len(metadata_batch) * 2:
+        raise ValueError(ARTIST_NAME_RESOLUTION_CARDINALITY_MESSAGE)
+    return tuple(
+        ArtistNameProjection(
+            artist=resolved_names[index * 2],
+            album_artist=resolved_names[index * 2 + 1],
+        )
+        for index in range(len(metadata_batch))
+    )

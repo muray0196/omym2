@@ -23,7 +23,7 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
-from omym2.domain.services.artist_name import ArtistNameProjector
+from omym2.domain.services.artist_name import artist_name_projections, artist_name_sources
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
@@ -81,37 +81,33 @@ class CreateAddPlanUseCase:
             config.artist_names,
         )
         path_policy = PathPolicy.from_app_config(config)
-        artist_name_projector = ArtistNameProjector(config.artist_names.preferences)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
-            operation = _running_operation(uow, request.operation_id)
+            _ = _running_operation(uow, request.operation_id)
             library = _select_registered_library(uow, path_policy_hash, request.library_id)
             library_tracks = tuple(uow.tracks.list_by_library(library.library_id))
-            active_library_tracks = tuple(track for track in library_tracks if track.status == TrackStatus.ACTIVE)
-            duplicate_track_by_hash = _duplicate_track_by_hash(active_library_tracks)
-            scan_entries = tuple(self.ports.file_scanner.scan(source_root))
-            source_paths = tuple(_normalize_external_source_path(entry.path) for entry in scan_entries)
-            snapshots = self.ports.file_snapshot_reader.capture_many(
-                tuple(FileSnapshotCaptureRequest(entry.path) for entry in scan_entries)
-            )
-            candidates = tuple(
-                self._candidate(entry, source_path, snapshot, config)
-                for entry, source_path, snapshot in zip(scan_entries, source_paths, snapshots, strict=True)
-            )
-            candidates = self._with_target_paths(
-                candidates,
-                library_tracks,
-                config,
-                path_policy,
-                artist_name_projector,
-            )
-            candidates = self._with_duplicates(candidates, duplicate_track_by_hash)
-            candidates = self._with_target_conflicts(library, candidates, active_library_tracks)
-            plan_id = self.ports.id_generator.new_plan_id()
-            actions = self._actions(plan_id, library, candidates)
-            plan = _plan(plan_id, library, actions, config_hash, timestamp)
 
+        active_library_tracks = tuple(track for track in library_tracks if track.status == TrackStatus.ACTIVE)
+        duplicate_track_by_hash = _duplicate_track_by_hash(active_library_tracks)
+        scan_entries = tuple(self.ports.file_scanner.scan(source_root))
+        source_paths = tuple(_normalize_external_source_path(entry.path) for entry in scan_entries)
+        snapshots = self.ports.file_snapshot_reader.capture_many(
+            tuple(FileSnapshotCaptureRequest(entry.path) for entry in scan_entries)
+        )
+        candidates = tuple(
+            self._candidate(entry, source_path, snapshot, config)
+            for entry, source_path, snapshot in zip(scan_entries, source_paths, snapshots, strict=True)
+        )
+        candidates = self._with_target_paths(candidates, library_tracks, config, path_policy)
+        candidates = self._with_duplicates(candidates, duplicate_track_by_hash)
+        candidates = self._with_target_conflicts(library, candidates, active_library_tracks)
+        plan_id = self.ports.id_generator.new_plan_id()
+        actions = self._actions(plan_id, library, candidates)
+        plan = _plan(plan_id, library, actions, config_hash, timestamp)
+
+        with self.ports.uow as uow:
+            operation = _running_operation(uow, request.operation_id)
             uow.plans.save(plan)
             for action in actions:
                 uow.plan_actions.save(action)
@@ -175,15 +171,22 @@ class CreateAddPlanUseCase:
         library_tracks: Sequence[Track],
         config: AppConfig,
         path_policy: PathPolicy,
-        artist_name_projector: ArtistNameProjector,
     ) -> tuple[_AddCandidate, ...]:
         active_library_metadata = tuple(
             track.metadata for track in library_tracks if track.status == TrackStatus.ACTIVE
         )
-        metadata_batch = active_library_metadata + tuple(
+        candidate_metadata = tuple(
             candidate.snapshot.metadata
             for candidate in candidates
             if candidate.snapshot is not None and candidate.reason is None
+        )
+        metadata_batch = active_library_metadata + candidate_metadata
+        resolutions = self.ports.artist_name_resolver.resolve_many(
+            artist_name_sources(candidate_metadata),
+            preferences=config.artist_names.preferences,
+        )
+        projections = iter(
+            artist_name_projections(candidate_metadata, tuple(resolution.resolved_name for resolution in resolutions))
         )
         resolved_years = resolve_album_years(
             metadata_batch,
@@ -207,6 +210,7 @@ class CreateAddPlanUseCase:
                 judged_candidates.append(candidate)
                 continue
 
+            artist_names = next(projections)
             try:
                 resolved_metadata = metadata_with_resolved_album_year(
                     snapshot.metadata,
@@ -217,7 +221,7 @@ class CreateAddPlanUseCase:
                     resolved_metadata,
                     snapshot.file_extension,
                     album_disc_total=album_disc_totals.for_metadata(resolved_metadata),
-                    artist_names=artist_name_projector.project(snapshot.metadata),
+                    artist_names=artist_names,
                 )
             except ValueError as exc:
                 judged_candidates.append(

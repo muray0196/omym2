@@ -12,8 +12,16 @@ from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.artist_ids import ArtistIdsCommandDependencies, run_artist_ids_command
 from omym2.adapters.config.toml_config_store import TomlConfigStore
+from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.config import CONFIG_FILE_ENCODING
 from omym2.domain.models.app_config import AppConfig, ArtistIdConfig
+from omym2.domain.services.artist_name import derive_artist_name_source_key
+from omym2.features.artist_names.dto import (
+    ArtistLanguagePrediction,
+    ArtistNameAliasCandidate,
+    ArtistNameProviderCandidate,
+    ArtistNameSearchResult,
+)
 from omym2.platform.artist_ids_composition import build_artist_ids_command_ports
 
 if TYPE_CHECKING:
@@ -25,20 +33,35 @@ JAPANESE_ARTIST = "米津玄師"
 RESOLVED_ARTIST = "Kenshi Yonezu"
 ENGLISH_ARTIST = "John Smith"
 MODEL_LOAD_ERROR = "model cannot be loaded"
+MUSICBRAINZ_ARTIST_ID = "db2f4f3a-f0c2-4c96-bea3-636f4b44f57b"
 
 
 @dataclass(frozen=True, slots=True)
-class _JapaneseDetector:
-    def is_japanese(self, text: str) -> bool:
-        return text == JAPANESE_ARTIST
+class _JapanesePredictor:
+    def predict_language(self, text: str) -> ArtistLanguagePrediction:
+        return ArtistLanguagePrediction(
+            label="__label__ja" if text == JAPANESE_ARTIST else "__label__en",
+            confidence=0.99,
+            available=True,
+        )
 
 
 @dataclass(frozen=True, slots=True)
-class _Resolver:
-    def english_or_latin_name(self, source_artist: str) -> str | None:
-        if source_artist == JAPANESE_ARTIST:
-            return RESOLVED_ARTIST
-        return None
+class _Provider:
+    def search_artists(self, source_name: str) -> ArtistNameSearchResult:
+        if source_name != JAPANESE_ARTIST:
+            return ArtistNameSearchResult(available=True)
+        return ArtistNameSearchResult(
+            available=True,
+            candidates=(
+                ArtistNameProviderCandidate(
+                    provider_artist_id=MUSICBRAINZ_ARTIST_ID,
+                    score=100,
+                    name=source_name,
+                    aliases=(ArtistNameAliasCandidate(name=RESOLVED_ARTIST, locale="en"),),
+                ),
+            ),
+        )
 
 
 def test_artist_ids_generate_command_saves_generated_entry(tmp_path: Path) -> None:
@@ -48,7 +71,10 @@ def test_artist_ids_generate_command_saves_generated_entry(tmp_path: Path) -> No
     stderr = StringIO()
 
     exit_code = run_artist_ids_command(
-        ["generate", ENGLISH_ARTIST], stdout, stderr, build_artist_ids_command_ports(config_path)
+        ["generate", ENGLISH_ARTIST],
+        stdout,
+        stderr,
+        build_artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
     )
 
     assert exit_code == 0
@@ -60,6 +86,7 @@ def test_artist_ids_generate_command_saves_generated_entry(tmp_path: Path) -> No
 def test_artist_ids_generate_command_uses_injected_japanese_dependencies(tmp_path: Path) -> None:
     """Injected fastText/MusicBrainz ports can resolve Japanese names before generation."""
     config_path = tmp_path / "config.toml"
+    database_path = tmp_path / "omym2.db"
     stdout = StringIO()
     stderr = StringIO()
 
@@ -67,13 +94,23 @@ def test_artist_ids_generate_command_uses_injected_japanese_dependencies(tmp_pat
         ["generate", JAPANESE_ARTIST],
         stdout,
         stderr,
-        build_artist_ids_command_ports(config_path),
-        ArtistIdsCommandDependencies(language_detector=_JapaneseDetector(), artist_resolver=_Resolver()),
+        build_artist_ids_command_ports(config_path, database_path),
+        ArtistIdsCommandDependencies(
+            language_predictor=_JapanesePredictor(),
+            artist_name_provider=_Provider(),
+        ),
     )
 
     assert exit_code == 0
     assert RESOLVED_ARTIST in stdout.getvalue()
     assert TomlConfigStore(config_path).load().artist_ids.entries == {JAPANESE_ARTIST: "KENSHYNZ"}
+    source_key = derive_artist_name_source_key(JAPANESE_ARTIST)
+    assert source_key is not None
+    with SQLiteUnitOfWork(database_path) as uow:
+        accepted = uow.accepted_artist_names.find_by_source_key(source_key)
+        uow.commit()
+    assert accepted is not None
+    assert accepted.resolved_name == RESOLVED_ARTIST
 
 
 def test_artist_ids_generate_command_preserves_existing_without_overwrite(tmp_path: Path) -> None:
@@ -88,7 +125,10 @@ def test_artist_ids_generate_command_preserves_existing_without_overwrite(tmp_pa
     stderr = StringIO()
 
     exit_code = run_artist_ids_command(
-        ["generate", ENGLISH_ARTIST], stdout, stderr, build_artist_ids_command_ports(config_path)
+        ["generate", ENGLISH_ARTIST],
+        stdout,
+        stderr,
+        build_artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
     )
 
     assert exit_code == 0
@@ -107,7 +147,10 @@ def test_artist_ids_generate_command_reports_invalid_persisted_config(tmp_path: 
     stderr = StringIO()
 
     exit_code = run_artist_ids_command(
-        ["generate", ENGLISH_ARTIST], stdout, stderr, build_artist_ids_command_ports(config_path)
+        ["generate", ENGLISH_ARTIST],
+        stdout,
+        stderr,
+        build_artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
     )
 
     assert exit_code == 1
@@ -133,7 +176,7 @@ def test_artist_ids_generate_command_reports_missing_fasttext_dependency(
         ["generate", "--fasttext-model", str(tmp_path / "lid.bin"), ENGLISH_ARTIST],
         stdout,
         stderr,
-        build_artist_ids_command_ports(config_path),
+        build_artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
     )
 
     assert exit_code == 1
@@ -164,7 +207,7 @@ def test_artist_ids_generate_command_reports_fasttext_model_load_failure(
         ["generate", "--fasttext-model", str(tmp_path / "missing.bin"), ENGLISH_ARTIST],
         stdout,
         stderr,
-        build_artist_ids_command_ports(config_path),
+        build_artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
     )
 
     assert exit_code == 1

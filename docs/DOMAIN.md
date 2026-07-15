@@ -1,9 +1,9 @@
 ---
 type: Domain Model
 title: Domain
-description: Defines OMYM2's core entities, including raw track metadata, artist-name source keys and projections, durable Operations, Track stat baselines, snapshot boundaries, and UUIDv7 identity policy.
+description: Defines OMYM2's core entities, including raw track metadata, artist-name source keys, batch resolution and projections, durable Operations, Track stat baselines, snapshot boundaries, and UUIDv7 identity policy.
 tags: [domain-model, entities, invariants, artist-names, operations, id-design]
-timestamp: 2026-07-15T21:42:00+09:00
+timestamp: 2026-07-15T22:52:00+09:00
 ---
 
 # Domain
@@ -97,9 +97,10 @@ Filesystem attributes such as file extension or file size are not part of TrackM
 
 Missing, empty, malformed, or inconsistent tag values are allowed at this layer. Validation and fallback are performed by usecases or PathPolicy according to AppConfig.
 
-Raw TrackMetadata is never overwritten by a preferred artist display name.
+Raw TrackMetadata is never overwritten by a derived artist display name.
 Metadata hashes, Track persistence, album grouping, and artist-ID lookup keep
-using the raw tag values.
+using the raw tag values even when a preference, accepted provider result, or
+new provider result supplies different display text.
 
 ## ArtistNameSourceKey
 
@@ -128,10 +129,100 @@ the accepted record's `source_name`; deriving a key never changes TrackMetadata.
 An immutable derived value containing the effective `artist` and
 `album_artist` display strings for one raw TrackMetadata value.
 
-The Stage 1 projection is a pure, exact lookup in the configured full-name
+The current projection is a pure, exact lookup in the configured full-name
 preferences. Missing entries preserve the original strings, and a composite
-multi-artist string is treated as one opaque key. Automatic language detection
-and provider resolution are not part of this projection.
+multi-artist string is treated as one opaque key. It does not load accepted
+cache state, run a language model, or contact a provider.
+
+The shared resolver below returns `ArtistNameResolution` values for explicit
+consumers. Any consumer that turns those results into an
+`ArtistNameProjection` must do so explicitly and pass that projection onward;
+defining the resolver does not make PathPolicy or ordinary path projection
+perform cache, model, or provider work.
+
+## Artist Name Batch Resolution
+
+The shared artist-name resolver accepts artist and album-artist source values
+as one batch and resolves each complete value with this precedence:
+
+```text
+exact configured display-name preference
+-> accepted provider result by ArtistNameSourceKey
+-> newly accepted MusicBrainz result when eligible
+-> original source value
+```
+
+Preference lookup compares the complete raw source string exactly. It does not
+apply ArtistNameSourceKey normalization. An exact preference ends resolution
+for that occurrence and does not require a cache read, language-model call, or
+provider request.
+
+For remaining values, the resolver derives the whole-string source key and
+deduplicates the batch by that key. It performs at most one accepted-cache
+lookup and, on an eligible miss, at most one provider lookup for each distinct
+key. The resulting display value is reused for every occurrence of that key;
+the resolver never splits a source into artist components or changes their
+order. Missing and whitespace-only values produce no key and remain unchanged.
+
+The resolver returns one `ArtistNameResolution` for each input in input order.
+Each result retains `source_name` and `source_key`, supplies the effective
+`resolved_name`, and records provenance as `user_preference`,
+`accepted_musicbrainz`, `new_musicbrainz`, or `original`. A result that keeps
+the original may also carry a stable issue describing ineligibility,
+unavailability, low confidence, no confident match, or ambiguity. Provider
+provenance is carried by the associated immutable `AcceptedArtistName`; it does
+not modify TrackMetadata.
+
+Only positive provider results are accepted and persisted. Accepted results
+are sticky: a later lookup cannot replace the row selected for the same source
+key. If another writer wins an insert race, the persisted winner supplies the
+resolved value. Misses, ambiguity, ineligibility, model or provider
+unavailability, malformed responses, timeouts, and other provider failures are
+not negative cache entries and preserve the original source value. These
+fallbacks are normal resolution outcomes rather than errors for the caller.
+
+### Automatic lookup eligibility
+
+A cache miss is eligible for a new MusicBrainz lookup only when all of these
+conditions hold:
+
+* the complete source contains at least one alphabetic code point and every
+  alphabetic code point is non-Latin
+* the source does not contain the ASCII comma (`U+002C`); comma-composite
+  values remain unresolved by automatic lookup
+* fastText returns the exact label `__label__ja` with finite confidence in the
+  inclusive range from `0.8` through `1.0`
+
+Preferences and accepted cache entries still apply to comma-composite or
+otherwise ineligible values. An absent model, an unusable prediction, or a
+confidence below the threshold disables only the new provider lookup; it does
+not disable preference or cache resolution.
+
+### Deterministic MusicBrainz acceptance
+
+MusicBrainz search candidates are ranked by numeric score descending. The top
+candidate is considered only when its score is at least `95`. The resolver then
+finds the highest-scoring runner-up with a different MusicBrainz artist
+identity. When that distinct runner-up is within `5` score points of the top
+candidate, including a difference of exactly `5`, the result is ambiguous and
+is not accepted. Repeated rows for the same artist identity do not create
+runner-up ambiguity; they are coalesced by identity, and their alias facts are
+treated as one unordered set.
+
+An accepted candidate must carry a valid MusicBrainz artist identity and a
+usable Latin display name. Name selection uses these tiers in order:
+
+1. an English-locale Latin alias
+2. another Latin alias
+3. the Latin canonical artist name
+
+Aliases are an unordered set; provider response order is never a tie-breaker.
+Within one tier, duplicate aliases are removed and the lexicographically first
+`(name, locale-or-empty)` pair by Unicode code-point order is selected. An
+English locale is matched case-insensitively by primary language subtag `en`.
+A usable Latin display name is nonblank, contains at least one Latin-script
+alphabetic code point, and contains no non-Latin alphabetic code point.
+`sort-name` is not a fallback tier.
 
 ## PathPolicy
 
@@ -441,7 +532,8 @@ The following invariants belong to the domain / usecase layer, not to adapters:
 * A Plan is reviewed and applied through recorded PlanActions.
 * A Plan is single-use in the initial version.
 * Applying a Plan must not recalculate target paths from the latest AppConfig.
-* Artist display-name projection must not mutate raw TrackMetadata or alter artist-ID lookup keys.
+* Artist display-name resolution and projection must not mutate raw
+  TrackMetadata or alter artist-ID lookup keys.
 * `canonical_path` and Track `current_path` are Library-root-relative paths, not absolute paths.
 * Library music file mutations must be represented by FileEvents.
 * FileEvents represent Library music file mutations only, not DB-only updates.

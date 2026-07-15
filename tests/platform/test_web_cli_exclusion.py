@@ -32,6 +32,7 @@ from omym2.config import (
 )
 from omym2.domain.models.operation import OperationKind
 from omym2.features.artist_ids.usecases.generate_artist_id_draft import GenerateArtistIdDraftUseCase
+from omym2.features.artist_names.dto import ArtistLanguagePrediction, ArtistNameSearchResult
 from omym2.platform.artist_ids_composition import artist_ids_command_ports_for
 from omym2.platform.operation_composition import OperationRuntime
 from omym2.platform.runtime_context import runtime_context_for
@@ -62,7 +63,7 @@ if TYPE_CHECKING:
 
 CSRF_TOKEN = "web-cli-exclusion-csrf"  # noqa: S105  # Deterministic non-secret test token.
 IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def012345690")
-ARTIST_NAME = "John Smith"
+ARTIST_NAME = "米津玄師"
 LOCK_BUSY_TEXT = "Another state-changing operation is already in progress."
 WEB_WORK_FAILURE_MESSAGE = "Release the synthetic Web worker as a controlled failure."
 BLOCKING_DETECTOR_TIMEOUT_MESSAGE = "The blocking CLI detector was not released in time."
@@ -105,8 +106,8 @@ def test_web_check_blocks_cli_artist_id_config_mutation(tmp_path: Path) -> None:
                     stderr,
                     artist_ids_command_ports_for(cli_runtime_context, cli_operations),
                     ArtistIdsCommandDependencies(
-                        language_detector=_NonJapaneseDetector(),
-                        artist_resolver=_NoopArtistResolver(),
+                        language_predictor=_NonJapanesePredictor(),
+                        artist_name_provider=_NoopArtistNameProvider(),
                     ),
                 )
 
@@ -128,7 +129,7 @@ def test_cli_artist_id_mutation_blocks_web_mutations_but_not_draft(tmp_path: Pat
     web_runtime_context = runtime_context_for(config_path, database_path)
     cli_operations = OperationRuntime(cli_runtime_context)
     web_operations = OperationRuntime(web_runtime_context)
-    detector = _BlockingNonJapaneseDetector()
+    detector = _BlockingNonJapanesePredictor()
     stdout = StringIO()
     stderr = StringIO()
     exit_codes: list[int] = []
@@ -141,8 +142,8 @@ def test_cli_artist_id_mutation_blocks_web_mutations_but_not_draft(tmp_path: Pat
                 stderr,
                 artist_ids_command_ports_for(cli_runtime_context, cli_operations),
                 ArtistIdsCommandDependencies(
-                    language_detector=detector,
-                    artist_resolver=_NoopArtistResolver(),
+                    language_predictor=detector,
+                    artist_name_provider=_NoopArtistNameProvider(),
                 ),
             )
         )
@@ -193,7 +194,7 @@ def test_cli_artist_id_mutation_blocks_web_mutations_but_not_draft(tmp_path: Pat
     assert not cli_thread.is_alive()
     assert exit_codes == [0]
     assert stderr.getvalue() == ""
-    assert TomlConfigStore(config_path).load().artist_ids.entries == {ARTIST_NAME: "JOHNSMTH"}
+    assert TomlConfigStore(config_path).load().artist_ids.entries == {ARTIST_NAME: "NOART"}
 
 
 def _web_app(
@@ -221,10 +222,7 @@ def _web_app(
             validate_settings=_unexpected_validate_settings,
             preview_path_policy=_unexpected_preview,
             save_settings=save_settings,
-            generate_artist_id_draft=GenerateArtistIdDraftUseCase(
-                language_detector=_NonJapaneseDetector(),
-                artist_resolver=_NoopArtistResolver(),
-            ).execute,
+            generate_artist_id_draft=GenerateArtistIdDraftUseCase().execute,
         ),
         operations=OperationsRouteContext(
             get_operation=operations.get,
@@ -310,27 +308,27 @@ def _first_error(response: Response) -> dict[str, object]:
 
 
 @dataclass(frozen=True, slots=True)
-class _NonJapaneseDetector:
-    def is_japanese(self, text: str) -> bool:
+class _NonJapanesePredictor:
+    def predict_language(self, text: str) -> ArtistLanguagePrediction:
         del text
-        return False
+        return ArtistLanguagePrediction(label="__label__en", confidence=0.99, available=True)
 
 
 @dataclass(slots=True)
-class _BlockingNonJapaneseDetector:
+class _BlockingNonJapanesePredictor:
     entered: Event = field(default_factory=Event)
     release: Event = field(default_factory=Event)
 
-    def is_japanese(self, text: str) -> bool:
+    def predict_language(self, text: str) -> ArtistLanguagePrediction:
         del text
         self.entered.set()
         if not self.release.wait(OPERATION_RECONCILE_INTERVAL_SECONDS):
             raise AssertionError(BLOCKING_DETECTOR_TIMEOUT_MESSAGE)
-        return False
+        return ArtistLanguagePrediction(label="__label__en", confidence=0.99, available=True)
 
 
 @dataclass(frozen=True, slots=True)
-class _NoopArtistResolver:
-    def english_or_latin_name(self, source_artist: str) -> str | None:
-        del source_artist
-        return None
+class _NoopArtistNameProvider:
+    def search_artists(self, source_name: str) -> ArtistNameSearchResult:
+        del source_name
+        return ArtistNameSearchResult(available=True)
