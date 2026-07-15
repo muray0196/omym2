@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Ports And UnitOfWork
-description: Defines OMYM2's ports and UnitOfWork contract, including accepted artist-name persistence, durable Operations, Config revision CAS, atomic Apply claims, filesystem mutation preconditions, and FileEvent transaction ordering.
+description: Defines OMYM2's ports and UnitOfWork contract, including artist-name resolution and cache transactions, durable Operations, Config revision CAS, atomic Apply claims, filesystem mutation preconditions, and FileEvent transaction ordering.
 tags: [ports, unit-of-work, transactions, architecture, artist-names]
-timestamp: 2026-07-15T20:47:24+09:00
+timestamp: 2026-07-15T23:22:18+09:00
 ---
 
 # Ports And UnitOfWork
@@ -58,6 +58,45 @@ The accepted-name repository treats its already-derived source key as an
 exact opaque lookup value. `insert_if_absent` preserves a previously accepted
 provider result instead of updating it. Provider matching and normalization
 are feature rules, not repository behavior.
+
+```python
+class ArtistNameResolutionReader(Protocol):
+    def resolve_many(
+        self,
+        source_names: Sequence[str | None],
+        *,
+        preferences: Mapping[str, str] | None = None,
+    ) -> tuple[ArtistNameResolution, ...]: ...
+```
+
+`ArtistNameResolutionReader` is the consumer-facing shared batch boundary. It
+returns one result for each input in input order, including repeated inputs.
+It applies exact preferences before accepted-cache and provider work, while
+whole-string source-key deduplication keeps cache and provider calls bounded.
+The resolution and acceptance rules are authoritative in
+[Artist Name Batch Resolution](../DOMAIN.md#artist-name-batch-resolution).
+
+`add`, `organize`, `refresh`, and `artist-ids generate` all consume this same
+port. Normal Plan composition uses the local resolver mode until persisted
+automatic-lookup controls provide a fastText model; this mode still applies
+exact preferences and accepted cache entries. An enabled predictor/provider
+changes only new cache-miss resolution, not the Plan usecase contract.
+
+The `artist_names` feature owns two narrower outbound ports:
+
+```python
+class ArtistLanguagePredictor(Protocol):
+    def predict_language(self, text: str) -> ArtistLanguagePrediction: ...
+
+class ArtistNameProvider(Protocol):
+    def search_artists(self, source_name: str) -> ArtistNameSearchResult: ...
+```
+
+`ArtistLanguagePrediction` carries the adapter-observed label and confidence.
+`ArtistNameSearchResult` carries scored provider candidates, their MusicBrainz
+identities, canonical names, and alias facts. The ports report typed external
+facts; they do not decide eligibility, ambiguity, display-name tiering,
+stickiness, or fallback. Those decisions stay in the feature resolver.
 
 ```python
 class FileScanner(Protocol):
@@ -236,9 +275,31 @@ A usecase coordinates domain behavior and persistence through ports. Concrete re
 
 Usecases define the business transition. The UnitOfWork adapter defines the concrete DB transaction mechanics.
 
-Every `with uow` block starts and completes an independent transaction, even inside `usecase_scope()`. No transaction stays open across hashing, fastText model work, provider HTTP calls, or a Library music file mutation. Apply's committed PENDING FileEvent therefore remains visible and durable before the mover runs; connection reuse changes checkpoint timing, not commit ordering or durability. A naming usecase that needs cache state and a new provider lookup uses short cache-read/final-persistence transactions around the external work rather than holding SQLite open during MusicBrainz access. The SQLite-specific FULL/WAL rationale is authoritative in [../STORAGE.md](../STORAGE.md#db-consistency).
+Every `with uow` block starts and completes an independent transaction, even inside `usecase_scope()`. No transaction stays open across hashing, fastText model work, provider HTTP calls, or a Library music file mutation. Plan creators therefore close their Library/Track read transaction before snapshot and artist-name resolution work, then use a later transaction for the resulting Plan, PlanActions, and terminal Operation state. Apply's committed PENDING FileEvent remains visible and durable before the mover runs; connection reuse changes checkpoint timing, not commit ordering or durability. The SQLite-specific FULL/WAL rationale is authoritative in [../STORAGE.md](../STORAGE.md#db-consistency).
 
 Repositories persist and restore domain models. They must not decide conflicts, duplicates, canonical paths, metadata validity, PlanAction status, or retry policy.
+
+## Artist Name Cache Coordination
+
+One batch resolution uses these transaction boundaries:
+
+1. Apply exact preferences and derive the distinct unresolved source keys
+   without opening a DB transaction.
+2. Open one short cache-read transaction, load accepted rows for those keys,
+   and close the transaction.
+3. Run fastText and MusicBrainz work only for the remaining eligible misses,
+   with no DB transaction open.
+4. If positive results were accepted, open one short final transaction and call
+   `insert_if_absent` for their source keys. When insertion loses a race, read
+   the persisted row in that same transaction and use that sticky winner.
+   Commit before returning the corresponding resolutions.
+
+No final write transaction is needed for ineligible values, misses,
+ambiguity, or provider failures. A consumer may keep an outer nontransactional
+resource scope if its concrete UnitOfWork supports one, but that scope must not
+merge the cache-read and final-persistence transactions or span the external
+work as an open SQLite transaction. The storage-level summary is in
+[Accepted Artist-Name Cache Transactions](../STORAGE.md#accepted-artist-name-cache-transactions).
 
 ## Atomic Apply Claim
 

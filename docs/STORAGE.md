@@ -3,7 +3,7 @@ type: Storage Design
 title: Storage
 description: Defines application-root selection, TOML raw-revision and atomic-save ownership, artist-name storage boundaries, SQLite managed state, durable Operation and FileEvent storage, consistency, reproducibility, and path responsibilities.
 tags: [storage, sqlite, toml, persistence, artist-names, desktop]
-timestamp: 2026-07-15T20:47:24+09:00
+timestamp: 2026-07-15T22:15:52+09:00
 ---
 
 # Storage
@@ -99,9 +99,11 @@ Artist ID entries are application config. They are stored in TOML because they
 are user-editable path/config values, not managed Library state.
 
 Full artist display-name preferences are also application config and remain
-separate from compact artist IDs. Positive automatic provider results are not
-editable config: accepted names and their provenance are stored in SQLite so
-the same source key resolves deterministically across later Plans.
+separate from compact artist IDs. Preference keys are complete raw source
+strings and are compared exactly by the naming feature. Positive automatic
+provider results are not editable config: accepted names and their provenance
+are stored in SQLite so the same derived source key resolves deterministically
+for later resolver calls.
 
 ## SQLite Responsibility
 
@@ -133,6 +135,10 @@ accepted_artist_names
 `accepted_artist_names` is a global sticky provider cache rather than a
 Library-managed table. It does not carry `library_id`, does not replace raw
 Track metadata, and does not authorize a repository to recalculate paths.
+Only accepted positive results are stored. Ineligible values, misses,
+ambiguous matches, and provider failures do not create rows. A row may be
+created by an explicit naming consumer such as `artist-ids generate`; its
+existence does not imply that a Plan, Track, or file mutation was created.
 
 `check` replaces each Library's prior CheckRun and CheckIssues with its latest
 diagnostics. It does not change Tracks, Plans, Runs, or Library music files.
@@ -162,9 +168,26 @@ The DB adapter persists and restores domain models. It must not contain business
 Repositories must preserve `library_id` on Library-managed records and restore path fields according to [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 
 Accepted artist-name persistence exposes exact lookup by an already-derived
-source key and insert-if-absent semantics. Key derivation, lookup eligibility, provider
-matching, precedence over raw metadata, and any decision to surface an
-ambiguous result remain naming-feature rules above the repository.
+source key and insert-if-absent semantics. Key derivation, batch deduplication,
+lookup eligibility, provider matching, precedence over raw metadata, and any
+decision to surface an ambiguous result remain naming-feature rules above the
+repository. Those rules are authoritative in
+[Artist Name Batch Resolution](DOMAIN.md#artist-name-batch-resolution).
+
+## Accepted Artist-Name Cache Transactions
+
+No SQLite transaction remains open while fastText runs or MusicBrainz is
+contacted. A resolver call reads accepted rows for its distinct unresolved
+source keys in a short transaction and closes that transaction before any
+model or provider work. It performs a later short transaction only for newly
+accepted positive results.
+
+Final persistence uses `insert_if_absent`. If another writer has already
+accepted the same source key, the resolver reads and uses that persisted winner
+instead of its newer provider response. Misses and ambiguous or failed lookups
+need no final transaction because negative outcomes are not cached. The exact
+UnitOfWork choreography is defined in
+[Ports And UnitOfWork](codebase/ports-uow.md#artist-name-cache-coordination).
 
 ## Track Stat Baselines
 

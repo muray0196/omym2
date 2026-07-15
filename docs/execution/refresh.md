@@ -1,9 +1,9 @@
 ---
 type: Execution Spec
 title: Refresh Execution
-description: Defines refresh target re-evaluation, move versus metadata actions, stable Track identity, and the explicit size+mtime trust-stat optimization and fallback rules.
-tags: [refresh, metadata, plan-creation, track-id]
-timestamp: 2026-07-11T10:21:41+09:00
+description: Defines refresh target re-evaluation with artist-name resolution, move versus metadata actions, stable Track identity, and the explicit size+mtime trust-stat optimization and fallback rules.
+tags: [refresh, metadata, artist-names, plan-creation, track-id]
+timestamp: 2026-07-15T23:22:18+09:00
 ---
 
 # Refresh Execution
@@ -47,6 +47,13 @@ For each selected Track without a review-time issue, plan creation chooses one o
 * If the recalculated canonical path differs from the Track's current path, refresh plans a `move` action.
 * If the canonical path is unchanged but the content hash or metadata hash differs from the managed Track, refresh plans a `refresh_metadata` action that reingests Track metadata and hashes without moving the file. Applying it updates the Track in place without creating a FileEvent, as described in [apply.md](apply.md).
 * If neither the path nor the hashes changed, refresh plans no action for that Track.
+
+Before that choice, refresh sends the selected snapshots' raw artist and
+album-artist values through the shared `ArtistNameResolutionReader` and passes
+the aligned projections to PathPolicy. Existing Track metadata remains the
+album-context input and is not rewritten. Track selection finishes in a short
+read transaction; snapshot capture and name resolution occur before the final
+Plan persistence transaction.
 
 `refresh` does not move files directly. As a rule, it creates a Plan.
 

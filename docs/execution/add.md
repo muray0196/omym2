@@ -1,9 +1,9 @@
 ---
 type: Execution Spec
 title: Add Execution
-description: Defines add plan creation from an Incoming/source scan against the sole registered Library, including duplicate-hash skips, missing-metadata and target-conflict blocks, and add --apply orchestration.
-tags: [add, plan-creation, library-registration, apply]
-timestamp: 2026-07-11T21:33:40+09:00
+description: Defines add plan creation from an Incoming/source scan against the sole registered Library, including artist-name resolution, duplicate-hash skips, missing-metadata and target-conflict blocks, and add --apply orchestration.
+tags: [add, plan-creation, library-registration, artist-names, apply]
+timestamp: 2026-07-15T23:22:18+09:00
 ---
 
 # Add Execution
@@ -49,6 +49,13 @@ The add plan creation behavior includes:
 * persist Plan and PlanActions
 
 REMOVED Library tracks are excluded from duplicate-hash and target-conflict judgment, matching refresh, check, and album-year resolution.
+
+Before target generation, eligible candidate artist and album-artist values are
+sent as one ordered batch through the shared `ArtistNameResolutionReader`.
+PathPolicy receives the aligned resolved projection; raw snapshot metadata and
+artist-ID lookup keys remain unchanged. The Library/Track read transaction is
+closed before resolution begins, and the Plan is persisted in a later
+transaction, so fastText or provider work cannot extend a Plan DB transaction.
 
 ## Target Collision Safety
 

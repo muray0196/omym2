@@ -3,7 +3,7 @@ type: Command Reference
 title: Commands
 description: Lists the OMYM2 CLI surface, including Plan workflows, artist-name settings, diagnostics, and the explicit organize/refresh/check trust-stat optimization flags.
 tags: [cli, commands, reference]
-timestamp: 2026-07-15T20:47:24+09:00
+timestamp: 2026-07-15T22:44:00+09:00
 ---
 
 # Commands
@@ -181,15 +181,31 @@ Config validation is implemented through the config adapter and settings usecase
 
 ## artist-ids generate
 
-`artist-ids generate` creates editable artist ID entries in TOML config.
+`artist-ids generate` creates editable artist ID entries in TOML config. It
+uses the shared whole-string artist-name resolver defined in
+[DOMAIN.md](DOMAIN.md#artist-name-batch-resolution) without making the display
+name and compact artist ID the same setting.
 
-Without `--overwrite`, existing saved entries are preserved. With
-`--fasttext-model`, the command uses fastText to identify Japanese source artist
-names. For each name that needs generation, it queries MusicBrainz to prefer an
-English or Latin name before deterministic ID generation.
+Without `--overwrite`, existing saved artist ID entries are preserved. The
+flag permits replacing only those compact config entries; it does not replace
+an exact display-name preference or a sticky accepted provider result.
 
-The command does not create internal Artist identities and does not write
-SQLite state.
+Without `--fasttext-model`, each name is generated from its exact configured
+display-name preference, then an accepted cached provider name, then the
+original source value. The command does not load fastText or contact
+MusicBrainz in this mode.
+
+An explicit `--fasttext-model <path>` additionally permits eligible unresolved
+names to use the shared fastText gate and deterministic MusicBrainz acceptance
+rules. A newly accepted positive result is inserted into the SQLite
+`accepted_artist_names` cache before its display value is used for artist ID
+generation. Lookup misses, ambiguity, ineligibility, and provider failure fall
+back to the original source value and do not prevent local generation.
+
+The artist-ID generation work writes only editable artist ID config entries
+and positive accepted-name cache rows. It does not create internal Artist
+identities or directly mutate Tracks, Plans, PlanActions, Runs, FileEvents, or
+music files.
 
 ## settings
 

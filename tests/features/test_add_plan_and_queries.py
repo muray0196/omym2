@@ -20,7 +20,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, ArtistNameConfig, PathPolicyConfig, PathsConfig
+from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig, PathsConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
@@ -49,7 +49,7 @@ from omym2.features.plans.usecases.list_plan_actions import ListPlanActionsUseCa
 from omym2.features.plans.usecases.list_plans import ListPlansUseCase
 from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
-from tests.fakes.runtime import FixedClock, SequenceIdGenerator
+from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -334,9 +334,9 @@ def test_add_uses_configured_incoming_and_persists_move_action() -> None:
     assert uow.commit_count == 1
 
 
-def test_add_projects_artist_preferences_only_into_the_recorded_target() -> None:
-    """Add keeps snapshot metadata raw while recording the preferred display path."""
-    config = AppConfig(artist_names=ArtistNameConfig(preferences={"Artist": "Preferred Artist"}))
+def test_add_projects_shared_artist_name_resolution_only_into_the_recorded_target() -> None:
+    """Add uses the shared resolver while keeping snapshot metadata raw."""
+    config = AppConfig()
     path_policy_hash = calculate_path_policy_fingerprint(
         config.path_policy,
         config.artist_ids,
@@ -350,7 +350,7 @@ def test_add_projects_artist_preferences_only_into_the_recorded_target() -> None
         (_entry(INCOMING_FILE),),
         {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
         SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
-        options=PortOptions(config=config),
+        options=PortOptions(config=config, resolved_names={"Artist": "Preferred Artist"}),
     )
 
     plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
@@ -359,6 +359,8 @@ def test_add_projects_artist_preferences_only_into_the_recorded_target() -> None
     assert action.target_path == EXPECTED_PREFERRED_ARTIST_PATH
     assert action.metadata_hash_at_plan == calculate_metadata_fingerprint(METADATA)
     assert METADATA.artist == "Artist"
+    assert isinstance(ports.artist_name_resolver, MappingArtistNameResolver)
+    assert ports.artist_name_resolver.calls == [("Artist", None)]
 
 
 def test_add_plan_resolves_latest_album_year_across_incoming_album_group() -> None:
@@ -829,6 +831,7 @@ class PortOptions:
 
     config: AppConfig | None = None
     existing_files: set[str] | None = None
+    resolved_names: dict[str, str] | None = None
 
 
 def _ports(
@@ -848,6 +851,7 @@ def _ports(
         file_snapshot_reader=snapshot_reader,
         file_presence=StaticFilePresence(port_options.existing_files),
         config_store=StaticConfigStore(port_options.config),
+        artist_name_resolver=MappingArtistNameResolver(port_options.resolved_names or {}),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=id_generator,

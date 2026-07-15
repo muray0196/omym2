@@ -34,7 +34,7 @@ from omym2.features.organize.dto import CreateOrganizePlanRequest
 from omym2.features.organize.ports import CreateOrganizePlanPorts
 from omym2.features.organize.usecases.create_organize_plan import CreateOrganizePlanUseCase
 from omym2.shared.ids import ActionId, CheckRunId, LibraryId, OperationId, PlanId
-from tests.fakes.runtime import FixedClock, SequenceIdGenerator
+from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -87,6 +87,7 @@ def test_add_plan_and_operation_success_roll_back_together(
         file_snapshot_reader=_StaticSnapshotReader(),
         file_presence=_MissingFilePresence(),
         config_store=_StaticConfigReader(),
+        artist_name_resolver=MappingArtistNameResolver(),
         path_resolver=_SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
@@ -120,6 +121,7 @@ def test_clean_organize_registration_and_operation_success_roll_back_together(
         file_scanner=_EmptyScanner(),
         file_snapshot_reader=_UnexpectedSnapshotReader(),
         config_store=_StaticConfigReader(),
+        artist_name_resolver=MappingArtistNameResolver(),
         path_resolver=_SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(library_ids=deque((LIBRARY_ID,))),

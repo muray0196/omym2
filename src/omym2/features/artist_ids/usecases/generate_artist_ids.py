@@ -15,8 +15,7 @@ from omym2.features.common_ports import ConfigSnapshotState, ConfigStoreValidati
 
 if TYPE_CHECKING:
     from omym2.features.artist_ids.dto import GenerateArtistIdsRequest
-    from omym2.features.artist_ids.ports import ArtistLanguageDetector, ArtistNameResolver
-    from omym2.features.common_ports import ConfigStore
+    from omym2.features.common_ports import ArtistNameResolutionReader, ConfigStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,8 +23,7 @@ class GenerateArtistIdsUseCase:
     """Generate artist IDs and persist them in AppConfig."""
 
     config_store: ConfigStore
-    language_detector: ArtistLanguageDetector
-    artist_resolver: ArtistNameResolver
+    artist_name_resolver: ArtistNameResolutionReader
 
     def execute(self, request: GenerateArtistIdsRequest) -> GenerateArtistIdsResult:
         """Save missing artist IDs and preserve existing entries by default."""
@@ -34,10 +32,24 @@ class GenerateArtistIdsUseCase:
             raise ConfigStoreValidationError(snapshot.errors)
         config = snapshot.config
         saved_entries = dict(config.artist_ids.entries or {})
+        source_artists = _normalized_artist_names(request.artist_names)
+        generation_sources = tuple(
+            source_artist for source_artist in source_artists if request.overwrite or source_artist not in saved_entries
+        )
+        resolved_names: dict[str, str] = {}
+        if generation_sources:
+            resolutions = self.artist_name_resolver.resolve_many(
+                generation_sources,
+                preferences=config.artist_names.preferences,
+            )
+            resolved_names = {
+                source_artist: resolution.resolved_name or source_artist
+                for source_artist, resolution in zip(generation_sources, resolutions, strict=True)
+            }
         results: list[ArtistIdEntryResult] = []
         changed = False
 
-        for source_artist in _normalized_artist_names(request.artist_names):
+        for source_artist in source_artists:
             existing_artist_id = saved_entries.get(source_artist)
             if existing_artist_id is not None and not request.overwrite:
                 results.append(
@@ -51,7 +63,7 @@ class GenerateArtistIdsUseCase:
                 )
                 continue
 
-            generation_artist = self._generation_artist(source_artist)
+            generation_artist = resolved_names[source_artist]
             artist_id = generate_artist_id(
                 generation_artist,
                 max_length=config.artist_ids.max_length,
@@ -93,13 +105,6 @@ class GenerateArtistIdsUseCase:
                 expected_config_revision=snapshot.config_revision,
             )
         return GenerateArtistIdsResult(entries=tuple(results))
-
-    def _generation_artist(self, source_artist: str) -> str:
-        if self.language_detector.is_japanese(source_artist):
-            resolved_artist = self.artist_resolver.english_or_latin_name(source_artist)
-            if resolved_artist is not None and resolved_artist.strip() != "":
-                return resolved_artist
-        return source_artist
 
 
 def _normalized_artist_names(artist_names: tuple[str, ...]) -> tuple[str, ...]:

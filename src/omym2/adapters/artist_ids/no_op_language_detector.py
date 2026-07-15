@@ -1,18 +1,20 @@
 """
-Summary: Implements a no-op Japanese-language detector.
-Why: Lets callers skip fastText model loading when detection isn't needed.
+Summary: Implements an unavailable artist language predictor.
+Why: Lets local naming continue without loading an optional fastText model.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from omym2.features.artist_names.dto import ArtistLanguagePrediction
+
 
 @dataclass(frozen=True, slots=True)
 class NoOpLanguageDetector:
-    """Language detector that always reports text as non-Japanese."""
+    """Language predictor that explicitly reports model unavailability."""
 
-    def is_japanese(self, text: str) -> bool:
-        """Return false without inspecting the supplied text."""
+    def predict_language(self, text: str) -> ArtistLanguagePrediction:
+        """Return an unavailable observation without inspecting text."""
         _ = text
-        return False
+        return ArtistLanguagePrediction(label=None, confidence=None, available=False)

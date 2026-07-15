@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from typing import TextIO
 
     from omym2.features.artist_ids.dto import GenerateArtistIdsResult
-    from omym2.features.artist_ids.ports import ArtistLanguageDetector, ArtistNameResolver
+    from omym2.features.artist_names.ports import ArtistLanguagePredictor, ArtistNameProvider
 
 ERROR_EXIT_CODE = 1
 FASTTEXT_MODEL_OPTION = "--fasttext-model"
@@ -42,18 +42,18 @@ class ArtistIdsCommandPorts:
     """Ports injected for artist ID generation."""
 
     generate_artist_ids: Callable[
-        [GenerateArtistIdsRequest, ArtistLanguageDetector, ArtistNameResolver], GenerateArtistIdsResult
+        [GenerateArtistIdsRequest, ArtistLanguagePredictor, ArtistNameProvider], GenerateArtistIdsResult
     ]
-    language_detector_factory: Callable[[Path | None], ArtistLanguageDetector]
-    artist_resolver: ArtistNameResolver
+    language_predictor_factory: Callable[[Path | None], ArtistLanguagePredictor]
+    artist_name_provider: ArtistNameProvider
 
 
 @dataclass(frozen=True, slots=True)
 class ArtistIdsCommandDependencies:
     """Optional dependency overrides for CLI tests."""
 
-    language_detector: ArtistLanguageDetector | None = None
-    artist_resolver: ArtistNameResolver | None = None
+    language_predictor: ArtistLanguagePredictor | None = None
+    artist_name_provider: ArtistNameProvider | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,17 +81,21 @@ def run_artist_ids_command(
         return USAGE_EXIT_CODE
 
     command_dependencies = ArtistIdsCommandDependencies() if dependencies is None else dependencies
-    detector, detector_error = _command_language_detector(ports, command_dependencies, parsed_args.fasttext_model_path)
-    if detector_error is not None or detector is None:
-        write_line(stderr, detector_error or FASTTEXT_MODEL_LOAD_ERROR_MESSAGE)
+    predictor, predictor_error = _command_language_predictor(
+        ports,
+        command_dependencies,
+        parsed_args.fasttext_model_path,
+    )
+    if predictor_error is not None or predictor is None:
+        write_line(stderr, predictor_error or FASTTEXT_MODEL_LOAD_ERROR_MESSAGE)
         return ERROR_EXIT_CODE
 
-    resolver = command_dependencies.artist_resolver or ports.artist_resolver
+    provider = command_dependencies.artist_name_provider or ports.artist_name_provider
     try:
         result = ports.generate_artist_ids(
             GenerateArtistIdsRequest(parsed_args.artist_names, overwrite=parsed_args.overwrite),
-            detector,
-            resolver,
+            predictor,
+            provider,
         )
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)
@@ -138,15 +142,15 @@ def _parse_generate_args(args: tuple[str, ...]) -> _ParsedGenerateArgs | None:
     return _ParsedGenerateArgs(tuple(artist_names), fasttext_model_path, overwrite)
 
 
-def _command_language_detector(
+def _command_language_predictor(
     ports: ArtistIdsCommandPorts,
     dependencies: ArtistIdsCommandDependencies,
     fasttext_model_path: Path | None,
-) -> tuple[ArtistLanguageDetector | None, str | None]:
-    if dependencies.language_detector is not None:
-        return dependencies.language_detector, None
+) -> tuple[ArtistLanguagePredictor | None, str | None]:
+    if dependencies.language_predictor is not None:
+        return dependencies.language_predictor, None
     try:
-        return ports.language_detector_factory(fasttext_model_path), None
+        return ports.language_predictor_factory(fasttext_model_path), None
     except ModuleNotFoundError as exc:
         return None, f"{FASTTEXT_OPTIONAL_DEPENDENCY_MESSAGE} ({exc})"
     except FASTTEXT_MODEL_LOAD_ERROR_TYPES as exc:

@@ -29,7 +29,7 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
-from omym2.domain.services.artist_name import ArtistNameProjector
+from omym2.domain.services.artist_name import artist_name_projections, artist_name_sources
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
@@ -81,38 +81,41 @@ class CreateOrganizePlanUseCase:
             config.artist_names,
         )
         path_policy = PathPolicy.from_app_config(config)
-        artist_name_projector = ArtistNameProjector(config.artist_names.preferences)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
-            operation = _running_operation(uow, request.operation_id)
+            _ = _running_operation(uow, request.operation_id)
             library = self._select_library(uow, request.library_root, path_policy_hash, timestamp)
             existing_track_records = tuple(uow.tracks.list_by_library(library.library_id))
-            trust_eligible_tracks = _unique_tracks_by_current_path(existing_track_records)
-            existing_tracks = {track.current_path: track for track in existing_track_records}
-            existing_tracks.update(trust_eligible_tracks)
-            scan_entries = tuple(self.ports.file_scanner.scan(library.root_path))
-            capture_inputs = tuple(self._capture_input(library.root_path, entry) for entry in scan_entries)
-            valid_capture_inputs = tuple(
-                capture_input for capture_input in capture_inputs if isinstance(capture_input, _OrganizeCaptureInput)
+
+        trust_eligible_tracks = _unique_tracks_by_current_path(existing_track_records)
+        existing_tracks = {track.current_path: track for track in existing_track_records}
+        existing_tracks.update(trust_eligible_tracks)
+        scan_entries = tuple(self.ports.file_scanner.scan(library.root_path))
+        capture_inputs = tuple(self._capture_input(library.root_path, entry) for entry in scan_entries)
+        valid_capture_inputs = tuple(
+            capture_input for capture_input in capture_inputs if isinstance(capture_input, _OrganizeCaptureInput)
+        )
+        snapshots = self._capture_snapshots(
+            valid_capture_inputs,
+            trust_eligible_tracks,
+            timestamp,
+            trust_stat=request.trust_stat,
+        )
+        captured_candidates = iter(
+            tuple(
+                self._candidate(capture_input.source_path, snapshot, config)
+                for capture_input, snapshot in zip(valid_capture_inputs, snapshots, strict=True)
             )
-            snapshots = self._capture_snapshots(
-                valid_capture_inputs,
-                trust_eligible_tracks,
-                timestamp,
-                trust_stat=request.trust_stat,
-            )
-            captured_candidates = iter(
-                tuple(
-                    self._candidate(capture_input.source_path, snapshot, config)
-                    for capture_input, snapshot in zip(valid_capture_inputs, snapshots, strict=True)
-                )
-            )
-            candidates = tuple(
-                capture_input if isinstance(capture_input, _OrganizeCandidate) else next(captured_candidates)
-                for capture_input in capture_inputs
-            )
-            candidates = self._with_target_paths(candidates, config, path_policy, artist_name_projector)
+        )
+        candidates = tuple(
+            capture_input if isinstance(capture_input, _OrganizeCandidate) else next(captured_candidates)
+            for capture_input in capture_inputs
+        )
+        candidates = self._with_target_paths(candidates, config, path_policy)
+
+        with self.ports.uow as uow:
+            operation = _running_operation(uow, request.operation_id)
             result = self._persist_result(
                 uow,
                 library,
@@ -257,12 +260,18 @@ class CreateOrganizePlanUseCase:
         candidates: Sequence[_OrganizeCandidate],
         config: AppConfig,
         path_policy: PathPolicy,
-        artist_name_projector: ArtistNameProjector,
     ) -> tuple[_OrganizeCandidate, ...]:
         metadata_batch = tuple(
             candidate.snapshot.metadata
             for candidate in candidates
             if candidate.snapshot is not None and candidate.block_reason is None
+        )
+        resolutions = self.ports.artist_name_resolver.resolve_many(
+            artist_name_sources(metadata_batch),
+            preferences=config.artist_names.preferences,
+        )
+        projections = iter(
+            artist_name_projections(metadata_batch, tuple(resolution.resolved_name for resolution in resolutions))
         )
         resolved_years = resolve_album_years(
             metadata_batch,
@@ -286,6 +295,7 @@ class CreateOrganizePlanUseCase:
                 judged_candidates.append(candidate)
                 continue
 
+            artist_names = next(projections)
             try:
                 resolved_metadata = metadata_with_resolved_album_year(
                     snapshot.metadata,
@@ -296,7 +306,7 @@ class CreateOrganizePlanUseCase:
                     resolved_metadata,
                     snapshot.file_extension,
                     album_disc_total=album_disc_totals.for_metadata(resolved_metadata),
-                    artist_names=artist_name_projector.project(snapshot.metadata),
+                    artist_names=artist_names,
                 )
             except ValueError as exc:
                 judged_candidates.append(

@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Layout
 description: Defines OMYM2's feature-oriented source layout, including artist naming, Bootstrap, durable Operation, desktop-shell placement, dependency layers, composition, and directory rules.
 tags: [source-layout, architecture, artist-names, operations, desktop, hexagonal-architecture, python]
-timestamp: 2026-07-15T20:47:24+09:00
+timestamp: 2026-07-15T23:22:18+09:00
 ---
 
 # Source Layout
@@ -33,13 +33,13 @@ PathPolicy are not split by feature. They are placed in `domain/` as the shared
 domain kernel for all of OMYM2.
 
 Features are divided by user goal, such as `bootstrap`, `settings`,
-`artist_ids`, `organize`, `add`, `refresh`, `apply`, `undo`, `check`,
-`operations`, `plans`, `history`, `tracks`, and `inspect`.
+`artist_names`, `artist_ids`, `organize`, `add`, `refresh`, `apply`, `undo`,
+`check`, `operations`, `plans`, `history`, `tracks`, and `inspect`.
 
 CLI and Web call feature usecases as inbound adapters. The desktop shell is a
 presentation adapter around the platform-composed Web application; it does not
 call features directly. DB, filesystem, metadata reader, config loader, and
-artist-ID integrations implement ports as outbound adapters.
+artist-name integrations implement ports as outbound adapters.
 
 ## Representative Package Structure
 
@@ -56,6 +56,7 @@ src/
       common_ports.py
       bootstrap/
       add/
+      artist_names/
       artist_ids/
       organize/
       refresh/
@@ -104,6 +105,7 @@ Main targets:
 * Operation
 * PathPolicy
 * ArtistNameProjection
+* ArtistNameResolution
 * CollisionPolicy
 * CheckRun
 * CheckIssue
@@ -120,7 +122,12 @@ PathPolicy is a pure domain service.
 * `bootstrap`: project Config validity, unambiguous Library readiness, runtime
   capabilities, and polling policy without making the Web route read storage
   directly
-* `artist_ids`: generate and save artist ID path values in config, preserving existing entries unless overwrite is requested
+* `artist_names`: resolve whole artist and album-artist source values in
+  batches through exact preferences, sticky accepted-name persistence,
+  fastText eligibility, and deterministic provider acceptance
+* `artist_ids`: generate and save artist ID path values in config, preserving
+  existing entries unless overwrite is requested and consuming artist-name
+  results through the shared `ArtistNameResolutionReader` port
 * `organize`: scan the selected Library, create a relocation plan when needed, and register the Library when clean
 * `add`: create an add plan from Incoming / specified source
 * `refresh`: reload metadata and create a relocation plan
@@ -146,7 +153,8 @@ When a usecase needs files from a directory, it uses FileScanner only to discove
 * `adapters/fs`: file discovery / snapshot capture / move / path operations /
   hash calculation / native application-root exclusive lock
 * `adapters/metadata`: metadata reading with mutagen
-* `adapters/artist_ids`: fastText Japanese-name detection and MusicBrainz artist name lookup
+* `adapters/artist_ids`: fastText language prediction and raw MusicBrainz
+  artist search used by the shared artist-name resolver and artist-ID command
 * `adapters/config`: TOML config store / validator / defaults
 * `adapters/cli`: CLI commands
 * `adapters/desktop`: the retained loopback Uvicorn server and one pywebview
@@ -163,8 +171,9 @@ Adapters may create and restore domain models. They must not contain business ru
 `platform/` is the composition root. It wires concrete adapters to feature usecases and owns application runtime assembly.
 
 * `runtime_context.py`: `RuntimeContext` (resolved config file, database file, a shared `TomlConfigStore`, and a shared `MutagenMetadataReader`) and `runtime_context_for(...)`, which resolves `default_application_paths()` once per invocation.
-* `feature_composition.py`: `build_*` functions that construct feature `*Ports` dataclasses from concrete adapters (add, apply, check, history, inspect, organize, plans, refresh, settings, tracks, undo), plus `build_uow`.
-* `artist_ids_composition.py`: language-detector and artist-name-resolver selection (`language_detector_for_model`, `default_artist_resolver`, `web_artist_language_detector`, `web_artist_name_resolver`), the artist-ids CLI command bundle, and the Web artist-ID collaborators.
+* `feature_composition.py`: `build_*` functions that construct feature `*Ports` dataclasses from concrete adapters (add, apply, check, history, inspect, organize, plans, refresh, settings, tracks, undo), plus `build_uow`; normal Plan ports receive the shared local artist-name resolver.
+* `artist_name_composition.py`: language-predictor and MusicBrainz-provider selection plus shared cache-aware artist-name resolver composition for Plan and naming consumers.
+* `artist_ids_composition.py`: the artist-ids CLI command bundle, composed through the shared artist-name composition boundary, and the local-only Web artist-ID collaborator.
 * `cli_composition.py`: `build_command_dependencies(...)`, which builds the full `CommandDependencies` bundle for one CLI invocation.
 * `cli_path_normalization.py`: `normalize_cli_path(...)`, injected into add, organize, and refresh command dependencies so their handlers do not resolve filesystem paths directly.
 * `cli_entry_point.py`: `main()` / `run_cli(...)`, the process entry point that both the `omym2` console script and `python -m omym2` route through.

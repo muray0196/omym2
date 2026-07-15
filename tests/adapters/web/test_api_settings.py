@@ -259,10 +259,7 @@ def _client(tmp_path: Path, store: FakeConfigStore) -> TestClient:
         validate_settings=ValidateSettingsCandidateUseCase(ports).execute,
         preview_path_policy=PreviewPathPolicyUseCase().execute,
         save_settings=SaveSettingsCandidateUseCase(ports).execute,
-        generate_artist_id_draft=GenerateArtistIdDraftUseCase(
-            language_detector=StaticLanguageDetector(),
-            artist_resolver=StaticArtistNameResolver(),
-        ).execute,
+        generate_artist_id_draft=GenerateArtistIdDraftUseCase().execute,
     )
     app = create_web_app(
         ApiRouteContext(
@@ -340,23 +337,3 @@ class FakeConfigStore:
         self.errors = ()
         self.config_revision = SAVED_CONFIG_REVISION
         return self.read_snapshot()
-
-
-@dataclass(frozen=True, slots=True)
-class StaticLanguageDetector:
-    """Treat route-test artists as generation-ready."""
-
-    def is_japanese(self, text: str) -> bool:
-        """Return false without model I/O."""
-        _ = text
-        return False
-
-
-@dataclass(frozen=True, slots=True)
-class StaticArtistNameResolver:
-    """Resolver fake unused for generation-ready names."""
-
-    def english_or_latin_name(self, source_artist: str) -> str | None:
-        """Return no alternate name."""
-        _ = source_artist
-        return None
