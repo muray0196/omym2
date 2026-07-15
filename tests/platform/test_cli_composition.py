@@ -42,13 +42,20 @@ def test_settings_web_app_factory_uses_config_and_database_overrides(
 
 
 def test_building_cli_dependencies_does_not_import_web_stack() -> None:
-    """Non-settings CLI startup leaves FastAPI and uvicorn unloaded."""
+    """Non-settings CLI startup leaves Web and optional native desktop stacks unloaded."""
     script = """
 import sys
 from omym2.platform.cli_composition import build_command_dependencies
 
 _ = build_command_dependencies()
-for module_name in ("fastapi", "omym2.platform.web_composition", "uvicorn"):
+for module_name in (
+    "fastapi",
+    "omym2.platform.web_composition",
+    "uvicorn",
+    "webview",
+    "omym2.adapters.desktop.window",
+    "omym2.platform.desktop_entry_point",
+):
     assert module_name not in sys.modules, module_name
 """
 

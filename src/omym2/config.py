@@ -28,6 +28,64 @@ BENCHMARK_FILE_WRITE_CHUNK_SIZE_BYTES: Final = 1_048_576  # bounded fixture writ
 WEB_DEFAULT_HOST: Final = "127.0.0.1"  # local Web UI bind host
 WEB_DEFAULT_PORT: Final = 8765  # local Web UI bind port
 WEB_APP_TITLE: Final = "OMYM2"  # local Web UI application title
+DESKTOP_SUPPORTED_PLATFORM = "win32"  # supported desktop runtime platform, sys.platform value, Windows only
+DESKTOP_APPLICATION_DIRECTORY_NAME = "OMYM2"  # per-user desktop application directory name
+DESKTOP_WINDOWS_DATA_ENVIRONMENT_VARIABLE = "LOCALAPPDATA"  # Windows per-user local application-data variable
+DESKTOP_LOG_DIRECTORY_NAME = "logs"  # desktop diagnostic directory under the internal data directory
+DESKTOP_LOG_FILE_NAME = "omym2-desktop.log"  # desktop diagnostic log file name
+DESKTOP_LOG_MAX_BYTES = 5_242_880  # maximum desktop log file size before rotation, bytes, >= 1
+DESKTOP_LOG_BACKUP_COUNT = 3  # retained rotated desktop log files, files, >= 1
+DESKTOP_LOG_LEVEL = "INFO"  # minimum persisted desktop log severity
+DESKTOP_LOG_ENCODING = "utf-8"  # desktop diagnostic log text encoding
+DESKTOP_LOG_FORMAT = "%(asctime)s level=%(levelname)s logger=%(name)s %(message)s"  # desktop log record format
+DESKTOP_LOOPBACK_HOST = "127.0.0.1"  # desktop server bind host, loopback only
+DESKTOP_EPHEMERAL_PORT = 0  # operating-system-selected desktop server port, exactly 0
+DESKTOP_READINESS_MAX_ATTEMPTS = 200  # maximum Bootstrap readiness probes, attempts, >= 1
+DESKTOP_READINESS_INTERVAL_SECONDS = 0.05  # delay between desktop readiness probes, seconds, > 0
+DESKTOP_READINESS_TIMEOUT_SECONDS = 0.5  # timeout for one desktop readiness probe, seconds, > 0
+DESKTOP_SERVER_THREAD_NAME = "omym2-desktop-server"  # background Uvicorn thread name
+DESKTOP_WINDOW_TITLE = "OMYM2"  # native desktop window title
+DESKTOP_WINDOW_WIDTH = 1440  # initial desktop window width, pixels, >= minimum width
+DESKTOP_WINDOW_HEIGHT = 900  # initial desktop window height, pixels, >= minimum height
+DESKTOP_WINDOW_MIN_WIDTH = 1024  # minimum desktop window width, pixels, >= supported Web viewport
+DESKTOP_WINDOW_MIN_HEIGHT = 700  # minimum desktop window height, pixels, >= 1
+DESKTOP_WINDOW_BACKGROUND_COLOR = "#07080a"  # native window background matching the Web canvas before paint
+DESKTOP_WINDOW_RESIZABLE = True  # allow the native desktop window to resize
+DESKTOP_WINDOW_MAXIMIZED = False  # open the native desktop window without maximizing it
+DESKTOP_WEBVIEW_BACKEND = "edgechromium"  # required Windows native WebView backend
+DESKTOP_WEBVIEW_PRIVATE_MODE = True  # avoid persistent browser cookies and local storage
+DESKTOP_WEBVIEW_CONTENT_LOADED_LOG_MARKER = "Desktop WebView content loaded"  # exact post-navigation smoke marker
+DESKTOP_WEBVIEW_CONTENT_LOAD_TIMEOUT_SECONDS = 30.0  # maximum wait for WebView document load, seconds, > 0
+DESKTOP_WEBVIEW2_ENVIRONMENT_OVERRIDE_PREFIXES = (  # inherited WebView2 variables rejected before native startup
+    "COREWEBVIEW2_",
+    "WEBVIEW2_",
+)
+DESKTOP_WEBVIEW2_POLICY_REGISTRY_ROOT = (  # administrative WebView2 loader policy root checked in both supported hives
+    r"SOFTWARE\Policies\Microsoft\Edge\WebView2"
+)
+DESKTOP_WEBVIEW2_POLICY_NAMES = (  # policies capable of changing runtime selection, storage, or browser arguments
+    "AdditionalBrowserArguments",
+    "BrowserExecutableFolder",
+    "ChannelSearchKind",
+    "ReleaseChannels",
+    "UserDataFolder",
+)
+DESKTOP_WEBVIEW2_POLICY_APPLICATION_ONLY_NAMES = (  # policies for which WebView2 does not accept the wildcard AppId
+    "UserDataFolder",
+)
+DESKTOP_WEBVIEW2_POLICY_WILDCARD_APPLICATION_ID = "*"  # policy value name applying to every WebView2 host
+DESKTOP_WEBVIEW2_DOTNET_REGISTRY_KEY = (
+    r"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full"  # .NET Framework registry key required by pywebview WinForms
+)
+DESKTOP_WEBVIEW2_DOTNET_REGISTRY_RELEASE_VALUE = "Release"  # installed .NET Framework release registry value
+DESKTOP_WEBVIEW2_MINIMUM_DOTNET_RELEASE = 394_802  # minimum .NET Framework 4.6.2 release required by pywebview
+DESKTOP_WEBVIEW2_MACHINE_REGISTRY_KEY = r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"  # 64-bit Evergreen WebView2 registry key
+DESKTOP_WEBVIEW2_USER_REGISTRY_KEY = r"Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"  # per-user Evergreen WebView2 registry key
+DESKTOP_WEBVIEW2_REGISTRY_VERSION_VALUE = "pv"  # Evergreen WebView2 installed-version registry value
+DESKTOP_WEBVIEW2_MINIMUM_VERSION = (146, 0, 3856, 49)  # minimum Runtime for pywebview's bundled SDK 1.0.3856.49
+DESKTOP_SUCCESS_EXIT_CODE = 0  # successful desktop process exit code
+DESKTOP_FAILURE_EXIT_CODE = 1  # fatal desktop startup or runtime exit code
+DESKTOP_ERROR_DIALOG_FLAGS = 0x10  # Windows MessageBox error-icon flags, MB_ICONERROR
 WEB_CSRF_TOKEN_BYTES: Final = 32  # random bytes used for local Web UI save-token generation
 WEB_CSRF_HEADER_NAME: Final = "X-OMYM2-CSRF-Token"  # header required for state-changing Web API saves
 WEB_ROOT_ROUTE: Final = "/"  # local Web UI root path

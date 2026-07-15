@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Dependency Boundaries
-description: Defines OMYM2's dependency direction between adapters, features, domain, and shared layers, the forbidden dependencies, and where business rules must live.
-tags: [architecture, dependency-boundaries, hexagonal-architecture, business-rules]
-timestamp: 2026-07-13T01:34:09+09:00
+description: Defines OMYM2's dependency direction between CLI, Web, desktop and outbound adapters, features, domain, and shared layers, the forbidden dependencies, and where business rules must live.
+tags: [architecture, dependency-boundaries, desktop, hexagonal-architecture, business-rules]
+timestamp: 2026-07-15T00:13:25+09:00
 ---
 
 # Dependency Boundaries
@@ -14,7 +14,8 @@ Source placement is in [source-layout.md](source-layout.md).
 
 ## Dependency Direction
 
-Inbound adapters call features, features use domain and may use shared primitives, and domain may use shared primitives.
+CLI and Web inbound adapters call features, features use domain and may use
+shared primitives, and domain may use shared primitives.
 
 ```text
 adapters/cli, adapters/web
@@ -25,6 +26,10 @@ domain/
   ↓
 shared/
 ```
+
+`adapters/desktop` is an inbound presentation/runtime adapter invoked by the
+platform composition root. It receives the already-composed ASGI application
+through its server boundary and does not import features or `adapters/web`.
 
 Outbound adapters implement ports owned by features or common feature ports.
 
@@ -55,8 +60,9 @@ features -> concrete adapter implementations
 features -> internal implementations of other features
 
 adapters -> platform
-adapters/cli, adapters/web -> adapters/db, adapters/fs, adapters/metadata, adapters/config, adapters/artist_ids
+adapters/cli, adapters/web, adapters/desktop -> adapters/db, adapters/fs, adapters/metadata, adapters/config, adapters/artist_ids
 adapters/cli -> adapters/web
+adapters/desktop -> adapters/web
 
 adapters/web/routes -> direct filesystem operations
 adapters/cli/commands -> direct filesystem operations
@@ -68,10 +74,12 @@ Inbound adapters must not import concrete outbound adapter subpackages
 I/O-free TOML-representation helper import from
 `adapters/cli/commands/config.py` to
 `omym2.adapters.config.toml_config_store`. That exception does not permit
-adapter construction or I/O from the CLI. No file under `adapters/web/` and no
-other file under `adapters/cli/` may import a concrete outbound adapter
-subpackage; typed Web schemas translate feature DTOs without importing TOML
-validators or serializers.
+adapter construction or I/O from the CLI. No file under `adapters/web/` or
+`adapters/desktop/`, and no other file under `adapters/cli/`, may import a
+concrete outbound adapter subpackage; typed Web schemas translate feature DTOs
+without importing TOML validators or serializers. The desktop adapter also
+does not import the Web adapter: the platform layer injects the composed
+FastAPI application into its server boundary.
 
 Direct imports between features are prohibited in principle. When multiple usecases are chained, orchestration is done in CLI, Web, or platform.
 
@@ -110,7 +118,11 @@ This only restores a domain model from persisted data, so it is allowed.
 
 ## Inbound Adapter Rule
 
-CLI and Web route user intent to usecases. They may orchestrate multiple usecases when the command contract requires it, but they must not perform filesystem mutations directly.
+CLI and Web route user intent to usecases. The desktop adapter supplies native
+window and server mechanics around the already-composed Web application; it
+does not call feature usecases or expose a native bridge. Inbound adapters may
+orchestrate multiple usecases when the command contract requires it, but they
+must not perform filesystem mutations directly.
 
 Route handlers and command handlers should stay thin. They translate input, call usecases, and format output.
 
@@ -129,5 +141,6 @@ Architecture tests enforce the highest-risk dependency rules:
 * domain does not import adapters or platform
 * shared stays below upper layers
 * adapters do not import platform
-* CLI and Web adapters do not import concrete outbound adapters (`db`, `fs`,
-  `metadata`, `config`, `artist_ids`), except the one CLI-only pair above
+* CLI, Web, and desktop adapters do not import concrete outbound adapters (`db`,
+  `fs`, `metadata`, `config`, `artist_ids`), except the one CLI-only pair above
+* the desktop adapter does not import the Web adapter or expose feature access

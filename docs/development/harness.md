@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, suppressions, and Python runtime configuration policy.
-tags: [development, tooling, quality-gates, validation, web]
-timestamp: 2026-07-14T02:00:00+09:00
+description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, Windows desktop CI expectations, suppressions, and Python runtime configuration policy.
+tags: [development, tooling, quality-gates, validation, web, desktop]
+timestamp: 2026-07-15T00:13:25+09:00
 ---
 
 # Development Harness
@@ -181,12 +181,19 @@ The mode is required; there is no default. The wrapper does not install dependen
 The command groups in this document remain authoritative; the script must stay in sync with them.
 
 Hosted CI runs independently diagnosable Python, API/client, frontend,
-Playwright, Linux package, Windows package/static-smoke, and installed-package
+Playwright, Linux package, Windows desktop package/native-smoke, and installed-package
 performance jobs. Linux measurement uses the pinned `ubuntu-24.04` image;
-Windows package smoke uses `windows-2025`. Frontend jobs install with
+Windows desktop package smoke uses `windows-2025`. Frontend jobs install with
 `web/package-lock.json` and pinned Chromium. The Linux package job uploads
-short-lived audited package evidence for the Windows smoke job, which also
-runs the real multiprocess lock contention/crash-release test.
+short-lived audited wheel evidence for the Windows job, which freezes that
+wheel, audits and smoke-tests the native ZIP, emits JSON measurements, and also
+runs the real multiprocess lock contention/crash-release test. The authoritative
+Windows build and smoke commands are in
+[Windows Desktop Packaging](desktop-packaging.md).
+
+The hosted Windows Server 2025 x64 job is a native development build/smoke
+proxy, not Windows 11 release evidence. The supported end-user target and its
+additional release-validation requirement are defined in the packaging guide.
 
 CI runs `git diff --exit-code` after tracked generators. The final diff check is
 a clean-checkout guard against validation tools mutating tracked files; it is

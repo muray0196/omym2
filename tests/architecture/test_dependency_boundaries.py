@@ -67,14 +67,16 @@ def test_adapters_does_not_import_platform() -> None:
 
 
 def test_inbound_adapters_does_not_import_concrete_outbound_adapters() -> None:
-    """CLI and web adapters must depend on ports, not concrete outbound adapters."""
+    """CLI, Web, and desktop adapters must not construct or import outbound adapters."""
     adapters_root = _source_root() / "omym2" / "adapters"
     cli_root = adapters_root / "cli"
     web_root = adapters_root / "web"
+    desktop_root = adapters_root / "desktop"
+    inbound_roots = (cli_root, web_root, desktop_root)
 
-    for source_file in itertools.chain(_python_files_under(cli_root), _python_files_under(web_root)):
+    for source_file in itertools.chain.from_iterable(_python_files_under(root) for root in inbound_roots):
         forbidden_prefixes = INBOUND_ADAPTER_FORBIDDEN_OUTBOUND_PREFIXES
-        if source_file.is_relative_to(cli_root):
+        if source_file.is_relative_to(cli_root) or source_file.is_relative_to(desktop_root):
             forbidden_prefixes += ("omym2.adapters.web",)
 
         allowed_prefixes = _allowed_outbound_import_prefixes(source_file)

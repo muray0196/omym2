@@ -78,6 +78,8 @@
 .cardLink::after {
   color: var(--color-mute);
   content: "→";
+  /* Empty alternative text keeps the decorative arrow out of the link's accessible name. */
+  content: "→" / "";
   transition: color var(--motion-control) ease;
 }
 
