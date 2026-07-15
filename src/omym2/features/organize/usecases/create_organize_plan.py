@@ -29,6 +29,7 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
+from omym2.domain.services.artist_name import ArtistNameProjector
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
@@ -77,8 +78,10 @@ class CreateOrganizePlanUseCase:
             config.path_policy,
             config.artist_ids,
             config.metadata.album_year_resolution,
+            config.artist_names,
         )
         path_policy = PathPolicy.from_app_config(config)
+        artist_name_projector = ArtistNameProjector(config.artist_names.preferences)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
@@ -109,7 +112,7 @@ class CreateOrganizePlanUseCase:
                 capture_input if isinstance(capture_input, _OrganizeCandidate) else next(captured_candidates)
                 for capture_input in capture_inputs
             )
-            candidates = self._with_target_paths(candidates, config, path_policy)
+            candidates = self._with_target_paths(candidates, config, path_policy, artist_name_projector)
             result = self._persist_result(
                 uow,
                 library,
@@ -254,6 +257,7 @@ class CreateOrganizePlanUseCase:
         candidates: Sequence[_OrganizeCandidate],
         config: AppConfig,
         path_policy: PathPolicy,
+        artist_name_projector: ArtistNameProjector,
     ) -> tuple[_OrganizeCandidate, ...]:
         metadata_batch = tuple(
             candidate.snapshot.metadata
@@ -292,6 +296,7 @@ class CreateOrganizePlanUseCase:
                     resolved_metadata,
                     snapshot.file_extension,
                     album_disc_total=album_disc_totals.for_metadata(resolved_metadata),
+                    artist_names=artist_name_projector.project(snapshot.metadata),
                 )
             except ValueError as exc:
                 judged_candidates.append(

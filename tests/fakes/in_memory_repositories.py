@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from types import TracebackType
     from uuid import UUID
 
+    from omym2.domain.models.accepted_artist_name import AcceptedArtistName
     from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
     from omym2.domain.models.check_run import CheckRun
     from omym2.domain.models.file_event import FileEvent
@@ -51,6 +52,24 @@ KEYSET_CURSOR_KEY_LENGTH = 2  # every Track/Track-group cursor key is a 2-tuple
 TRACK_GROUP_MEMBER_CURSOR_KEY_LENGTH = 4  # grouped Track member cursor: rank, number, title, track ID
 CHECK_ISSUE_CURSOR_KEY_LENGTH = 1  # a CheckIssue cursor key is a single issue_seq value
 TRACK_GROUP_FILTER_PAIRING_MESSAGE = "grouping and group_key must be provided together."
+
+
+@dataclass(slots=True)
+class InMemoryAcceptedArtistNameRepository:
+    """In-memory AcceptedArtistNameRepository fake."""
+
+    records: dict[str, AcceptedArtistName] = field(default_factory=dict)
+
+    def find_by_source_key(self, source_key: str) -> AcceptedArtistName | None:
+        """Return the accepted artist name for one already-derived source key."""
+        return self.records.get(source_key)
+
+    def insert_if_absent(self, accepted_name: AcceptedArtistName) -> bool:
+        """Insert one accepted name without replacing an existing record."""
+        if accepted_name.source_key in self.records:
+            return False
+        self.records[accepted_name.source_key] = accepted_name
+        return True
 
 
 @dataclass(slots=True)
@@ -962,6 +981,9 @@ class InMemoryOperationRepository:
 class InMemoryUnitOfWork:
     """In-memory UnitOfWork fake with observable transaction calls."""
 
+    accepted_artist_names: InMemoryAcceptedArtistNameRepository = field(
+        default_factory=InMemoryAcceptedArtistNameRepository
+    )
     libraries: InMemoryLibraryRepository = field(default_factory=InMemoryLibraryRepository)
     check_runs: InMemoryCheckRunRepository = field(default_factory=InMemoryCheckRunRepository)
     check_issues: InMemoryCheckIssueRepository = field(default_factory=InMemoryCheckIssueRepository)

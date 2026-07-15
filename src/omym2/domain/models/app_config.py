@@ -56,6 +56,7 @@ INVALID_ARTIST_ID_FALLBACK_MESSAGE = (
     "with optional single internal hyphens."
 )
 INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE = "ArtistIdConfig max_length must be positive."
+INVALID_ARTIST_NAME_PREFERENCE_MESSAGE = "ArtistNameConfig preference keys and values must not be empty."
 INVALID_MAX_FILENAME_LENGTH_MESSAGE = "PathPolicy max_filename_length must be positive."
 INVALID_PATH_POLICY_DISC_NUMBER_CONDITION_MESSAGE = "PathPolicy disc_number_condition is not supported."
 INVALID_PATH_POLICY_DISC_NUMBER_STYLE_MESSAGE = "PathPolicy disc_number_style is not supported."
@@ -148,6 +149,19 @@ class ArtistIdConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ArtistNameConfig:
+    """Editable full artist display-name preferences stored in TOML config."""
+
+    preferences: Mapping[str, str] | None = None
+
+    def __post_init__(self) -> None:
+        """Validate and freeze exact source-to-display-name preferences."""
+        normalized_preferences = dict(self.preferences or {})
+        _validate_artist_name_preferences(normalized_preferences)
+        object.__setattr__(self, "preferences", MappingProxyType(normalized_preferences))
+
+
+@dataclass(frozen=True, slots=True)
 class MetadataConfig:
     """Settings that define required metadata during plan creation."""
 
@@ -180,6 +194,12 @@ def _validate_artist_id_entries(entries: dict[str, str]) -> None:
             raise ValueError(INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE)
 
 
+def _validate_artist_name_preferences(preferences: dict[str, str]) -> None:
+    for source_name, display_name in preferences.items():
+        if source_name.strip() == "" or display_name.strip() == "":
+            raise ValueError(INVALID_ARTIST_NAME_PREFERENCE_MESSAGE)
+
+
 def _validate_template_placeholders(template: str) -> None:
     allowed_placeholders = set(PATH_POLICY_ALLOWED_PLACEHOLDERS)
     for _, field_name, format_spec, conversion in Formatter().parse(template):
@@ -208,6 +228,7 @@ class AppConfig:
     refresh: CommandConfig = CommandConfig(auto_apply=DEFAULT_REFRESH_AUTO_APPLY)
     path_policy: PathPolicyConfig = PathPolicyConfig()
     artist_ids: ArtistIdConfig = field(default_factory=ArtistIdConfig)
+    artist_names: ArtistNameConfig = field(default_factory=ArtistNameConfig)
     metadata: MetadataConfig = MetadataConfig()
     collision: CollisionConfig = CollisionConfig()
 

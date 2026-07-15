@@ -32,6 +32,7 @@ def test_config_show_prints_default_toml_without_creating_missing_file(tmp_path:
     assert exit_code == SUCCESS_EXIT_CODE
     assert f"version = {CONFIG_VERSION}" in stdout.getvalue()
     assert "[path_policy]" in stdout.getvalue()
+    assert "[artist_names.preferences]" in stdout.getvalue()
     assert stderr.getvalue() == ""
     assert not config_path.exists()
 

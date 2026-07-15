@@ -19,14 +19,16 @@ from omym2.config import (
     CONFIG_FINGERPRINT_PATH_POLICY_BEHAVIOR_KEY,
     CONFIG_FINGERPRINT_PATH_POLICY_CONFIG_KEY,
     DEFAULT_ALBUM_YEAR_RESOLUTION,
+    PATH_POLICY_ALBUM_ARTIST_PLACEHOLDER,
     PATH_POLICY_ARTIST_ID_PLACEHOLDER,
+    PATH_POLICY_ARTIST_PLACEHOLDER,
     PATH_POLICY_BEHAVIOR_VERSION,
     PATH_POLICY_DISC_NUMBER_PLACEHOLDER,
     PATH_POLICY_YEAR_PLACEHOLDER,
 )
 
 if TYPE_CHECKING:
-    from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig
+    from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, ArtistNameConfig, PathPolicyConfig
 
 JSON_SEPARATORS = (CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR, CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR)
 
@@ -51,6 +53,7 @@ def calculate_path_policy_fingerprint(
     path_policy_config: PathPolicyConfig,
     artist_id_config: ArtistIdConfig | None = None,
     album_year_resolution: str = DEFAULT_ALBUM_YEAR_RESOLUTION,
+    artist_name_config: ArtistNameConfig | None = None,
     algorithm: str = CONFIG_FINGERPRINT_ALGORITHM,
 ) -> str:
     """Return a stable fingerprint for Library registration path policy."""
@@ -67,6 +70,15 @@ def calculate_path_policy_fingerprint(
         path_policy_payload["artist_ids"] = _artist_id_payload(artist_id_config)
     if template_uses_placeholder(path_policy_config.template, PATH_POLICY_YEAR_PLACEHOLDER):
         path_policy_payload["album_year_resolution"] = album_year_resolution
+    if (
+        artist_name_config is not None
+        and artist_name_config.preferences
+        and (
+            template_uses_placeholder(path_policy_config.template, PATH_POLICY_ARTIST_PLACEHOLDER)
+            or template_uses_placeholder(path_policy_config.template, PATH_POLICY_ALBUM_ARTIST_PLACEHOLDER)
+        )
+    ):
+        path_policy_payload["artist_names"] = _artist_name_payload(artist_name_config)
     payload = json.dumps(path_policy_payload, sort_keys=True, separators=JSON_SEPARATORS)
     return _fingerprint_payload(payload, algorithm)
 
@@ -91,6 +103,7 @@ def _app_config_payload(config: AppConfig) -> dict[str, object]:
         "refresh": asdict(config.refresh),
         "path_policy": asdict(config.path_policy),
         "artist_ids": _artist_id_payload(config.artist_ids),
+        "artist_names": _artist_name_payload(config.artist_names),
         "metadata": asdict(config.metadata),
         "collision": asdict(config.collision),
     }
@@ -118,6 +131,11 @@ def _artist_id_payload(config: ArtistIdConfig) -> dict[str, object]:
         "fallback_id": config.fallback_id,
         "entries": dict(config.entries or {}),
     }
+
+
+def _artist_name_payload(config: ArtistNameConfig) -> dict[str, object]:
+    """Return full artist-name preferences as plain JSON data for stable hashing."""
+    return {"preferences": dict(config.preferences or {})}
 
 
 def _fingerprint_payload(payload: str, algorithm: str) -> str:

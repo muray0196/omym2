@@ -18,6 +18,7 @@ from omym2.adapters.config.config_validator import (
     ADD_SECTION,
     ALBUM_YEAR_RESOLUTION_KEY,
     ARTIST_IDS_SECTION,
+    ARTIST_NAMES_SECTION,
     AUTO_APPLY_KEY,
     COLLISION_SECTION,
     DEFAULT_MODE_KEY,
@@ -37,6 +38,7 @@ from omym2.adapters.config.config_validator import (
     PATH_POLICY_SECTION,
     PATHS_SECTION,
     PREFER_ALBUM_ARTIST_KEY,
+    PREFERENCES_KEY,
     REFRESH_SECTION,
     REQUIRE_ALBUM_KEY,
     REQUIRE_ARTIST_KEY,
@@ -339,6 +341,11 @@ def dump_config_toml(config: AppConfig) -> str:
         lines,
         f"{ARTIST_IDS_SECTION}.{ENTRIES_KEY}",
         tuple((key, value) for key, value in sorted((config.artist_ids.entries or {}).items())),
+    )
+    _append_section(
+        lines,
+        f"{ARTIST_NAMES_SECTION}.{PREFERENCES_KEY}",
+        tuple((key, value) for key, value in sorted((config.artist_names.preferences or {}).items())),
     )
     _append_section(
         lines,

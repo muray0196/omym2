@@ -22,6 +22,7 @@ from omym2.config import (
 from omym2.domain.models.app_config import (
     INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE,
     INVALID_ARTIST_ID_FALLBACK_MESSAGE,
+    INVALID_ARTIST_NAME_PREFERENCE_MESSAGE,
     INVALID_CONFIG_VERSION_MESSAGE,
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     INVALID_METADATA_ALBUM_YEAR_RESOLUTION_MESSAGE,
@@ -33,6 +34,7 @@ from omym2.domain.models.app_config import (
     INVALID_PATH_POLICY_UNKNOWN_ARTIST_MESSAGE,
     AppConfig,
     ArtistIdConfig,
+    ArtistNameConfig,
     MetadataConfig,
     PathPolicyConfig,
 )
@@ -75,6 +77,20 @@ def test_config_default_artist_id_entries_are_immutable_and_per_instance() -> No
 
     assert first_config.artist_ids == ArtistIdConfig()
     assert second_config.artist_ids == ArtistIdConfig()
+
+
+def test_config_default_artist_name_preferences_are_immutable_and_per_instance() -> None:
+    """Default display-name preferences cannot mutate cached or separate configs."""
+    first_config = AppConfig()
+    second_config = AppConfig()
+
+    first_preferences = first_config.artist_names.preferences
+    assert first_preferences is not None
+    with pytest.raises(TypeError):
+        cast("dict[str, str]", first_preferences)["宇多田ヒカル"] = "Hikaru Utada"
+
+    assert first_config.artist_names == ArtistNameConfig()
+    assert second_config.artist_names == ArtistNameConfig()
 
 
 def test_config_validation_fails_invalid_version() -> None:
@@ -181,3 +197,13 @@ def test_artist_id_config_accepts_default_fallback_id() -> None:
     config = ArtistIdConfig()
 
     assert config.fallback_id == "NOART"
+
+
+@pytest.mark.parametrize(
+    ("source_name", "display_name"),
+    [("", "Hikaru Utada"), ("   ", "Hikaru Utada"), ("宇多田ヒカル", ""), ("宇多田ヒカル", "   ")],
+)
+def test_artist_name_config_rejects_blank_preferences(source_name: str, display_name: str) -> None:
+    """ArtistNameConfig rejects preference keys and values with no visible text."""
+    with pytest.raises(ValueError, match=INVALID_ARTIST_NAME_PREFERENCE_MESSAGE):
+        _ = ArtistNameConfig(preferences={source_name: display_name})

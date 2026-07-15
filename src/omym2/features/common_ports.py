@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from types import TracebackType
     from uuid import UUID
 
+    from omym2.domain.models.accepted_artist_name import AcceptedArtistName
     from omym2.domain.models.app_config import AppConfig
     from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
     from omym2.domain.models.check_run import CheckRun
@@ -152,6 +153,18 @@ class CheckRunRepository(Protocol):
 
     def delete_for_library(self, library_id: LibraryId) -> None:
         """Delete the CheckRun row for one Library, cascading its CheckIssues."""
+        ...
+
+
+class AcceptedArtistNameRepository(Protocol):
+    """Persistence contract for sticky accepted provider artist names."""
+
+    def find_by_source_key(self, source_key: str) -> AcceptedArtistName | None:
+        """Return the accepted name for one already-derived source key, if any."""
+        ...
+
+    def insert_if_absent(self, accepted_name: AcceptedArtistName) -> bool:
+        """Insert one accepted name without replacing an existing sticky result."""
         ...
 
 
@@ -561,6 +574,11 @@ class UnitOfWork(Protocol):
 
     def usecase_scope(self) -> AbstractContextManager[None]:
         """Retain adapter resources across this usecase's transaction scopes."""
+        ...
+
+    @property
+    def accepted_artist_names(self) -> AcceptedArtistNameRepository:
+        """Repository for sticky accepted provider artist names."""
         ...
 
     @property

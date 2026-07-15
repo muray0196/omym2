@@ -20,7 +20,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
+from omym2.domain.models.app_config import AppConfig, ArtistNameConfig, PathPolicyConfig
 from omym2.domain.models.file_scan_entry import FileScanEntry
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.library import Library, LibraryStatus
@@ -63,6 +63,7 @@ LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 LIBRARY_ROOT = "/music/library"
 NEW_PATH = "Artist/2026_Album/1-02_New-Title.flac"
 NEW_D_PREFIXED_PATH = "Artist/2026_Album/D1-02_New-Title.flac"
+NEW_PREFERRED_ARTIST_PATH = "Preferred-Artist/2026_Album/1-02_New-Title.flac"
 OLD_PATH = "Artist/2026_Album/1-02_Old-Title.flac"
 OTHER_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 OTHER_LIBRARY_ROOT = "/music/other"
@@ -171,6 +172,34 @@ def test_refresh_operation_success_commits_the_created_plan_result() -> None:
     assert terminal.result_expires_at == BASE_TIME + timedelta(hours=OPERATION_RESULT_RETENTION_HOURS)
     assert terminal.tombstone_expires_at == BASE_TIME + timedelta(days=OPERATION_TOMBSTONE_RETENTION_DAYS)
     assert uow.plans.get(plan.plan_id) == plan
+
+
+def test_refresh_projects_artist_preferences_without_updating_raw_track_state() -> None:
+    """Refresh records a preferred target while leaving the managed Track untouched."""
+    config = AppConfig(artist_names=ArtistNameConfig(preferences={"Artist": "Preferred Artist"}))
+    path_policy_hash = calculate_path_policy_fingerprint(
+        config.path_policy,
+        config.artist_ids,
+        config.metadata.album_year_resolution,
+        config.artist_names,
+    )
+    track = _track()
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(path_policy_hash=path_policy_hash))
+    uow.tracks.save(track)
+    source_path = _absolute(OLD_PATH)
+    ports, _ = _ports(
+        uow,
+        {source_path: _snapshot(source_path, NEW_METADATA)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(config=config),
+    )
+
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
+
+    assert plan.actions[0].target_path == NEW_PREFERRED_ARTIST_PATH
+    assert plan.actions[0].metadata_hash_at_plan == calculate_metadata_fingerprint(NEW_METADATA)
+    assert uow.tracks.get(TRACK_ID) == track
 
 
 def test_refresh_renders_disc_number_from_active_peer_context() -> None:

@@ -35,6 +35,7 @@ from omym2.shared.paths import normalize_library_relative_path
 if TYPE_CHECKING:
     from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig
     from omym2.domain.models.track_metadata import TrackMetadata
+    from omym2.domain.services.artist_name import ArtistNameProjection
 
 from omym2.domain.models.app_config import ArtistIdConfig
 from omym2.domain.services.artist_id import generate_artist_id
@@ -95,14 +96,20 @@ class PathPolicy:
         file_extension: str,
         *,
         album_disc_total: int | None = None,
+        artist_names: ArtistNameProjection | None = None,
     ) -> str:
         """Generate a normalized Library-root-relative canonical path."""
         extension_suffix = _normalize_extension_suffix(file_extension)
-        raw_stem = self._render_raw_stem(metadata, album_disc_total)
+        raw_stem = self._render_raw_stem(metadata, album_disc_total, artist_names)
         generated_path = _normalize_generated_path(raw_stem, extension_suffix, self.config)
         return normalize_library_relative_path(generated_path)
 
-    def _render_raw_stem(self, metadata: TrackMetadata, album_disc_total: int | None) -> str:
+    def _render_raw_stem(
+        self,
+        metadata: TrackMetadata,
+        album_disc_total: int | None,
+        artist_names: ArtistNameProjection | None,
+    ) -> str:
         # Title validity predates template-aware rendering and remains a
         # PathPolicy invariant even when a custom template omits {title}.
         if metadata.title is None or metadata.title.strip() == "":
@@ -110,7 +117,7 @@ class PathPolicy:
 
         values: dict[str, str] = {}
         if "album_artist" in self._used_placeholders:
-            values["album_artist"] = self._album_artist(metadata)
+            values["album_artist"] = self._album_artist(metadata, artist_names)
         if "year" in self._used_placeholders:
             values["year"] = self._optional_number(metadata.year)
         if "album" in self._used_placeholders:
@@ -122,16 +129,32 @@ class PathPolicy:
         if "title" in self._used_placeholders:
             values["title"] = self._title(metadata)
         if "artist" in self._used_placeholders:
-            values["artist"] = self._artist(metadata)
+            values["artist"] = self._artist(metadata, artist_names)
         if "artist_id" in self._used_placeholders:
             values["artist_id"] = self._artist_id(metadata)
         return self.config.template.format(**values)
 
-    def _album_artist(self, metadata: TrackMetadata) -> str:
-        return self._artist_component(metadata.album_artist or metadata.artist or self.config.unknown_artist)
+    def _album_artist(self, metadata: TrackMetadata, artist_names: ArtistNameProjection | None) -> str:
+        projected_album_artist = None if artist_names is None else artist_names.album_artist
+        projected_artist = None if artist_names is None else artist_names.artist
+        return self._artist_component(
+            projected_album_artist
+            or metadata.album_artist
+            or projected_artist
+            or metadata.artist
+            or self.config.unknown_artist
+        )
 
-    def _artist(self, metadata: TrackMetadata) -> str:
-        return self._artist_component(metadata.artist or metadata.album_artist or self.config.unknown_artist)
+    def _artist(self, metadata: TrackMetadata, artist_names: ArtistNameProjection | None) -> str:
+        projected_artist = None if artist_names is None else artist_names.artist
+        projected_album_artist = None if artist_names is None else artist_names.album_artist
+        return self._artist_component(
+            projected_artist
+            or metadata.artist
+            or projected_album_artist
+            or metadata.album_artist
+            or self.config.unknown_artist
+        )
 
     def _artist_id(self, metadata: TrackMetadata) -> str:
         source_artist = metadata.artist or metadata.album_artist or self.config.unknown_artist

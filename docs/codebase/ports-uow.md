@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Ports And UnitOfWork
-description: Defines OMYM2's ports and UnitOfWork contract, including durable Operations, Config revision CAS, atomic Apply claims, filesystem mutation preconditions, and FileEvent transaction ordering.
-tags: [ports, unit-of-work, transactions, architecture]
-timestamp: 2026-07-13T22:03:37+09:00
+description: Defines OMYM2's ports and UnitOfWork contract, including accepted artist-name persistence, durable Operations, Config revision CAS, atomic Apply claims, filesystem mutation preconditions, and FileEvent transaction ordering.
+tags: [ports, unit-of-work, transactions, architecture, artist-names]
+timestamp: 2026-07-15T20:47:24+09:00
 ---
 
 # Ports And UnitOfWork
@@ -25,6 +25,7 @@ Representative examples:
 
 ```python
 class UnitOfWork(Protocol):
+    accepted_artist_names: AcceptedArtistNameRepository
     libraries: LibraryRepository
     check_runs: CheckRunRepository
     check_issues: CheckIssueRepository
@@ -46,6 +47,17 @@ class UnitOfWork(Protocol):
 `check_runs` and `check_issues` persist each Library's latest completed check
 diagnostics. Their replacement and browsing rules are authoritative in
 [../contracts/db-schema.md](../contracts/db-schema.md#check_runs).
+
+```python
+class AcceptedArtistNameRepository(Protocol):
+    def find_by_source_key(self, source_key: str) -> AcceptedArtistName | None: ...
+    def insert_if_absent(self, accepted_name: AcceptedArtistName) -> bool: ...
+```
+
+The accepted-name repository treats its already-derived source key as an
+exact opaque lookup value. `insert_if_absent` preserves a previously accepted
+provider result instead of updating it. Provider matching and normalization
+are feature rules, not repository behavior.
 
 ```python
 class FileScanner(Protocol):
@@ -224,7 +236,7 @@ A usecase coordinates domain behavior and persistence through ports. Concrete re
 
 Usecases define the business transition. The UnitOfWork adapter defines the concrete DB transaction mechanics.
 
-Every `with uow` block starts and completes an independent transaction, even inside `usecase_scope()`. No transaction stays open across hashing or a Library music file mutation. Apply's committed PENDING FileEvent therefore remains visible and durable before the mover runs; connection reuse changes checkpoint timing, not commit ordering or durability. The SQLite-specific FULL/WAL rationale is authoritative in [../STORAGE.md](../STORAGE.md#db-consistency).
+Every `with uow` block starts and completes an independent transaction, even inside `usecase_scope()`. No transaction stays open across hashing, fastText model work, provider HTTP calls, or a Library music file mutation. Apply's committed PENDING FileEvent therefore remains visible and durable before the mover runs; connection reuse changes checkpoint timing, not commit ordering or durability. A naming usecase that needs cache state and a new provider lookup uses short cache-read/final-persistence transactions around the external work rather than holding SQLite open during MusicBrainz access. The SQLite-specific FULL/WAL rationale is authoritative in [../STORAGE.md](../STORAGE.md#db-consistency).
 
 Repositories persist and restore domain models. They must not decide conflicts, duplicates, canonical paths, metadata validity, PlanAction status, or retry policy.
 

@@ -304,6 +304,7 @@ def _preview_request(body: PathPreviewRequest) -> PathPolicyPreviewRequest:
     return PathPolicyPreviewRequest(
         path_policy=body.path_policy.to_domain(),
         artist_ids=body.artist_ids.to_domain(),
+        artist_names=body.artist_names.to_domain(),
         metadata=body.metadata.to_domain(),
         file_extension=body.file_extension,
     )

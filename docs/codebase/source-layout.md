@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Source Layout
-description: Defines OMYM2's feature-oriented source layout, including Bootstrap, durable Operation, desktop-shell placement, dependency layers, composition, and directory rules.
-tags: [source-layout, architecture, operations, desktop, hexagonal-architecture, python]
-timestamp: 2026-07-15T00:13:25+09:00
+description: Defines OMYM2's feature-oriented source layout, including artist naming, Bootstrap, durable Operation, desktop-shell placement, dependency layers, composition, and directory rules.
+tags: [source-layout, architecture, artist-names, operations, desktop, hexagonal-architecture, python]
+timestamp: 2026-07-15T20:47:24+09:00
 ---
 
 # Source Layout
@@ -91,6 +91,7 @@ src/
 Main targets:
 
 * AppConfig
+* AcceptedArtistName
 * Library
 * Track
 * TrackMetadata
@@ -102,6 +103,7 @@ Main targets:
 * FileEvent
 * Operation
 * PathPolicy
+* ArtistNameProjection
 * CollisionPolicy
 * CheckRun
 * CheckIssue
@@ -140,7 +142,7 @@ When a usecase needs files from a directory, it uses FileScanner only to discove
 
 `adapters/` implement ports and handle external I/O.
 
-* `adapters/db/sqlite`: SQLite repositories / UnitOfWork
+* `adapters/db/sqlite`: SQLite repositories / UnitOfWork, including sticky accepted artist-name provenance
 * `adapters/fs`: file discovery / snapshot capture / move / path operations /
   hash calculation / native application-root exclusive lock
 * `adapters/metadata`: metadata reading with mutagen

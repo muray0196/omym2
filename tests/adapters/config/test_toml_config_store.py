@@ -21,6 +21,7 @@ from omym2.domain.models.app_config import (
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     AppConfig,
     ArtistIdConfig,
+    ArtistNameConfig,
     MetadataConfig,
     PathPolicyConfig,
     PathsConfig,
@@ -38,6 +39,7 @@ INVALID_MAX_FILENAME_LENGTH = 0
 LIBRARY_PATH = "/music/library"
 ARTIST_NAME = "Jane Doe"
 ARTIST_ID = "JAND"
+PREFERRED_ARTIST_NAME = "Jane D."
 INJECTED_ARTIST_NAME = "Injected"
 INJECTED_ARTIST_ID = "INJECTED"
 FIRST_SAME_SIZE_LIBRARY_PATH = "/music/a"
@@ -64,6 +66,7 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
     config = AppConfig(
         paths=PathsConfig(library=LIBRARY_PATH, incoming=INCOMING_PATH),
         artist_ids=ArtistIdConfig(entries={ARTIST_NAME: ARTIST_ID}),
+        artist_names=ArtistNameConfig(preferences={ARTIST_NAME: PREFERRED_ARTIST_NAME}),
         metadata=MetadataConfig(album_year_resolution=ALBUM_YEAR_RESOLUTION_OLDEST),
     )
 
@@ -75,6 +78,7 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
         encoding=CONFIG_FILE_ENCODING
     )
     assert f'"{ARTIST_NAME}" = "{ARTIST_ID}"' in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
+    assert f'"{ARTIST_NAME}" = "{PREFERRED_ARTIST_NAME}"' in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
 
 
 def test_toml_config_store_saves_and_loads_disc_number_settings(tmp_path: Path) -> None:
@@ -133,6 +137,26 @@ def test_toml_config_store_cached_artist_id_entries_are_immutable(tmp_path: Path
 
     assert second_config is first_config
     assert second_config.artist_ids.entries == {ARTIST_NAME: ARTIST_ID}
+
+
+def test_toml_config_store_cached_artist_name_preferences_are_immutable(tmp_path: Path) -> None:
+    """Cached loads cannot be poisoned by unsaved artist display-name mutations."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    _save_current(
+        store,
+        AppConfig(artist_names=ArtistNameConfig(preferences={ARTIST_NAME: PREFERRED_ARTIST_NAME})),
+    )
+
+    first_config = store.load()
+    assert first_config.artist_names.preferences is not None
+    with pytest.raises(TypeError):
+        cast("dict[str, str]", first_config.artist_names.preferences)[INJECTED_ARTIST_NAME] = ARTIST_NAME
+
+    second_config = store.load()
+
+    assert second_config is first_config
+    assert second_config.artist_names.preferences == {ARTIST_NAME: PREFERRED_ARTIST_NAME}
 
 
 def test_toml_config_store_load_reparses_after_external_rewrite(tmp_path: Path) -> None:
@@ -264,6 +288,22 @@ def test_toml_config_store_validation_fails_invalid_artist_id_entry_value(tmp_pa
         _ = TomlConfigStore(config_path).load()
 
 
+@pytest.mark.parametrize("invalid_value", ['""', '"   "', "42"])
+def test_toml_config_store_validation_fails_invalid_artist_name_preference(
+    tmp_path: Path,
+    invalid_value: str,
+) -> None:
+    """Artist display-name preferences require nonblank string values."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        f'version = 1\n\n[artist_names.preferences]\n"{ARTIST_NAME}" = {invalid_value}\n',
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError, match=r"artist_names\.preferences"):
+        _ = TomlConfigStore(config_path).load()
+
+
 def test_toml_config_store_validation_fails_invalid_album_year_resolution(tmp_path: Path) -> None:
     """Adapter validation rejects unknown album-year resolution methods."""
     config_path = tmp_path / CONFIG_FILE_NAME
@@ -314,6 +354,13 @@ def test_toml_config_text_loads_missing_artist_id_defaults() -> None:
     config = load_config_text("version = 1\n")
 
     assert config.artist_ids == ArtistIdConfig()
+
+
+def test_toml_config_text_loads_missing_artist_name_defaults() -> None:
+    """Missing artist_names config resolves to an empty preference mapping."""
+    config = load_config_text("version = 1\n")
+
+    assert config.artist_names == ArtistNameConfig()
 
 
 def test_config_snapshot_gives_missing_storage_a_stable_revision_without_creating_file(tmp_path: Path) -> None:

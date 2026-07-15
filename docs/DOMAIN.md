@@ -1,9 +1,9 @@
 ---
 type: Domain Model
 title: Domain
-description: Defines OMYM2's core entities, including durable Operations and Track stat baselines, their invariants, snapshot boundaries, and UUIDv7 identity policy.
-tags: [domain-model, entities, invariants, operations, id-design]
-timestamp: 2026-07-13T22:03:37+09:00
+description: Defines OMYM2's core entities, including raw track metadata, artist-name projection, durable Operations, Track stat baselines, snapshot boundaries, and UUIDv7 identity policy.
+tags: [domain-model, entities, invariants, artist-names, operations, id-design]
+timestamp: 2026-07-15T20:47:24+09:00
 ---
 
 # Domain
@@ -25,6 +25,10 @@ The config schema and defaults are authoritative in [contracts/config.md](contra
 Artist IDs are user-facing config/path values inside AppConfig. They are
 editable TOML settings and must not be modeled as internal OMYM2 identity in
 the way `track_id` and `library_id` are.
+
+Full artist display-name preferences are also user-facing AppConfig values,
+but are independent from artist IDs. They replace only the display text used
+by artist path placeholders; they do not rewrite compact IDs.
 
 ## FileScanEntry
 
@@ -93,6 +97,20 @@ Filesystem attributes such as file extension or file size are not part of TrackM
 
 Missing, empty, malformed, or inconsistent tag values are allowed at this layer. Validation and fallback are performed by usecases or PathPolicy according to AppConfig.
 
+Raw TrackMetadata is never overwritten by a preferred artist display name.
+Metadata hashes, Track persistence, album grouping, and artist-ID lookup keep
+using the raw tag values.
+
+## ArtistNameProjection
+
+An immutable derived value containing the effective `artist` and
+`album_artist` display strings for one raw TrackMetadata value.
+
+The Stage 1 projection is a pure, exact lookup in the configured full-name
+preferences. Missing entries preserve the original strings, and a composite
+multi-artist string is treated as one opaque key. Automatic language detection
+and provider resolution are not part of this projection.
+
 ## PathPolicy
 
 A pure domain service that generates the Library-root-relative canonical path for a track.
@@ -102,6 +120,7 @@ Input:
 * TrackMetadata
 * file_extension
 * PathPolicyConfig
+* optional already-derived ArtistNameProjection
 
 Output:
 
@@ -109,7 +128,10 @@ Output:
 
 `canonical_path` is a normalized relative path from the Library root. It is not an absolute path.
 
-PathPolicy may normalize metadata values for path generation. This normalization is local to PathPolicy in the initial version and is not modeled as a separate domain object. Source file extensions are normalized to lowercase when appended to generated paths.
+PathPolicy may normalize metadata values for path generation. Artist and album
+artist display values are resolved before rendering and passed explicitly;
+PathPolicy does not read AppConfig preferences or provider state. Source file
+extensions are normalized to lowercase when appended to generated paths.
 
 PathPolicy is deterministic and does not perform I/O. It does not join paths with the Library root and does not check whether the target path exists. Target existence is handled by usecases through filesystem ports and CollisionPolicy.
 
@@ -124,7 +146,8 @@ without recalculating it.
 Allowed placeholders, initial template, preview behavior, and config validation rules are authoritative in [contracts/config.md](contracts/config.md#pathpolicyconfig).
 
 When the template includes `{artist_id}`, PathPolicy resolves it from
-already-loaded config and metadata only. Language detection, fastText model
+already-loaded config and raw metadata only. The optional display-name
+projection cannot change its source key. Language detection, fastText model
 loading, and MusicBrainz HTTP lookup are feature/adapter concerns and must not
 run during canonical path generation.
 
@@ -396,6 +419,7 @@ The following invariants belong to the domain / usecase layer, not to adapters:
 * A Plan is reviewed and applied through recorded PlanActions.
 * A Plan is single-use in the initial version.
 * Applying a Plan must not recalculate target paths from the latest AppConfig.
+* Artist display-name projection must not mutate raw TrackMetadata or alter artist-ID lookup keys.
 * `canonical_path` and Track `current_path` are Library-root-relative paths, not absolute paths.
 * Library music file mutations must be represented by FileEvents.
 * FileEvents represent Library music file mutations only, not DB-only updates.

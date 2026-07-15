@@ -11,6 +11,11 @@ from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 from omym2.config import PERSISTED_JSON_ITEM_SEPARATOR, PERSISTED_JSON_KEY_SEPARATOR
+from omym2.domain.models.accepted_artist_name import (
+    AcceptedArtistName,
+    ArtistNameProvider,
+    SelectedArtistNameKind,
+)
 from omym2.domain.models.check_issue import (
     CHECK_ISSUE_GROUP_ARTIST_ALBUM_LABEL_SEPARATOR,
     CHECK_ISSUE_GROUP_EXTERNAL_KEY,
@@ -205,6 +210,18 @@ TRACK_SELECT_FROM = """
                 updated_at
             FROM tracks
 """
+ACCEPTED_ARTIST_NAME_SELECT_FROM = """
+            SELECT
+                source_key,
+                source_name,
+                resolved_name,
+                provider,
+                provider_artist_id,
+                selected_name_kind,
+                selected_locale,
+                accepted_at
+            FROM accepted_artist_names
+"""
 RUN_SELECT_FROM = """
             SELECT run_id, plan_id, library_id, status, started_at, completed_at, error_summary
             FROM runs
@@ -290,6 +307,52 @@ class _SQLiteRepository:
     def __init__(self, connection: sqlite3.Connection) -> None:
         """Keep the connection owned by the surrounding UnitOfWork."""
         self._connection: sqlite3.Connection = connection
+
+
+class SQLiteAcceptedArtistNameRepository(_SQLiteRepository):
+    """SQLite implementation of AcceptedArtistNameRepository."""
+
+    def find_by_source_key(self, source_key: str) -> AcceptedArtistName | None:
+        """Return the accepted artist name for one already-derived source key."""
+        row = _fetch_one(
+            self._connection,
+            ACCEPTED_ARTIST_NAME_SELECT_FROM
+            + """
+            WHERE source_key = ?
+            """,
+            (source_key,),
+        )
+        return None if row is None else _accepted_artist_name_from_row(row)
+
+    def insert_if_absent(self, accepted_name: AcceptedArtistName) -> bool:
+        """Insert one accepted name while preserving any existing sticky result."""
+        cursor = self._connection.execute(
+            """
+            INSERT INTO accepted_artist_names (
+                source_key,
+                source_name,
+                resolved_name,
+                provider,
+                provider_artist_id,
+                selected_name_kind,
+                selected_locale,
+                accepted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source_key) DO NOTHING
+            """,
+            (
+                accepted_name.source_key,
+                accepted_name.source_name,
+                accepted_name.resolved_name,
+                accepted_name.provider.value,
+                accepted_name.provider_artist_id,
+                accepted_name.selected_name_kind.value,
+                accepted_name.selected_locale,
+                _timestamp_to_text(accepted_name.accepted_at),
+            ),
+        )
+        return cursor.rowcount > 0
 
 
 class SQLiteLibraryRepository(_SQLiteRepository):
@@ -1864,6 +1927,19 @@ def _library_from_row(row: sqlite3.Row) -> Library:
         status=LibraryStatus(_row_text(row, "status")),
         created_at=_timestamp_from_text(_row_text(row, "created_at")),
         updated_at=_timestamp_from_text(_row_text(row, "updated_at")),
+    )
+
+
+def _accepted_artist_name_from_row(row: sqlite3.Row) -> AcceptedArtistName:
+    return AcceptedArtistName(
+        source_key=_row_text(row, "source_key"),
+        source_name=_row_text(row, "source_name"),
+        resolved_name=_row_text(row, "resolved_name"),
+        provider=ArtistNameProvider(_row_text(row, "provider")),
+        provider_artist_id=_row_text(row, "provider_artist_id"),
+        selected_name_kind=SelectedArtistNameKind(_row_text(row, "selected_name_kind")),
+        selected_locale=_row_optional_text(row, "selected_locale"),
+        accepted_at=_timestamp_from_text(_row_text(row, "accepted_at")),
     )
 
 

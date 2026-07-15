@@ -30,6 +30,15 @@ export const settingsCopy = {
   maxFilenameLength: "Maximum filename length",
   discNumberStyle: "Disc number style",
   discNumberCondition: "Disc number condition",
+  artistDisplayNamesTitle: "Artist display names",
+  artistDisplayNamesHelp:
+    "Map exact source artist text to a full display name for path planning and preview. These names do not change embedded tags or compact artist IDs. With no entries, source names remain unchanged.",
+  displayNameEntriesTitle: "Preferred full display names",
+  noDisplayNameEntries: "No artist display-name preferences are in this draft.",
+  displayName: "Display name",
+  manualDisplayNameSource: "New display-name source artist",
+  manualDisplayName: "New full display name",
+  addDisplayName: "Add display name",
   artistIdsTitle: "Artist IDs",
   artistIdsHelp:
     "Generation changes only this draft. Save before generated entries become persistent.",

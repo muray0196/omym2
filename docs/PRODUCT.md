@@ -1,9 +1,9 @@
 ---
 type: Product Overview
 title: Product
-description: Defines OMYM2 as a Plan-centered local music application with CLI, browser-hosted Web, and supported Windows desktop surfaces, including their execution boundary and non-goals.
-tags: [product, overview, cli, web-ui, desktop, windows, operations-console]
-timestamp: 2026-07-15T00:13:25+09:00
+description: Defines OMYM2 as a Plan-centered local music application with configurable artist display names across CLI, browser-hosted Web, and supported Windows desktop surfaces, including their execution boundary and non-goals.
+tags: [product, overview, cli, web-ui, artist-names, desktop, windows, operations-console]
+timestamp: 2026-07-15T20:47:24+09:00
 ---
 
 # Product
@@ -95,6 +95,7 @@ The roles of the Web UI are:
 * Setting optional Library path shortcuts
 * Setting the Incoming path
 * Editing the path policy
+* Editing exact full artist display-name preferences used for planned paths
 * Generating and editing artist ID path values
 * Setting required metadata fields
 * Setting behavior for duplicates

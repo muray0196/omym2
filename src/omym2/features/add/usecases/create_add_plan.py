@@ -23,6 +23,7 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
+from omym2.domain.services.artist_name import ArtistNameProjector
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
@@ -77,8 +78,10 @@ class CreateAddPlanUseCase:
             config.path_policy,
             config.artist_ids,
             config.metadata.album_year_resolution,
+            config.artist_names,
         )
         path_policy = PathPolicy.from_app_config(config)
+        artist_name_projector = ArtistNameProjector(config.artist_names.preferences)
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
@@ -96,7 +99,13 @@ class CreateAddPlanUseCase:
                 self._candidate(entry, source_path, snapshot, config)
                 for entry, source_path, snapshot in zip(scan_entries, source_paths, snapshots, strict=True)
             )
-            candidates = self._with_target_paths(candidates, library_tracks, config, path_policy)
+            candidates = self._with_target_paths(
+                candidates,
+                library_tracks,
+                config,
+                path_policy,
+                artist_name_projector,
+            )
             candidates = self._with_duplicates(candidates, duplicate_track_by_hash)
             candidates = self._with_target_conflicts(library, candidates, active_library_tracks)
             plan_id = self.ports.id_generator.new_plan_id()
@@ -166,6 +175,7 @@ class CreateAddPlanUseCase:
         library_tracks: Sequence[Track],
         config: AppConfig,
         path_policy: PathPolicy,
+        artist_name_projector: ArtistNameProjector,
     ) -> tuple[_AddCandidate, ...]:
         active_library_metadata = tuple(
             track.metadata for track in library_tracks if track.status == TrackStatus.ACTIVE
@@ -207,6 +217,7 @@ class CreateAddPlanUseCase:
                     resolved_metadata,
                     snapshot.file_extension,
                     album_disc_total=album_disc_totals.for_metadata(resolved_metadata),
+                    artist_names=artist_name_projector.project(snapshot.metadata),
                 )
             except ValueError as exc:
                 judged_candidates.append(

@@ -410,6 +410,7 @@ export type ApiRemediation = {
 export type AppConfigResource = {
     add: CommandConfigResource;
     artist_ids: ArtistIdConfigResource;
+    artist_names: ArtistNameConfigResource;
     collision: CollisionConfigResource;
     metadata: MetadataConfigResource;
     organize: CommandConfigResource;
@@ -495,6 +496,20 @@ export type ArtistIdDraftRequest = {
      * Overwrite
      */
     overwrite: boolean;
+};
+
+/**
+ * ArtistNameConfigResource
+ *
+ * Editable full artist display-name preferences.
+ */
+export type ArtistNameConfigResource = {
+    /**
+     * Preferences
+     */
+    preferences: {
+        [key: string]: string;
+    };
 };
 
 /**
@@ -1273,6 +1288,7 @@ export type PathPreview = {
  */
 export type PathPreviewRequest = {
     artist_ids: ArtistIdConfigResource;
+    artist_names: ArtistNameConfigResource;
     /**
      * File Extension
      */

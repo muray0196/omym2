@@ -17,6 +17,7 @@ from omym2.domain.models.app_config import ArtistIdConfig, PathPolicyConfig
 from omym2.domain.models.plan_action import PlanActionReason
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.artist_id import generate_artist_id
+from omym2.domain.services.artist_name import ArtistNameProjector
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
@@ -60,6 +61,7 @@ ARTIST_ID_TEMPLATE = "{artist_id}/{title}"
 ARTIST_ONLY_TEMPLATE = "{artist}"
 ALBUM_ARTIST_ID_TEMPLATE = "{album}/{artist_id}/{title}"
 ALBUM_ARTIST_ID_TEMPLATE_PART_COUNT = 3
+DISPLAY_ARTIST_ID_TEMPLATE = "{album_artist}/{artist_id}/{title}"
 UNSAFE_ARTIST_ID_ENTRY = "../../../etc/passwd"
 UNUSED_ARTIST_ID_GENERATOR_MESSAGE = "unused artist ID generator was called"
 
@@ -157,6 +159,21 @@ def test_path_policy_generates_artist_id_when_no_saved_entry_exists() -> None:
         fallback_id=DEFAULT_ARTIST_ID_FALLBACK,
     )
     assert canonical_path == f"{expected_artist_id}/Example-Song.flac"
+
+
+def test_path_policy_projects_display_artist_without_changing_artist_id_source() -> None:
+    """Display preferences never replace the raw key used for saved artist IDs."""
+    source_artist = "エメ"
+    display_artist = "Aimer"
+    metadata = TrackMetadata(title=TITLE, artist=source_artist, album_artist=source_artist)
+    artist_names = ArtistNameProjector({source_artist: display_artist}).project(metadata)
+
+    canonical_path = PathPolicy(
+        PathPolicyConfig(template=DISPLAY_ARTIST_ID_TEMPLATE),
+        ArtistIdConfig(entries={source_artist: "AIMR"}),
+    ).canonical_path(metadata, FILE_EXTENSION, artist_names=artist_names)
+
+    assert canonical_path == "Aimer/AIMR/Example-Song.flac"
 
 
 def test_path_policy_does_not_generate_artist_id_when_template_does_not_use_it(

@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Config Contract
-description: Defines OMYM2's TOML config schema, raw-storage revision and atomic-save protocol, path policy, artist IDs, and metadata/collision policy.
-tags: [config, toml, concurrency, atomic-save, path-policy, artist-ids]
-timestamp: 2026-07-14T01:47:14+09:00
+description: Defines OMYM2's TOML config schema, raw-storage revision and atomic-save protocol, path policy, artist display-name preferences, artist IDs, and metadata/collision policy.
+tags: [config, toml, concurrency, atomic-save, path-policy, artist-names, artist-ids]
+timestamp: 2026-07-15T20:47:24+09:00
 ---
 
 # Config Contract
@@ -111,7 +111,8 @@ The `.config/` directory is reserved for OMYM2 internal data under the applicati
 ## TOML Schema, Defaults, And Validation
 
 The table below is the complete schema for the persisted config. Every table
-except `[artist_ids.entries]` has a fixed key set.
+except `[artist_ids.entries]` and `[artist_names.preferences]` has a fixed key
+set.
 
 | TOML path | Accepted value | Default when omitted |
 | --- | --- | --- |
@@ -134,6 +135,7 @@ except `[artist_ids.entries]` has a fixed key set.
 | `artist_ids.max_length` | positive integer | `8` |
 | `artist_ids.fallback_id` | value matching the saved artist-ID pattern below | `"NOART"` |
 | `artist_ids.entries` | table mapping non-empty source-artist strings to valid saved artist-ID values | empty mapping |
+| `artist_names.preferences` | table mapping non-empty source-artist strings to non-empty full display names | empty mapping |
 | `metadata.prefer_album_artist` | boolean | `true` |
 | `metadata.require_title` | boolean | `true` |
 | `metadata.require_artist` | boolean | `true` |
@@ -146,13 +148,14 @@ except `[artist_ids.entries]` has a fixed key set.
 Every named section is optional. A missing section, or a missing key in a
 present section, uses the table's default; `version` is the sole exception.
 `TomlConfigStore.save` serializes a deterministic configuration containing every
-non-null setting and an `[artist_ids.entries]` table, even when that mapping is
+non-null setting and both open-ended mapping tables, even when the mappings are
 empty.
 
 Unknown top-level keys and unknown keys in a fixed section are validation
-errors. `[artist_ids.entries]` is the only open-ended table: its keys are
-user-provided source artist names, so any non-empty string key is allowed.
-Its values must be non-empty strings. All ordinary string settings must be
+errors. The two open-ended tables use user-provided source artist names as
+keys, so any non-empty string key is allowed. Artist-ID values must satisfy the
+saved-ID rule below. Artist display-name values may contain arbitrary Unicode
+text but must be non-empty strings. All ordinary string settings must be
 non-empty when present; integers reject booleans; booleans must be TOML
 booleans. TOML validation checks configured paths only for string type and
 non-emptiness, not filesystem existence or accessibility.
@@ -198,7 +201,9 @@ The source music file suffix is appended after template rendering. Source suffix
 
 The default template does not include hash-based suffixes. If the final target path already exists, the PlanAction is blocked with `target_exists`.
 
-PathPolicy is pure and does not perform I/O. Target existence is checked by usecases through ports.
+PathPolicy is pure and does not perform I/O. It receives an already-derived
+artist-name projection rather than reading preferences or provider state.
+Target existence is checked by usecases through ports.
 
 `{disc}` renders from `TrackMetadata.disc_number` only. `disc_number_style`
 controls the displayed value:
@@ -233,6 +238,31 @@ It must not load fastText models or call MusicBrainz during path rendering.
 Artist ID settings participate in the Library registration path-policy
 fingerprint only when the active template contains the `{artist_id}`
 placeholder.
+
+`{artist}` and `{album_artist}` use the already-derived display-name projection
+when one is supplied. `{artist_id}` always uses the original metadata value as
+its lookup/generation key, so changing a full display-name preference never
+silently changes a saved or generated compact artist ID.
+
+## ArtistNameConfig
+
+Full artist display names are editable preferences stored in TOML separately
+from compact `artist_ids` path values. `preferences` is an exact mapping from
+one complete source metadata string to its preferred display string. Stage 1
+treats a multi-artist value as one opaque key; it does not split on commas or
+other guessed separators.
+
+An empty mapping is the disabled, no-behavior-change default. No fastText model
+or network provider is required to use preferences. During Plan creation and
+read-only path projection, the pure naming projection uses the preferred value
+when an exact entry exists and otherwise preserves the original value. Raw
+`TrackMetadata` and embedded tags remain unchanged.
+
+The complete mapping participates in `config_hash`. It participates in the
+Library path-policy fingerprint only when it is non-empty and the active
+template contains `{artist}` or `{album_artist}`. Empty preferences, and
+preferences used with artist-free or `{artist_id}`-only templates, preserve the
+existing path-policy fingerprint.
 
 ## ArtistIdConfig
 
