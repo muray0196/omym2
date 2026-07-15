@@ -547,6 +547,8 @@ def test_native_ui_probe_uses_uia_patterns_and_validates_evidence(
     assert "Set-And-VerifyValue -Root $documentRoot" in script
     assert "remote-debugging" not in script.casefold()
     assert "evaluate_js" not in script
+    assert "ConvertFrom-Json -InputObject" in script
+    assert "| ConvertFrom-Json" not in script
     assert arguments[0] == "42"
     assert arguments[1] == str(incoming.resolve())
     assert int(arguments[2]) == round(config.DESKTOP_WINDOWS_SMOKE_STARTUP_TIMEOUT_SECONDS * 1000)
@@ -591,6 +593,22 @@ def test_powershell_probe_forces_utf8_before_localized_json(monkeypatch: pytest.
     assert observed_scripts[0].startswith("param([string]$EncodedArguments)\n")
     assert _POWERSHELL_UTF8_PREAMBLE in observed_scripts[0]
     assert "FromBase64String" in observed_scripts[0]
+
+
+def test_powershell_probe_enumerates_arguments_for_windows_powershell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows PowerShell 5.1 pipes a decoded JSON array as one object, so splatting must re-enumerate it."""
+    observed_scripts: list[str] = []
+
+    def fake_run(command: tuple[str, ...], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed_scripts.append(Path(command[5]).read_text(encoding="utf-8-sig"))
+        return subprocess.CompletedProcess(command, 0, stdout='{"ok":true}\n', stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert _run_powershell("param([int]$First, [string]$Second)", "1", "two", timeout=1) == {"ok": True}
+    assert "ConvertFrom-Json | ForEach-Object { $_ })" in observed_scripts[0]
 
 
 def test_native_ui_plan_evidence_requires_one_new_ready_plan(

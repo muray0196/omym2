@@ -220,9 +220,10 @@ Add-Type -AssemblyName UIAutomationTypes
 
 $window = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$Handle)
 if ($null -eq $window) { throw 'The packaged window has no UI Automation root.' }
-$primaryNavigation = @($PrimaryNavigationJson | ConvertFrom-Json)
-$overviewAction = @($OverviewActionJson | ConvertFrom-Json)
-$addActions = @($AddActionsJson | ConvertFrom-Json)
+# Direct assignment keeps one element per JSON item on Windows PowerShell 5.1, which does not enumerate piped arrays.
+$primaryNavigation = ConvertFrom-Json -InputObject $PrimaryNavigationJson
+$overviewAction = ConvertFrom-Json -InputObject $OverviewActionJson
+$addActions = ConvertFrom-Json -InputObject $AddActionsJson
 
 function Get-VisibleMatches {
   param(
@@ -1113,8 +1114,11 @@ def _run_powershell(script: str, *arguments: str, timeout: float) -> dict[str, o
         "param([string]$EncodedArguments)\n"
         "$ErrorActionPreference = 'Stop'\n"
         f"{_POWERSHELL_UTF8_PREAMBLE}\n"
+        # ForEach-Object forces one splatted element per argument: Windows PowerShell 5.1
+        # emits the decoded JSON array as one pipeline object, so @(...) alone would bind
+        # the whole array to the probe's first parameter.
         "$decodedArguments = @([Text.Encoding]::UTF8.GetString("
-        "[Convert]::FromBase64String($EncodedArguments)) | ConvertFrom-Json)\n"
+        "[Convert]::FromBase64String($EncodedArguments)) | ConvertFrom-Json | ForEach-Object { $_ })\n"
         f"& {{\n{script}\n}} @decodedArguments\n"
     )
     try:
