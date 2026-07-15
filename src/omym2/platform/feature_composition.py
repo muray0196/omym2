@@ -27,7 +27,7 @@ from omym2.features.refresh.ports import CreateRefreshPlanPorts
 from omym2.features.settings.ports import SettingsPorts
 from omym2.features.tracks.ports import TracksPorts
 from omym2.features.undo.ports import CreateUndoPlanPorts
-from omym2.platform.artist_name_composition import local_artist_name_resolver_for
+from omym2.platform.artist_name_composition import plan_artist_name_resolver_for
 
 if TYPE_CHECKING:
     from omym2.platform.runtime_context import RuntimeContext
@@ -46,7 +46,11 @@ def build_create_add_plan_ports(runtime: RuntimeContext) -> CreateAddPlanPorts:
         file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=runtime.metadata_reader),
         file_presence=FilesystemFilePresence(),
         config_store=runtime.config_store,
-        artist_name_resolver=local_artist_name_resolver_for(runtime),
+        artist_name_resolver=plan_artist_name_resolver_for(
+            runtime.database_file,
+            runtime.artist_name_language_predictor,
+            runtime.artist_name_provider,
+        ),
         path_resolver=FilesystemPathResolver(),
         clock=SystemClock(),
         id_generator=Uuid7IdGenerator(),
@@ -112,7 +116,11 @@ def build_create_organize_plan_ports(runtime: RuntimeContext) -> CreateOrganizeP
         file_scanner=FilesystemFileScanner(),
         file_snapshot_reader=FilesystemFileSnapshotReader(metadata_reader=runtime.metadata_reader),
         config_store=runtime.config_store,
-        artist_name_resolver=local_artist_name_resolver_for(runtime),
+        artist_name_resolver=plan_artist_name_resolver_for(
+            runtime.database_file,
+            runtime.artist_name_language_predictor,
+            runtime.artist_name_provider,
+        ),
         path_resolver=FilesystemPathResolver(),
         clock=SystemClock(),
         id_generator=Uuid7IdGenerator(),
@@ -132,7 +140,11 @@ def build_create_refresh_plan_ports(runtime: RuntimeContext) -> CreateRefreshPla
         file_stat_reader=FilesystemFileScanner(),
         file_presence=FilesystemFilePresence(),
         config_store=runtime.config_store,
-        artist_name_resolver=local_artist_name_resolver_for(runtime),
+        artist_name_resolver=plan_artist_name_resolver_for(
+            runtime.database_file,
+            runtime.artist_name_language_predictor,
+            runtime.artist_name_provider,
+        ),
         path_resolver=FilesystemPathResolver(),
         clock=SystemClock(),
         id_generator=Uuid7IdGenerator(),

@@ -56,6 +56,6 @@ def _generate_artist_ids(
         "generate_artist_ids",
         lambda: GenerateArtistIdsUseCase(
             config_store=runtime.config_store,
-            artist_name_resolver=artist_name_resolver_for(runtime, predictor, provider),
+            artist_name_resolver=artist_name_resolver_for(runtime.database_file, predictor, provider),
         ).execute(request),
     )

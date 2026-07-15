@@ -1,9 +1,9 @@
 ---
 type: Execution Spec
 title: Refresh Execution
-description: Defines refresh target re-evaluation with artist-name resolution diagnostics, move versus metadata actions, stable Track identity, and the explicit size+mtime trust-stat optimization and fallback rules.
+description: Defines refresh target re-evaluation with artist-name resolution diagnostics and reconciliation safety, move versus metadata actions, stable Track identity, and the explicit size+mtime trust-stat optimization and fallback rules.
 tags: [refresh, metadata, artist-names, plan-creation, track-id]
-timestamp: 2026-07-16T00:44:26+09:00
+timestamp: 2026-07-16T01:53:29+09:00
 ---
 
 # Refresh Execution
@@ -59,6 +59,16 @@ Every Refresh action whose candidate reached resolution records the aligned
 artist and album-artist source, resolved value, provenance, and issue. A
 candidate blocked before resolution has no diagnostic pair. Both move and
 `refresh_metadata` actions retain this plan-time review evidence.
+
+An executable Refresh action cannot introduce a resolved artist name while
+leaving another active Track at an obsolete canonical artist path. A partial
+Refresh that would do so is refused and requires Organize to reconcile the
+whole Library. Selected candidates with no action or a blocked action still
+count as unreconciled; a full Refresh can proceed when every affected Track has
+an executable action or is already at its resolved target. A newly accepted
+provider result may already be committed to the resolver cache before this
+refusal, but no Refresh Plan or PlanAction is persisted; Organize then consumes
+the sticky result.
 
 `refresh` does not move files directly. As a rule, it creates a Plan.
 

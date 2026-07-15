@@ -1,16 +1,20 @@
 """
-Summary: Tests RuntimeContext construction.
-Why: Verifies path overrides, cwd fallback, and shared adapter construction stay correct.
+Summary: Tests RuntimeContext path and shared adapter construction.
+Why: Verifies storage overrides and optional naming activation stay process-scoped.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from omym2.adapters.artist_ids.fasttext_language_detector import OptionalFastTextLanguageDetector
+from omym2.adapters.artist_ids.musicbrainz_artist_lookup import MusicBrainzArtistLookup
+from omym2.adapters.artist_ids.no_op_language_detector import NoOpLanguageDetector
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.fs.exclusive_operation_lock import FilesystemExclusiveOperationLock
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
+from omym2.config import ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE
 from omym2.platform.runtime_context import runtime_context_for
 
 if TYPE_CHECKING:
@@ -109,3 +113,40 @@ def test_runtime_context_for_constructs_one_shared_config_store_and_metadata_rea
     assert isinstance(runtime.config_store, TomlConfigStore)
     assert runtime.config_store.config_path == config_path
     assert isinstance(runtime.metadata_reader, MutagenMetadataReader)
+
+
+def test_runtime_context_for_disables_new_artist_name_lookups_without_process_opt_in(tmp_path: Path) -> None:
+    """An absent model-path environment value keeps normal Plan composition local-only."""
+    runtime = runtime_context_for(
+        tmp_path / "config.toml",
+        tmp_path / "omym2.sqlite3",
+        environment={},
+    )
+
+    assert isinstance(runtime.artist_name_language_predictor, NoOpLanguageDetector)
+    assert isinstance(runtime.artist_name_provider, MusicBrainzArtistLookup)
+
+
+def test_runtime_context_for_builds_one_lazy_predictor_from_process_opt_in(tmp_path: Path) -> None:
+    """A non-empty model path activates lazy automatic lookup for the shared process runtime."""
+    model_path = tmp_path / "lid.176.ftz"
+    runtime = runtime_context_for(
+        tmp_path / "config.toml",
+        tmp_path / "omym2.sqlite3",
+        environment={ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE: f"  {model_path}  "},
+    )
+
+    predictor = runtime.artist_name_language_predictor
+    assert isinstance(predictor, OptionalFastTextLanguageDetector)
+    assert predictor.model_path == model_path
+
+
+def test_runtime_context_for_treats_blank_artist_name_model_path_as_disabled(tmp_path: Path) -> None:
+    """Whitespace-only runtime configuration cannot accidentally enable model work."""
+    runtime = runtime_context_for(
+        tmp_path / "config.toml",
+        tmp_path / "omym2.sqlite3",
+        environment={ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE: "   "},
+    )
+
+    assert isinstance(runtime.artist_name_language_predictor, NoOpLanguageDetector)

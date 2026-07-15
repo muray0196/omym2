@@ -3,7 +3,7 @@ type: Development Guide
 title: Development Harness
 description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, Windows desktop CI expectations, suppressions, and Python runtime configuration policy.
 tags: [development, tooling, quality-gates, validation, web, desktop]
-timestamp: 2026-07-15T00:13:25+09:00
+timestamp: 2026-07-16T01:53:29+09:00
 ---
 
 # Development Harness
@@ -237,3 +237,28 @@ Each suppression must include a brief justification comment explaining why the w
 Python/runtime configuration uses environment variables only.
 
 This does not change OMYM2 application configuration. Application config remains TOML-based and is governed by [contracts/config.md](../contracts/config.md).
+
+### Automatic Artist-Name Lookup Development Opt-In
+
+`OMYM2_ARTIST_NAME_FASTTEXT_MODEL_PATH` is the process-level development
+opt-in for new fastText-gated MusicBrainz artist-name lookups during Add,
+Organize, and Refresh Plan creation. Its value is a fastText language-model
+path; use an absolute path so CLI and browser-hosted Web processes select the
+same file. An unset, empty, or whitespace-only value keeps new provider
+lookups disabled while configured preferences and accepted cache rows remain
+available.
+
+The project does not install a fastText prediction runtime or distribute a
+model yet. When the variable is set, normal Plan composition creates one lazy
+predictor and one rate-limited provider per process. The optional `fasttext`
+module and model are loaded only when an otherwise eligible uncached source
+first needs language detection. Import, model-load, and model-open failures are
+reported to the resolver as detector unavailability, so Plan creation falls
+back to the original source and does not contact MusicBrainz. A load failure is
+remembered for the process instead of being retried for every candidate.
+
+Apply, Undo, Check, history, inspection, Track browsing, and Settings preview
+never invoke the predictor or provider. Persisted enablement, runtime tunables,
+model distribution, and packaged Windows support remain separate release work;
+this environment variable does not add a TOML key or enable packaged builds by
+default.

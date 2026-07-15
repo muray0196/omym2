@@ -18,6 +18,7 @@ from omym2.adapters.fs.hash_calculator import FileContentHasher
 from omym2.adapters.fs.path_resolver import FilesystemPathResolver
 from omym2.features.add.ports import CreateAddPlanPorts
 from omym2.features.apply.ports import ApplyPlanPorts
+from omym2.features.artist_names.usecases.resolve_artist_names import ResolveArtistNamesUseCase
 from omym2.features.check.ports import CheckLibraryPorts, CheckQueryPorts
 from omym2.features.common_ports import SystemClock, Uuid7IdGenerator
 from omym2.features.history.ports import HistoryPorts
@@ -77,6 +78,9 @@ def test_build_create_add_plan_ports_matches_add_command_recipe(runtime: Runtime
     assert ports.file_snapshot_reader.metadata_reader is runtime.metadata_reader
     assert isinstance(ports.file_presence, FilesystemFilePresence)
     assert ports.config_store is runtime.config_store
+    assert isinstance(ports.artist_name_resolver, ResolveArtistNamesUseCase)
+    assert ports.artist_name_resolver.ports.language_predictor is runtime.artist_name_language_predictor
+    assert ports.artist_name_resolver.ports.artist_name_provider is runtime.artist_name_provider
     assert isinstance(ports.path_resolver, FilesystemPathResolver)
     assert isinstance(ports.clock, SystemClock)
     assert isinstance(ports.id_generator, Uuid7IdGenerator)
@@ -95,6 +99,7 @@ def test_build_apply_plan_ports_matches_shared_apply_recipe(runtime: RuntimeCont
     assert isinstance(ports.path_resolver, FilesystemPathResolver)
     assert isinstance(ports.clock, SystemClock)
     assert isinstance(ports.id_generator, Uuid7IdGenerator)
+    assert not hasattr(ports, "artist_name_resolver")
 
 
 def test_build_check_library_ports_matches_check_command_recipe(runtime: RuntimeContext) -> None:
@@ -153,6 +158,9 @@ def test_build_create_organize_plan_ports_matches_organize_command_recipe(runtim
     assert isinstance(ports.file_snapshot_reader, FilesystemFileSnapshotReader)
     assert ports.file_snapshot_reader.metadata_reader is runtime.metadata_reader
     assert ports.config_store is runtime.config_store
+    assert isinstance(ports.artist_name_resolver, ResolveArtistNamesUseCase)
+    assert ports.artist_name_resolver.ports.language_predictor is runtime.artist_name_language_predictor
+    assert ports.artist_name_resolver.ports.artist_name_provider is runtime.artist_name_provider
     assert isinstance(ports.path_resolver, FilesystemPathResolver)
     assert isinstance(ports.clock, SystemClock)
     assert isinstance(ports.id_generator, Uuid7IdGenerator)
@@ -179,6 +187,9 @@ def test_build_create_refresh_plan_ports_matches_refresh_command_recipe(runtime:
     assert isinstance(ports.file_stat_reader, FilesystemFileScanner)
     assert isinstance(ports.file_presence, FilesystemFilePresence)
     assert ports.config_store is runtime.config_store
+    assert isinstance(ports.artist_name_resolver, ResolveArtistNamesUseCase)
+    assert ports.artist_name_resolver.ports.language_predictor is runtime.artist_name_language_predictor
+    assert ports.artist_name_resolver.ports.artist_name_provider is runtime.artist_name_provider
     assert isinstance(ports.path_resolver, FilesystemPathResolver)
     assert isinstance(ports.clock, SystemClock)
     assert isinstance(ports.id_generator, Uuid7IdGenerator)

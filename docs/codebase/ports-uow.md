@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Ports And UnitOfWork
 description: Defines OMYM2's ports and UnitOfWork contract, including artist-name resolution and cache transactions, durable Operations, Config revision CAS, atomic Apply claims, filesystem mutation preconditions, and FileEvent transaction ordering.
 tags: [ports, unit-of-work, transactions, architecture, artist-names]
-timestamp: 2026-07-15T23:22:18+09:00
+timestamp: 2026-07-16T01:53:29+09:00
 ---
 
 # Ports And UnitOfWork
@@ -77,10 +77,20 @@ The resolution and acceptance rules are authoritative in
 [Artist Name Batch Resolution](../DOMAIN.md#artist-name-batch-resolution).
 
 `add`, `organize`, `refresh`, and `artist-ids generate` all consume this same
-port. Normal Plan composition uses the local resolver mode until persisted
-automatic-lookup controls provide a fastText model; this mode still applies
-exact preferences and accepted cache entries. An enabled predictor/provider
-changes only new cache-miss resolution, not the Plan usecase contract.
+port. Normal Plan composition shares one lazy language predictor and one
+rate-limited provider for the process. The development-only
+`OMYM2_ARTIST_NAME_FASTTEXT_MODEL_PATH` runtime opt-in selects the predictor's
+model; without it, the no-op predictor still permits exact preferences and
+accepted cache entries. Optional runtime or model-load failure becomes a
+detector-unavailable observation and cannot trigger a provider request. The
+environment boundary and its packaged-build limits are authoritative in
+[Development Harness](../development/harness.md#automatic-artist-name-lookup-development-opt-in).
+An enabled predictor/provider changes only new cache-miss resolution, not the
+Plan usecase contract.
+
+Add and partial Refresh reject an executable resolved-name move when other
+active Tracks would remain at an obsolete canonical artist path. Organize owns
+that whole-Library reconciliation.
 
 The `artist_names` feature owns two narrower outbound ports:
 
