@@ -4,19 +4,17 @@
 
 This is an active, multi-session initiative with cross-cutting changes to configuration, metadata naming, Plan execution, persistence, Web/CLI settings, and desktop packaging.
 
-Stage 1 is complete. Stage 2 is in progress: the shared resolver now feeds
-normal Plan target calculation, Add refuses an import that would mix a new
-resolved name with unreconciled active Library paths, and each resolved
-PlanAction retains its artist and album-artist source, result, provenance, and
-issue for CLI and Web review. Opt-in activation of new fastText/MusicBrainz
-lookups remains the next delivery target; runtime and packaging hardening
-remains ordered after that behavior is proven.
+Stages 1 and 2 are complete. Normal Add, Organize, and Refresh composition now
+supports an explicit process-level development opt-in for lazy fastText-gated
+MusicBrainz lookup, shares the loaded predictor and rate-limited provider, and
+falls back locally when the optional runtime or model cannot load. Persisted
+runtime controls and packaging hardening are the next delivery target.
 
 The rollout order is intentional:
 
 1. Established deterministic artist display-name preferences and the persistence foundation.
-2. In progress: enable opt-in fastText-gated MusicBrainz English/Latin name resolution in normal Plan creation, using the delivered review diagnostics.
-3. Harden runtime controls, packaging, and operational behavior.
+2. Delivered opt-in fastText-gated MusicBrainz English/Latin name resolution in normal Plan creation, with review diagnostics.
+3. Next: harden runtime controls, packaging, and operational behavior.
 4. Add companion lyrics and artwork handling.
 5. Add reviewed collection of unprocessed files.
 
@@ -62,7 +60,7 @@ The initiative does not add tag editing, playback, remote lyrics or artwork down
 * Apply always executes recorded PlanActions and never re-resolves names or recalculates target paths.
 * MusicBrainz access is opt-in. Without an enabled provider and an available fastText model, OMYM2 uses preferences, accepted cache entries, and original metadata without blocking local operation.
 * MusicBrainz matching must use deterministic acceptance criteria rather than accepting the first search result. English-locale aliases are preferred, then other Latin aliases or names; an uncertain result is treated as no result.
-* Provider calls remain rate-limited, bounded by timeout and retry policy, and cached so large libraries do not repeat identical lookups.
+* Provider calls remain rate-limited, bounded by timeout and retry policy, and cached so large libraries do not repeat identical lookups. Stage 2 enforces request cadence within one composed process; Stage 3 owns persisted controls and durable cross-process cadence coordination.
 
 ### Persistence and configuration
 
@@ -97,16 +95,24 @@ The stage establishes the separation between raw tag metadata, preferred display
 
 **Outcome:** Eligible Japanese artist and album-artist values are resolved during normal Plan creation and appear as reviewable canonical target paths.
 
-**Status:** In progress. Add, Organize, and Refresh share the resolver and
-sticky cache projection, and Add now requires Organize before an executable
-incoming move could introduce mixed resolved naming. Their PlanActions now
-persist and expose the exact artist and album-artist source, resolved value,
-provenance, and unresolved/ambiguous issue observed during target calculation;
-pre-resolution blocks and Undo actions explicitly carry no naming snapshot.
-Normal composition still disables new provider lookup. The available
-`lid.176.ftz` file remains a local development input; a CPython 3.14 and
-Windows-compatible prediction runtime has not yet passed the distribution
-gate.
+**Status:** Complete for source/runtime behavior. Add, Organize, and Refresh
+share the resolver and sticky cache projection, and Add or a partial Refresh
+requires Organize before an executable move could introduce mixed resolved
+naming.
+Their PlanActions persist and expose the exact artist and album-artist source,
+resolved value, provenance, and unresolved/ambiguous issue observed during
+target calculation; pre-resolution blocks and Undo actions explicitly carry
+no naming snapshot.
+
+Normal CLI and Web Plan composition honors the development-only
+`OMYM2_ARTIST_NAME_FASTTEXT_MODEL_PATH` process opt-in. It loads the model only
+for the first eligible uncached source, reuses the predictor and provider for
+the process, and treats an unavailable optional runtime or model as a local
+fallback without a MusicBrainz request. Apply remains resolver-free and uses
+the recorded action. The available `lid.176.ftz` file remains a local
+development input; persisted enablement and a CPython 3.14 and
+Windows-compatible prediction runtime/model distribution have not yet passed
+the Stage 3 gate.
 
 `add`, `organize`, and `refresh` use one shared resolver and cache contract. `organize` can reconcile existing paths after a preference or accepted resolution changes. `add` may use a resolved name for a new artist, but it must refuse mixed naming when an existing Library artist requires reconciliation. The existing `artist-ids generate` flow should reuse the shared naming result where appropriate while keeping display-name preferences and compact IDs separate.
 
@@ -118,7 +124,7 @@ opaque value.
 
 Plan review surfaces the source value, resolved value, provenance, and unresolved/ambiguous state. Provider failure is non-fatal and falls back to the original value.
 
-**Release gate:** Apply performs no network or model work; identical source/config/cache state produces identical targets; offline and timeout cases remain usable; ambiguous MusicBrainz results do not become canonical automatically; and user overrides deterministically win over provider data.
+**Release gate met:** Apply performs no network or model work; identical source/config/cache state produces identical targets; offline and timeout cases remain usable; ambiguous MusicBrainz results do not become canonical automatically; and user overrides deterministically win over provider data.
 
 ### Stage 3 — Runtime controls and distribution hardening
 

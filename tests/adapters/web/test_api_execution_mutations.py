@@ -6,21 +6,25 @@ Why: Proves synchronous preflight and Apply/Cancel race responses before dispatc
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Never, cast
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 
+from omym2.adapters.artist_ids.musicbrainz_artist_lookup import MusicBrainzArtistLookup
 from omym2.adapters.config.application_paths import default_application_paths
+from omym2.adapters.config.default_config import default_app_config
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
 from omym2.adapters.web.app import create_web_app
 from omym2.config import (
+    ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE,
     HTTP_ACCEPTED_STATUS,
     HTTP_CONFLICT_STATUS,
     HTTP_NOT_FOUND_STATUS,
     HTTP_OK_STATUS,
+    WEB_API_ADD_PLAN_ROUTE,
     WEB_API_APPLY_PLAN_ROUTE,
     WEB_API_CANCEL_PLAN_ROUTE,
     WEB_API_RUN_DETAIL_ROUTE,
@@ -29,13 +33,21 @@ from omym2.config import (
     WEB_CSRF_HEADER_NAME,
     WEB_IDEMPOTENCY_HEADER_NAME,
 )
+from omym2.domain.models.artist_name_resolution import ArtistNameResolutionProvenance
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track_metadata import TrackMetadata
+from omym2.domain.services.artist_name import derive_artist_name_source_key
+from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.apply.usecases.apply_plan import TARGET_EXISTS_MOVE_FAILURE_MESSAGE
+from omym2.features.artist_names.dto import (
+    ArtistLanguagePrediction,
+    ArtistNameProviderCandidate,
+    ArtistNameSearchResult,
+)
 from omym2.features.common_ports import ExclusiveOperationRequest
 from omym2.platform.runtime_context import runtime_context_for
 from omym2.platform.web_composition import build_api_route_context
@@ -53,6 +65,12 @@ RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345692"))
 IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def012345693")
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345694"))
 AUDIO_CONTENT = b"not-real-audio"
+APPLY_MODEL_LOAD_MESSAGE = "Apply must not load the automatic artist-name model."
+APPLY_PROVIDER_LOOKUP_MESSAGE = "Apply must not contact the artist-name provider."
+EXPECTED_RESOLVED_TARGET_PATH = "Hikaru-Utada/2026_Album/1-02_Title.flac"
+JAPANESE_ARTIST = "宇多田ヒカル"
+MUSICBRAINZ_ARTIST_ID = "4a9af2f1-e4b7-4b7b-a0be-7f3d2e6f8f21"
+RESOLVED_ARTIST = "Hikaru Utada"
 SENSITIVE_LIBRARY_COMPONENT = "private-owner-token"
 SOURCE_PATH = "Incoming/Secret.flac"
 TARGET_PATH = "Artist/Existing.flac"
@@ -133,7 +151,10 @@ def test_undo_preflight_returns_not_found_without_reserving_an_operation(tmp_pat
         assert uow.operations.find_by_idempotency_key(IDEMPOTENCY_KEY) is None
 
 
-def test_apply_route_claims_and_completes_one_durable_run(tmp_path: Path) -> None:
+def test_apply_route_claims_and_completes_one_durable_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Web Apply uses the atomic claim and returns a pollable run_completed Operation."""
     paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
@@ -157,6 +178,7 @@ def test_apply_route_claims_and_completes_one_durable_run(tmp_path: Path) -> Non
             )
         )
         uow.commit()
+    _forbid_automatic_artist_name_lookup(monkeypatch, tmp_path / "apply-must-not-load.ftz")
     context = build_api_route_context(paths.config_file, paths.database_file)
     client = TestClient(
         create_web_app(context, tmp_path / "missing-static", allowed_hosts=("testserver",)),
@@ -195,6 +217,93 @@ def test_apply_route_claims_and_completes_one_durable_run(tmp_path: Path) -> Non
     assert action.status is ActionStatus.APPLIED
     assert len(runs) == 1
     assert result["run_id"] == str(runs[0].run_id)
+
+
+def test_add_route_runtime_opt_in_records_new_musicbrainz_target_and_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Normal Web Add shares the explicit lazy model/provider activation used by CLI."""
+    paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    incoming_root = tmp_path / "incoming"
+    audio_path = incoming_root / "Title.flac"
+    model_path = tmp_path / "lid.176.ftz"
+    library_root.mkdir()
+    incoming_root.mkdir()
+    _ = audio_path.write_bytes(AUDIO_CONTENT)
+    _register_library(paths.database_file, library_root)
+    provider_calls: list[str] = []
+
+    def read(self: MutagenMetadataReader, path: FileSystemPath) -> TrackMetadata:
+        del self
+        assert path == audio_path
+        return TrackMetadata(
+            title="Title",
+            artist=JAPANESE_ARTIST,
+            album="Album",
+            year=2026,
+            track_number=2,
+            disc_number=1,
+        )
+
+    def build_predictor(*, model_path: Path | None = None) -> _JapanesePredictor:
+        assert model_path == tmp_path / "lid.176.ftz"
+        return _JapanesePredictor()
+
+    def search_artists(_self: MusicBrainzArtistLookup, source_name: str) -> ArtistNameSearchResult:
+        provider_calls.append(source_name)
+        return ArtistNameSearchResult(
+            available=True,
+            candidates=(
+                ArtistNameProviderCandidate(
+                    provider_artist_id=MUSICBRAINZ_ARTIST_ID,
+                    score=100,
+                    name=RESOLVED_ARTIST,
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(MutagenMetadataReader, "read", read)
+    monkeypatch.setattr(
+        "omym2.adapters.artist_ids.fasttext_language_detector.FastTextLanguageDetector",
+        build_predictor,
+    )
+    monkeypatch.setattr(MusicBrainzArtistLookup, "search_artists", search_artists)
+    monkeypatch.setenv(ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE, str(model_path))
+    context = build_api_route_context(paths.config_file, paths.database_file)
+    client = TestClient(
+        create_web_app(context, tmp_path / "missing-static", allowed_hosts=("testserver",)),
+        raise_server_exceptions=False,
+    )
+
+    try:
+        accepted = client.post(
+            WEB_API_ADD_PLAN_ROUTE,
+            json={"source_path": str(incoming_root), "library_id": str(LIBRARY_ID)},
+            headers={
+                WEB_CSRF_HEADER_NAME: context.csrf_token,
+                WEB_IDEMPOTENCY_HEADER_NAME: str(IDEMPOTENCY_KEY),
+            },
+        )
+    finally:
+        assert context.close_runtime is not None
+        context.close_runtime()
+
+    assert accepted.status_code == HTTP_ACCEPTED_STATUS
+    assert provider_calls == [JAPANESE_ARTIST]
+    source_key = derive_artist_name_source_key(JAPANESE_ARTIST)
+    assert source_key is not None
+    with SQLiteUnitOfWork(paths.database_file) as uow:
+        plan = uow.plans.list_by_library(LIBRARY_ID)[0]
+        action = uow.plan_actions.list_by_plan(plan.plan_id)[0]
+        accepted_name = uow.accepted_artist_names.find_by_source_key(source_key)
+    assert action.target_path == EXPECTED_RESOLVED_TARGET_PATH
+    assert action.artist_name_diagnostics is not None
+    assert action.artist_name_diagnostics.artist.resolved_name == RESOLVED_ARTIST
+    assert action.artist_name_diagnostics.artist.provenance is ArtistNameResolutionProvenance.NEW_MUSICBRAINZ
+    assert accepted_name is not None
+    assert accepted_name.resolved_name == RESOLVED_ARTIST
 
 
 def test_apply_move_failure_redacts_sensitive_path_from_history_json(
@@ -306,3 +415,52 @@ def _patch_metadata_reader(monkeypatch: pytest.MonkeyPatch) -> None:
         return TrackMetadata(title="Secret")
 
     monkeypatch.setattr(MutagenMetadataReader, "read", read)
+
+
+def _register_library(database_path: Path, library_root: Path) -> None:
+    """Persist one registered Library suitable for normal Add planning."""
+    config = default_app_config()
+    with SQLiteUnitOfWork(database_path) as uow:
+        uow.libraries.save(
+            Library(
+                library_id=LIBRARY_ID,
+                root_path=str(library_root),
+                path_policy_hash=calculate_path_policy_fingerprint(
+                    config.path_policy,
+                    config.artist_ids,
+                    artist_name_config=config.artist_names,
+                ),
+                registered_at=NOW,
+                status=LibraryStatus.REGISTERED,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        uow.commit()
+
+
+class _JapanesePredictor:
+    """Return the deterministic eligible observation used by composition tests."""
+
+    def predict_language(self, text: str) -> ArtistLanguagePrediction:
+        assert text == JAPANESE_ARTIST
+        return ArtistLanguagePrediction(label="__label__ja", confidence=0.99, available=True)
+
+
+def _forbid_automatic_artist_name_lookup(monkeypatch: pytest.MonkeyPatch, model_path: Path) -> None:
+    """Make any model load or provider request fail the current Apply test."""
+
+    def fail_model_load(*, model_path: Path | None = None) -> Never:
+        del model_path
+        raise AssertionError(APPLY_MODEL_LOAD_MESSAGE)
+
+    def fail_provider_lookup(_self: MusicBrainzArtistLookup, source_name: str) -> Never:
+        del source_name
+        raise AssertionError(APPLY_PROVIDER_LOOKUP_MESSAGE)
+
+    monkeypatch.setenv(ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE, str(model_path))
+    monkeypatch.setattr(
+        "omym2.adapters.artist_ids.fasttext_language_detector.FastTextLanguageDetector",
+        fail_model_load,
+    )
+    monkeypatch.setattr(MusicBrainzArtistLookup, "search_artists", fail_provider_lookup)

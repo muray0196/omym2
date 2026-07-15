@@ -239,6 +239,9 @@ ARTIST_ID_ENTRY_VALUE_PATTERN: Final = (
 ARTIST_ID_SPLIT_PATTERN: Final = r"[\s-]+"  # separators that divide artist names into allocation words
 ARTIST_ID_MULTI_ARTIST_SEPARATOR: Final = ","  # separator between source artist names in metadata text
 ARTIST_ID_VOWELS: Final = frozenset("AEIOU")  # vowels deprioritized after the first character in a word
+ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE: Final = (
+    "OMYM2_ARTIST_NAME_FASTTEXT_MODEL_PATH"  # process opt-in path for automatic artist naming
+)
 FASTTEXT_JAPANESE_LABEL: Final = "__label__ja"  # fastText label that means Japanese text
 ARTIST_NAME_LANGUAGE_CONFIDENCE_MIN: Final = 0.8  # minimum fastText confidence for automatic naming, 0..1
 ARTIST_NAME_LANGUAGE_CONFIDENCE_MAX: Final = 1.0  # maximum valid fastText confidence for automatic naming

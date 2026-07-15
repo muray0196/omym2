@@ -1,6 +1,6 @@
 """
-Summary: Tests artist ID adapter selection builders.
-Why: Guards the moved selection logic used by ArtistIdsCommandPorts against drift.
+Summary: Tests explicit and automatic artist-name adapter selection builders.
+Why: Guards eager CLI selection and lazy normal-Plan activation against drift.
 """
 
 from __future__ import annotations
@@ -9,9 +9,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from omym2.adapters.artist_ids.fasttext_language_detector import OptionalFastTextLanguageDetector
 from omym2.adapters.artist_ids.musicbrainz_artist_lookup import MusicBrainzArtistLookup
 from omym2.adapters.artist_ids.no_op_language_detector import NoOpLanguageDetector
-from omym2.platform.artist_name_composition import default_artist_name_provider, language_predictor_for_model
+from omym2.platform.artist_name_composition import (
+    automatic_language_predictor_for_model,
+    default_artist_name_provider,
+    language_predictor_for_model,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -20,6 +25,23 @@ if TYPE_CHECKING:
 def test_language_predictor_for_model_returns_no_op_when_model_path_is_none() -> None:
     """A missing --fasttext-model option selects the no-op predictor."""
     detector = language_predictor_for_model(None)
+
+    assert isinstance(detector, NoOpLanguageDetector)
+
+
+def test_automatic_language_predictor_for_model_is_lazy_when_model_path_is_present(tmp_path: Path) -> None:
+    """Normal Plan selection records the opt-in without importing fastText eagerly."""
+    model_path = tmp_path / "lid.176.ftz"
+
+    detector = automatic_language_predictor_for_model(model_path)
+
+    assert isinstance(detector, OptionalFastTextLanguageDetector)
+    assert detector.model_path == model_path
+
+
+def test_automatic_language_predictor_for_model_returns_no_op_without_model_path() -> None:
+    """Normal Plan selection stays local-only when the process did not opt in."""
+    detector = automatic_language_predictor_for_model(None)
 
     assert isinstance(detector, NoOpLanguageDetector)
 

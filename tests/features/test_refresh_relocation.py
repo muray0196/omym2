@@ -36,10 +36,12 @@ from omym2.features.refresh.dto import CreateRefreshPlanRequest
 from omym2.features.refresh.ports import CreateRefreshPlanPorts
 from omym2.features.refresh.usecases.create_refresh_plan import (
     AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE,
+    ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE,
     NO_REGISTERED_LIBRARY_MESSAGE,
     REFRESH_TARGET_NOT_FOUND_MESSAGE,
     STALE_LIBRARY_MESSAGE,
     CreateRefreshPlanUseCase,
+    RefreshLibraryReconciliationRequiredError,
     RefreshLibrarySelectionError,
     RefreshTargetSelectionError,
 )
@@ -73,6 +75,7 @@ OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568e"))
 IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def01234568f")
 SECOND_NEW_PATH = "Artist/2026_Album/1-03_Second-New.flac"
 SECOND_OLD_PATH = "Artist/2026_Album/1-03_Second-Old.flac"
+SECOND_PREFERRED_ARTIST_PATH = "Preferred-Artist/2026_Album/1-03_Second-New.flac"
 SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 
@@ -100,6 +103,7 @@ SECOND_NEW_METADATA = TrackMetadata(
     track_number=3,
     disc_number=1,
 )
+NORMALIZED_PEER_METADATA = replace(SECOND_NEW_METADATA, artist=" Artist ")
 PEER_METADATA = TrackMetadata(
     title="Peer",
     artist="Artist",
@@ -208,6 +212,92 @@ def test_refresh_projects_shared_artist_name_resolution_without_updating_raw_tra
     assert uow.tracks.get(TRACK_ID) == track
     assert isinstance(ports.artist_name_resolver, MappingArtistNameResolver)
     assert ports.artist_name_resolver.calls == [("Artist", None)]
+
+
+def test_refresh_requires_organize_before_partial_artist_name_reconciliation() -> None:
+    """A narrow Refresh cannot move one Track while leaving a related peer at the old artist path."""
+    uow = _uow_with_library_and_tracks(
+        _track(),
+        _track(SECOND_TRACK_ID, SECOND_NEW_PATH, metadata=NORMALIZED_PEER_METADATA),
+    )
+    source_path = _absolute(OLD_PATH)
+    ports, _ = _ports(
+        uow,
+        {source_path: _snapshot(source_path, NEW_METADATA)},
+        SequenceIdGenerator(),
+        options=PortOptions(resolved_names={"Artist": "Preferred Artist"}),
+    )
+
+    with pytest.raises(
+        RefreshLibraryReconciliationRequiredError,
+        match=ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE,
+    ):
+        _ = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
+
+    assert uow.plans.records == {}
+    assert uow.plan_actions.records == {}
+    assert isinstance(ports.artist_name_resolver, MappingArtistNameResolver)
+    assert ports.artist_name_resolver.calls == [("Artist", None)]
+
+
+def test_refresh_allows_artist_name_reconciliation_when_every_related_track_moves() -> None:
+    """A full Refresh may reconcile every active Track to the same resolved artist path."""
+    uow = _uow_with_library_and_tracks(
+        _track(),
+        _track(SECOND_TRACK_ID, SECOND_NEW_PATH, metadata=NORMALIZED_PEER_METADATA),
+    )
+    source_path = _absolute(OLD_PATH)
+    second_source_path = _absolute(SECOND_NEW_PATH)
+    ports, _ = _ports(
+        uow,
+        {
+            source_path: _snapshot(source_path, NEW_METADATA),
+            second_source_path: _snapshot(second_source_path, NORMALIZED_PEER_METADATA),
+        },
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, DUPLICATE_ACTION_ID)),
+        ),
+        options=PortOptions(resolved_names={"Artist": "Preferred Artist", " Artist ": "Preferred Artist"}),
+    )
+
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, include_all=True))
+
+    assert tuple(action.target_path for action in plan.actions) == (
+        NEW_PREFERRED_ARTIST_PATH,
+        SECOND_PREFERRED_ARTIST_PATH,
+    )
+
+
+def test_refresh_reconciliation_treats_a_blocked_selected_track_as_unreconciled() -> None:
+    """A blocked peer cannot be omitted while another selected Track adopts the resolved name."""
+    uow = _uow_with_library_and_tracks(
+        _track(),
+        _track(SECOND_TRACK_ID, SECOND_NEW_PATH, metadata=NORMALIZED_PEER_METADATA),
+    )
+    source_path = _absolute(OLD_PATH)
+    second_source_path = _absolute(SECOND_NEW_PATH)
+    ports, _ = _ports(
+        uow,
+        {
+            source_path: _snapshot(source_path, NEW_METADATA),
+            second_source_path: _snapshot(second_source_path, NORMALIZED_PEER_METADATA),
+        },
+        SequenceIdGenerator(),
+        options=PortOptions(
+            existing_files={_absolute(SECOND_PREFERRED_ARTIST_PATH)},
+            resolved_names={"Artist": "Preferred Artist", " Artist ": "Preferred Artist"},
+        ),
+    )
+
+    with pytest.raises(
+        RefreshLibraryReconciliationRequiredError,
+        match=ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE,
+    ):
+        _ = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, include_all=True))
+
+    assert uow.plans.records == {}
+    assert uow.plan_actions.records == {}
 
 
 def test_refresh_renders_disc_number_from_active_peer_context() -> None:

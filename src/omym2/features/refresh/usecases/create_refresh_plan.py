@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import timedelta
+from itertools import batched
 from os import fspath
 from pathlib import PurePath
 from typing import TYPE_CHECKING
@@ -25,7 +26,13 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
-from omym2.domain.services.artist_name import artist_name_diagnostics, artist_name_projections, artist_name_sources
+from omym2.domain.services.artist_name import (
+    ARTIST_NAME_FIELD_COUNT,
+    artist_name_diagnostics,
+    artist_name_projections,
+    artist_name_sources,
+)
+from omym2.domain.services.artist_name_reconciliation import artist_name_reconciliation_required
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
@@ -46,10 +53,11 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from omym2.domain.models.app_config import AppConfig
-    from omym2.domain.models.artist_name_resolution import ArtistNameDiagnostics
+    from omym2.domain.models.artist_name_resolution import ArtistNameDiagnostics, ArtistNameResolution
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.library import Library
     from omym2.domain.models.track import Track
+    from omym2.domain.models.track_metadata import TrackMetadata
     from omym2.features.common_ports import FileSystemPath, UnitOfWork
     from omym2.features.refresh.dto import CreateRefreshPlanRequest
     from omym2.features.refresh.ports import CreateRefreshPlanPorts
@@ -57,6 +65,9 @@ if TYPE_CHECKING:
 
 AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE = (
     "Multiple registered Libraries exist. Library selection is not supported for refresh yet."
+)
+ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE = (
+    "Artist naming for Library tracks outside this refresh Plan changed. Run organize before refresh."
 )
 NO_REGISTERED_LIBRARY_MESSAGE = "No registered Library can be selected. Run organize --library PATH."
 REFRESH_TARGET_NOT_FOUND_MESSAGE = "Refresh target does not match any managed active Track."
@@ -118,6 +129,13 @@ class CreateRefreshPlanUseCase:
         )
         candidates = self._with_target_paths(candidates, active_tracks, config, path_policy)
         candidates = self._with_target_conflicts(library, candidates, active_tracks)
+        if _artist_name_reconciliation_required(
+            active_tracks=active_tracks,
+            candidates=candidates,
+            config=config,
+            path_policy=path_policy,
+        ):
+            raise RefreshLibraryReconciliationRequiredError(ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE)
         plan_id = self.ports.id_generator.new_plan_id()
         actions = self._actions(plan_id, library, candidates)
         plan = _plan(plan_id, library, actions, config_hash, timestamp)
@@ -234,19 +252,13 @@ class CreateRefreshPlanUseCase:
         config: AppConfig,
         path_policy: PathPolicy,
     ) -> tuple[_RefreshCandidate, ...]:
-        selected_track_ids = {candidate.track.track_id for candidate in candidates}
-        candidate_metadata = tuple(
-            candidate.snapshot.metadata
-            for candidate in candidates
-            if candidate.snapshot is not None and candidate.reason is None
-        )
-        metadata_batch = candidate_metadata + tuple(
-            track.metadata for track in active_tracks if track.track_id not in selected_track_ids
-        )
+        candidate_metadata = _candidate_metadata(candidates)
+        metadata_batch = _effective_metadata_batch(candidates, active_tracks)
         resolutions = self.ports.artist_name_resolver.resolve_many(
             artist_name_sources(candidate_metadata),
             preferences=config.artist_names.preferences,
         )
+        resolution_pairs = iter(batched(resolutions, ARTIST_NAME_FIELD_COUNT, strict=True))
         projections = iter(
             artist_name_projections(candidate_metadata, tuple(resolution.resolved_name for resolution in resolutions))
         )
@@ -275,6 +287,7 @@ class CreateRefreshPlanUseCase:
 
             artist_names = next(projections)
             candidate_diagnostics = next(diagnostics)
+            candidate_resolutions = next(resolution_pairs)
             try:
                 resolved_metadata = metadata_with_resolved_album_year(
                     snapshot.metadata,
@@ -294,6 +307,7 @@ class CreateRefreshPlanUseCase:
                         target_path=None,
                         reason=_path_generation_failure_reason(exc),
                         needs_action=True,
+                        artist_name_resolutions=candidate_resolutions,
                         artist_name_diagnostics=candidate_diagnostics,
                     )
                 )
@@ -308,6 +322,7 @@ class CreateRefreshPlanUseCase:
                         or snapshot.content_hash != candidate.track.content_hash
                         or snapshot.metadata_hash != candidate.track.metadata_hash
                     ),
+                    artist_name_resolutions=candidate_resolutions,
                     artist_name_diagnostics=candidate_diagnostics,
                 )
             )
@@ -401,6 +416,10 @@ class RefreshTargetSelectionError(ValueError):
     """Raised when refresh cannot select managed active Tracks."""
 
 
+class RefreshLibraryReconciliationRequiredError(RefreshLibrarySelectionError):
+    """Raised when a partial refresh would leave related Tracks unreconciled."""
+
+
 @dataclass(frozen=True, slots=True)
 class _RefreshCandidate:
     """One managed Track and its plan-time refresh judgment."""
@@ -410,7 +429,55 @@ class _RefreshCandidate:
     target_path: str | None
     reason: PlanActionReason | None
     needs_action: bool
+    artist_name_resolutions: tuple[ArtistNameResolution, ...] = ()
     artist_name_diagnostics: ArtistNameDiagnostics | None = None
+
+
+def _artist_name_reconciliation_required(
+    *,
+    active_tracks: Sequence[Track],
+    candidates: Sequence[_RefreshCandidate],
+    config: AppConfig,
+    path_policy: PathPolicy,
+) -> bool:
+    executable_candidates = tuple(candidate for candidate in candidates if _is_executable_candidate(candidate))
+    executable_track_ids = {candidate.track.track_id for candidate in executable_candidates}
+    unreconciled_tracks = tuple(track for track in active_tracks if track.track_id not in executable_track_ids)
+    planned_resolutions = tuple(
+        resolution for candidate in executable_candidates for resolution in candidate.artist_name_resolutions
+    )
+    executable_metadata = tuple(
+        candidate.snapshot.metadata for candidate in executable_candidates if candidate.snapshot is not None
+    )
+    return artist_name_reconciliation_required(
+        unreconciled_tracks=unreconciled_tracks,
+        planned_resolutions=planned_resolutions,
+        effective_metadata_batch=executable_metadata + tuple(track.metadata for track in unreconciled_tracks),
+        config=config,
+        path_policy=path_policy,
+    )
+
+
+def _candidate_metadata(candidates: Sequence[_RefreshCandidate]) -> tuple[TrackMetadata, ...]:
+    return tuple(
+        candidate.snapshot.metadata
+        for candidate in candidates
+        if candidate.snapshot is not None and candidate.reason is None
+    )
+
+
+def _effective_metadata_batch(
+    candidates: Sequence[_RefreshCandidate],
+    active_tracks: Sequence[Track],
+) -> tuple[TrackMetadata, ...]:
+    selected_track_ids = {candidate.track.track_id for candidate in candidates}
+    return _candidate_metadata(candidates) + tuple(
+        track.metadata for track in active_tracks if track.track_id not in selected_track_ids
+    )
+
+
+def _is_executable_candidate(candidate: _RefreshCandidate) -> bool:
+    return candidate.needs_action and candidate.reason is None and candidate.target_path is not None
 
 
 def _require_one_target_selector(request: CreateRefreshPlanRequest) -> None:

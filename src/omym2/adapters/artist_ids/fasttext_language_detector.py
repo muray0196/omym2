@@ -1,12 +1,12 @@
 """
-Summary: Adapts fastText language predictions to artist naming contracts.
-Why: Keeps optional model loading and prediction parsing outside naming usecases.
+Summary: Adapts eager and optional lazy fastText predictions to naming contracts.
+Why: Keeps model loading, failure fallback, and parsing outside naming usecases.
 """
 
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isfinite
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -15,6 +15,8 @@ from omym2.features.artist_names.dto import ArtistLanguagePrediction
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
+
+    from omym2.features.artist_names.ports import ArtistLanguagePredictor
 
 FASTTEXT_MODEL_PATH_REQUIRED_MESSAGE = "fastText model_path is required when model is not injected."
 
@@ -35,7 +37,7 @@ class FastTextLanguageDetector:
     model: _FastTextModel | None = None
 
     def __post_init__(self) -> None:
-        """Load the model lazily when tests did not inject one."""
+        """Load the model during construction when tests did not inject one."""
         if self.model is not None:
             return
         if self.model_path is None:
@@ -57,6 +59,43 @@ class FastTextLanguageDetector:
         except RuntimeError, ValueError:
             return _unavailable_prediction()
         return _prediction_from(labels, scores)
+
+
+def _fasttext_detector_for(model_path: Path) -> ArtistLanguagePredictor:
+    return FastTextLanguageDetector(model_path=model_path)
+
+
+@dataclass(slots=True)
+class OptionalFastTextLanguageDetector:
+    """Load fastText on first prediction and degrade unavailable runtimes locally."""
+
+    model_path: Path
+    detector_factory: Callable[[Path], ArtistLanguagePredictor] = _fasttext_detector_for
+    _detector: ArtistLanguagePredictor | None = field(default=None, init=False)
+    _load_attempted: bool = field(default=False, init=False)
+
+    def predict_language(self, text: str) -> ArtistLanguagePrediction:
+        """Return one prediction, or unavailable when optional model work cannot run."""
+        if text.strip() == "":
+            return _unavailable_prediction()
+        detector = self._load_detector()
+        if detector is None:
+            return _unavailable_prediction()
+        try:
+            return detector.predict_language(text)
+        except AttributeError, ImportError, OSError, RuntimeError, TypeError, ValueError:
+            self._detector = None
+            return _unavailable_prediction()
+
+    def _load_detector(self) -> ArtistLanguagePredictor | None:
+        if self._load_attempted:
+            return self._detector
+        self._load_attempted = True
+        try:
+            self._detector = self.detector_factory(self.model_path)
+        except AttributeError, ImportError, OSError, RuntimeError, TypeError, ValueError:
+            self._detector = None
+        return self._detector
 
 
 def _prediction_from(labels: Sequence[object], scores: Sequence[float]) -> ArtistLanguagePrediction:
