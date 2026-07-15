@@ -513,6 +513,48 @@ export type ArtistNameConfigResource = {
 };
 
 /**
+ * ArtistNameDiagnosticsResource
+ *
+ * Artist and album-artist naming evidence recorded for one action.
+ */
+export type ArtistNameDiagnosticsResource = {
+    album_artist: ArtistNameResolutionDiagnosticResource;
+    artist: ArtistNameResolutionDiagnosticResource;
+};
+
+/**
+ * ArtistNameResolutionDiagnosticResource
+ *
+ * One reviewable artist-field resolution outcome.
+ */
+export type ArtistNameResolutionDiagnosticResource = {
+    issue: ArtistNameResolutionIssue | null;
+    provenance: ArtistNameResolutionProvenance;
+    /**
+     * Resolved Name
+     */
+    resolved_name: string | null;
+    /**
+     * Source Name
+     */
+    source_name: string | null;
+};
+
+/**
+ * ArtistNameResolutionIssue
+ *
+ * Reason automatic artist-name resolution preserved the original value.
+ */
+export type ArtistNameResolutionIssue = 'missing_source' | 'composite_unsupported' | 'non_latin_required' | 'detector_unavailable' | 'not_japanese' | 'low_language_confidence' | 'provider_unavailable' | 'no_confident_match' | 'ambiguous_match';
+
+/**
+ * ArtistNameResolutionProvenance
+ *
+ * Source that supplied one effective artist display name.
+ */
+export type ArtistNameResolutionProvenance = 'user_preference' | 'accepted_musicbrainz' | 'new_musicbrainz' | 'original';
+
+/**
  * BootstrapData
  *
  * Initial application state returned even when recovery is required.
@@ -1402,6 +1444,7 @@ export type PlanActionResource = {
      */
     action_id: string;
     action_type: ActionType;
+    artist_name_diagnostics: ArtistNameDiagnosticsResource | null;
     /**
      * Content Hash At Plan
      */

@@ -14,6 +14,10 @@ from omym2.adapters.web.schemas.browsing import (
     NonNegativeCount,  # noqa: TC001  # Pydantic resolves annotated schema types at runtime.
     PageInfo,  # noqa: TC001  # Pydantic resolves nested schema types at runtime.
 )
+from omym2.domain.models.artist_name_resolution import (  # noqa: TC001  # Pydantic resolves enum schema types at runtime.
+    ArtistNameResolutionIssue,
+    ArtistNameResolutionProvenance,
+)
 from omym2.domain.models.plan import (  # noqa: TC001  # Pydantic resolves enum schema types at runtime.
     PlanStatus,
     PlanType,
@@ -93,6 +97,22 @@ class PlanDetailData(ApiModel):
     active_operation_id: UUID | None
 
 
+class ArtistNameResolutionDiagnosticResource(ApiModel):
+    """One reviewable artist-field resolution outcome."""
+
+    source_name: str | None
+    resolved_name: str | None
+    provenance: ArtistNameResolutionProvenance
+    issue: ArtistNameResolutionIssue | None
+
+
+class ArtistNameDiagnosticsResource(ApiModel):
+    """Artist and album-artist naming evidence recorded for one action."""
+
+    artist: ArtistNameResolutionDiagnosticResource
+    album_artist: ArtistNameResolutionDiagnosticResource
+
+
 class PlanActionResource(ApiModel):
     """One recorded PlanAction in immutable review order."""
 
@@ -108,6 +128,7 @@ class PlanActionResource(ApiModel):
     status: ActionStatus
     reason: PlanActionReason | None
     sort_order: int
+    artist_name_diagnostics: ArtistNameDiagnosticsResource | None
 
 
 class PlanActionFacetSets(ApiModel):

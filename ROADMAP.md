@@ -5,16 +5,17 @@
 This is an active, multi-session initiative with cross-cutting changes to configuration, metadata naming, Plan execution, persistence, Web/CLI settings, and desktop packaging.
 
 Stage 1 is complete. Stage 2 is in progress: the shared resolver now feeds
-normal Plan target calculation, and Add refuses an import that would mix a new
-resolved name with unreconciled active Library paths. Opt-in activation of new
-fastText/MusicBrainz lookups and durable Plan-review naming diagnostics remain
-the next delivery targets; runtime and packaging hardening remains ordered
-after those behaviors are proven.
+normal Plan target calculation, Add refuses an import that would mix a new
+resolved name with unreconciled active Library paths, and each resolved
+PlanAction retains its artist and album-artist source, result, provenance, and
+issue for CLI and Web review. Opt-in activation of new fastText/MusicBrainz
+lookups remains the next delivery target; runtime and packaging hardening
+remains ordered after that behavior is proven.
 
 The rollout order is intentional:
 
 1. Established deterministic artist display-name preferences and the persistence foundation.
-2. In progress: finish opt-in fastText-gated MusicBrainz English/Latin name resolution and review diagnostics in normal Plan creation.
+2. In progress: enable opt-in fastText-gated MusicBrainz English/Latin name resolution in normal Plan creation, using the delivered review diagnostics.
 3. Harden runtime controls, packaging, and operational behavior.
 4. Add companion lyrics and artwork handling.
 5. Add reviewed collection of unprocessed files.
@@ -98,11 +99,14 @@ The stage establishes the separation between raw tag metadata, preferred display
 
 **Status:** In progress. Add, Organize, and Refresh share the resolver and
 sticky cache projection, and Add now requires Organize before an executable
-incoming move could introduce mixed resolved naming. Normal composition still
-disables new provider lookup, and Plan review does not yet persist resolution
-provenance or unresolved/ambiguous diagnostics. The available `lid.176.ftz`
-file remains a local development input; a CPython 3.14 and Windows-compatible
-prediction runtime has not yet passed the distribution gate.
+incoming move could introduce mixed resolved naming. Their PlanActions now
+persist and expose the exact artist and album-artist source, resolved value,
+provenance, and unresolved/ambiguous issue observed during target calculation;
+pre-resolution blocks and Undo actions explicitly carry no naming snapshot.
+Normal composition still disables new provider lookup. The available
+`lid.176.ftz` file remains a local development input; a CPython 3.14 and
+Windows-compatible prediction runtime has not yet passed the distribution
+gate.
 
 `add`, `organize`, and `refresh` use one shared resolver and cache contract. `organize` can reconcile existing paths after a preference or accepted resolution changes. `add` may use a resolved name for a new artist, but it must refuse mixed naming when an existing Library artist requires reconciliation. The existing `artist-ids generate` flow should reuse the shared naming result where appropriate while keeping display-name preferences and compact IDs separate.
 

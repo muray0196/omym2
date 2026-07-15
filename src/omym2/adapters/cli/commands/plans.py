@@ -34,6 +34,10 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from typing import TextIO
 
+    from omym2.domain.models.artist_name_resolution import (
+        ArtistNameDiagnostics,
+        ArtistNameResolutionDiagnostic,
+    )
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
     from omym2.features.plans.ports import PlanQueryPorts
@@ -387,6 +391,30 @@ def _write_actions(stdout: TextIO, actions: tuple[PlanAction, ...]) -> None:
         )
         _ = stdout.write(f"    source_path: {_format_optional(action.source_path)}\n")
         _ = stdout.write(f"    target_path: {_format_optional(action.target_path)}\n")
+        if action.artist_name_diagnostics is not None:
+            _write_artist_name_diagnostics(stdout, action.artist_name_diagnostics)
+
+
+def _write_artist_name_diagnostics(stdout: TextIO, diagnostics: ArtistNameDiagnostics) -> None:
+    """Write the two recorded artist-name resolution outcomes."""
+    _ = stdout.write("    artist_name_diagnostics:\n")
+    _write_artist_name_diagnostic(stdout, "artist", diagnostics.artist)
+    _write_artist_name_diagnostic(stdout, "album_artist", diagnostics.album_artist)
+
+
+def _write_artist_name_diagnostic(
+    stdout: TextIO,
+    field_name: str,
+    diagnostic: ArtistNameResolutionDiagnostic,
+) -> None:
+    """Write one field's source, result, provenance, and issue."""
+    _ = stdout.write(f"      {field_name}:\n")
+    _ = stdout.write(f"        source_name: {_format_optional(diagnostic.source_name)}\n")
+    _ = stdout.write(f"        resolved_name: {_format_optional(diagnostic.resolved_name)}\n")
+    _ = stdout.write(f"        provenance: {diagnostic.provenance.value}\n")
+    _ = stdout.write(
+        f"        issue: {_format_optional(diagnostic.issue.value if diagnostic.issue is not None else None)}\n"
+    )
 
 
 def _format_optional(value: str | None) -> str:

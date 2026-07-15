@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines OMYM2's SQLite tables, accepted artist-name provenance, durable Operation schema, atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
+description: Defines OMYM2's SQLite tables, accepted artist-name provenance, PlanAction naming diagnostics, durable Operation schema, atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
 tags: [database, sqlite, schema, migrations, artist-names, provenance]
-timestamp: 2026-07-15T21:42:00+09:00
+timestamp: 2026-07-16T00:44:26+09:00
 ---
 
 # DB Schema Contract
@@ -184,11 +184,20 @@ Minimum representative fields:
 * `reverses_event_id` nullable
 * `content_hash_at_plan`
 * `metadata_hash_at_plan`
+* `artist_name_diagnostics_json` nullable
 * `status`
 * `reason`
 * `sort_order`
 
 `conflict` and `error` are not action types. They are represented by status and reason values.
+
+`artist_name_diagnostics_json` is `NULL` when the action did not pass through
+artist-name resolution, including pre-resolution blocked actions and Undo
+actions. Otherwise it stores one typed object with `artist` and `album_artist`
+members. Each member records the nullable source and resolved values, the
+resolution provenance, and the nullable resolution issue observed during Plan
+creation. Repositories restore this JSON as the domain diagnostic pair without
+re-resolving names or deciding whether the result was acceptable.
 
 `reverses_event_id` references the succeeded source `file_events.event_id` for
 each Undo PlanAction and is `NULL` for every non-Undo action. It is durable
@@ -373,6 +382,11 @@ associations, idempotency identity, and tombstone expiry remain unchanged.
 `202607150001_accepted_artist_names.sql` additively creates the global
 `accepted_artist_names` table. It has no legacy backfill and does not modify
 Library, Track, Plan, or execution rows.
+
+`202607160001_plan_action_artist_name_diagnostics.sql` additively adds nullable
+`plan_actions.artist_name_diagnostics_json`. Existing PlanActions remain
+`NULL`; no historical diagnostic is inferred from recorded paths or current
+provider state.
 
 Before adding those columns to a database that already contains Undo Plans,
 `202607130002_undo_provenance_and_apply_claim.sql` proves the legacy provenance

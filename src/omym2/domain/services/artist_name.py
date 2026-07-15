@@ -7,8 +7,15 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
+from itertools import batched
 from types import MappingProxyType
 from typing import TYPE_CHECKING
+
+from omym2.domain.models.artist_name_resolution import (
+    ArtistNameDiagnostics,
+    ArtistNameResolution,
+    ArtistNameResolutionDiagnostic,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -17,6 +24,7 @@ if TYPE_CHECKING:
 
 _ARTIST_NAME_SOURCE_KEY_NORMALIZATION_FORM = "NFC"
 ARTIST_NAME_RESOLUTION_CARDINALITY_MESSAGE = "Resolved artist names must align with artist and album-artist sources."
+ARTIST_NAME_FIELD_COUNT = 2  # artist and album-artist values per TrackMetadata
 
 
 def derive_artist_name_source_key(source_name: str | None) -> str | None:
@@ -72,12 +80,25 @@ def artist_name_projections(
     resolved_names: Sequence[str | None],
 ) -> tuple[ArtistNameProjection, ...]:
     """Restore aligned resolver output into one projection per metadata value."""
-    if len(resolved_names) != len(metadata_batch) * 2:
+    if len(resolved_names) != len(metadata_batch) * ARTIST_NAME_FIELD_COUNT:
         raise ValueError(ARTIST_NAME_RESOLUTION_CARDINALITY_MESSAGE)
     return tuple(
-        ArtistNameProjection(
-            artist=resolved_names[index * 2],
-            album_artist=resolved_names[index * 2 + 1],
+        ArtistNameProjection(artist=artist, album_artist=album_artist)
+        for artist, album_artist in batched(resolved_names, ARTIST_NAME_FIELD_COUNT, strict=True)
+    )
+
+
+def artist_name_diagnostics(
+    metadata_batch: Sequence[TrackMetadata],
+    resolutions: Sequence[ArtistNameResolution],
+) -> tuple[ArtistNameDiagnostics, ...]:
+    """Pair aligned resolver outcomes into durable artist-field diagnostics."""
+    if len(resolutions) != len(metadata_batch) * ARTIST_NAME_FIELD_COUNT:
+        raise ValueError(ARTIST_NAME_RESOLUTION_CARDINALITY_MESSAGE)
+    return tuple(
+        ArtistNameDiagnostics(
+            artist=ArtistNameResolutionDiagnostic.from_resolution(artist),
+            album_artist=ArtistNameResolutionDiagnostic.from_resolution(album_artist),
         )
-        for index in range(len(metadata_batch))
+        for artist, album_artist in batched(resolutions, ARTIST_NAME_FIELD_COUNT, strict=True)
     )

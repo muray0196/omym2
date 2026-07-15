@@ -360,6 +360,11 @@ def test_add_projects_shared_artist_name_resolution_only_into_the_recorded_targe
     action = plan.actions[0]
     assert action.target_path == EXPECTED_PREFERRED_ARTIST_PATH
     assert action.metadata_hash_at_plan == calculate_metadata_fingerprint(METADATA)
+    assert action.artist_name_diagnostics is not None
+    assert action.artist_name_diagnostics.artist.source_name == "Artist"
+    assert action.artist_name_diagnostics.artist.resolved_name == "Preferred Artist"
+    assert action.artist_name_diagnostics.album_artist.source_name is None
+    assert action.artist_name_diagnostics.album_artist.resolved_name is None
     assert METADATA.artist == "Artist"
     assert isinstance(ports.artist_name_resolver, MappingArtistNameResolver)
     assert ports.artist_name_resolver.calls == [("Artist", None)]

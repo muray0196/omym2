@@ -471,8 +471,85 @@ function ActionRow({ action }: { action: PlanAction }) {
           <dd className={styles.path}>{action.target_path ?? "—"}</dd>
         </div>
       </dl>
+      {action.artist_name_diagnostics !== null ? (
+        <ArtistNameDiagnostics diagnostics={action.artist_name_diagnostics} />
+      ) : null}
     </li>
   );
+}
+
+type ArtistNameDiagnosticsValue = NonNullable<
+  PlanAction["artist_name_diagnostics"]
+>;
+
+type ArtistNameDiagnosticValue = ArtistNameDiagnosticsValue["artist"];
+
+function ArtistNameDiagnostics({
+  diagnostics,
+}: {
+  diagnostics: ArtistNameDiagnosticsValue;
+}) {
+  return (
+    <section className={styles.artistNameDiagnostics}>
+      <h3>{planCopy.detail.artistNameDiagnostics}</h3>
+      <dl className={styles.artistNameDiagnosticList}>
+        <ArtistNameDiagnostic
+          diagnostic={diagnostics.artist}
+          fieldLabel={planCopy.labels.artist}
+        />
+        <ArtistNameDiagnostic
+          diagnostic={diagnostics.album_artist}
+          fieldLabel={planCopy.labels.albumArtist}
+        />
+      </dl>
+    </section>
+  );
+}
+
+function ArtistNameDiagnostic({
+  diagnostic,
+  fieldLabel,
+}: {
+  diagnostic: ArtistNameDiagnosticValue;
+  fieldLabel: string;
+}) {
+  return (
+    <div className={styles.artistNameDiagnostic}>
+      <dt>{fieldLabel}</dt>
+      <dd>
+        <div className={styles.artistNameResolution}>
+          <code>{diagnostic.source_name ?? "—"}</code>
+          <VisuallyHidden> resolves to </VisuallyHidden>
+          <span aria-hidden="true" className={styles.artistNameArrow}>
+            →
+          </span>
+          <code>{diagnostic.resolved_name ?? "—"}</code>
+        </div>
+        <div className={styles.artistNameDiagnosticMetadata}>
+          <span>
+            <strong>{planCopy.labels.provenance}:</strong>{" "}
+            {artistNameProvenanceLabel(diagnostic.provenance)}
+          </span>
+          <span>
+            <strong>{planCopy.labels.issue}:</strong>{" "}
+            {diagnostic.issue === null
+              ? planCopy.artistNames.noIssue
+              : artistNameIssueLabel(diagnostic.issue)}
+          </span>
+        </div>
+      </dd>
+    </div>
+  );
+}
+
+function artistNameProvenanceLabel(value: string): string {
+  const labels: Record<string, string> = planCopy.artistNames.provenance;
+  return labels[value] ?? `${planCopy.unknown.artistNameProvenance}: ${value}`;
+}
+
+function artistNameIssueLabel(value: string): string {
+  const labels: Record<string, string> = planCopy.artistNames.issue;
+  return labels[value] ?? `${planCopy.unknown.artistNameIssue}: ${value}`;
 }
 
 function FacetSection({

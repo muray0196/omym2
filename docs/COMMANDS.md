@@ -3,7 +3,7 @@ type: Command Reference
 title: Commands
 description: Lists the OMYM2 CLI surface, including Plan workflows, artist-name settings, diagnostics, and the explicit organize/refresh/check trust-stat optimization flags.
 tags: [cli, commands, reference]
-timestamp: 2026-07-15T22:44:00+09:00
+timestamp: 2026-07-16T00:44:26+09:00
 ---
 
 # Commands
@@ -108,6 +108,10 @@ omym2 plans <PLAN_ID> [--actions STATUS] [--blocked-only] [--summary] [--diff] [
 The list is sorted newest-first by creation time. This default order is intentional so the most recent Plan is always the first row.
 
 The recommended pre-apply review workflow is `omym2 plans <PLAN_ID> --blocked-only --diff`. It lists PlanActions recorded as `blocked` and their recorded reasons.
+
+The default detail view and detail `--json` include each action's recorded
+artist and album-artist resolution diagnostics when that action reached name
+resolution during Plan creation. Inspection never re-runs the resolver.
 
 `--json` output is stable enough for scripting, but it is not a versioned public API. `--json` cannot be combined with `--summary` or `--diff`.
 

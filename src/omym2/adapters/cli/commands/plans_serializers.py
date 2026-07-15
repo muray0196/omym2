@@ -8,6 +8,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from omym2.domain.models.artist_name_resolution import (
+        ArtistNameDiagnostics,
+        ArtistNameResolutionDiagnostic,
+    )
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
     from omym2.features.plans.dto import PlanDetail
@@ -49,6 +53,27 @@ def serialize_plan_action(action: PlanAction) -> dict[str, object]:
         "status": action.status.value,
         "reason": None if action.reason is None else action.reason.value,
         "sort_order": action.sort_order,
+        "artist_name_diagnostics": _serialize_artist_name_diagnostics(action.artist_name_diagnostics),
+    }
+
+
+def _serialize_artist_name_diagnostics(diagnostics: ArtistNameDiagnostics | None) -> dict[str, object] | None:
+    """Return the recorded artist and album-artist review snapshot."""
+    if diagnostics is None:
+        return None
+    return {
+        "artist": _serialize_artist_name_diagnostic(diagnostics.artist),
+        "album_artist": _serialize_artist_name_diagnostic(diagnostics.album_artist),
+    }
+
+
+def _serialize_artist_name_diagnostic(diagnostic: ArtistNameResolutionDiagnostic) -> dict[str, object]:
+    """Return one field's recorded resolution evidence."""
+    return {
+        "source_name": diagnostic.source_name,
+        "resolved_name": diagnostic.resolved_name,
+        "provenance": diagnostic.provenance.value,
+        "issue": None if diagnostic.issue is None else diagnostic.issue.value,
     }
 
 

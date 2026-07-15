@@ -511,6 +511,79 @@
   font-weight: 600;
 }
 
+.artistNameDiagnostics {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-8);
+  display: grid;
+  gap: var(--space-8);
+  padding: var(--space-12);
+}
+
+.artistNameDiagnostics h3 {
+  color: var(--color-mute);
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.artistNameDiagnosticList {
+  display: grid;
+  gap: var(--space-12);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.artistNameDiagnostic {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.artistNameDiagnostic dt {
+  color: var(--color-body);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.artistNameDiagnostic dd {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  min-width: 0;
+}
+
+.artistNameResolution {
+  align-items: center;
+  color: var(--color-ink);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.artistNameResolution code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.artistNameArrow {
+  color: var(--color-mute);
+}
+
+.artistNameDiagnosticMetadata {
+  color: var(--color-mute);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: var(--space-4) var(--space-12);
+}
+
+.artistNameDiagnosticMetadata strong {
+  color: var(--color-body);
+  font-weight: 600;
+}
+
 .groupRow,
 .facetRow {
   align-items: center;
@@ -618,7 +691,8 @@
   }
 
   .filterGrid,
-  .metadataList {
+  .metadataList,
+  .artistNameDiagnosticList {
     grid-template-columns: 1fr;
   }
 

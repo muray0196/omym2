@@ -61,6 +61,7 @@ export const planCopy = {
     noActions: "This Plan has no recorded actions.",
     noGroups: "No action groups are available for this Plan.",
     noFacets: "No action facets are available for this Plan.",
+    artistNameDiagnostics: "Artist naming",
   },
   execution: {
     title: "Plan execution",
@@ -113,6 +114,30 @@ export const planCopy = {
     count: "Count",
     blockedCount: "Blocked",
     topReason: "Most common reason",
+    artist: "Artist",
+    albumArtist: "Album artist",
+    provenance: "Provenance",
+    issue: "Issue",
+  },
+  artistNames: {
+    noIssue: "None",
+    provenance: {
+      user_preference: "User preference",
+      accepted_musicbrainz: "Accepted MusicBrainz result",
+      new_musicbrainz: "New MusicBrainz result",
+      original: "Original metadata",
+    },
+    issue: {
+      missing_source: "Missing source name",
+      composite_unsupported: "Composite name unsupported",
+      non_latin_required: "Source contains Latin text",
+      detector_unavailable: "Language detector unavailable",
+      not_japanese: "Not detected as Japanese",
+      low_language_confidence: "Low language confidence",
+      provider_unavailable: "MusicBrainz unavailable",
+      no_confident_match: "No confident match",
+      ambiguous_match: "Ambiguous match",
+    },
   },
   unknown: {
     status: "Unknown status",
@@ -120,5 +145,7 @@ export const planCopy = {
     actionType: "Unknown action type",
     reason: "Unknown reason",
     grouping: "Unknown grouping",
+    artistNameProvenance: "Unknown provenance",
+    artistNameIssue: "Unknown issue",
   },
 } as const;
