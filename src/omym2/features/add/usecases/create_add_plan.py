@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import timedelta
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
 
 from omym2.config import (
@@ -23,7 +23,12 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
-from omym2.domain.services.artist_name import artist_name_projections, artist_name_sources
+from omym2.domain.services.artist_name import (
+    ArtistNameProjection,
+    artist_name_projections,
+    artist_name_sources,
+    derive_artist_name_source_key,
+)
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
@@ -37,10 +42,11 @@ from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 from omym2.features.common_ports import FileSnapshotCaptureRequest
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
     from datetime import datetime
 
     from omym2.domain.models.app_config import AppConfig
+    from omym2.domain.models.artist_name_resolution import ArtistNameResolution
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.track import Track
@@ -51,6 +57,9 @@ if TYPE_CHECKING:
 
 AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE = (
     "Multiple registered Libraries exist. Library selection is not supported for add yet."
+)
+ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE = (
+    "Artist naming for existing Library tracks changed. Run organize before add."
 )
 NO_INCOMING_SOURCE_MESSAGE = "No Incoming path is configured. Use add SOURCE_DIR."
 NO_REGISTERED_LIBRARY_MESSAGE = "No registered Library can be selected. Run organize --library PATH."
@@ -102,6 +111,13 @@ class CreateAddPlanUseCase:
         candidates = self._with_target_paths(candidates, library_tracks, config, path_policy)
         candidates = self._with_duplicates(candidates, duplicate_track_by_hash)
         candidates = self._with_target_conflicts(library, candidates, active_library_tracks)
+        if _artist_name_reconciliation_required(
+            active_library_tracks=active_library_tracks,
+            candidates=candidates,
+            config=config,
+            path_policy=path_policy,
+        ):
+            raise AddLibraryReconciliationRequiredError(ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE)
         plan_id = self.ports.id_generator.new_plan_id()
         actions = self._actions(plan_id, library, candidates)
         plan = _plan(plan_id, library, actions, config_hash, timestamp)
@@ -188,6 +204,7 @@ class CreateAddPlanUseCase:
         projections = iter(
             artist_name_projections(candidate_metadata, tuple(resolution.resolved_name for resolution in resolutions))
         )
+        resolution_pairs = iter(tuple(zip(resolutions[::2], resolutions[1::2], strict=True)))
         resolved_years = resolve_album_years(
             metadata_batch,
             config.path_policy,
@@ -211,6 +228,7 @@ class CreateAddPlanUseCase:
                 continue
 
             artist_names = next(projections)
+            artist_name_resolutions = next(resolution_pairs)
             try:
                 resolved_metadata = metadata_with_resolved_album_year(
                     snapshot.metadata,
@@ -225,11 +243,22 @@ class CreateAddPlanUseCase:
                 )
             except ValueError as exc:
                 judged_candidates.append(
-                    replace(candidate, reason=_path_generation_failure_reason(exc), target_path=None)
+                    replace(
+                        candidate,
+                        reason=_path_generation_failure_reason(exc),
+                        target_path=None,
+                        artist_name_resolutions=artist_name_resolutions,
+                    )
                 )
                 continue
 
-            judged_candidates.append(replace(candidate, target_path=target_path))
+            judged_candidates.append(
+                replace(
+                    candidate,
+                    target_path=target_path,
+                    artist_name_resolutions=artist_name_resolutions,
+                )
+            )
 
         return tuple(judged_candidates)
 
@@ -322,6 +351,10 @@ class AddLibrarySelectionError(ValueError):
     """Raised when add cannot select exactly one current registered Library."""
 
 
+class AddLibraryReconciliationRequiredError(AddLibrarySelectionError):
+    """Raised when changed artist naming must be reconciled before import."""
+
+
 class AddSourceSelectionError(ValueError):
     """Raised when add cannot determine the incoming source directory."""
 
@@ -336,6 +369,15 @@ class _AddCandidate:
     action_type: ActionType
     reason: PlanActionReason | None
     track_id: TrackId | None
+    artist_name_resolutions: tuple[ArtistNameResolution, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _PlannedArtistNameChanges:
+    """Incoming resolved names that can affect matching existing raw values."""
+
+    exact_names: Mapping[str, str]
+    names_by_source_key: Mapping[str, str]
 
 
 def _source_root(request: CreateAddPlanRequest, config: AppConfig) -> str:
@@ -414,6 +456,136 @@ def _duplicate_track_by_hash(tracks: Sequence[Track]) -> dict[str, Track]:
     for track in tracks:
         _ = duplicate_track_by_hash.setdefault(track.content_hash, track)
     return duplicate_track_by_hash
+
+
+def _artist_name_reconciliation_required(
+    *,
+    active_library_tracks: Sequence[Track],
+    candidates: Sequence[_AddCandidate],
+    config: AppConfig,
+    path_policy: PathPolicy,
+) -> bool:
+    planned_resolutions = tuple(
+        resolution
+        for candidate in candidates
+        if _is_executable_move(candidate)
+        for resolution in candidate.artist_name_resolutions
+    )
+    changes = _planned_artist_name_changes(
+        planned_resolutions,
+        config.artist_names.preferences,
+    )
+    if not changes.exact_names and not changes.names_by_source_key:
+        return False
+
+    candidate_metadata = tuple(
+        candidate.snapshot.metadata
+        for candidate in candidates
+        if candidate.snapshot is not None and _is_executable_move(candidate)
+    )
+    metadata_batch = tuple(track.metadata for track in active_library_tracks) + candidate_metadata
+    resolved_years = resolve_album_years(
+        metadata_batch,
+        config.path_policy,
+        config.metadata.album_year_resolution,
+    )
+    resolved_metadata_batch = tuple(
+        metadata_with_resolved_album_year(metadata, config.path_policy, resolved_years) for metadata in metadata_batch
+    )
+    album_disc_totals = infer_album_disc_totals(
+        resolved_metadata_batch,
+        unknown_artist=config.path_policy.unknown_artist,
+        unknown_album=config.path_policy.unknown_album,
+    )
+
+    for track in active_library_tracks:
+        metadata = track.metadata
+        original_projection = ArtistNameProjection(
+            artist=metadata.artist,
+            album_artist=metadata.album_artist,
+        )
+        resolved_projection = ArtistNameProjection(
+            artist=_resolved_artist_name(metadata.artist, config.artist_names.preferences, changes),
+            album_artist=_resolved_artist_name(
+                metadata.album_artist,
+                config.artist_names.preferences,
+                changes,
+            ),
+        )
+        if resolved_projection == original_projection:
+            continue
+
+        resolved_metadata = metadata_with_resolved_album_year(
+            metadata,
+            config.path_policy,
+            resolved_years,
+        )
+        file_extension = PurePath(track.current_path).suffix
+        try:
+            original_target = path_policy.canonical_path(
+                resolved_metadata,
+                file_extension,
+                album_disc_total=album_disc_totals.for_metadata(resolved_metadata),
+                artist_names=original_projection,
+            )
+            resolved_target = path_policy.canonical_path(
+                resolved_metadata,
+                file_extension,
+                album_disc_total=album_disc_totals.for_metadata(resolved_metadata),
+                artist_names=resolved_projection,
+            )
+        except ValueError:
+            return True
+        if original_target == resolved_target:
+            continue
+        if any(path != resolved_target for path in (track.current_path, track.canonical_path)):
+            return True
+
+    return False
+
+
+def _is_executable_move(candidate: _AddCandidate) -> bool:
+    return candidate.action_type is ActionType.MOVE and candidate.reason is None
+
+
+def _planned_artist_name_changes(
+    resolutions: Sequence[ArtistNameResolution],
+    preferences: Mapping[str, str] | None,
+) -> _PlannedArtistNameChanges:
+    exact_names: dict[str, str] = {}
+    names_by_source_key: dict[str, str] = {}
+    for resolution in resolutions:
+        source_name = resolution.source_name
+        source_key = resolution.source_key
+        resolved_name = resolution.resolved_name
+        if resolved_name is None or resolved_name == source_name:
+            continue
+        if source_name is not None and preferences is not None and source_name in preferences:
+            _ = exact_names.setdefault(source_name, resolved_name)
+        elif source_key is not None:
+            _ = names_by_source_key.setdefault(source_key, resolved_name)
+    return _PlannedArtistNameChanges(
+        exact_names=exact_names,
+        names_by_source_key=names_by_source_key,
+    )
+
+
+def _resolved_artist_name(
+    source_name: str | None,
+    preferences: Mapping[str, str] | None,
+    changes: _PlannedArtistNameChanges,
+) -> str | None:
+    if source_name is None:
+        return None
+    exact_name = changes.exact_names.get(source_name)
+    if exact_name is not None:
+        return exact_name
+    source_key = derive_artist_name_source_key(source_name)
+    if source_key is None or source_key not in changes.names_by_source_key:
+        return source_name
+    if preferences is not None and source_name in preferences:
+        return preferences[source_name]
+    return changes.names_by_source_key[source_key]
 
 
 def _move_target_sources(candidates: Sequence[_AddCandidate]) -> dict[str, tuple[str, ...]]:
