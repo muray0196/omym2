@@ -3,7 +3,7 @@ type: Contract
 title: DB Schema Contract
 description: Defines OMYM2's SQLite tables, accepted artist-name provenance, durable Operation schema, atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
 tags: [database, sqlite, schema, migrations, artist-names, provenance]
-timestamp: 2026-07-15T20:47:24+09:00
+timestamp: 2026-07-15T21:42:00+09:00
 ---
 
 # DB Schema Contract
@@ -116,7 +116,7 @@ in TOML.
 
 Fields:
 
-* `source_key`, the non-empty exact lookup key and primary key
+* `source_key`, the non-empty derived lookup key and primary key
 * `source_name`, the non-empty original metadata text associated with that key
 * `resolved_name`, the non-empty accepted display name
 * `provider`, currently `musicbrainz`
@@ -125,10 +125,13 @@ Fields:
 * `selected_locale`, nullable and permitted only for an alias selection
 * `accepted_at`, the UTC acceptance timestamp
 
-The naming feature owns source-key derivation before repository access; the
-repository compares the supplied key exactly. Before Stage 2 writes any rows,
-the feature must define its Unicode normalization and whitespace contract.
-Insertion is sticky:
+The naming feature derives every lookup and insertion key with the pure
+[ArtistNameSourceKey](../DOMAIN.md#artistnamesourcekey) contract before
+repository access; the repository compares the supplied key exactly. Missing
+or whitespace-only source text produces no key and must not reach the
+repository. The stored `source_name` preserves the exact source text from the
+first accepted insertion even when another canonically equivalent or
+whitespace-equivalent value derives the same key. Insertion is sticky:
 `insert_if_absent` does nothing and returns false when `source_key` already
 exists. Ordinary Plan creation must not overwrite an accepted row merely
 because MusicBrainz later returns different data. More than one source key may

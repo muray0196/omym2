@@ -95,10 +95,11 @@ The stage establishes the separation between raw tag metadata, preferred display
 
 `add`, `organize`, and `refresh` use one shared resolver and cache contract. `organize` can reconcile existing paths after a preference or accepted resolution changes. `add` may use a resolved name for a new artist, but it must refuse mixed naming when an existing Library artist requires reconciliation. The existing `artist-ids generate` flow should reuse the shared naming result where appropriate while keeping display-name preferences and compact IDs separate.
 
-Before the accepted-name cache is read or written, Stage 2 must define one
-pure whole-string source-key function, including its Unicode normalization and
-whitespace rules. Lookup and insertion must use that same function; it must not
-silently reuse PathPolicy sanitization or split multi-artist text.
+Accepted-name cache reads and writes use the pure whole-string source-key
+contract in [DOMAIN.md](docs/DOMAIN.md#artistnamesourcekey) and
+[db-schema.md](docs/contracts/db-schema.md#accepted_artist_names). It is
+independent from PathPolicy sanitization and preserves multi-artist text as one
+opaque value.
 
 Plan review surfaces the source value, resolved value, provenance, and unresolved/ambiguous state. Provider failure is non-fatal and falls back to the original value.
 
