@@ -1,9 +1,9 @@
 ---
 type: Domain Model
 title: Domain
-description: Defines OMYM2's core entities, including raw track metadata, artist-name projection, durable Operations, Track stat baselines, snapshot boundaries, and UUIDv7 identity policy.
+description: Defines OMYM2's core entities, including raw track metadata, artist-name source keys and projections, durable Operations, Track stat baselines, snapshot boundaries, and UUIDv7 identity policy.
 tags: [domain-model, entities, invariants, artist-names, operations, id-design]
-timestamp: 2026-07-15T20:47:24+09:00
+timestamp: 2026-07-15T21:42:00+09:00
 ---
 
 # Domain
@@ -100,6 +100,28 @@ Missing, empty, malformed, or inconsistent tag values are allowed at this layer.
 Raw TrackMetadata is never overwritten by a preferred artist display name.
 Metadata hashes, Track persistence, album grouping, and artist-ID lookup keep
 using the raw tag values.
+
+## ArtistNameSourceKey
+
+`derive_artist_name_source_key` produces the sole lookup key used for accepted
+provider artist names. It treats the complete source artist or album-artist
+value as one opaque string and applies these rules in order:
+
+1. Missing input produces no key.
+2. Normalize the string to Unicode NFC.
+3. Replace each run of Unicode whitespace with one ASCII space and remove
+   leading and trailing whitespace.
+4. If no text remains, produce no key.
+
+Key derivation preserves case, punctuation, compatibility characters, source
+order, and multi-artist separators. It never applies PathPolicy sanitization,
+case folding, transliteration, or multi-artist splitting. Consequently,
+canonically equivalent spellings and whitespace-only variations share a cache
+entry while other textual distinctions remain separate.
+
+Naming usecases derive the key with this function before every accepted-name
+cache lookup and insertion. The exact raw metadata string remains available as
+the accepted record's `source_name`; deriving a key never changes TrackMetadata.
 
 ## ArtistNameProjection
 

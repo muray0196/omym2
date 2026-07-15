@@ -1,10 +1,11 @@
 """
-Summary: Projects raw artist metadata into preferred display names.
-Why: Keeps path-facing names derived without changing source tag metadata.
+Summary: Projects artist metadata and derives stable provider-cache keys.
+Why: Keeps path names and lookup identity derived without changing source tags.
 """
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -13,6 +14,17 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from omym2.domain.models.track_metadata import TrackMetadata
+
+_ARTIST_NAME_SOURCE_KEY_NORMALIZATION_FORM = "NFC"
+
+
+def derive_artist_name_source_key(source_name: str | None) -> str | None:
+    """Return one normalized whole-string key, or no key for missing text."""
+    if source_name is None:
+        return None
+    normalized = unicodedata.normalize(_ARTIST_NAME_SOURCE_KEY_NORMALIZATION_FORM, source_name)
+    source_key = " ".join(normalized.split())
+    return source_key or None
 
 
 @dataclass(frozen=True, slots=True)
