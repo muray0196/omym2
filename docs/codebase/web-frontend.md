@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Web Frontend
-description: Defines the bundled desktop React and Vite Web frontend contract, including routes, artist-name settings, design rules, API boundaries, browser and native-window serving, packaging, security, and performance gates.
+description: Defines the bundled desktop React and Vite Web frontend contract, including routes, artist-name settings and Plan diagnostics, design rules, API boundaries, browser and native-window serving, packaging, security, and performance gates.
 tags: [web-frontend, react, vite, static-spa, artist-names, desktop, windows, performance]
-timestamp: 2026-07-15T20:47:24+09:00
+timestamp: 2026-07-16T00:44:26+09:00
 ---
 
 # Web Frontend
@@ -167,7 +167,7 @@ result.
 | `/plans/new/add` | Add Plan creation | Scan and create Plan |
 | `/plans/new/organize` | Library registration or reconciliation Plan creation | Scan Library |
 | `/plans/new/refresh` | File, directory, or all-target Refresh Plan creation | Create Refresh Plan |
-| `/plans/:planId` | Plan header, summary, actions, groups, Apply, and Cancel | Apply Plan |
+| `/plans/:planId` | Plan header, summary, actions with recorded artist-name diagnostics, groups, Apply, and Cancel | Apply Plan |
 | `/library` | Track search, status filtering, and artist/album grouping | Refresh path |
 | `/library/:trackId` | Track metadata, paths, hashes, and history links | Refresh Track |
 | `/health` | Latest persisted Check issues, facets, groups, and timestamp | Run Check |

@@ -5,6 +5,7 @@ Why: Verifies storage, migration, and UnitOfWork behavior.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import nullcontext
 from dataclasses import replace
@@ -22,11 +23,18 @@ from omym2.adapters.db.sqlite.migration_runner import (
     ensure_database_migrated,
     migrate_database,
 )
+from omym2.adapters.db.sqlite.repositories import INVALID_ARTIST_NAME_DIAGNOSTICS_MESSAGE
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.domain.models.accepted_artist_name import (
     AcceptedArtistName,
     ArtistNameProvider,
     SelectedArtistNameKind,
+)
+from omym2.domain.models.artist_name_resolution import (
+    ArtistNameDiagnostics,
+    ArtistNameResolutionDiagnostic,
+    ArtistNameResolutionIssue,
+    ArtistNameResolutionProvenance,
 )
 from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
 from omym2.domain.models.check_run import CheckRun
@@ -73,6 +81,7 @@ OTHER_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345683"))
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 PLAN_SUMMARY = {"moves": "1"}
 PERFORMANCE_INDEX_MIGRATION_NAME = "202607110001_performance_indexes.sql"
+PLAN_ACTION_DIAGNOSTICS_MIGRATION_NAME = "202607160001_plan_action_artist_name_diagnostics.sql"
 STAT_BASELINE_MIGRATION_NAME = "202607110002_track_stat_baseline.sql"
 UNDO_PROVENANCE_MIGRATION_NAME = "202607130002_undo_provenance_and_apply_claim.sql"
 REUSED_BEGIN_COUNT = 3
@@ -180,6 +189,35 @@ def test_accepted_artist_name_migration_preserves_existing_managed_state(
     with SQLiteUnitOfWork(database_file) as uow:
         assert uow.libraries.get(LIBRARY_ID) == _library()
         assert uow.tracks.get(TRACK_ID) == _track()
+
+
+def test_plan_action_diagnostics_migration_preserves_existing_actions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The additive diagnostics column leaves existing PlanActions intact with no fabricated evidence."""
+    database_file = default_application_paths(tmp_path).database_file
+    packaged_migrations = migration_runner.load_packaged_migrations()
+    prior_migrations = tuple(
+        migration for migration in packaged_migrations if migration.name < PLAN_ACTION_DIAGNOSTICS_MIGRATION_NAME
+    )
+    existing_action = _plan_action(ACTION_ID, SORT_ORDER_EARLY)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(migration_runner, "load_packaged_migrations", lambda: prior_migrations)
+        with SQLiteUnitOfWork(database_file) as uow:
+            uow.libraries.save(_library())
+            uow.tracks.save(_track())
+            uow.plans.save(_plan())
+            uow.commit()
+        _insert_plan_action_without_diagnostics(database_file, existing_action)
+
+    migrate_database(database_file)
+
+    assert PLAN_ACTION_DIAGNOSTICS_MIGRATION_NAME in _applied_migrations(database_file)
+    assert _table_columns_for(database_file, "plan_actions")["artist_name_diagnostics_json"] == "TEXT"
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.plan_actions.get(ACTION_ID) == existing_action
 
 
 def test_sqlite_accepted_artist_names_are_sticky_and_round_trip_provenance(tmp_path: Path) -> None:
@@ -788,6 +826,116 @@ def test_sqlite_repositories_round_trip_domain_models(tmp_path: Path) -> None:
         assert uow.file_events.list_by_library(LIBRARY_ID) == (event_early, event_late)
 
 
+def test_sqlite_plan_actions_round_trip_typed_artist_name_diagnostics(tmp_path: Path) -> None:
+    """PlanAction persistence restores the complete typed naming review snapshot."""
+    database_file = default_application_paths(tmp_path).database_file
+    diagnostics = _artist_name_diagnostics()
+    action = _plan_action(ACTION_ID, SORT_ORDER_EARLY, artist_name_diagnostics=diagnostics)
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.plans.save(_plan())
+        uow.plan_actions.save(action)
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.plan_actions.get(ACTION_ID) == action
+
+    with sqlite3.connect(database_file) as connection:
+        row = cast(
+            "tuple[str] | None",
+            connection.execute(
+                "SELECT artist_name_diagnostics_json FROM plan_actions WHERE action_id = ?",
+                (str(ACTION_ID),),
+            ).fetchone(),
+        )
+        assert row is not None
+        assert json.loads(row[0]) == {
+            "album_artist": {
+                "issue": ArtistNameResolutionIssue.AMBIGUOUS_MATCH.value,
+                "provenance": ArtistNameResolutionProvenance.ORIGINAL.value,
+                "resolved_name": ACCEPTED_ARTIST_SOURCE_NAME,
+                "source_name": ACCEPTED_ARTIST_SOURCE_NAME,
+            },
+            "artist": {
+                "issue": None,
+                "provenance": ArtistNameResolutionProvenance.ACCEPTED_MUSICBRAINZ.value,
+                "resolved_name": ACCEPTED_ARTIST_RESOLVED_NAME,
+                "source_name": ACCEPTED_ARTIST_SOURCE_NAME,
+            },
+        }
+
+
+@pytest.mark.parametrize("invalid_payload", ["{", "[]"])
+def test_sqlite_plan_action_diagnostics_column_rejects_non_object_json(
+    tmp_path: Path,
+    invalid_payload: str,
+) -> None:
+    """The additive column cannot retain malformed or non-object diagnostics JSON."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.plans.save(_plan())
+        uow.plan_actions.save(_plan_action(ACTION_ID, SORT_ORDER_EARLY))
+        uow.commit()
+
+    with sqlite3.connect(database_file) as connection, pytest.raises(sqlite3.IntegrityError):
+        _ = connection.execute(
+            "UPDATE plan_actions SET artist_name_diagnostics_json = ? WHERE action_id = ?",
+            (invalid_payload, str(ACTION_ID)),
+        )
+
+
+@pytest.mark.parametrize("missing_field", ["source_name", "resolved_name", "issue"])
+def test_sqlite_plan_actions_reject_incomplete_artist_name_diagnostics(
+    tmp_path: Path,
+    missing_field: str,
+) -> None:
+    """Nullable diagnostic fields remain required so missing evidence is not fabricated as null."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.plans.save(_plan())
+        uow.plan_actions.save(
+            _plan_action(ACTION_ID, SORT_ORDER_EARLY, artist_name_diagnostics=_artist_name_diagnostics())
+        )
+        uow.commit()
+
+    payload = {
+        "artist": {
+            "source_name": ACCEPTED_ARTIST_SOURCE_NAME,
+            "resolved_name": ACCEPTED_ARTIST_RESOLVED_NAME,
+            "provenance": ArtistNameResolutionProvenance.ACCEPTED_MUSICBRAINZ.value,
+            "issue": None,
+        },
+        "album_artist": {
+            "source_name": ACCEPTED_ARTIST_SOURCE_NAME,
+            "resolved_name": ACCEPTED_ARTIST_SOURCE_NAME,
+            "provenance": ArtistNameResolutionProvenance.ORIGINAL.value,
+            "issue": ArtistNameResolutionIssue.AMBIGUOUS_MATCH.value,
+        },
+    }
+    artist_payload = cast("dict[str, object]", payload["artist"])
+    _ = artist_payload.pop(missing_field)
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute(
+            "UPDATE plan_actions SET artist_name_diagnostics_json = ? WHERE action_id = ?",
+            (json.dumps(payload), str(ACTION_ID)),
+        )
+
+    with (
+        SQLiteUnitOfWork(database_file) as uow,
+        pytest.raises(
+            TypeError,
+            match=INVALID_ARTIST_NAME_DIAGNOSTICS_MESSAGE,
+        ),
+    ):
+        _ = uow.plan_actions.get(ACTION_ID)
+
+
 def test_sqlite_repositories_round_trip_undo_provenance(tmp_path: Path) -> None:
     """Plan and PlanAction repositories preserve Run and FileEvent provenance verbatim."""
     database_file = default_application_paths(tmp_path).database_file
@@ -901,6 +1049,22 @@ def _accepted_artist_name() -> AcceptedArtistName:
         selected_name_kind=SelectedArtistNameKind.ALIAS,
         selected_locale="en",
         accepted_at=BASE_TIME,
+    )
+
+
+def _artist_name_diagnostics() -> ArtistNameDiagnostics:
+    return ArtistNameDiagnostics(
+        artist=ArtistNameResolutionDiagnostic(
+            source_name=ACCEPTED_ARTIST_SOURCE_NAME,
+            resolved_name=ACCEPTED_ARTIST_RESOLVED_NAME,
+            provenance=ArtistNameResolutionProvenance.ACCEPTED_MUSICBRAINZ,
+        ),
+        album_artist=ArtistNameResolutionDiagnostic(
+            source_name=ACCEPTED_ARTIST_SOURCE_NAME,
+            resolved_name=ACCEPTED_ARTIST_SOURCE_NAME,
+            provenance=ArtistNameResolutionProvenance.ORIGINAL,
+            issue=ArtistNameResolutionIssue.AMBIGUOUS_MATCH,
+        ),
     )
 
 
@@ -1427,6 +1591,7 @@ def _plan_action(
     sort_order: int,
     *,
     plan_id: PlanId = PLAN_ID,
+    artist_name_diagnostics: ArtistNameDiagnostics | None = None,
 ) -> PlanAction:
     return PlanAction(
         action_id=action_id,
@@ -1441,7 +1606,48 @@ def _plan_action(
         status=ActionStatus.PLANNED,
         reason=None,
         sort_order=sort_order,
+        artist_name_diagnostics=artist_name_diagnostics,
     )
+
+
+def _insert_plan_action_without_diagnostics(database_file: Path, action: PlanAction) -> None:
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute("PRAGMA foreign_keys = ON")
+        _ = connection.execute(
+            """
+            INSERT INTO plan_actions (
+                action_id,
+                plan_id,
+                library_id,
+                track_id,
+                action_type,
+                source_path,
+                target_path,
+                reverses_event_id,
+                content_hash_at_plan,
+                metadata_hash_at_plan,
+                status,
+                reason,
+                sort_order
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(action.action_id),
+                str(action.plan_id),
+                str(action.library_id),
+                None if action.track_id is None else str(action.track_id),
+                action.action_type.value,
+                action.source_path,
+                action.target_path,
+                None if action.reverses_event_id is None else str(action.reverses_event_id),
+                action.content_hash_at_plan,
+                action.metadata_hash_at_plan,
+                action.status.value,
+                None if action.reason is None else action.reason.value,
+                action.sort_order,
+            ),
+        )
 
 
 def _run(*, run_id: RunId = RUN_ID, plan_id: PlanId = PLAN_ID) -> Run:

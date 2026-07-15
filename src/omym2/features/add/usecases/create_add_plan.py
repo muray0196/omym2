@@ -25,6 +25,7 @@ from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
 from omym2.domain.services.artist_name import (
     ArtistNameProjection,
+    artist_name_diagnostics,
     artist_name_projections,
     artist_name_sources,
     derive_artist_name_source_key,
@@ -46,7 +47,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from omym2.domain.models.app_config import AppConfig
-    from omym2.domain.models.artist_name_resolution import ArtistNameResolution
+    from omym2.domain.models.artist_name_resolution import ArtistNameDiagnostics, ArtistNameResolution
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.track import Track
@@ -204,6 +205,7 @@ class CreateAddPlanUseCase:
         projections = iter(
             artist_name_projections(candidate_metadata, tuple(resolution.resolved_name for resolution in resolutions))
         )
+        diagnostics = iter(artist_name_diagnostics(candidate_metadata, resolutions))
         resolution_pairs = iter(tuple(zip(resolutions[::2], resolutions[1::2], strict=True)))
         resolved_years = resolve_album_years(
             metadata_batch,
@@ -228,6 +230,7 @@ class CreateAddPlanUseCase:
                 continue
 
             artist_names = next(projections)
+            artist_diagnostics = next(diagnostics)
             artist_name_resolutions = next(resolution_pairs)
             try:
                 resolved_metadata = metadata_with_resolved_album_year(
@@ -247,6 +250,7 @@ class CreateAddPlanUseCase:
                         candidate,
                         reason=_path_generation_failure_reason(exc),
                         target_path=None,
+                        artist_name_diagnostics=artist_diagnostics,
                         artist_name_resolutions=artist_name_resolutions,
                     )
                 )
@@ -256,6 +260,7 @@ class CreateAddPlanUseCase:
                 replace(
                     candidate,
                     target_path=target_path,
+                    artist_name_diagnostics=artist_diagnostics,
                     artist_name_resolutions=artist_name_resolutions,
                 )
             )
@@ -340,6 +345,7 @@ class CreateAddPlanUseCase:
                     status=_action_status(candidate),
                     reason=candidate.reason,
                     sort_order=sort_order,
+                    artist_name_diagnostics=candidate.artist_name_diagnostics,
                 )
             )
             sort_order += PLAN_ACTION_SORT_ORDER_STEP
@@ -370,6 +376,7 @@ class _AddCandidate:
     reason: PlanActionReason | None
     track_id: TrackId | None
     artist_name_resolutions: tuple[ArtistNameResolution, ...] = ()
+    artist_name_diagnostics: ArtistNameDiagnostics | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -213,6 +213,20 @@ export const readyPlanActionsFirstPage = {
       {
         action_id: "01912345-6789-7abc-8def-012345678911",
         action_type: "move",
+        artist_name_diagnostics: {
+          artist: {
+            issue: null,
+            provenance: "new_musicbrainz",
+            resolved_name: "Hikaru Utada",
+            source_name: "宇多田ヒカル",
+          },
+          album_artist: {
+            issue: "ambiguous_match",
+            provenance: "original",
+            resolved_name: "宇多田ヒカル",
+            source_name: "宇多田ヒカル",
+          },
+        },
         content_hash_at_plan: "fixture-content-hash-a",
         library_id: FIXTURE_LIBRARY_ID,
         metadata_hash_at_plan: "fixture-metadata-hash-a",
@@ -227,6 +241,7 @@ export const readyPlanActionsFirstPage = {
       {
         action_id: "01912345-6789-7abc-8def-012345678912",
         action_type: "skip",
+        artist_name_diagnostics: null,
         content_hash_at_plan: "fixture-content-hash-b",
         library_id: FIXTURE_LIBRARY_ID,
         metadata_hash_at_plan: "fixture-metadata-hash-b",
@@ -254,6 +269,7 @@ export const readyPlanActionsSecondPage = {
       {
         action_id: "01912345-6789-7abc-8def-012345678913",
         action_type: "refresh_metadata",
+        artist_name_diagnostics: null,
         content_hash_at_plan: null,
         library_id: FIXTURE_LIBRARY_ID,
         metadata_hash_at_plan: "fixture-metadata-hash-c",
@@ -268,6 +284,7 @@ export const readyPlanActionsSecondPage = {
       {
         action_id: "01912345-6789-7abc-8def-012345678914",
         action_type: "move",
+        artist_name_diagnostics: null,
         content_hash_at_plan: "fixture-content-hash-d",
         library_id: FIXTURE_LIBRARY_ID,
         metadata_hash_at_plan: "fixture-metadata-hash-d",

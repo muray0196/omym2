@@ -16,6 +16,12 @@ from omym2.domain.models.accepted_artist_name import (
     ArtistNameProvider,
     SelectedArtistNameKind,
 )
+from omym2.domain.models.artist_name_resolution import (
+    ArtistNameDiagnostics,
+    ArtistNameResolutionDiagnostic,
+    ArtistNameResolutionIssue,
+    ArtistNameResolutionProvenance,
+)
 from omym2.domain.models.check_issue import (
     CHECK_ISSUE_GROUP_ARTIST_ALBUM_LABEL_SEPARATOR,
     CHECK_ISSUE_GROUP_EXTERNAL_KEY,
@@ -82,6 +88,8 @@ if TYPE_CHECKING:
     from omym2.shared.pagination import PageRequest
 
 INVALID_JSON_OBJECT_MESSAGE = "Persisted JSON payload must be an object."
+INVALID_ARTIST_NAME_DIAGNOSTICS_MESSAGE = "Persisted artist-name diagnostics do not match the typed contract."
+ARTIST_NAME_DIAGNOSTIC_FIELD_NAMES = frozenset({"source_name", "resolved_name", "provenance", "issue"})
 INVALID_METADATA_VALUE_MESSAGE = "Persisted metadata JSON contains an unsupported value."
 INVALID_ROW_TEXT_MESSAGE = "Expected SQLite text value."
 INVALID_ROW_INTEGER_MESSAGE = "Expected SQLite integer value."
@@ -243,6 +251,7 @@ PLAN_ACTION_SELECT_FROM = """
                 reverses_event_id,
                 content_hash_at_plan,
                 metadata_hash_at_plan,
+                artist_name_diagnostics_json,
                 status,
                 reason,
                 sort_order
@@ -1409,11 +1418,12 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 reverses_event_id,
                 content_hash_at_plan,
                 metadata_hash_at_plan,
+                artist_name_diagnostics_json,
                 status,
                 reason,
                 sort_order
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(action_id) DO UPDATE SET
                 plan_id = excluded.plan_id,
                 library_id = excluded.library_id,
@@ -1424,6 +1434,7 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 reverses_event_id = excluded.reverses_event_id,
                 content_hash_at_plan = excluded.content_hash_at_plan,
                 metadata_hash_at_plan = excluded.metadata_hash_at_plan,
+                artist_name_diagnostics_json = excluded.artist_name_diagnostics_json,
                 status = excluded.status,
                 reason = excluded.reason,
                 sort_order = excluded.sort_order
@@ -1439,6 +1450,11 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 None if action.reverses_event_id is None else str(action.reverses_event_id),
                 action.content_hash_at_plan,
                 action.metadata_hash_at_plan,
+                (
+                    None
+                    if action.artist_name_diagnostics is None
+                    else _artist_name_diagnostics_to_json(action.artist_name_diagnostics)
+                ),
                 action.status.value,
                 None if action.reason is None else action.reason.value,
                 action.sort_order,
@@ -2012,6 +2028,9 @@ def _plan_action_from_row(row: sqlite3.Row) -> PlanAction:
         target_path=_row_optional_text(row, "target_path"),
         content_hash_at_plan=_row_optional_text(row, "content_hash_at_plan"),
         metadata_hash_at_plan=_row_optional_text(row, "metadata_hash_at_plan"),
+        artist_name_diagnostics=_artist_name_diagnostics_from_optional_json(
+            _row_optional_text(row, "artist_name_diagnostics_json")
+        ),
         status=ActionStatus(_row_text(row, "status")),
         reason=None if reason is None else PlanActionReason(reason),
         sort_order=_row_int(row, "sort_order"),
@@ -2819,6 +2838,65 @@ def _summary_from_json(raw_value: str) -> dict[str, str]:
             raise TypeError(INVALID_SUMMARY_VALUE_MESSAGE)
         summary[key] = value
     return summary
+
+
+def _artist_name_diagnostics_to_json(diagnostics: ArtistNameDiagnostics) -> str:
+    return _json_to_text(
+        {
+            "artist": _artist_name_resolution_diagnostic_payload(diagnostics.artist),
+            "album_artist": _artist_name_resolution_diagnostic_payload(diagnostics.album_artist),
+        }
+    )
+
+
+def _artist_name_resolution_diagnostic_payload(
+    diagnostic: ArtistNameResolutionDiagnostic,
+) -> dict[str, object]:
+    return {
+        "source_name": diagnostic.source_name,
+        "resolved_name": diagnostic.resolved_name,
+        "provenance": diagnostic.provenance.value,
+        "issue": None if diagnostic.issue is None else diagnostic.issue.value,
+    }
+
+
+def _artist_name_diagnostics_from_optional_json(raw_value: str | None) -> ArtistNameDiagnostics | None:
+    if raw_value is None:
+        return None
+    payload = _json_object(raw_value)
+    return ArtistNameDiagnostics(
+        artist=_artist_name_resolution_diagnostic_from_payload(payload, "artist"),
+        album_artist=_artist_name_resolution_diagnostic_from_payload(payload, "album_artist"),
+    )
+
+
+def _artist_name_resolution_diagnostic_from_payload(
+    payload: Mapping[str, object],
+    key: str,
+) -> ArtistNameResolutionDiagnostic:
+    raw_diagnostic = payload.get(key)
+    if not isinstance(raw_diagnostic, dict):
+        raise TypeError(INVALID_ARTIST_NAME_DIAGNOSTICS_MESSAGE)
+    diagnostic = cast("dict[str, object]", raw_diagnostic)
+    if not ARTIST_NAME_DIAGNOSTIC_FIELD_NAMES.issubset(diagnostic):
+        raise TypeError(INVALID_ARTIST_NAME_DIAGNOSTICS_MESSAGE)
+    raw_provenance = diagnostic.get("provenance")
+    raw_issue = diagnostic.get("issue")
+    if not isinstance(raw_provenance, str) or not (raw_issue is None or isinstance(raw_issue, str)):
+        raise TypeError(INVALID_ARTIST_NAME_DIAGNOSTICS_MESSAGE)
+    return ArtistNameResolutionDiagnostic(
+        source_name=_artist_name_diagnostic_optional_text(diagnostic, "source_name"),
+        resolved_name=_artist_name_diagnostic_optional_text(diagnostic, "resolved_name"),
+        provenance=ArtistNameResolutionProvenance(raw_provenance),
+        issue=None if raw_issue is None else ArtistNameResolutionIssue(raw_issue),
+    )
+
+
+def _artist_name_diagnostic_optional_text(payload: Mapping[str, object], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None or isinstance(value, str):
+        return value
+    raise TypeError(INVALID_ARTIST_NAME_DIAGNOSTICS_MESSAGE)
 
 
 def _operation_result_to_json(result: OperationResult) -> str:

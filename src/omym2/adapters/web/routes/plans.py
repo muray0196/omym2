@@ -22,6 +22,8 @@ from omym2.adapters.web.schemas.api_envelopes import ApiEnvelope, ApiFailureEnve
 from omym2.adapters.web.schemas.api_errors import ApiError, ApiErrorCode, ApiRemediation
 from omym2.adapters.web.schemas.browsing import FacetValueResource, PageInfo, PaginatedData
 from omym2.adapters.web.schemas.plans import (
+    ArtistNameDiagnosticsResource,
+    ArtistNameResolutionDiagnosticResource,
     PlanActionFacetsData,
     PlanActionFacetSets,
     PlanActionGroupResource,
@@ -93,6 +95,10 @@ from omym2.shared.pagination import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from omym2.domain.models.artist_name_resolution import (
+        ArtistNameDiagnostics,
+        ArtistNameResolutionDiagnostic,
+    )
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
     from omym2.features.plans.dto import PlanActionFacetsResult, PlanActionGroup
@@ -510,6 +516,29 @@ def _plan_action_resource(action: PlanAction) -> PlanActionResource:
         status=action.status,
         reason=action.reason,
         sort_order=action.sort_order,
+        artist_name_diagnostics=_artist_name_diagnostics_resource(action.artist_name_diagnostics),
+    )
+
+
+def _artist_name_diagnostics_resource(
+    diagnostics: ArtistNameDiagnostics | None,
+) -> ArtistNameDiagnosticsResource | None:
+    if diagnostics is None:
+        return None
+    return ArtistNameDiagnosticsResource(
+        artist=_artist_name_resolution_diagnostic_resource(diagnostics.artist),
+        album_artist=_artist_name_resolution_diagnostic_resource(diagnostics.album_artist),
+    )
+
+
+def _artist_name_resolution_diagnostic_resource(
+    diagnostic: ArtistNameResolutionDiagnostic,
+) -> ArtistNameResolutionDiagnosticResource:
+    return ArtistNameResolutionDiagnosticResource(
+        source_name=diagnostic.source_name,
+        resolved_name=diagnostic.resolved_name,
+        provenance=diagnostic.provenance,
+        issue=diagnostic.issue,
     )
 
 

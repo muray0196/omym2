@@ -1,9 +1,9 @@
 ---
 type: Domain Model
 title: Domain
-description: Defines OMYM2's core entities, including raw track metadata, artist-name source keys, batch resolution and projections, durable Operations, Track stat baselines, snapshot boundaries, and UUIDv7 identity policy.
+description: Defines OMYM2's core entities, including raw track metadata, artist-name source keys, batch resolution, Plan review diagnostics and projections, durable Operations, Track stat baselines, snapshot boundaries, and UUIDv7 identity policy.
 tags: [domain-model, entities, invariants, artist-names, operations, id-design]
-timestamp: 2026-07-15T22:52:00+09:00
+timestamp: 2026-07-16T00:44:26+09:00
 ---
 
 # Domain
@@ -180,6 +180,21 @@ resolved value. Misses, ambiguity, ineligibility, model or provider
 unavailability, malformed responses, timeouts, and other provider failures are
 not negative cache entries and preserve the original source value. These
 fallbacks are normal resolution outcomes rather than errors for the caller.
+
+### Plan Review Diagnostics
+
+When an Add, Organize, or Refresh candidate reaches artist-name resolution and
+becomes a PlanAction, that action records a review-only diagnostic pair for its
+artist and album-artist fields. Each field snapshots the source value, resolved
+value, resolution provenance, and nullable resolution issue observed while the
+target path was calculated. A missing field remains an explicit resolution
+outcome inside the pair.
+
+Candidates blocked before artist-name resolution and Undo actions record no
+artist-name diagnostic pair. Plan review reads only this recorded snapshot; it
+does not reload preferences, consult the accepted-name cache, run fastText, or
+contact MusicBrainz. Apply preserves the snapshot while changing action status
+and continues to execute only the recorded paths.
 
 ### Automatic lookup eligibility
 

@@ -96,6 +96,17 @@ describe("PlanDetail", () => {
     expect(
       screen.getByText("01912345-6789-7abc-8def-012345678911"),
     ).toBeVisible();
+    const artistNamingHeading = screen.getByRole("heading", {
+      name: "Artist naming",
+    });
+    const artistNaming = within(artistNamingHeading.parentElement!);
+    expect(artistNaming.getByText("Artist")).toBeVisible();
+    expect(artistNaming.getByText("Album artist")).toBeVisible();
+    expect(artistNaming.getByText("Hikaru Utada")).toBeVisible();
+    expect(artistNaming.getByText("New MusicBrainz result")).toBeVisible();
+    expect(artistNaming.getByText("Original metadata")).toBeVisible();
+    expect(artistNaming.getByText("None")).toBeVisible();
+    expect(artistNaming.getByText("Ambiguous match")).toBeVisible();
 
     await user.click(
       screen.getByRole("button", { name: "Next page of Plan actions" }),
@@ -114,6 +125,53 @@ describe("PlanDetail", () => {
       const parameters = new URLSearchParams(router.state.location.search);
       expect(parameters.get("group_key")).toBe("fixture-group-planned");
     });
+  });
+
+  it("renders null names and preserves unknown diagnostic catalog values", async () => {
+    const [action] = readyPlanActionsFirstPage.data.items;
+    if (action === undefined) {
+      throw new Error("The Plan action fixture must not be empty.");
+    }
+    server.use(
+      http.get("*/api/plans/:planId/actions", () =>
+        HttpResponse.json({
+          data: {
+            items: [
+              {
+                ...action,
+                artist_name_diagnostics: {
+                  artist: {
+                    issue: "future_issue",
+                    provenance: "future_provenance",
+                    resolved_name: null,
+                    source_name: null,
+                  },
+                  album_artist: {
+                    issue: null,
+                    provenance: "original",
+                    resolved_name: "Album Artist",
+                    source_name: "Album Artist",
+                  },
+                },
+              },
+            ],
+            page: { limit: 100, next_cursor: null, total: 1 },
+          },
+          errors: [],
+        }),
+      ),
+    );
+    renderPlanDetail();
+
+    const artistNamingHeading = await screen.findByRole("heading", {
+      name: "Artist naming",
+    });
+    const artistNaming = within(artistNamingHeading.parentElement!);
+    expect(artistNaming.getAllByText("—")).toHaveLength(2);
+    expect(
+      artistNaming.getByText(/Unknown provenance: future_provenance/),
+    ).toBeVisible();
+    expect(artistNaming.getByText(/Unknown issue: future_issue/)).toBeVisible();
   });
 
   it("starts Apply once, polls durable progress, and opens the completed Run in History", async () => {

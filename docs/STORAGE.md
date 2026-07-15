@@ -1,9 +1,9 @@
 ---
 type: Storage Design
 title: Storage
-description: Defines application-root selection, TOML raw-revision and atomic-save ownership, artist-name storage boundaries, SQLite managed state, durable Operation and FileEvent storage, consistency, reproducibility, and path responsibilities.
+description: Defines application-root selection, TOML raw-revision and atomic-save ownership, artist-name cache and Plan-diagnostic storage boundaries, SQLite managed state, durable Operation and FileEvent storage, consistency, reproducibility, and path responsibilities.
 tags: [storage, sqlite, toml, persistence, artist-names, desktop]
-timestamp: 2026-07-15T22:15:52+09:00
+timestamp: 2026-07-16T00:44:26+09:00
 ---
 
 # Storage
@@ -140,6 +140,11 @@ ambiguous matches, and provider failures do not create rows. A row may be
 created by an explicit naming consumer such as `artist-ids generate`; its
 existence does not imply that a Plan, Track, or file mutation was created.
 
+PlanActions separately store the artist and album-artist resolution diagnostics
+that were actually observed while calculating their reviewed targets. These
+bounded snapshots explain a recorded action without turning a Plan into a
+negative provider cache or authorizing later name resolution.
+
 `check` replaces each Library's prior CheckRun and CheckIssues with its latest
 diagnostics. It does not change Tracks, Plans, Runs, or Library music files.
 The detailed persistence and browsing contract is in
@@ -250,6 +255,7 @@ The DB does not store editable settings. However, a Plan must preserve enough in
 In the initial version, this means:
 
 * store concrete path references in PlanActions according to [contracts/path-identity-storage.md](contracts/path-identity-storage.md)
+* store the plan-time artist and album-artist resolution diagnostics on each PlanAction that reached name resolution
 * store `config_hash` and `library_root_at_plan` in Plans
 * apply recorded PlanActions instead of recalculating paths from the latest config
 * reject or expire unapplied Plans when the owning Library root has changed since plan creation

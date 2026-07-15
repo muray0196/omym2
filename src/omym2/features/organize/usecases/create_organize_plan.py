@@ -29,7 +29,7 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
-from omym2.domain.services.artist_name import artist_name_projections, artist_name_sources
+from omym2.domain.services.artist_name import artist_name_diagnostics, artist_name_projections, artist_name_sources
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from omym2.domain.models.app_config import AppConfig
+    from omym2.domain.models.artist_name_resolution import ArtistNameDiagnostics
     from omym2.domain.models.file_scan_entry import FileScanEntry
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.features.common_ports import UnitOfWork
@@ -273,6 +274,7 @@ class CreateOrganizePlanUseCase:
         projections = iter(
             artist_name_projections(metadata_batch, tuple(resolution.resolved_name for resolution in resolutions))
         )
+        diagnostics = iter(artist_name_diagnostics(metadata_batch, resolutions))
         resolved_years = resolve_album_years(
             metadata_batch,
             config.path_policy,
@@ -296,6 +298,7 @@ class CreateOrganizePlanUseCase:
                 continue
 
             artist_names = next(projections)
+            candidate_diagnostics = next(diagnostics)
             try:
                 resolved_metadata = metadata_with_resolved_album_year(
                     snapshot.metadata,
@@ -310,11 +313,22 @@ class CreateOrganizePlanUseCase:
                 )
             except ValueError as exc:
                 judged_candidates.append(
-                    replace(candidate, target_path=None, block_reason=_path_generation_failure_reason(exc))
+                    replace(
+                        candidate,
+                        target_path=None,
+                        block_reason=_path_generation_failure_reason(exc),
+                        artist_name_diagnostics=candidate_diagnostics,
+                    )
                 )
                 continue
 
-            judged_candidates.append(replace(candidate, target_path=target_path))
+            judged_candidates.append(
+                replace(
+                    candidate,
+                    target_path=target_path,
+                    artist_name_diagnostics=candidate_diagnostics,
+                )
+            )
 
         return tuple(judged_candidates)
 
@@ -424,6 +438,7 @@ class CreateOrganizePlanUseCase:
                     status=action_status,
                     reason=record.reason,
                     sort_order=sort_order,
+                    artist_name_diagnostics=candidate.artist_name_diagnostics,
                 )
             )
             sort_order += PLAN_ACTION_SORT_ORDER_STEP
@@ -471,6 +486,7 @@ class _OrganizeCandidate:
     snapshot: FileSnapshot | None
     target_path: str | None
     block_reason: PlanActionReason | None
+    artist_name_diagnostics: ArtistNameDiagnostics | None = None
 
 
 @dataclass(frozen=True, slots=True)

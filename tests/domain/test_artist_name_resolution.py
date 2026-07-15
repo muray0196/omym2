@@ -14,6 +14,7 @@ from omym2.domain.models.accepted_artist_name import (
 )
 from omym2.domain.models.artist_name_resolution import (
     ArtistNameResolution,
+    ArtistNameResolutionDiagnostic,
     ArtistNameResolutionIssue,
     ArtistNameResolutionProvenance,
 )
@@ -58,6 +59,25 @@ def test_artist_name_resolution_carries_the_accepted_match() -> None:
 
     assert resolution.accepted_name == accepted_name
     assert resolution.issue is None
+
+
+def test_artist_name_resolution_diagnostic_copies_only_durable_review_fields() -> None:
+    """Plan review diagnostics do not retain the accepted cache record or source key."""
+    resolution = ArtistNameResolution(
+        source_name=SOURCE_NAME,
+        source_key=SOURCE_NAME,
+        resolved_name=RESOLVED_NAME,
+        provenance=ArtistNameResolutionProvenance.NEW_MUSICBRAINZ,
+        accepted_name=_accepted_name(),
+    )
+
+    diagnostic = ArtistNameResolutionDiagnostic.from_resolution(resolution)
+
+    assert diagnostic == ArtistNameResolutionDiagnostic(
+        source_name=SOURCE_NAME,
+        resolved_name=RESOLVED_NAME,
+        provenance=ArtistNameResolutionProvenance.NEW_MUSICBRAINZ,
+    )
 
 
 def _accepted_name() -> AcceptedArtistName:

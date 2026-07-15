@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
+    from omym2.domain.models.artist_name_resolution import ArtistNameDiagnostics
     from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, TrackId
 
 
@@ -62,6 +63,7 @@ class PlanAction:
     reason: PlanActionReason | None
     sort_order: int
     reverses_event_id: EventId | None = None
+    artist_name_diagnostics: ArtistNameDiagnostics | None = None
 
     def __post_init__(self) -> None:
         """Normalize Library-managed path references stored in the action."""
@@ -97,4 +99,5 @@ class PlanAction:
             reason=reason,
             sort_order=self.sort_order,
             reverses_event_id=self.reverses_event_id,
+            artist_name_diagnostics=self.artist_name_diagnostics,
         )

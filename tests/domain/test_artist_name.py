@@ -5,10 +5,21 @@ Why: Keeps naming deterministic without changing or sanitizing raw metadata.
 
 from __future__ import annotations
 
+import pytest
+
+from omym2.domain.models.artist_name_resolution import (
+    ArtistNameDiagnostics,
+    ArtistNameResolution,
+    ArtistNameResolutionDiagnostic,
+    ArtistNameResolutionIssue,
+    ArtistNameResolutionProvenance,
+)
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.artist_name import (
+    ARTIST_NAME_RESOLUTION_CARDINALITY_MESSAGE,
     ArtistNameProjection,
     ArtistNameProjector,
+    artist_name_diagnostics,
     derive_artist_name_source_key,
 )
 
@@ -77,3 +88,44 @@ def test_artist_name_projector_freezes_its_preference_snapshot() -> None:
     preferences[ARTIST] = "Changed"
 
     assert projector.project(TrackMetadata(artist=ARTIST)).artist == DISPLAY_ARTIST
+
+
+def test_artist_name_diagnostics_pair_flat_results_by_metadata_field() -> None:
+    """Resolver results retain artist and album-artist roles in durable review data."""
+    metadata = TrackMetadata(artist=ARTIST, album_artist=ALBUM_ARTIST)
+    artist_resolution = ArtistNameResolution(
+        source_name=ARTIST,
+        source_key=ARTIST,
+        resolved_name=DISPLAY_ARTIST,
+        provenance=ArtistNameResolutionProvenance.ACCEPTED_MUSICBRAINZ,
+    )
+    album_artist_resolution = ArtistNameResolution(
+        source_name=ALBUM_ARTIST,
+        source_key=ALBUM_ARTIST,
+        resolved_name=ALBUM_ARTIST,
+        provenance=ArtistNameResolutionProvenance.ORIGINAL,
+        issue=ArtistNameResolutionIssue.AMBIGUOUS_MATCH,
+    )
+
+    diagnostics = artist_name_diagnostics((metadata,), (artist_resolution, album_artist_resolution))
+
+    assert diagnostics == (
+        ArtistNameDiagnostics(
+            artist=ArtistNameResolutionDiagnostic.from_resolution(artist_resolution),
+            album_artist=ArtistNameResolutionDiagnostic.from_resolution(album_artist_resolution),
+        ),
+    )
+
+
+def test_artist_name_diagnostics_reject_misaligned_results() -> None:
+    """Every metadata value requires one artist and one album-artist result."""
+    metadata = TrackMetadata(artist=ARTIST, album_artist=ALBUM_ARTIST)
+    resolution = ArtistNameResolution(
+        source_name=ARTIST,
+        source_key=ARTIST,
+        resolved_name=DISPLAY_ARTIST,
+        provenance=ArtistNameResolutionProvenance.ACCEPTED_MUSICBRAINZ,
+    )
+
+    with pytest.raises(ValueError, match=ARTIST_NAME_RESOLUTION_CARDINALITY_MESSAGE):
+        _ = artist_name_diagnostics((metadata,), (resolution,))

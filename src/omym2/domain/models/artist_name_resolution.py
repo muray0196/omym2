@@ -46,3 +46,31 @@ class ArtistNameResolution:
     provenance: ArtistNameResolutionProvenance
     issue: ArtistNameResolutionIssue | None = None
     accepted_name: AcceptedArtistName | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ArtistNameResolutionDiagnostic:
+    """Durable review snapshot of one artist-name resolution outcome."""
+
+    source_name: str | None
+    resolved_name: str | None
+    provenance: ArtistNameResolutionProvenance
+    issue: ArtistNameResolutionIssue | None = None
+
+    @classmethod
+    def from_resolution(cls, resolution: ArtistNameResolution) -> ArtistNameResolutionDiagnostic:
+        """Copy the reviewable fields without retaining provider-cache state."""
+        return cls(
+            source_name=resolution.source_name,
+            resolved_name=resolution.resolved_name,
+            provenance=resolution.provenance,
+            issue=resolution.issue,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ArtistNameDiagnostics:
+    """Artist and album-artist diagnostics recorded for one planned action."""
+
+    artist: ArtistNameResolutionDiagnostic
+    album_artist: ArtistNameResolutionDiagnostic

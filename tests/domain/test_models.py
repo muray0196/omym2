@@ -9,6 +9,12 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
+from omym2.domain.models.artist_name_resolution import (
+    ArtistNameDiagnostics,
+    ArtistNameResolutionDiagnostic,
+    ArtistNameResolutionIssue,
+    ArtistNameResolutionProvenance,
+)
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
@@ -155,6 +161,34 @@ def test_plan_action_stores_final_target_path_with_extension() -> None:
     assert action.target_path.endswith(".flac")
 
 
+def test_plan_action_status_transitions_preserve_artist_name_diagnostics() -> None:
+    """Apply-time status updates cannot erase the naming evidence reviewed with an action."""
+    diagnostics = _artist_name_diagnostics()
+    action = PlanAction(
+        action_id=new_action_id(),
+        plan_id=new_plan_id(),
+        library_id=new_library_id(),
+        track_id=None,
+        action_type=ActionType.MOVE,
+        source_path=NORMALIZED_PATH,
+        target_path=TARGET_PATH,
+        content_hash_at_plan=CONTENT_HASH,
+        metadata_hash_at_plan=METADATA_HASH,
+        status=ActionStatus.PLANNED,
+        reason=None,
+        sort_order=SORT_ORDER,
+        artist_name_diagnostics=diagnostics,
+    )
+
+    transitioned = (
+        action.mark_applied(),
+        action.mark_blocked(PlanActionReason.TARGET_EXISTS),
+        action.mark_failed(PlanActionReason.SOURCE_CHANGED),
+    )
+
+    assert all(item.artist_name_diagnostics == diagnostics for item in transitioned)
+
+
 def test_run_completion_records_failed_state() -> None:
     """Run completion preserves the run ID and records failure details."""
     run = Run(
@@ -235,4 +269,20 @@ def _plan_action(status: ActionStatus, reason: PlanActionReason | None) -> PlanA
         status=status,
         reason=reason,
         sort_order=SORT_ORDER,
+    )
+
+
+def _artist_name_diagnostics() -> ArtistNameDiagnostics:
+    return ArtistNameDiagnostics(
+        artist=ArtistNameResolutionDiagnostic(
+            source_name="Artist",
+            resolved_name="Preferred Artist",
+            provenance=ArtistNameResolutionProvenance.ACCEPTED_MUSICBRAINZ,
+        ),
+        album_artist=ArtistNameResolutionDiagnostic(
+            source_name=None,
+            resolved_name=None,
+            provenance=ArtistNameResolutionProvenance.ORIGINAL,
+            issue=ArtistNameResolutionIssue.MISSING_SOURCE,
+        ),
     )

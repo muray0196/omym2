@@ -1102,6 +1102,100 @@
         "title": "ArtistNameConfigResource",
         "type": "object"
       },
+      "ArtistNameDiagnosticsResource": {
+        "additionalProperties": false,
+        "description": "Artist and album-artist naming evidence recorded for one action.",
+        "properties": {
+          "album_artist": {
+            "$ref": "#/components/schemas/ArtistNameResolutionDiagnosticResource"
+          },
+          "artist": {
+            "$ref": "#/components/schemas/ArtistNameResolutionDiagnosticResource"
+          }
+        },
+        "required": [
+          "artist",
+          "album_artist"
+        ],
+        "title": "ArtistNameDiagnosticsResource",
+        "type": "object"
+      },
+      "ArtistNameResolutionDiagnosticResource": {
+        "additionalProperties": false,
+        "description": "One reviewable artist-field resolution outcome.",
+        "properties": {
+          "issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtistNameResolutionIssue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ArtistNameResolutionProvenance"
+          },
+          "resolved_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Name"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          }
+        },
+        "required": [
+          "source_name",
+          "resolved_name",
+          "provenance",
+          "issue"
+        ],
+        "title": "ArtistNameResolutionDiagnosticResource",
+        "type": "object"
+      },
+      "ArtistNameResolutionIssue": {
+        "description": "Reason automatic artist-name resolution preserved the original value.",
+        "enum": [
+          "missing_source",
+          "composite_unsupported",
+          "non_latin_required",
+          "detector_unavailable",
+          "not_japanese",
+          "low_language_confidence",
+          "provider_unavailable",
+          "no_confident_match",
+          "ambiguous_match"
+        ],
+        "title": "ArtistNameResolutionIssue",
+        "type": "string"
+      },
+      "ArtistNameResolutionProvenance": {
+        "description": "Source that supplied one effective artist display name.",
+        "enum": [
+          "user_preference",
+          "accepted_musicbrainz",
+          "new_musicbrainz",
+          "original"
+        ],
+        "title": "ArtistNameResolutionProvenance",
+        "type": "string"
+      },
       "BootstrapData": {
         "additionalProperties": false,
         "description": "Initial application state returned even when recovery is required.",
@@ -2741,6 +2835,16 @@
           "action_type": {
             "$ref": "#/components/schemas/ActionType"
           },
+          "artist_name_diagnostics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtistNameDiagnosticsResource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content_hash_at_plan": {
             "anyOf": [
               {
@@ -2837,7 +2941,8 @@
           "metadata_hash_at_plan",
           "status",
           "reason",
-          "sort_order"
+          "sort_order",
+          "artist_name_diagnostics"
         ],
         "title": "PlanActionResource",
         "type": "object"

@@ -25,7 +25,7 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
-from omym2.domain.services.artist_name import artist_name_projections, artist_name_sources
+from omym2.domain.services.artist_name import artist_name_diagnostics, artist_name_projections, artist_name_sources
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from omym2.domain.models.app_config import AppConfig
+    from omym2.domain.models.artist_name_resolution import ArtistNameDiagnostics
     from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.library import Library
     from omym2.domain.models.track import Track
@@ -249,6 +250,7 @@ class CreateRefreshPlanUseCase:
         projections = iter(
             artist_name_projections(candidate_metadata, tuple(resolution.resolved_name for resolution in resolutions))
         )
+        diagnostics = iter(artist_name_diagnostics(candidate_metadata, resolutions))
         resolved_years = resolve_album_years(
             metadata_batch,
             config.path_policy,
@@ -272,6 +274,7 @@ class CreateRefreshPlanUseCase:
                 continue
 
             artist_names = next(projections)
+            candidate_diagnostics = next(diagnostics)
             try:
                 resolved_metadata = metadata_with_resolved_album_year(
                     snapshot.metadata,
@@ -286,7 +289,13 @@ class CreateRefreshPlanUseCase:
                 )
             except ValueError as exc:
                 judged_candidates.append(
-                    replace(candidate, target_path=None, reason=_path_generation_failure_reason(exc), needs_action=True)
+                    replace(
+                        candidate,
+                        target_path=None,
+                        reason=_path_generation_failure_reason(exc),
+                        needs_action=True,
+                        artist_name_diagnostics=candidate_diagnostics,
+                    )
                 )
                 continue
 
@@ -299,6 +308,7 @@ class CreateRefreshPlanUseCase:
                         or snapshot.content_hash != candidate.track.content_hash
                         or snapshot.metadata_hash != candidate.track.metadata_hash
                     ),
+                    artist_name_diagnostics=candidate_diagnostics,
                 )
             )
 
@@ -375,6 +385,7 @@ class CreateRefreshPlanUseCase:
                     status=ActionStatus.PLANNED if candidate.reason is None else ActionStatus.BLOCKED,
                     reason=candidate.reason,
                     sort_order=sort_order,
+                    artist_name_diagnostics=candidate.artist_name_diagnostics,
                 )
             )
             sort_order += PLAN_ACTION_SORT_ORDER_STEP
@@ -399,6 +410,7 @@ class _RefreshCandidate:
     target_path: str | None
     reason: PlanActionReason | None
     needs_action: bool
+    artist_name_diagnostics: ArtistNameDiagnostics | None = None
 
 
 def _require_one_target_selector(request: CreateRefreshPlanRequest) -> None:

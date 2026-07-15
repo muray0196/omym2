@@ -197,8 +197,14 @@ def test_refresh_projects_shared_artist_name_resolution_without_updating_raw_tra
 
     plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
 
-    assert plan.actions[0].target_path == NEW_PREFERRED_ARTIST_PATH
-    assert plan.actions[0].metadata_hash_at_plan == calculate_metadata_fingerprint(NEW_METADATA)
+    action = plan.actions[0]
+    assert action.target_path == NEW_PREFERRED_ARTIST_PATH
+    assert action.metadata_hash_at_plan == calculate_metadata_fingerprint(NEW_METADATA)
+    assert action.artist_name_diagnostics is not None
+    assert action.artist_name_diagnostics.artist.source_name == "Artist"
+    assert action.artist_name_diagnostics.artist.resolved_name == "Preferred Artist"
+    assert action.artist_name_diagnostics.album_artist.source_name is None
+    assert action.artist_name_diagnostics.album_artist.resolved_name is None
     assert uow.tracks.get(TRACK_ID) == track
     assert isinstance(ports.artist_name_resolver, MappingArtistNameResolver)
     assert ports.artist_name_resolver.calls == [("Artist", None)]

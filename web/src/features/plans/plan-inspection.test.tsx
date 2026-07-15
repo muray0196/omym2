@@ -347,6 +347,7 @@ const secondPlan = {
 const blockedAction = {
   action_id: ACTION_ID,
   action_type: "move",
+  artist_name_diagnostics: null,
   content_hash_at_plan: "content",
   library_id: LIBRARY_ID,
   metadata_hash_at_plan: "metadata",

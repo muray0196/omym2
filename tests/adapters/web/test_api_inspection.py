@@ -5,6 +5,7 @@ Why: Locks list, detail, capability, facet, group, and error envelope shapes.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 from uuid import UUID
@@ -15,6 +16,12 @@ from fastapi.testclient import TestClient
 from omym2.adapters.web.routes.plans import PlanRouteHandlers, create_plans_router, get_plan_route_handlers
 from omym2.adapters.web.routes.tracks import TrackRouteHandlers, create_tracks_router, get_track_route_handlers
 from omym2.config import HTTP_NOT_FOUND_STATUS
+from omym2.domain.models.artist_name_resolution import (
+    ArtistNameDiagnostics,
+    ArtistNameResolutionDiagnostic,
+    ArtistNameResolutionIssue,
+    ArtistNameResolutionProvenance,
+)
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
@@ -33,6 +40,8 @@ from omym2.shared.pagination import FacetValue, GroupCount, Page
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from omym2.features.plans.dto import ListPlanActionsRequest
 
 NOW = datetime(2026, 7, 13, tzinfo=UTC)
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345670"))
@@ -72,9 +81,44 @@ def test_plan_routes_return_typed_browse_and_detail_resources() -> None:
         "disabled_reasons": [],
     }
     assert detail_data["active_operation_id"] == str(OPERATION_ID)
-    assert _objects(actions_data, "items")[0]["source_path"] == "Artist/old.flac"
+    action = _objects(actions_data, "items")[0]
+    assert action["source_path"] == "Artist/old.flac"
+    assert action["artist_name_diagnostics"] == {
+        "artist": {
+            "source_name": "宇多田ヒカル",
+            "resolved_name": "Hikaru Utada",
+            "provenance": "new_musicbrainz",
+            "issue": None,
+        },
+        "album_artist": {
+            "source_name": "宇多田ヒカル",
+            "resolved_name": "宇多田ヒカル",
+            "provenance": "original",
+            "issue": "ambiguous_match",
+        },
+    }
     assert _object(facets_data, "facets")["status"] == [{"value": "planned", "count": 1}]
     assert _objects(groups_data, "items")[0]["blocked_count"] == 0
+
+
+def test_plan_actions_return_explicit_null_artist_name_diagnostics() -> None:
+    """Legacy, pre-resolution, and Undo actions keep the required nullable API field."""
+    action_without_diagnostics = replace(_action(), artist_name_diagnostics=None)
+
+    def list_action_without_diagnostics(_request: ListPlanActionsRequest) -> Page[PlanAction]:
+        return Page(items=(action_without_diagnostics,), next_cursor_key=None, total=1)
+
+    handlers = replace(
+        _plan_handlers(),
+        list_plan_actions=list_action_without_diagnostics,
+    )
+    client = _client(create_plans_router(), get_plan_route_handlers, handlers)
+
+    actions_payload = _payload(cast("object", client.get(f"/api/plans/{PLAN_ID}/actions").json()))
+
+    action = _objects(_object(actions_payload, "data"), "items")[0]
+    assert "artist_name_diagnostics" in action
+    assert action["artist_name_diagnostics"] is None
 
 
 def test_plan_detail_returns_typed_not_found_envelope() -> None:
@@ -253,6 +297,19 @@ def _action() -> PlanAction:
         status=ActionStatus.PLANNED,
         reason=None,
         sort_order=1,
+        artist_name_diagnostics=ArtistNameDiagnostics(
+            artist=ArtistNameResolutionDiagnostic(
+                source_name="宇多田ヒカル",
+                resolved_name="Hikaru Utada",
+                provenance=ArtistNameResolutionProvenance.NEW_MUSICBRAINZ,
+            ),
+            album_artist=ArtistNameResolutionDiagnostic(
+                source_name="宇多田ヒカル",
+                resolved_name="宇多田ヒカル",
+                provenance=ArtistNameResolutionProvenance.ORIGINAL,
+                issue=ArtistNameResolutionIssue.AMBIGUOUS_MATCH,
+            ),
+        ),
     )
 
 

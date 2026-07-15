@@ -15,6 +15,12 @@ import pytest
 
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
+from omym2.domain.models.artist_name_resolution import (
+    ArtistNameDiagnostics,
+    ArtistNameResolutionDiagnostic,
+    ArtistNameResolutionIssue,
+    ArtistNameResolutionProvenance,
+)
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
@@ -294,6 +300,35 @@ def test_plans_detail_filter_to_empty_reports_no_matching_actions(tmp_path: Path
     assert f"plan_id: {PLAN_ID_1}" in output
 
 
+def test_plans_detail_shows_recorded_artist_name_diagnostics(tmp_path: Path) -> None:
+    """Default detail exposes the exact naming evidence reviewed with an action."""
+    database_file = _database_file(tmp_path)
+    _seed(
+        database_file,
+        plans=(_plan(PLAN_ID_1, created_at=BASE_TIME),),
+        actions=(
+            _action(
+                ACTION_ID_1,
+                status=ActionStatus.PLANNED,
+                sort_order=0,
+                artist_name_diagnostics=_artist_name_diagnostics(),
+            ),
+        ),
+    )
+    stdout, stderr = StringIO(), StringIO()
+
+    exit_code = main(["plans", str(PLAN_ID_1)], stdout=stdout, stderr=stderr, database_path=database_file)
+
+    assert exit_code == SUCCESS_EXIT_CODE
+    assert stderr.getvalue() == ""
+    output = stdout.getvalue()
+    assert "artist_name_diagnostics:" in output
+    assert "source_name: 宇多田ヒカル" in output
+    assert "resolved_name: Hikaru Utada" in output
+    assert "provenance: accepted_musicbrainz" in output
+    assert "issue: detector_unavailable" in output
+
+
 @pytest.mark.parametrize(
     "extra_args",
     [
@@ -551,6 +586,7 @@ def test_plans_detail_json_emits_full_payload_with_null_fields(tmp_path: Path) -
                 sort_order=0,
                 source_path="/music/incoming/a.flac",
                 target_path="Artist/A.flac",
+                artist_name_diagnostics=_artist_name_diagnostics(),
             ),
             _action(
                 ACTION_ID_2,
@@ -597,6 +633,20 @@ def test_plans_detail_json_emits_full_payload_with_null_fields(tmp_path: Path) -
                 "status": "planned",
                 "reason": None,
                 "sort_order": 0,
+                "artist_name_diagnostics": {
+                    "artist": {
+                        "source_name": "宇多田ヒカル",
+                        "resolved_name": "Hikaru Utada",
+                        "provenance": "accepted_musicbrainz",
+                        "issue": None,
+                    },
+                    "album_artist": {
+                        "source_name": "椎名林檎",
+                        "resolved_name": "椎名林檎",
+                        "provenance": "original",
+                        "issue": "detector_unavailable",
+                    },
+                },
             },
             {
                 "action_id": str(ACTION_ID_2),
@@ -611,6 +661,7 @@ def test_plans_detail_json_emits_full_payload_with_null_fields(tmp_path: Path) -
                 "status": "planned",
                 "reason": None,
                 "sort_order": 1,
+                "artist_name_diagnostics": None,
             },
         ],
         "total_action_count": 2,
@@ -656,6 +707,7 @@ def test_plans_detail_json_blocked_only_filters_actions_and_keeps_total(tmp_path
                 "status": "blocked",
                 "reason": "target_exists",
                 "sort_order": 1,
+                "artist_name_diagnostics": None,
             }
         ],
         "total_action_count": 3,
@@ -771,6 +823,7 @@ def _action(  # noqa: PLR0913 - test fixture spans the full diff/summary action 
     reason: PlanActionReason | None = None,
     source_path: str | None = "Source/Track.flac",
     target_path: str | None = "Target/Track.flac",
+    artist_name_diagnostics: ArtistNameDiagnostics | None = None,
 ) -> PlanAction:
     return PlanAction(
         action_id=action_id,
@@ -785,4 +838,22 @@ def _action(  # noqa: PLR0913 - test fixture spans the full diff/summary action 
         status=status,
         reason=reason,
         sort_order=sort_order,
+        artist_name_diagnostics=artist_name_diagnostics,
+    )
+
+
+def _artist_name_diagnostics() -> ArtistNameDiagnostics:
+    """Return deterministic resolved and unresolved review evidence."""
+    return ArtistNameDiagnostics(
+        artist=ArtistNameResolutionDiagnostic(
+            source_name="宇多田ヒカル",
+            resolved_name="Hikaru Utada",
+            provenance=ArtistNameResolutionProvenance.ACCEPTED_MUSICBRAINZ,
+        ),
+        album_artist=ArtistNameResolutionDiagnostic(
+            source_name="椎名林檎",
+            resolved_name="椎名林檎",
+            provenance=ArtistNameResolutionProvenance.ORIGINAL,
+            issue=ArtistNameResolutionIssue.DETECTOR_UNAVAILABLE,
+        ),
     )

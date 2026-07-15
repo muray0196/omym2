@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Web API Contract
-description: Defines the bundled local Web API's typed envelopes, errors, artist-name settings, settings concurrency, bootstrap, durable-operation routes, capabilities, and preserved browsing semantics.
+description: Defines the bundled local Web API's typed envelopes, errors, artist-name settings and Plan diagnostics, settings concurrency, bootstrap, durable-operation routes, capabilities, and preserved browsing semantics.
 tags: [web-api, openapi, artist-names, operations, concurrency, pagination]
-timestamp: 2026-07-15T20:47:24+09:00
+timestamp: 2026-07-16T00:44:26+09:00
 ---
 
 # Web API Contract
@@ -679,7 +679,11 @@ Plan ordering remains `created_at DESC, plan_id DESC`. Action ordering remains
   returns PlanAction list data. `query` matches `action_id`, `track_id`,
   `source_path`, `target_path`, `content_hash_at_plan`, or
   `metadata_hash_at_plan`. `group_by` and `group_key` are provided together or
-  omitted together and combine with all other filters as AND.
+  omitted together and combine with all other filters as AND. Each action also
+  returns nullable `artist_name_diagnostics`; when present, its `artist` and
+  `album_artist` members expose the recorded source value, resolved value,
+  provenance, and nullable resolution issue from target calculation. The route
+  never re-resolves those values.
 * `GET /api/plans/{plan_id}/facets?query=&status=&action_type=&reason=` returns
   facets for `status`, `action_type`, and non-null `reason`. Each facet applies
   search and the other two filters while omitting its own. `data` additionally

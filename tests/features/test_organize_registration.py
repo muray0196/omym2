@@ -347,7 +347,13 @@ def test_organize_projects_shared_artist_name_resolution_while_storing_raw_metad
         CreateOrganizePlanRequest(trust_stat=False, library_root=LIBRARY_ROOT)
     )
 
-    assert result.actions[0].target_path == EXPECTED_PREFERRED_ARTIST_PATH
+    action = result.actions[0]
+    assert action.target_path == EXPECTED_PREFERRED_ARTIST_PATH
+    assert action.artist_name_diagnostics is not None
+    assert action.artist_name_diagnostics.artist.source_name == "Artist"
+    assert action.artist_name_diagnostics.artist.resolved_name == "Preferred Artist"
+    assert action.artist_name_diagnostics.album_artist.source_name is None
+    assert action.artist_name_diagnostics.album_artist.resolved_name is None
     track = uow.tracks.get(TRACK_ID)
     assert track is not None
     assert track.canonical_path == EXPECTED_PREFERRED_ARTIST_PATH

@@ -1,9 +1,9 @@
 ---
 type: Execution Spec
 title: Add Execution
-description: Defines add plan creation from an Incoming/source scan against the sole registered Library, including artist-name resolution, duplicate-hash skips, missing-metadata and target-conflict blocks, and add --apply orchestration.
+description: Defines add plan creation from an Incoming/source scan against the sole registered Library, including artist-name resolution diagnostics, duplicate-hash skips, missing-metadata and target-conflict blocks, and add --apply orchestration.
 tags: [add, plan-creation, library-registration, artist-names, apply]
-timestamp: 2026-07-16T00:25:03+09:00
+timestamp: 2026-07-16T00:44:26+09:00
 ---
 
 # Add Execution
@@ -76,6 +76,12 @@ transaction, so fastText or provider work cannot extend a Plan DB transaction.
 A positive accepted-name cache write may commit before the reconciliation guard
 refuses Add; that sticky provider state is intentional, and the required
 Organize run consumes it when calculating the Library-wide reconciliation.
+
+Every Add action whose candidate reached this resolution step records the
+aligned artist and album-artist source, resolved value, provenance, and issue as
+review diagnostics. Candidates blocked before resolution record no diagnostic
+pair. Duplicate skips and later target-conflict blocks retain the resolution
+evidence that informed their recorded target calculation.
 
 ## Target Collision Safety
 
