@@ -27,8 +27,41 @@ For an implementation task, start with
 focused documentation for the change. Do not replace those focused checks with
 the Architecture summary.
 
-Read `docs/development/harness.md` for implementation, validation, quality
-gates, suppressions, or runtime configuration work.
+Use `.agents/skills/validate/SKILL.md` for ordinary implementation and
+validation. Read only the relevant section of `docs/development/harness.md`
+when changing the harness, suppressions, runtime configuration, or a gate detail
+not covered by the skill.
+
+## Context Discipline
+
+Treat `ARCHITECTURE.md` and matching skills as operational safety caches. Follow
+their conditional documentation routes; do not preload every linked document.
+Locate the relevant heading first, then read only the bounded section needed for
+the task.
+
+Start repository searches with paths, filenames, or counts (`rg --files`,
+`rg -l`, or `rg -c`). Scope by directory and glob before requesting matching
+lines, and inspect only targeted ranges around relevant matches. Never emit an
+unbounded repo-wide search into the conversation.
+
+Inspect large source and test files by symbol or line range. Do not read lockfiles,
+generated clients, OpenAPI output, bundled static assets, or other generated
+artifacts in full; use the owning generator, drift check, hashes, or a focused
+diff instead.
+
+For Linear execution, fetch the issue description and current workpad once for
+orientation. Re-fetch full history only when external changes are plausible or
+the current state is missing. Keep one compact workpad by replacing stale status
+instead of appending a transcript; retain only current objective, material
+decisions, validation, blockers, and handoff state. Never copy full tool output,
+diffs, or the issue description into the workpad.
+
+Apply the same delta rule to pull requests. Retain stable PR metadata locally
+and refresh only mutable checks, mergeability, and unresolved review threads;
+do not re-fetch the full body, diff, or comment history at every milestone.
+
+Across long runs, report milestone deltas only. Do not repeat unchanged plans,
+commands, prior diagnostics, or earlier status summaries in later turns.
 
 ## Validation Shortcut
 

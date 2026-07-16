@@ -20,9 +20,14 @@ description: Route OMYM2 implementation work to the applicable architecture, saf
    | Anything under `web/` or Web adapter routes | `web-frontend-change` |
    | Behavior documented under `docs/`, or any file under `docs/` | `update-docs` |
 
-3. Use `docs/codebase/index.md` for placement and naming details not decided by a safety skill.
-4. Open `write-tests` when adding or changing tests. Open `update-docs` when behavior described under `docs/` changes.
-5. Use `validate` to select edit-loop and completion checks.
+3. Treat each matching skill as the operational safety cache. Follow its
+   conditional documentation routes and read only the relevant heading or
+   bounded section; do not open every referenced authoritative document.
+4. Use `docs/codebase/index.md` only for a placement or naming question the
+   safety skill does not answer.
+5. Open `write-tests` when adding or changing tests. Open `update-docs` when behavior described under `docs/` changes.
+6. Use `validate` to select edit-loop and completion checks. Open the harness
+   only when changing it or when the skill does not answer a gate detail.
 
 ## Done means
 

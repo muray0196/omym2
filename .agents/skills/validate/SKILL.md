@@ -26,6 +26,18 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 
 `scripts/checks.sh` wraps the authoritative commands in `docs/development/harness.md`. If the script is missing or itself broken, run those commands directly.
 
+The wrapper discards successful gate output and reports one pass line. A failed
+gate reports only a bounded tail and retains the complete combined output at the
+printed temporary path. Use progressive diagnostics:
+
+1. Act on the bounded failure first.
+2. Reproduce only the first failure with the smallest mode; for pytest, use the
+   reported node id with `scripts/checks.sh test`.
+3. If the cause is still unclear, inspect a larger tail or a targeted range from
+   the retained log. Do not read the whole log by default.
+4. Run the exact failed command with full output only when the focused evidence
+   remains insufficient. For pytest, the deep-debug command is the final step.
+
 The wrapper requires an explicit mode and assumes dependencies are already
 installed. Run `uv sync --locked --dev` after checkout or Python dependency
 changes. Install frontend dependencies in `web/`. Do not reinstall dependencies
@@ -70,7 +82,8 @@ Fix the first failing gate before looking at later ones.
 
 1. Pick the command from the mode table above that matches your situation.
 2. Run it.
-3. If it fails, find the first failure in the triage table above and take its next action.
+3. If it fails, follow the progressive diagnostic flow above, find the first
+   failure in the triage table, and take its next action.
 4. Apply a suppression only as a last resort, per the suppression rules above, with a justification comment on the same line.
 5. Re-run the same focused command until it passes.
 6. Attempt completion and let the repo `Stop` hook run the path-aware completion gate. If the hook is unavailable or bypassed, run `scripts/checks.sh completion` manually instead.

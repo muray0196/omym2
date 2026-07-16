@@ -12,8 +12,15 @@ from pathlib import Path
 
 import pytest
 
+from scripts.config import CHECKS_FAILURE_DIAGNOSTIC_MAX_BYTES
+
 CHECKS_SCRIPT = Path(__file__).parents[2] / "scripts/checks.sh"
+CHECK_OUTPUT_SCRIPT = CHECKS_SCRIPT.with_name("check_output.py")
+SCRIPT_CONFIG = CHECKS_SCRIPT.with_name("config.py")
 SUCCESS_EXIT_CODE = 0
+FAKE_FAILURE_EXIT_CODE = 7
+DIAGNOSTIC_OVERFLOW_BYTES = 200
+DOCS_COMMAND = "uv:run pytest tests/docs -q"
 
 
 @pytest.mark.parametrize(
@@ -109,6 +116,59 @@ def test_completion_routes_deleted_files_to_their_gate_group(tmp_path: Path) -> 
     assert "uv:run pytest -q" not in commands
 
 
+def test_successful_mode_discards_gate_output_and_reports_only_pass(tmp_path: Path) -> None:
+    """Successful tools cannot flood the caller's context."""
+    repository, _command_log, environment = _repository(tmp_path)
+    environment["OMYM2_CHECK_FAKE_OUTPUT"] = "unneeded successful diagnostics"
+
+    result = subprocess.run(  # noqa: S603 -- Fixed repository script is exercised with controlled fake tools.
+        (str(repository / "scripts/checks.sh"), "docs"),
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+    assert result.returncode == SUCCESS_EXIT_CODE
+    assert result.stdout == ""
+    assert result.stderr == "checks.sh: mode 'docs' passed.\n"
+
+
+def test_failed_mode_reports_bounded_tail_and_retains_full_output(tmp_path: Path) -> None:
+    """A failed tool starts concise while preserving opt-in deep diagnostics."""
+    repository, _command_log, environment = _repository(tmp_path)
+    payload = (
+        "discarded diagnostic marker\n"
+        f"{'x' * (CHECKS_FAILURE_DIAGNOSTIC_MAX_BYTES + DIAGNOSTIC_OVERFLOW_BYTES)}\n"
+        "focused failure"
+    )
+    environment["OMYM2_CHECK_FAKE_OUTPUT"] = payload
+    environment["OMYM2_CHECK_FAIL_COMMAND"] = DOCS_COMMAND
+    environment["OMYM2_CHECK_FAIL_EXIT_CODE"] = str(FAKE_FAILURE_EXIT_CODE)
+
+    result = subprocess.run(  # noqa: S603 -- Fixed repository script is exercised with controlled fake tools.
+        (str(repository / "scripts/checks.sh"), "docs"),
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+    assert result.returncode == FAKE_FAILURE_EXIT_CODE
+    assert result.stdout == ""
+    assert "gate 'docs bundle' failed with exit code 7" in result.stderr
+    assert "[earlier check output omitted]" in result.stderr
+    assert "discarded diagnostic marker" not in result.stderr
+    assert "focused failure" in result.stderr
+    log_prefix = "checks.sh: full output retained at "
+    log_line = next(line for line in result.stderr.splitlines() if line.startswith(log_prefix))
+    output_path = Path(log_line.removeprefix(log_prefix))
+    assert output_path.read_text(encoding="utf-8") == f"{payload}\n"
+    output_path.unlink()
+
+
 def _repository(tmp_path: Path, *, configure_origin: bool = True) -> tuple[Path, Path, dict[str, str]]:
     repository = tmp_path / "repository"
     repository.mkdir()
@@ -118,6 +178,8 @@ def _repository(tmp_path: Path, *, configure_origin: bool = True) -> tuple[Path,
     checks_script = repository / "scripts/checks.sh"
     checks_script.parent.mkdir()
     _ = shutil.copy2(CHECKS_SCRIPT, checks_script)
+    _ = shutil.copy2(CHECK_OUTPUT_SCRIPT, checks_script.with_name("check_output.py"))
+    _ = shutil.copy2(SCRIPT_CONFIG, checks_script.with_name("config.py"))
     checks_script.chmod(0o755)
     _write(repository / "baseline.txt", "baseline\n")
     _write(repository / "web/.keep", "fixture\n")
@@ -133,7 +195,19 @@ def _repository(tmp_path: Path, *, configure_origin: bool = True) -> tuple[Path,
         executable = fake_bin / command_name
         _write(
             executable,
-            f'#!/bin/sh\nprintf \'{command_name}:%s\\n\' "$*" >> "$OMYM2_CHECK_COMMAND_LOG"\n',
+            "".join(
+                (
+                    "#!/bin/sh\n",
+                    f"command='{command_name}:'\"$*\"\n",
+                    'printf \'%s\\n\' "$command" >> "$OMYM2_CHECK_COMMAND_LOG"\n',
+                    'if [ -n "${OMYM2_CHECK_FAKE_OUTPUT:-}" ]; then\n',
+                    "    printf '%s\\n' \"$OMYM2_CHECK_FAKE_OUTPUT\"\n",
+                    "fi\n",
+                    'if [ "${OMYM2_CHECK_FAIL_COMMAND:-}" = "$command" ]; then\n',
+                    '    exit "$OMYM2_CHECK_FAIL_EXIT_CODE"\n',
+                    "fi\n",
+                )
+            ),
         )
         executable.chmod(0o755)
     environment = os.environ.copy()

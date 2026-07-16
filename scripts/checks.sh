@@ -10,10 +10,18 @@
 
 set -euo pipefail
 
-cd "$(git rev-parse --show-toplevel)"
+repository_root="$(git rev-parse --show-toplevel)"
+check_output_script="$repository_root/scripts/check_output.py"
+cd "$repository_root"
 
 usage() {
     echo "usage: scripts/checks.sh <changed|completion|py|api|web|e2e|package|performance|all|docs|arch> | scripts/checks.sh test <pytest-target>" >&2
+}
+
+run_check() {
+    local label="$1"
+    shift
+    python3 "$check_output_script" --label "$label" -- "$@"
 }
 
 if [[ $# -eq 0 ]]; then
@@ -35,45 +43,43 @@ run_changed() {
         } | sort -u
     )
     if [[ ${#files[@]} -eq 0 ]]; then
-        echo "checks.sh: no changed Python files; nothing to check." >&2
         return 0
     fi
-    echo "checks.sh: checking ${#files[@]} changed Python file(s)." >&2
-    uv run ruff check "${files[@]}" --fix --output-format=concise
-    uv run ruff format "${files[@]}" -q
-    uv run basedpyright "${files[@]}" --level error
+    run_check "changed Python lint" uv run ruff check "${files[@]}" --fix --output-format=concise
+    run_check "changed Python format" uv run ruff format "${files[@]}" -q
+    run_check "changed Python types" uv run basedpyright "${files[@]}" --level error
 }
 
 run_py() {
-    uv run ruff check . --output-format=concise
-    uv run ruff format . --check -q
-    uv run basedpyright
-    uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
+    run_check "Python lint" uv run ruff check . --output-format=concise
+    run_check "Python format" uv run ruff format . --check -q
+    run_check "Python types" uv run basedpyright
+    run_check "Python tests" uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
 }
 
 run_api() (
     cd web
-    npm run api:check
+    run_check "generated API drift" npm run api:check
 )
 
 run_web() {
     run_api
     (
     cd web
-    npm run format:check
-    npm run lint
-    npm run typecheck
-    npm run test:unit
-    npm run build
+    run_check "frontend format" npm run format:check
+    run_check "frontend lint" npm run lint
+    run_check "frontend types" npm run typecheck
+    run_check "frontend unit tests" npm run test:unit
+    run_check "frontend build" npm run build
     )
-    uv run python scripts/web/sync_web_static.py
-    uv run python scripts/web/audit_web_static.py
+    run_check "Web static synchronization" uv run python scripts/web/sync_web_static.py
+    run_check "Web static audit" uv run python scripts/web/audit_web_static.py
 }
 
 run_e2e_profile() {
     local fixture_profile="$1"
     shift
-    uv run python scripts/web/run_web_test_server.py \
+    run_check "browser tests ($fixture_profile profile)" uv run python scripts/web/run_web_test_server.py \
         --environment-variable OMYM2_E2E_BASE_URL \
         --working-directory web \
         --fixture-profile "$fixture_profile" \
@@ -91,15 +97,15 @@ run_e2e() {
 }
 
 run_package() {
-    uv run python scripts/web/build_web_evidence.py
+    run_check "package evidence" uv run python scripts/web/build_web_evidence.py
 }
 
 run_performance() {
-    uv run python scripts/web/build_web_evidence.py --run-performance
+    run_check "package performance" uv run python scripts/web/build_web_evidence.py --run-performance
 }
 
 run_docs() {
-    uv run pytest tests/docs -q
+    run_check "docs bundle" uv run pytest tests/docs -q
 }
 
 run_completion() {
@@ -111,7 +117,6 @@ run_completion() {
     local file
 
     if ! comparison="$(git merge-base HEAD origin/main 2>/dev/null)"; then
-        echo "checks.sh: origin/main unavailable; running all completion check groups." >&2
         run_docs
         run_web
         run_py
@@ -124,10 +129,9 @@ run_completion() {
             git ls-files --others --exclude-standard
         } | sort -u
     )
-    git diff --check "$comparison" --
+    run_check "Git whitespace" git diff --check "$comparison" --
 
     if [[ ${#files[@]} -eq 0 ]]; then
-        echo "checks.sh: no repository changes; nothing to complete." >&2
         return
     fi
 
@@ -198,11 +202,11 @@ docs)
     run_docs
     ;;
 arch)
-    uv run pytest tests/architecture -q
+    run_check "architecture tests" uv run pytest tests/architecture -q
     ;;
 test)
     target="${2:?usage: scripts/checks.sh test <pytest-target>}"
-    uv run pytest "$target" -q --tb=short --show-capture=all
+    run_check "focused Python test" uv run pytest "$target" -q --tb=short --show-capture=all
     ;;
 *)
     echo "checks.sh: unknown mode '$mode'" >&2

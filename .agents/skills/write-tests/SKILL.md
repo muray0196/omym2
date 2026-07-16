@@ -35,14 +35,15 @@ Frontend unit/component tests live beside their feature or under
 - Frontend unit/component tests use the contract-approved Vitest, React Testing
   Library, `user-event`, and MSW stack. Browser tests use Playwright Chromium
   and axe. Exact versions come from the frontend lockfile.
-- Use only the canonical fixtures in `docs/development/testing.md`.
+- When a canonical fixture is relevant, locate and read only its matching
+  subsection in `docs/development/testing.md`.
 
 ## What must be tested (by contract touched)
 
-Open `docs/development/testing.md`'s Contract Change Test Requirements table and match
-the row for the contract you changed (Config, DB schema, Path identity,
-Status catalog, Execution, Architecture, Web API, durable Operation, exclusive
-operation, or generated API).
+Only for a contract change, locate `Contract Change Test Requirements` in
+`docs/development/testing.md` and read the row for the changed contract. Routine
+regression tests follow the nearest existing test and do not require loading the
+full testing document.
 
 ## Procedure
 

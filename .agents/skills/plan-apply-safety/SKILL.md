@@ -10,13 +10,21 @@ Authoritative docs: `docs/execution/model.md`, `docs/execution/apply.md`,
 `docs/execution/failure-policy.md`, `docs/contracts/operations.md`,
 `docs/contracts/status-reason-catalog.md`.
 
-## Read first (in this order)
+## Focused reading
 
-1. `docs/execution/model.md`
-2. The doc for the command you touch: `docs/execution/{apply,undo,refresh,organize,add,check}.md`
-3. `docs/execution/failure-policy.md`
-4. `docs/contracts/operations.md`
-5. `docs/contracts/status-reason-catalog.md` — only the statuses/reasons listed there may be persisted
+This skill carries the cross-cutting invariants. Locate headings first and read
+only sections that govern the changed behavior:
+
+| Change | Read |
+| --- | --- |
+| Plan, Run, FileEvent, blocked/failed, or single-use semantics | Matching section of `docs/execution/model.md` |
+| Command behavior | Matching section of `docs/execution/{apply,undo,refresh,organize,add,check}.md` |
+| Failure timing, rollback, restart, or recovery | Matching case in `docs/execution/failure-policy.md` |
+| Background lifecycle, idempotency, progress, cancellation, or reconciliation | Matching section of `docs/contracts/operations.md` |
+| Persisted status or reason | Exact entity section plus Cross-Cutting Rules in `docs/contracts/status-reason-catalog.md` |
+
+Do not preload all five documents. Only statuses/reasons listed in the catalog
+may be persisted.
 
 ## Non-negotiable invariants
 
@@ -43,7 +51,7 @@ Authoritative docs: `docs/execution/model.md`, `docs/execution/apply.md`,
 
 ## Procedure
 
-1. Read the docs above, in the listed order.
+1. Route focused reading through the table above.
 2. Check the design against every non-negotiable invariant above.
 3. Every PlanAction carries stored `source_path`/`target_path`, so this skill and `path-identity-safety` always co-trigger together: follow this skill's execution-semantics checks first, then apply `path-identity-safety`'s stored-path invariants throughout the work.
 4. Work through the Done means checklist below before declaring the change safe.

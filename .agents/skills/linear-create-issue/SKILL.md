@@ -40,7 +40,9 @@ Use the available Linear tools or app. Search for near-duplicates before creatin
 
 ## Procedure
 
-1. Read only the context needed for an accurate issue.
+1. Read only the context needed for an accurate issue. Request selected issue
+   fields and near-duplicate summaries; do not retrieve full comment histories
+   or copy history into the new description unless a specific dependency needs it.
 2. Resolve the relevant Linear team, project, labels, status, and duplicates.
 3. Create or update the issue using the compact structure above, including links or attached-context references when useful.
 4. Stop unless the user explicitly asks to execute the work locally.

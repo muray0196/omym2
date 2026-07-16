@@ -5,7 +5,8 @@ description: Change the OMYM2 React and Vite frontend, generated API boundary, s
 
 # Web Frontend Change
 
-Authoritative doc: `docs/codebase/web-frontend.md`.
+Authoritative docs remain under `docs/`; this skill is the operational safety
+cache and routes only the sections needed for the current change.
 
 ## Current Facts
 
@@ -15,9 +16,6 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
 
 ## Rules
 
-- Evaluate implementation only against `docs/codebase/web-frontend.md`,
-  `docs/contracts/web-api.md`, `docs/contracts/status-reason-catalog.md`,
-  `docs/development/testing.md`, the clean-room fixtures, and accessibility tests.
 - The frontend consumes committed OpenAPI-generated request/response types. It
   must not hand-copy an API schema or infer capabilities from status values.
 - Every state-changing request sends `X-OMYM2-CSRF-Token`; every durable
@@ -28,9 +26,24 @@ Authoritative doc: `docs/codebase/web-frontend.md`.
 - Apply and Undo must use the atomic claim, shared lock, Plan, Run, and
   FileEvent contracts.
 
+## Focused reading
+
+Locate headings first and read only the matching section:
+
+| Change | Read |
+| --- | --- |
+| Source layout, routes, interaction, keyboard, build, serving, packaging, or performance | Matching section of `docs/codebase/web-frontend.md` |
+| Request/response shape, envelope, CSRF, browsing, idempotency, or one endpoint | Cross-cutting rule plus the affected endpoint section in `docs/contracts/web-api.md` |
+| Persisted or presented status/reason | The affected entity section plus Cross-Cutting Rules in `docs/contracts/status-reason-catalog.md` |
+| Unit, browser, accessibility, or fixture behavior | Matching test/fixture section in `docs/development/testing.md` |
+
+Do not preload all four documents. Do not read generated clients, OpenAPI JSON,
+lockfiles, `dist/`, or `static_dist/` in full; use targeted symbols, generation
+drift, or focused diffs.
+
 ## Procedure
 
-1. Read the authoritative docs above.
+1. Route focused reading through the table above.
 2. Edit frontend source only under `web/`; do not create a parallel Web tree.
 3. If the change needs new backend data, treat it as a coordinated two-sided
    contract change:

@@ -3,7 +3,7 @@ type: Development Guide
 title: Development Harness
 description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, Windows desktop CI expectations, suppressions, and runtime boundaries.
 tags: [development, tooling, quality-gates, validation, web, desktop]
-timestamp: 2026-07-16T03:30:43+09:00
+timestamp: 2026-07-16T20:37:30+09:00
 ---
 
 # Development Harness
@@ -155,6 +155,17 @@ scripts/checks.sh test <pytest-target>
 ```
 
 The mode is required; there is no default. The wrapper does not install dependencies.
+
+Each underlying command writes combined output to a private temporary log.
+Successful command logs are deleted, and a successful mode reports only its
+single pass line. On failure, the wrapper stops at the first failed gate, prints
+a bounded tail, and retains the complete log at the reported path.
+
+Use that bounded tail as the first diagnostic. If it is insufficient, inspect a
+larger tail or a targeted range from the retained log. Read the whole log or
+rerun the exact command with full output only as the final diagnostic step. For
+pytest, keep the existing progression: aggregate one-line traceback, focused
+short traceback, then focused long traceback with full capture.
 
 * `changed`: edit-loop checks on Python files changed vs `HEAD`
 * `completion`: path-aware Codex completion checks; excludes E2E, package,
