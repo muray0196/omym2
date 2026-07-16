@@ -13,5 +13,8 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     restoreMocks: true,
     clearMocks: true,
+    // Full-form userEvent tests legitimately exceed the 5s default on
+    // loaded CI runners; the suite still finishes in well under a minute.
+    testTimeout: 15_000,
   },
 });
