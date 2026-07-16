@@ -34,7 +34,7 @@ from omym2.adapters.fs.file_snapshot_reader import (
 )
 from omym2.adapters.fs.hash_calculator import INVALID_CHUNK_SIZE_MESSAGE, FileContentHasher
 from omym2.adapters.fs.path_resolver import PATH_OUTSIDE_LIBRARY_MESSAGE, FilesystemPathResolver
-from omym2.adapters.fs.win32_file_handles import Win32FileHandle, Win32FileIdentity
+from omym2.adapters.fs.win32_file_handles import Win32FileHandle, Win32FileIdentity, stat_change_marker_ns
 from omym2.config import FILE_SNAPSHOT_CAPTURE_MIN_WORKER_COUNT
 from omym2.domain.models.file_snapshot import FilesystemIdentity
 from omym2.domain.models.track_metadata import TrackMetadata
@@ -262,7 +262,7 @@ def test_file_snapshot_reader_captures_metadata_and_hash(tmp_path: Path) -> None
         inode=source_stat.st_ino,
         size=source_stat.st_size,
         mtime_ns=source_stat.st_mtime_ns,
-        ctime_ns=source_stat.st_ctime_ns,
+        ctime_ns=stat_change_marker_ns(source_stat),
     )
     assert snapshot.captured_at == FIXED_TIME
 
@@ -1731,7 +1731,7 @@ def _win32_identity(path_stat: os.stat_result) -> Win32FileIdentity:
         inode=path_stat.st_ino,
         size=path_stat.st_size,
         mtime_ns=path_stat.st_mtime_ns,
-        ctime_ns=path_stat.st_ctime_ns,
+        ctime_ns=stat_change_marker_ns(path_stat),
         volume_serial_number=path_stat.st_dev,
         file_id=inode_bytes,
         attributes=0,
@@ -1752,7 +1752,7 @@ def _filesystem_identity(path: Path) -> FilesystemIdentity:
         inode=source_stat.st_ino,
         size=source_stat.st_size,
         mtime_ns=source_stat.st_mtime_ns,
-        ctime_ns=source_stat.st_ctime_ns,
+        ctime_ns=stat_change_marker_ns(source_stat),
     )
 
 

@@ -26,6 +26,7 @@ from omym2.adapters.fs.source_inventory_reader import (
     SOURCE_INVENTORY_ROOT_SYMLINK_MESSAGE,
     FilesystemSourceInventoryReader,
 )
+from omym2.adapters.fs.win32_file_handles import default_win32_file_handle_backend, stat_change_marker_ns
 from omym2.domain.models.file_snapshot import FilesystemIdentity
 from omym2.features.common_ports import SourceInventoryRequest
 from tests.fakes.content_fingerprint import calculate_content_fingerprint
@@ -85,7 +86,10 @@ def test_content_snapshot_reader_hashes_retained_descriptor_without_metadata(
     )
 
     snapshot = reader.capture(source_path, root=source_root)
-    source_identity = source_path.stat()
+    # Handle-based stat reads $STANDARD_INFORMATION like the capture itself; a
+    # path stat may fall back to stale directory-entry timestamps on Windows.
+    with source_path.open("rb") as source_file:
+        source_identity = os.fstat(source_file.fileno())
 
     assert snapshot.path == str(source_path)
     assert snapshot.size == len(AUDIO_CONTENT)
@@ -95,7 +99,7 @@ def test_content_snapshot_reader_hashes_retained_descriptor_without_metadata(
         inode=source_identity.st_ino,
         size=source_identity.st_size,
         mtime_ns=source_identity.st_mtime_ns,
-        ctime_ns=source_identity.st_ctime_ns,
+        ctime_ns=stat_change_marker_ns(source_identity),
     )
     assert snapshot.captured_at == CAPTURED_TIME
     assert len(descriptor_calls) == EXPECTED_DESCRIPTOR_CALL_COUNT
@@ -173,17 +177,34 @@ def test_content_snapshot_reader_detects_path_replacement_during_hash(
     source_root.mkdir()
     _ = source_path.write_bytes(AUDIO_CONTENT)
     original_descriptor_hash = FileContentHasher.calculate_descriptor
+    rename_blocked = False
 
     def replace_after_hash(hasher: FileContentHasher, file_descriptor: int) -> str:
+        nonlocal rename_blocked
         content_hash = original_descriptor_hash(hasher, file_descriptor)
-        _ = source_path.rename(retained_path)
+        try:
+            _ = source_path.rename(retained_path)
+        except PermissionError:
+            # Windows blocks the swap outright: the retained capture handle is
+            # opened without FILE_SHARE_DELETE, so the rename cannot happen.
+            rename_blocked = True
+            return content_hash
         _ = source_path.write_bytes(AUDIO_CONTENT)
         return content_hash
 
     if use_path_fallback:
         monkeypatch.setattr(content_snapshot_reader_module, "_OPEN_SUPPORTS_DIR_FD", False)
     monkeypatch.setattr(FileContentHasher, "calculate_descriptor", replace_after_hash)
-    reader = FilesystemFileContentSnapshotReader(clock=FixedClock(CAPTURED_TIME))
+    reader = FilesystemFileContentSnapshotReader(
+        clock=FixedClock(CAPTURED_TIME),
+        windows_backend=None if use_path_fallback else default_win32_file_handle_backend(),
+    )
+
+    if os.name == "nt":
+        snapshot = reader.capture(source_path, root=source_root)
+        assert rename_blocked
+        assert snapshot.content_hash == calculate_content_fingerprint(AUDIO_CONTENT)
+        return
 
     with pytest.raises(ValueError, match=CONTENT_SNAPSHOT_CHANGED_MESSAGE):
         _ = reader.capture(source_path, root=source_root)
@@ -227,8 +248,10 @@ def test_content_snapshot_reader_path_fallback_detects_symlink_swap_before_open(
     monkeypatch.setattr(content_snapshot_reader_module, "_OPEN_SUPPORTS_DIR_FD", False)
     monkeypatch.setattr(os, "open", replace_before_open)
 
+    # windows_backend=None keeps this a genuine fallback test on Windows, where
+    # the native backend would otherwise bypass the patched os.open entirely.
     with pytest.raises(ValueError, match=CONTENT_SNAPSHOT_CHANGED_MESSAGE):
-        _ = FilesystemFileContentSnapshotReader(clock=FixedClock(CAPTURED_TIME)).capture(
+        _ = FilesystemFileContentSnapshotReader(clock=FixedClock(CAPTURED_TIME), windows_backend=None).capture(
             source_path,
             root=source_root,
         )
@@ -252,21 +275,33 @@ def test_content_snapshot_reader_path_fallback_detects_parent_swap_during_hash(
     outside_root.mkdir()
     _ = source_path.write_bytes(AUDIO_CONTENT)
     original_descriptor_hash = FileContentHasher.calculate_descriptor
+    rename_blocked = False
 
     def replace_parent_after_hash(hasher: FileContentHasher, file_descriptor: int) -> str:
+        nonlocal rename_blocked
         content_hash = original_descriptor_hash(hasher, file_descriptor)
-        _ = source_parent.rename(retained_parent)
+        try:
+            _ = source_parent.rename(retained_parent)
+        except PermissionError:
+            # Windows refuses to rename a directory while the capture holds an
+            # open descriptor below it, so the redirect cannot happen mid-hash.
+            rename_blocked = True
+            return content_hash
         source_parent.symlink_to(outside_root, target_is_directory=True)
         return content_hash
 
     monkeypatch.setattr(content_snapshot_reader_module, "_OPEN_SUPPORTS_DIR_FD", False)
     monkeypatch.setattr(FileContentHasher, "calculate_descriptor", replace_parent_after_hash)
+    reader = FilesystemFileContentSnapshotReader(clock=FixedClock(CAPTURED_TIME), windows_backend=None)
+
+    if os.name == "nt":
+        snapshot = reader.capture(source_path, root=source_root)
+        assert rename_blocked
+        assert snapshot.content_hash == calculate_content_fingerprint(AUDIO_CONTENT)
+        return
 
     with pytest.raises(ValueError, match=CONTENT_SNAPSHOT_CHANGED_MESSAGE):
-        _ = FilesystemFileContentSnapshotReader(clock=FixedClock(CAPTURED_TIME)).capture(
-            source_path,
-            root=source_root,
-        )
+        _ = reader.capture(source_path, root=source_root)
 
     assert source_parent.is_symlink()
     assert (retained_parent / SOURCE_FILE_NAME).read_bytes() == AUDIO_CONTENT

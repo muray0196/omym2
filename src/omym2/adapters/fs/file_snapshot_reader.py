@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from omym2.adapters.fs.hash_calculator import FileContentHasher
+from omym2.adapters.fs.win32_file_handles import stat_change_marker_ns
 from omym2.config import FILE_SNAPSHOT_CAPTURE_MIN_WORKER_COUNT, FILE_SNAPSHOT_CAPTURE_WORKER_COUNT
 from omym2.domain.models.file_snapshot import FileSnapshot, FilesystemIdentity
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
@@ -92,7 +93,7 @@ class FilesystemFileSnapshotReader:
                 inode=completed_stat_result.st_ino,
                 size=completed_stat_result.st_size,
                 mtime_ns=completed_stat_result.st_mtime_ns,
-                ctime_ns=completed_stat_result.st_ctime_ns,
+                ctime_ns=stat_change_marker_ns(completed_stat_result),
             ),
             captured_at=self.clock.now(),
         )
@@ -110,5 +111,5 @@ def _same_filesystem_identity(left: os.stat_result, right: os.stat_result) -> bo
         and left.st_ino == right.st_ino
         and left.st_size == right.st_size
         and left.st_mtime_ns == right.st_mtime_ns
-        and left.st_ctime_ns == right.st_ctime_ns
+        and stat_change_marker_ns(left) == stat_change_marker_ns(right)
     )
