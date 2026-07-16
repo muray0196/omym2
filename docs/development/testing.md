@@ -3,7 +3,7 @@ type: Development Guide
 title: Testing
 description: Defines OMYM2's Python, frontend, browser, architecture, integration, retained-object filesystem, native Windows, provider/companion/unprocessed fixture, rollback, and CI test policy.
 tags: [testing, pytest, vitest, playwright, desktop, windows, architecture-tests, fixtures, musicbrainz, companions, unprocessed, rollback]
-timestamp: 2026-07-16T22:15:00+09:00
+timestamp: 2026-07-17T00:51:21+09:00
 ---
 
 # Testing
@@ -158,6 +158,50 @@ suite, which remains authoritative for broader behavior, accessibility, and
 edge cases. Windows 11 release validation must repeat the complete smoke on the
 supported workstation target and retain its evidence; hosted Windows Server
 results cannot be relabeled as that target run.
+
+## Windows Filesystem Semantics
+
+The retained-object suites run unchanged on POSIX and native Windows, but the
+two platforms enforce the same invariants through different mechanisms. Tests
+and `adapters/fs` changes must respect these verified Windows behaviors rather
+than assume POSIX semantics:
+
+* Filesystem identity comparisons go through `stat_change_marker_ns`
+  (`src/omym2/adapters/fs/win32_file_handles.py`), never raw `st_ctime_ns`.
+  Python 3.14 maps Windows `st_ctime` to NTFS ChangeTime, and by-name stats
+  report it with transient staleness for freshly written files, so raw
+  comparisons across the path-stat/handle-stat boundary fail intermittently
+  on real NTFS.
+* By-name Windows stats may fall back to stale directory-entry timestamps.
+  When a test builds an expected identity, read it through an opened handle
+  (`os.fstat`), not `Path.stat()`.
+* NT share-mode arbitration binds only handles holding data or delete access.
+  An attributes-only handle neither blocks nor is blocked by renames, which is
+  why retained directory handles request `FILE_LIST_DIRECTORY`: withholding
+  `FILE_SHARE_DELETE` prevents parent replacement only from a data-access
+  handle.
+* TOCTOU simulations that rename an open file or a parent of an open file are
+  impossible on Windows: retained handles withhold `FILE_SHARE_DELETE`, so the
+  OS refuses the rename with a sharing violation. Such tests platform-split:
+  assert OS-level enforcement on `os.name == "nt"` and detection-based
+  invalidation on POSIX. Enforcement is the stronger form of the same
+  guarantee, not a skipped check.
+* The native Win32 backend preempts the descriptor and path fallbacks. A test
+  targeting a fallback must construct the reader with `windows_backend=None`;
+  monkeypatching `_OPEN_SUPPORTS_DIR_FD` alone is a no-op on Windows.
+* SQLite opens its database without `FILE_SHARE_DELETE`, and `sqlite3`'s
+  connection context manager only ends the transaction, not the connection.
+  Close connections deterministically (`contextlib.closing`, read-only URI
+  mode for observation) or later Windows directory cleanup fails with a
+  sharing violation.
+* `cmd.exe` builtins such as `mklink` need one subprocess argv element per
+  token; a single pre-quoted command string is corrupted by `list2cmdline`
+  escaping.
+
+Windows-only behavior is reproducible without CI round-trips: under WSL2 the
+Windows host can run the same pytest selection on real NTFS through `uv` on
+the host side. Prefer that reproduction before pushing Windows-affecting
+changes.
 
 ## Visual Regression
 
