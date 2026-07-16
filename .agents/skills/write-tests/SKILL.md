@@ -37,6 +37,10 @@ Frontend unit/component tests live beside their feature or under
   and axe. Exact versions come from the frontend lockfile.
 - When a canonical fixture is relevant, locate and read only its matching
   subsection in `docs/development/testing.md`.
+- For tests under `tests/adapters/fs/` or any test simulating filesystem
+  races (rename/replace/symlink swaps), read the `Windows Filesystem
+  Semantics` section of `docs/development/testing.md` first; POSIX-only
+  assumptions there fail on the native Windows CI job.
 
 ## What must be tested (by contract touched)
 
