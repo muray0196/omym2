@@ -18,6 +18,7 @@ from omym2.adapters.fs.win32_file_handles import (
     WIN32_EXPECTED_FILE_MESSAGE,
     Win32FileIdentity,
     default_win32_file_handle_backend,
+    stat_change_marker_ns,
     win32_directory_prefixes,
 )
 from omym2.domain.models.file_snapshot import FileContentSnapshot, FilesystemIdentity
@@ -480,7 +481,7 @@ def _same_file_state(left: os.stat_result, right: os.stat_result) -> bool:
         and left.st_ino == right.st_ino
         and left.st_size == right.st_size
         and left.st_mtime_ns == right.st_mtime_ns
-        and left.st_ctime_ns == right.st_ctime_ns
+        and stat_change_marker_ns(left) == stat_change_marker_ns(right)
     )
 
 
@@ -490,7 +491,7 @@ def _filesystem_identity(stat_result: os.stat_result) -> FilesystemIdentity:
         inode=stat_result.st_ino,
         size=stat_result.st_size,
         mtime_ns=stat_result.st_mtime_ns,
-        ctime_ns=stat_result.st_ctime_ns,
+        ctime_ns=stat_change_marker_ns(stat_result),
     )
 
 
@@ -500,7 +501,7 @@ def _win32_identity_matches_stat(identity: Win32FileIdentity, stat_result: os.st
         and identity.inode == stat_result.st_ino
         and identity.size == stat_result.st_size
         and identity.mtime_ns == stat_result.st_mtime_ns
-        and identity.ctime_ns == stat_result.st_ctime_ns
+        and identity.ctime_ns == stat_change_marker_ns(stat_result)
     )
 
 

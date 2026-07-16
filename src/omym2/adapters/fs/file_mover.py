@@ -20,6 +20,7 @@ from omym2.adapters.fs.win32_file_handles import (
     Win32FileHandleBackend,
     Win32FileIdentity,
     default_win32_file_handle_backend,
+    stat_change_marker_ns,
 )
 from omym2.config import PARENT_DIRECTORY_REFERENCE
 
@@ -1113,7 +1114,7 @@ def _stats_match(left: os.stat_result, right: os.stat_result) -> bool:
 
 
 def _file_states_match(left: os.stat_result, right: os.stat_result) -> bool:
-    return _file_states_match_except_ctime(left, right) and left.st_ctime_ns == right.st_ctime_ns
+    return _file_states_match_except_ctime(left, right) and stat_change_marker_ns(left) == stat_change_marker_ns(right)
 
 
 def _file_states_match_except_ctime(left: os.stat_result, right: os.stat_result) -> bool:
@@ -1126,5 +1127,5 @@ def _stat_matches_identity(source_stat: os.stat_result, expected_identity: Files
         and source_stat.st_ino == expected_identity.inode
         and source_stat.st_size == expected_identity.size
         and source_stat.st_mtime_ns == expected_identity.mtime_ns
-        and source_stat.st_ctime_ns == expected_identity.ctime_ns
+        and stat_change_marker_ns(source_stat) == expected_identity.ctime_ns
     )

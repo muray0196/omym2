@@ -27,6 +27,7 @@ from omym2.adapters.fs.win32_file_handles import (
     Win32FileHandle,
     Win32FileHandleBackend,
     Win32FileIdentity,
+    stat_change_marker_ns,
     win32_directory_prefixes,
 )
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
@@ -332,7 +333,7 @@ def _win32_identity(stat_result: os.stat_result) -> Win32FileIdentity:
         inode=stat_result.st_ino,
         size=stat_result.st_size,
         mtime_ns=stat_result.st_mtime_ns,
-        ctime_ns=stat_result.st_ctime_ns,
+        ctime_ns=stat_change_marker_ns(stat_result),
         volume_serial_number=stat_result.st_dev,
         file_id=stat_result.st_ino.to_bytes(16, byteorder="little", signed=False),
         attributes=0,
@@ -346,12 +347,13 @@ def _string_path(path: os.PathLike[str] | str) -> str:
 
 
 def _create_windows_junction(junction_path: Path, target_path: Path) -> None:
-    command = f'mklink /J "{junction_path}" "{target_path}"'
     command_interpreter = shutil.which("cmd.exe")
     if command_interpreter is None:
         pytest.fail("The native Windows command interpreter is unavailable.")
+    # One token per argument: a single pre-quoted string gets re-escaped by
+    # subprocess in a way cmd.exe builtins cannot parse.
     completed = subprocess.run(  # noqa: S603  # Fixed native test command with controlled temporary paths.
-        [command_interpreter, "/d", "/c", command],
+        [command_interpreter, "/d", "/c", "mklink", "/J", str(junction_path), str(target_path)],
         check=False,
         capture_output=True,
         text=True,
