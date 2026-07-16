@@ -17,7 +17,7 @@ MIXED_ENVELOPE_MESSAGE = "Only Bootstrap data may be combined with top-level err
 
 
 class ApiEnvelope[EnvelopeData](ApiModel):
-    """Generic response envelope with Bootstrap-compatible degradation."""
+    """Generic response envelope supporting Bootstrap degradation."""
 
     data: EnvelopeData | None
     errors: tuple[ApiError, ...]

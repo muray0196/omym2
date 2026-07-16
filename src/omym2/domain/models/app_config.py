@@ -77,7 +77,9 @@ from omym2.config import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-INVALID_CONFIG_VERSION_MESSAGE = "Unsupported config version."
+INVALID_CONFIG_VERSION_MESSAGE = (
+    "Unsupported pre-release config version. Reset .config/config.toml and recreate Settings."
+)
 INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE = (
     "ArtistIdConfig entries values must be non-empty ASCII letters, digits, or underscores "
     "with optional single internal hyphens."

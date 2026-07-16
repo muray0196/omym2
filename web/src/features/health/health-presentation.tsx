@@ -18,6 +18,5 @@ export function IssueTypeValue({ value }: { value: string }) {
 
 function toneClass(tone: HealthTone) {
   if (tone === "warning") return styles.warningTone;
-  if (tone === "danger") return styles.danger;
-  return styles.neutral;
+  return styles.danger;
 }

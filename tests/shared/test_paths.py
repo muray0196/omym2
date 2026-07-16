@@ -10,7 +10,6 @@ import pytest
 from omym2.shared.paths import (
     ESCAPING_LIBRARY_PATH_MESSAGE,
     ROOTED_LIBRARY_PATH_MESSAGE,
-    is_library_relative_path,
     normalize_library_relative_path,
 )
 
@@ -37,9 +36,3 @@ def test_library_relative_path_rejects_parent_reference() -> None:
     """Stored Library paths must not escape the Library root."""
     with pytest.raises(ValueError, match=ESCAPING_LIBRARY_PATH_MESSAGE):
         _ = normalize_library_relative_path(ESCAPING_PATH)
-
-
-def test_is_library_relative_path_reports_validity() -> None:
-    """Validity helper mirrors normalization without leaking exceptions."""
-    assert is_library_relative_path(NORMALIZED_PATH)
-    assert not is_library_relative_path(ABSOLUTE_PATH)

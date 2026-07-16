@@ -13,8 +13,9 @@ from uuid import UUID
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
-from omym2.adapters.web.routes.plans import PlanRouteHandlers, create_plans_router, get_plan_route_handlers
-from omym2.adapters.web.routes.tracks import TrackRouteHandlers, create_tracks_router, get_track_route_handlers
+from omym2.adapters.web.routes.api_context import PlansRouteContext, TracksRouteContext
+from omym2.adapters.web.routes.plans import create_plans_router, get_plan_route_handlers
+from omym2.adapters.web.routes.tracks import create_tracks_router, get_track_route_handlers
 from omym2.config import HTTP_NOT_FOUND_STATUS
 from omym2.domain.models.artist_name_resolution import (
     ArtistNameDiagnostics,
@@ -107,7 +108,7 @@ def test_plan_routes_return_typed_browse_and_detail_resources() -> None:
 
 
 def test_plan_actions_return_explicit_null_artist_name_diagnostics() -> None:
-    """Legacy, pre-resolution, and Undo actions keep the required nullable API field."""
+    """Actions without naming resolution, including Undo, return the required null field."""
     action_without_diagnostics = replace(_action(), artist_name_diagnostics=None)
 
     def list_action_without_diagnostics(_request: ListPlanActionsRequest) -> Page[PlanAction]:
@@ -136,7 +137,7 @@ def test_plan_detail_returns_typed_not_found_envelope() -> None:
     client = _client(
         create_plans_router(),
         get_plan_route_handlers,
-        PlanRouteHandlers(
+        PlansRouteContext(
             list_plans=handlers.list_plans,
             get_plan_header=missing_plan,
             get_plan_action_summaries=handlers.get_plan_action_summaries,
@@ -193,7 +194,7 @@ def test_track_detail_returns_typed_not_found_envelope() -> None:
     client = _client(
         create_tracks_router(),
         get_track_route_handlers,
-        TrackRouteHandlers(
+        TracksRouteContext(
             list_tracks=handlers.list_tracks,
             get_track=missing_track,
             get_track_status_facets=handlers.get_track_status_facets,
@@ -219,11 +220,11 @@ def _plan_client() -> TestClient:
     return _client(create_plans_router(), get_plan_route_handlers, _plan_handlers())
 
 
-def _plan_handlers() -> PlanRouteHandlers:
+def _plan_handlers() -> PlansRouteContext:
     plan = _plan()
     action = _action()
     summary = plan_action_summary_from_counts({(ActionStatus.PLANNED, ActionType.MOVE): 1})
-    return PlanRouteHandlers(
+    return PlansRouteContext(
         list_plans=lambda _request: Page(items=(plan,), next_cursor_key=None, total=1),
         get_plan_header=lambda _request: plan,
         get_plan_action_summaries=lambda _request: {PLAN_ID: summary},
@@ -257,9 +258,9 @@ def _track_client() -> TestClient:
     return _client(create_tracks_router(), get_track_route_handlers, _track_handlers())
 
 
-def _track_handlers() -> TrackRouteHandlers:
+def _track_handlers() -> TracksRouteContext:
     track = _track()
-    return TrackRouteHandlers(
+    return TracksRouteContext(
         list_tracks=lambda _request: Page(items=(track,), next_cursor_key=None, total=1),
         get_track=lambda _request: track,
         get_track_status_facets=lambda _request: TrackStatusFacetsResult(

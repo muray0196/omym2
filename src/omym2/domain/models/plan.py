@@ -76,10 +76,6 @@ class Plan:
         """Return whether this Plan can no longer be applied."""
         return self.status in TERMINAL_PLAN_STATUSES
 
-    def mark_applying(self) -> Plan:
-        """Return this Plan as single-use after apply starts."""
-        return self._with_status(PlanStatus.APPLYING)
-
     def mark_applied(self) -> Plan:
         """Return this Plan as fully applied."""
         return self._with_status(PlanStatus.APPLIED)

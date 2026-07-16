@@ -36,8 +36,7 @@ describe("Operation recovery route", () => {
     expect(
       await screen.findByRole("heading", { name: "Operation recovery" }),
     ).toHaveFocus();
-    expect(await screen.findByText(/Working: server stage/)).toBeVisible();
-    expect(screen.getByText("future_scan_stage")).toBeVisible();
+    expect((await screen.findAllByText("Running")).length).toBeGreaterThan(0);
 
     expect(
       await screen.findByText("Operation storage is temporarily busy."),
@@ -50,19 +49,6 @@ describe("Operation recovery route", () => {
     expect(
       screen.getByRole("link", { name: "Inspect related Plan" }),
     ).toHaveAttribute("href", `/plans/${CREATED_PLAN_ID}`);
-  });
-
-  it("preserves the raw kind for an unknown terminal result", async () => {
-    server.use(
-      http.get("*/api/operations/:operationId", () =>
-        HttpResponse.json(unknownResultOperation),
-      ),
-    );
-    renderRecoveryRoute();
-
-    expect(
-      (await screen.findAllByText("Unknown result: future_result")).length,
-    ).toBeGreaterThan(0);
   });
 });
 
@@ -102,12 +88,6 @@ const activeOperation = {
     library_id: normalBootstrap.data.active_library?.library_id ?? null,
     operation_id: OPERATION_ID,
     plan_id: CREATED_PLAN_ID,
-    progress: {
-      completed_units: 1,
-      message: null,
-      stage_code: "future_scan_stage",
-      total_units: 3,
-    },
     requested_at: "2026-07-13T00:00:00Z",
     result: null,
     run_id: null,
@@ -126,30 +106,10 @@ const interruptedOperation = {
       message: "The worker stopped before the Operation completed.",
       retryable: false,
     },
-    progress: {
-      completed_units: null,
-      message: null,
-      stage_code: null,
-      total_units: null,
-    },
     status: "interrupted",
   },
   errors: [],
 } satisfies ApiEnvelopeOperationResource;
-
-const unknownResultOperation = {
-  data: {
-    ...activeOperation.data,
-    completed_at: "2026-07-13T00:00:03Z",
-    progress: {
-      ...activeOperation.data.progress,
-      completed_units: 3,
-    },
-    result: { kind: "future_result" },
-    status: "succeeded",
-  },
-  errors: [],
-} as unknown as ApiEnvelopeOperationResource;
 
 const retryableReadFailure = {
   data: null,

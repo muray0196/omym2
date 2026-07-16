@@ -12,7 +12,7 @@ from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEvent
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.run import Run, RunStatus
-from omym2.features.history.dto import GetRunHeaderRequest, RunCapabilityReason
+from omym2.features.history.dto import GetRunDetailRequest, RunCapabilityReason
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
 from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId
@@ -35,7 +35,7 @@ def test_run_detail_allows_undo_only_with_terminal_succeeded_file_event() -> Non
     """A terminal Run with confirmed mutation evidence is Undo-capable."""
     uow = _history_uow(ActionType.MOVE, FileEventStatus.SUCCEEDED)
 
-    result = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunHeaderRequest(run_id=RUN_ID))
+    result = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunDetailRequest(run_id=RUN_ID))
 
     assert result.capabilities.can_create_undo is True
     assert result.capabilities.disabled_reasons == ()
@@ -46,7 +46,7 @@ def test_run_detail_reports_refresh_and_pending_evidence_reasons() -> None:
     """Refresh metadata and an unknown mutation outcome independently disable Undo."""
     uow = _history_uow(ActionType.REFRESH_METADATA, FileEventStatus.PENDING)
 
-    result = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunHeaderRequest(run_id=RUN_ID))
+    result = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunDetailRequest(run_id=RUN_ID))
 
     assert result.capabilities.can_create_undo is False
     assert result.capabilities.disabled_reasons == (
@@ -61,7 +61,7 @@ def test_run_detail_reports_prior_applied_undo_refusal() -> None:
     uow = _history_uow(ActionType.MOVE, FileEventStatus.SUCCEEDED)
     _add_prior_undo_evidence(uow, PlanStatus.APPLIED, FileEventStatus.SUCCEEDED)
 
-    result = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunHeaderRequest(run_id=RUN_ID))
+    result = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunDetailRequest(run_id=RUN_ID))
 
     assert result.capabilities.can_create_undo is False
     assert result.capabilities.disabled_reasons == (RunCapabilityReason.ALREADY_UNDONE_OR_IN_PROGRESS,)
@@ -72,14 +72,14 @@ def test_run_detail_accounts_for_prior_undo_pending_and_reversed_events() -> Non
     pending_uow = _history_uow(ActionType.MOVE, FileEventStatus.SUCCEEDED)
     _add_prior_undo_evidence(pending_uow, PlanStatus.FAILED, FileEventStatus.PENDING)
 
-    pending = GetRunDetailUseCase(HistoryPorts(pending_uow)).execute(GetRunHeaderRequest(run_id=RUN_ID))
+    pending = GetRunDetailUseCase(HistoryPorts(pending_uow)).execute(GetRunDetailRequest(run_id=RUN_ID))
 
     assert pending.capabilities.disabled_reasons == (RunCapabilityReason.PENDING_FILE_EVENT_REQUIRES_REVIEW,)
 
     reversed_uow = _history_uow(ActionType.MOVE, FileEventStatus.SUCCEEDED)
     _add_prior_undo_evidence(reversed_uow, PlanStatus.FAILED, FileEventStatus.SUCCEEDED)
 
-    reversed_result = GetRunDetailUseCase(HistoryPorts(reversed_uow)).execute(GetRunHeaderRequest(run_id=RUN_ID))
+    reversed_result = GetRunDetailUseCase(HistoryPorts(reversed_uow)).execute(GetRunDetailRequest(run_id=RUN_ID))
 
     assert reversed_result.capabilities.disabled_reasons == (RunCapabilityReason.NOTHING_TO_UNDO,)
 

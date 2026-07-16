@@ -31,7 +31,6 @@ import { server } from "../../test/server";
 import { RouteHeading } from "../../ui/primitives/route-heading";
 import { BootstrapContext } from "../bootstrap/bootstrap-context";
 import { bootstrapQuery } from "../bootstrap/bootstrap-query";
-import { eventStatusLabel, runStatusLabel } from "./history-catalog";
 
 const RUN_ID = "018f6a4f-3c2d-7b8a-9abc-def012345701";
 const COMPANION_ASSET_ID = "018f6a4f-3c2d-7b8a-9abc-def012345706";
@@ -266,15 +265,6 @@ describe("Run detail inspection", () => {
       ).toHaveAttribute("href", `/operations/${OPERATION_ID}`);
       expect(bootstrapReads).toBe(2);
     });
-  });
-
-  it("preserves raw unknown catalog values", () => {
-    expect(runStatusLabel("future_run_state")).toBe(
-      "Unknown status: future_run_state",
-    );
-    expect(eventStatusLabel("future_event_state")).toBe(
-      "Unknown status: future_event_state",
-    );
   });
 
   it("renders the typed Run not-found state", async () => {

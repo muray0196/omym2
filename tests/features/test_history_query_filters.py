@@ -17,7 +17,7 @@ from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.run import Run, RunStatus
 from omym2.features.history.dto import (
     FileEventStatusFacetsRequest,
-    GetRunHeaderRequest,
+    GetRunDetailRequest,
     GroupRunEventsRequest,
     ListRunEventsRequest,
     ListRunsRequest,
@@ -25,9 +25,9 @@ from omym2.features.history.dto import (
 )
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.history.usecases.get_file_event_status_facets import GetFileEventStatusFacetsUseCase
-from omym2.features.history.usecases.get_run_header import (
+from omym2.features.history.usecases.get_run_detail import (
     RUN_NOT_FOUND_MESSAGE,
-    GetRunHeaderUseCase,
+    GetRunDetailUseCase,
     RunNotFoundError,
 )
 from omym2.features.history.usecases.get_run_status_facets import GetRunStatusFacetsUseCase
@@ -179,23 +179,23 @@ def test_list_runs_does_not_commit() -> None:
     assert uow.commit_count == 0
 
 
-def test_get_run_header_returns_run() -> None:
+def test_get_run_detail_returns_run() -> None:
     """The header usecase returns the stored Run by ID."""
     uow = InMemoryUnitOfWork()
     run = _run(RUN_ID_1, started_at=BASE_TIME)
     uow.runs.save(run)
 
-    loaded = GetRunHeaderUseCase(HistoryPorts(uow)).execute(GetRunHeaderRequest(RUN_ID_1))
+    loaded = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunDetailRequest(RUN_ID_1)).run
 
     assert loaded == run
 
 
-def test_get_run_header_raises_for_unknown_run() -> None:
+def test_get_run_detail_raises_for_unknown_run() -> None:
     """An unknown Run ID raises RunNotFoundError."""
     uow = InMemoryUnitOfWork()
 
     with pytest.raises(RunNotFoundError, match=RUN_NOT_FOUND_MESSAGE):
-        _ = GetRunHeaderUseCase(HistoryPorts(uow)).execute(GetRunHeaderRequest(UNKNOWN_RUN_ID))
+        _ = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunDetailRequest(UNKNOWN_RUN_ID))
 
 
 def test_list_run_events_filters_by_status_and_reports_filtered_total() -> None:

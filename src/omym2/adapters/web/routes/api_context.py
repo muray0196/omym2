@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from omym2.features.history.dto import (
         FileEventStatusFacetsRequest,
         FileEventStatusFacetsResult,
-        GetRunHeaderRequest,
+        GetRunDetailRequest,
         GroupRunEventsRequest,
         ListRunEventsRequest,
         ListRunsRequest,
@@ -128,7 +128,7 @@ class HistoryRouteContext:
     """Run and FileEvent query handlers resolved by the platform composition root."""
 
     list_runs: Callable[[ListRunsRequest], Page[Run]]
-    get_run_detail: Callable[[GetRunHeaderRequest], RunDetailResult]
+    get_run_detail: Callable[[GetRunDetailRequest], RunDetailResult]
     get_run_status_facets: Callable[[RunStatusFacetsRequest], RunStatusFacetsResult]
     list_run_events: Callable[[ListRunEventsRequest], Page[FileEvent]]
     get_file_event_status_facets: Callable[[FileEventStatusFacetsRequest], FileEventStatusFacetsResult]

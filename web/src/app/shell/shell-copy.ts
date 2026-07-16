@@ -12,7 +12,6 @@ export const shellCopy = {
   navigationTitle: "Navigation",
   closeNavigation: "Close navigation",
   commandCenter: "Command Center",
-  commandShortcut: "Ctrl or Command plus K",
   shortcutHelp: "Keyboard shortcuts",
   shortcutHelpDescription: "Every shortcut has an equivalent visible control.",
   closeShortcutHelp: "Close keyboard shortcuts",

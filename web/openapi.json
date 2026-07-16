@@ -873,9 +873,6 @@
           "pending_file_event_requires_review",
           "operation_expired",
           "validation_failed",
-          "path_not_found",
-          "path_not_directory",
-          "path_outside_library",
           "storage_unavailable",
           "config_io_failed",
           "internal_error",
@@ -1250,10 +1247,6 @@
             ],
             "title": "Active Operation Id"
           },
-          "app_version": {
-            "title": "App Version",
-            "type": "string"
-          },
           "config_validation": {
             "$ref": "#/components/schemas/ConfigValidationResource"
           },
@@ -1273,16 +1266,10 @@
           },
           "runtime_capabilities": {
             "$ref": "#/components/schemas/RuntimeCapabilities"
-          },
-          "status_catalog_version": {
-            "title": "Status Catalog Version",
-            "type": "integer"
           }
         },
         "required": [
-          "app_version",
           "csrf_token",
-          "status_catalog_version",
           "active_library",
           "library_diagnostics",
           "config_validation",
@@ -2334,64 +2321,6 @@
         "title": "OperationPollingPolicy",
         "type": "object"
       },
-      "OperationProgressResource": {
-        "additionalProperties": false,
-        "description": "Display-safe durable progress without fabricated percentages.",
-        "properties": {
-          "completed_units": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed Units"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "stage_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stage Code"
-          },
-          "total_units": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Total Units"
-          }
-        },
-        "required": [
-          "stage_code",
-          "completed_units",
-          "total_units",
-          "message"
-        ],
-        "title": "OperationProgressResource",
-        "type": "object"
-      },
       "OperationRef": {
         "additionalProperties": false,
         "description": "Compact reference returned when durable work is accepted or replayed.",
@@ -2485,9 +2414,6 @@
             ],
             "title": "Plan Id"
           },
-          "progress": {
-            "$ref": "#/components/schemas/OperationProgressResource"
-          },
           "requested_at": {
             "format": "date-time",
             "title": "Requested At",
@@ -2538,7 +2464,6 @@
           "library_id",
           "plan_id",
           "run_id",
-          "progress",
           "result",
           "error",
           "requested_at",
@@ -4048,8 +3973,7 @@
         "enum": [
           "artist",
           "album",
-          "disc",
-          "artist_album"
+          "disc"
         ],
         "title": "TrackGrouping",
         "type": "string"

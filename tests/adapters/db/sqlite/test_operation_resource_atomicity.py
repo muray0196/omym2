@@ -22,7 +22,6 @@ from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.operation import Operation, OperationKind, OperationStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.add.dto import CreateAddPlanRequest
 from omym2.features.add.ports import CreateAddPlanPorts
@@ -34,6 +33,7 @@ from omym2.features.organize.dto import CreateOrganizePlanRequest
 from omym2.features.organize.ports import CreateOrganizePlanPorts
 from omym2.features.organize.usecases.create_organize_plan import CreateOrganizePlanUseCase
 from omym2.shared.ids import ActionId, CheckRunId, LibraryId, OperationId, PlanId
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 from tests.fakes.runtime import (
     EmptySourceInventoryReader,
     FixedClock,

@@ -12,14 +12,19 @@ import {
 import { useDeferredValue } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 
+import type {
+  ArtistNameResolutionIssue,
+  ArtistNameResolutionProvenance,
+} from "../../api/generated";
 import { useCursorPage } from "../../ui/cursor-page";
 import { Button } from "../../ui/primitives/button";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
 import { PageHeader } from "../../ui/primitives/page-header";
 import { VisuallyHidden } from "../../ui/primitives/visually-hidden";
 import toolbarStyles from "../../ui/primitives/toolbar.module.css";
+import { InspectionErrorState } from "../inspection/inspection-error-state";
+import { inspectionErrorHasCode } from "../inspection/query-errors";
 import { planCopy } from "./plan-copy";
-import { PlanErrorState } from "./plan-error-state";
 import { PlanExecutionControls } from "./plan-execution-controls";
 import {
   actionGroupValueLabel,
@@ -40,7 +45,6 @@ import {
   planActionFacetsQuery,
   planActionGroupsInfiniteQuery,
   planActionsInfiniteQuery,
-  PlansApiError,
   type PlanAction,
   type PlanActionFacets,
   type PlanActionGroups,
@@ -121,10 +125,9 @@ export function PlanDetail() {
             <p>{planCopy.detail.notFoundBody}</p>
           </section>
         ) : (
-          <PlanErrorState
+          <InspectionErrorState
             error={exactPlan.error}
             onRetry={() => void exactPlan.refetch()}
-            retryLabel={planCopy.detail.retry}
             title={planCopy.detail.loadError}
           />
         )
@@ -421,10 +424,9 @@ function ActionListSection({
         <p role="status">{planCopy.detail.loadingActions}</p>
       ) : null}
       {actions.isError ? (
-        <PlanErrorState
+        <InspectionErrorState
           error={actions.error}
           onRetry={() => void actions.refetch()}
-          retryLabel={planCopy.detail.retry}
           title={planCopy.detail.loadError}
         />
       ) : null}
@@ -564,14 +566,14 @@ function ArtistNameDiagnostic({
   );
 }
 
-function artistNameProvenanceLabel(value: string): string {
-  const labels: Record<string, string> = planCopy.artistNames.provenance;
-  return labels[value] ?? `${planCopy.unknown.artistNameProvenance}: ${value}`;
+function artistNameProvenanceLabel(
+  value: ArtistNameResolutionProvenance,
+): string {
+  return planCopy.artistNames.provenance[value];
 }
 
-function artistNameIssueLabel(value: string): string {
-  const labels: Record<string, string> = planCopy.artistNames.issue;
-  return labels[value] ?? `${planCopy.unknown.artistNameIssue}: ${value}`;
+function artistNameIssueLabel(value: ArtistNameResolutionIssue): string {
+  return planCopy.artistNames.issue[value];
 }
 
 function FacetSection({
@@ -593,10 +595,9 @@ function FacetSection({
         <p role="status">{planCopy.detail.loadingFacets}</p>
       ) : null}
       {facets.isError ? (
-        <PlanErrorState
+        <InspectionErrorState
           error={facets.error}
           onRetry={() => void facets.refetch()}
-          retryLabel={planCopy.detail.retry}
           title={planCopy.detail.loadError}
         />
       ) : null}
@@ -692,10 +693,9 @@ function GroupSection({
         <p role="status">{planCopy.detail.loadingGroups}</p>
       ) : null}
       {groups.isError ? (
-        <PlanErrorState
+        <InspectionErrorState
           error={groups.error}
           onRetry={() => void groups.refetch()}
-          retryLabel={planCopy.detail.retry}
           title={planCopy.detail.loadError}
         />
       ) : null}
@@ -764,10 +764,7 @@ function NotFoundState() {
 }
 
 function isPlanNotFound(error: Error) {
-  return (
-    error instanceof PlansApiError &&
-    error.envelope.errors.some((item) => item.code === "plan_not_found")
-  );
+  return inspectionErrorHasCode(error, "plan_not_found");
 }
 
 function formatTimestamp(value: string) {

@@ -19,6 +19,7 @@ from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.db.sqlite import migration_runner
 from omym2.adapters.db.sqlite import unit_of_work as unit_of_work_module
 from omym2.adapters.db.sqlite.migration_runner import (
+    PreReleaseDatabaseResetRequiredError,
     SQLiteMigration,
     ensure_database_migrated,
     migrate_database,
@@ -69,12 +70,10 @@ ACCEPTED_ARTIST_SOURCE_KEY = "宇多田ヒカル"
 ACCEPTED_ARTIST_SOURCE_NAME = "宇多田ヒカル"
 ACCEPTED_ARTIST_RESOLVED_NAME = "Hikaru Utada"
 MUSICBRAINZ_ARTIST_ID = "db2f4f3a-f0c2-4c96-bea3-636f4b44f57b"
-ACCEPTED_ARTIST_NAMES_MIGRATION_NAME = "202607150001_accepted_artist_names.sql"
+BASELINE_MIGRATION_NAME = "202607160001_baseline.sql"
 CHECK_ISSUE_COUNT = 1
 CHECK_RUN_ID = CheckRunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345684"))
 COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345689"))
-COMPANION_ASSETS_MIGRATION_NAME = "202607160003_companion_assets.sql"
-PLAN_SOURCE_COMPANION_CHECK_MIGRATION_NAME = "202607160004_plan_source_and_companion_check.sql"
 COMPANION_CONTENT_HASH = "companion-content-hash"
 COMPANION_SOURCE_PATH = "Artist/Album/cover.jpg"
 COMPANION_TARGET_PATH = "Artist/Album 2/cover.jpg"
@@ -86,8 +85,6 @@ EVENT_SEQUENCE_LATE = 2
 EVENT_SEQUENCE_THIRD = 3
 EXPECTED_REENTER_CONNECTION_COUNT = 2
 FINISHED_TIME = BASE_TIME + timedelta(minutes=5)
-UNDO_CREATED_TIME = FINISHED_TIME + timedelta(minutes=1)
-POST_UNDO_TIME = UNDO_CREATED_TIME + timedelta(minutes=1)
 LATE_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 LATE_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567f"))
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
@@ -96,10 +93,6 @@ METADATA_HASH = "metadata-hash"
 OTHER_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345683"))
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 PLAN_SUMMARY = {"moves": "1"}
-PERFORMANCE_INDEX_MIGRATION_NAME = "202607110001_performance_indexes.sql"
-PLAN_ACTION_DIAGNOSTICS_MIGRATION_NAME = "202607160001_plan_action_artist_name_diagnostics.sql"
-STAT_BASELINE_MIGRATION_NAME = "202607110002_track_stat_baseline.sql"
-UNDO_PROVENANCE_MIGRATION_NAME = "202607130002_undo_provenance_and_apply_claim.sql"
 REUSED_BEGIN_COUNT = 3
 REUSED_COMMIT_COUNT = 2
 REUSED_CONNECTION_COUNT = 1
@@ -124,6 +117,8 @@ TRACK_TITLE = "Title"
 
 REQUIRED_TABLES = {
     "accepted_artist_names",
+    "check_issues",
+    "check_runs",
     "companion_assets",
     "file_events",
     "libraries",
@@ -134,6 +129,7 @@ REQUIRED_TABLES = {
     "runs",
     "schema_migrations",
     "tracks",
+    "provider_request_cadence",
 }
 
 REQUIRED_BROWSING_INDEXES = {
@@ -173,111 +169,57 @@ UNDO_PROVENANCE_INDEX_FLAGS = {
 }
 
 
-def test_sqlite_migrations_create_required_tables(tmp_path: Path) -> None:
-    """Migration runner creates the SQLite table set."""
+def test_packaged_migrations_are_one_clean_baseline() -> None:
+    """Pre-release migration history is replaced by one current schema baseline."""
+    migrations = migration_runner.load_packaged_migrations()
+
+    assert tuple(migration.name for migration in migrations) == (BASELINE_MIGRATION_NAME,)
+    assert "ALTER TABLE" not in migrations[0].sql.upper()
+
+
+def test_sqlite_baseline_creates_exact_table_set(tmp_path: Path) -> None:
+    """The clean baseline creates exactly the current application table set."""
     database_file = default_application_paths(tmp_path).database_file
 
     migrate_database(database_file)
 
-    assert _table_names(database_file) >= REQUIRED_TABLES
+    assert _table_names(database_file) == REQUIRED_TABLES
+    assert _applied_migrations(database_file) == {BASELINE_MIGRATION_NAME}
 
 
-def test_accepted_artist_name_migration_preserves_existing_managed_state(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Applying the additive cache migration leaves populated Library and Track rows intact."""
+def test_pre_release_database_requires_explicit_reset(tmp_path: Path) -> None:
+    """A database carrying retired migration history is rejected without mutation."""
     database_file = default_application_paths(tmp_path).database_file
-    packaged_migrations = migration_runner.load_packaged_migrations()
-    prior_migrations = tuple(
-        migration for migration in packaged_migrations if migration.name < ACCEPTED_ARTIST_NAMES_MIGRATION_NAME
-    )
+    database_file.parent.mkdir(parents=True)
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute(migration_runner.CREATE_MIGRATIONS_TABLE_SQL)
+        _ = connection.execute(
+            migration_runner.INSERT_MIGRATION_SQL,
+            ("202606220001_initial_schema.sql", BASE_TIME.isoformat()),
+        )
+        _ = connection.execute("CREATE TABLE pre_release_state (id TEXT PRIMARY KEY)")
 
-    with monkeypatch.context() as patched:
-        patched.setattr(migration_runner, "load_packaged_migrations", lambda: prior_migrations)
-        with SQLiteUnitOfWork(database_file) as uow:
-            uow.libraries.save(_library())
-            uow.tracks.save(_track())
-            uow.commit()
+    with pytest.raises(PreReleaseDatabaseResetRequiredError, match="Delete the SQLite database"):
+        migrate_database(database_file)
 
-    migrate_database(database_file)
-
-    assert ACCEPTED_ARTIST_NAMES_MIGRATION_NAME in _applied_migrations(database_file)
-    assert "accepted_artist_names" in _table_names(database_file)
-    with SQLiteUnitOfWork(database_file) as uow:
-        assert uow.libraries.get(LIBRARY_ID) == _library()
-        assert uow.tracks.get(TRACK_ID) == _track()
+    assert _table_names(database_file) == {"pre_release_state", "schema_migrations"}
+    assert _applied_migrations(database_file) == {"202606220001_initial_schema.sql"}
 
 
-def test_plan_action_diagnostics_migration_preserves_existing_actions(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The additive diagnostics column leaves existing PlanActions intact with no fabricated evidence."""
+def test_unmanaged_database_requires_explicit_reset(tmp_path: Path) -> None:
+    """Existing application tables without migration metadata are never adopted."""
     database_file = default_application_paths(tmp_path).database_file
-    packaged_migrations = migration_runner.load_packaged_migrations()
-    prior_migrations = tuple(
-        migration for migration in packaged_migrations if migration.name < PLAN_ACTION_DIAGNOSTICS_MIGRATION_NAME
-    )
-    existing_action = _plan_action(ACTION_ID, SORT_ORDER_EARLY)
+    database_file.parent.mkdir(parents=True)
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute("CREATE TABLE unmanaged_state (id TEXT PRIMARY KEY)")
 
-    with monkeypatch.context() as patched:
-        patched.setattr(migration_runner, "load_packaged_migrations", lambda: prior_migrations)
-        with SQLiteUnitOfWork(database_file) as uow:
-            uow.libraries.save(_library())
-            uow.tracks.save(_track())
-            uow.commit()
-        _insert_plan_without_source_root(database_file, _plan())
-        _insert_plan_action_without_diagnostics(database_file, existing_action)
+    with pytest.raises(PreReleaseDatabaseResetRequiredError, match="Delete the SQLite database"):
+        migrate_database(database_file)
 
-    migrate_database(database_file)
-
-    assert PLAN_ACTION_DIAGNOSTICS_MIGRATION_NAME in _applied_migrations(database_file)
-    assert _table_columns_for(database_file, "plan_actions")["artist_name_diagnostics_json"] == "TEXT"
-    with SQLiteUnitOfWork(database_file) as uow:
-        assert uow.plan_actions.get(ACTION_ID) == existing_action
+    assert _table_names(database_file) == {"unmanaged_state"}
 
 
-def test_companion_asset_migration_preserves_existing_execution_state(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The additive companion migration retains existing Tracks, actions, and events with null asset links."""
-    database_file = default_application_paths(tmp_path).database_file
-    packaged_migrations = migration_runner.load_packaged_migrations()
-    prior_migrations = tuple(
-        migration for migration in packaged_migrations if migration.name < COMPANION_ASSETS_MIGRATION_NAME
-    )
-    existing_action = _plan_action(ACTION_ID, SORT_ORDER_EARLY)
-    existing_event = _file_event(EVENT_ID, ACTION_ID, EVENT_SEQUENCE_EARLY)
-
-    with monkeypatch.context() as patched:
-        patched.setattr(migration_runner, "load_packaged_migrations", lambda: prior_migrations)
-        with SQLiteUnitOfWork(database_file) as uow:
-            uow.libraries.save(_library())
-            uow.tracks.save(_track())
-            uow.commit()
-        _insert_plan_without_source_root(database_file, _plan())
-        with SQLiteUnitOfWork(database_file) as uow:
-            uow.runs.save(_run())
-            uow.commit()
-        _insert_plan_action_without_diagnostics(database_file, existing_action)
-        _insert_file_event_without_companion_asset(database_file, existing_event)
-
-    migrate_database(database_file)
-
-    assert COMPANION_ASSETS_MIGRATION_NAME in _applied_migrations(database_file)
-    assert _table_columns_for(database_file, "plan_actions")["companion_asset_id"] == "TEXT"
-    assert _table_columns_for(database_file, "plan_actions")["owner_action_id"] == "TEXT"
-    assert _table_columns_for(database_file, "file_events")["companion_asset_id"] == "TEXT"
-    with SQLiteUnitOfWork(database_file) as uow:
-        assert uow.tracks.get(TRACK_ID) == _track()
-        assert uow.plan_actions.get(ACTION_ID) == existing_action
-        assert uow.file_events.get(EVENT_ID) == existing_event
-        assert uow.companion_assets.list_by_library(LIBRARY_ID) == ()
-
-
-def test_companion_asset_migration_creates_foreign_keys_and_indexes(tmp_path: Path) -> None:
+def test_baseline_creates_companion_foreign_keys_and_indexes(tmp_path: Path) -> None:
     """Companion tables, preallocated audit links, owner constraints, and indexes are explicit."""
     database_file = default_application_paths(tmp_path).database_file
 
@@ -382,7 +324,6 @@ def test_plan_source_and_companion_check_links_round_trip_without_asset_row(tmp_
         uow.check_issues.save_many(CHECK_RUN_ID, (issue,))
         uow.commit()
 
-    assert PLAN_SOURCE_COMPANION_CHECK_MIGRATION_NAME in _applied_migrations(database_file)
     assert _table_columns_for(database_file, "plans")["source_root_at_plan"] == "TEXT"
     assert _table_columns_for(database_file, "check_issues")["companion_asset_id"] == "TEXT"
     assert not any(column == "companion_asset_id" for column, *_ in _foreign_keys(database_file, "check_issues"))
@@ -521,7 +462,7 @@ def test_sqlite_accepted_artist_names_allow_multiple_sources_for_one_provider_id
     ],
     ids=["provider", "selection-kind", "sort-name", "non-alias-locale"],
 )
-def test_sqlite_accepted_artist_name_migration_rejects_invalid_provenance(
+def test_sqlite_accepted_artist_name_schema_rejects_invalid_provenance(
     tmp_path: Path,
     provider: str,
     selected_name_kind: str,
@@ -559,7 +500,7 @@ def test_sqlite_accepted_artist_name_migration_rejects_invalid_provenance(
         )
 
 
-def test_sqlite_accepted_artist_name_migration_rejects_null_source_key(tmp_path: Path) -> None:
+def test_sqlite_accepted_artist_name_schema_rejects_null_source_key(tmp_path: Path) -> None:
     """The text primary key explicitly rejects SQLite's otherwise-permitted NULL values."""
     database_file = default_application_paths(tmp_path).database_file
     migrate_database(database_file)
@@ -603,8 +544,8 @@ def test_sqlite_accepted_artist_name_insert_rolls_back_without_commit(tmp_path: 
         assert uow.accepted_artist_names.find_by_source_key(ACCEPTED_ARTIST_SOURCE_KEY) is None
 
 
-def test_sqlite_migrations_create_browsing_indexes(tmp_path: Path) -> None:
-    """Browsing migrations create every Plan/Track/PlanAction/Run browsing index."""
+def test_sqlite_baseline_creates_browsing_indexes(tmp_path: Path) -> None:
+    """The baseline creates every Plan/Track/PlanAction/Run browsing index."""
     database_file = default_application_paths(tmp_path).database_file
 
     migrate_database(database_file)
@@ -612,8 +553,8 @@ def test_sqlite_migrations_create_browsing_indexes(tmp_path: Path) -> None:
     assert _index_names(database_file) >= REQUIRED_BROWSING_INDEXES
 
 
-def test_sqlite_performance_index_migration_replaces_redundant_indexes(tmp_path: Path) -> None:
-    """Performance indexes have the intended columns and replace redundant single-column indexes."""
+def test_sqlite_baseline_has_only_current_performance_indexes(tmp_path: Path) -> None:
+    """Current indexes have the intended columns without retired redundant indexes."""
     database_file = default_application_paths(tmp_path).database_file
 
     migrate_database(database_file)
@@ -625,77 +566,7 @@ def test_sqlite_performance_index_migration_replaces_redundant_indexes(tmp_path:
         assert _index_columns(database_file, index_name) == columns
 
 
-def test_sqlite_performance_index_migration_preserves_existing_managed_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The performance-index migration preserves every populated managed row."""
-    database_file = default_application_paths(tmp_path).database_file
-    packaged_migrations = migration_runner.load_packaged_migrations()
-    migrations_without_performance_indexes = tuple(
-        migration for migration in packaged_migrations if migration.name != PERFORMANCE_INDEX_MIGRATION_NAME
-    )
-    event = _file_event(EVENT_ID, ACTION_ID, EVENT_SEQUENCE_EARLY)
-    check_run = _check_run()
-    check_issue = _check_issue()
-
-    with monkeypatch.context() as patched:
-        patched.setattr(
-            migration_runner,
-            "load_packaged_migrations",
-            lambda: migrations_without_performance_indexes,
-        )
-        with SQLiteUnitOfWork(database_file) as uow:
-            uow.libraries.save(_library())
-            uow.tracks.save(_track())
-            uow.plans.save(_plan())
-            uow.plan_actions.save(_plan_action(ACTION_ID, SORT_ORDER_EARLY))
-            uow.runs.save(_run())
-            uow.file_events.save(event)
-            uow.check_runs.save(check_run)
-            uow.check_issues.save_many(CHECK_RUN_ID, (check_issue,))
-            uow.commit()
-
-    assert _index_names(database_file) >= REMOVED_REDUNDANT_INDEXES
-
-    migrate_database(database_file)
-
-    assert PERFORMANCE_INDEX_MIGRATION_NAME in _applied_migrations(database_file)
-    with SQLiteUnitOfWork(database_file) as uow:
-        assert uow.libraries.get(LIBRARY_ID) == _library()
-        assert uow.tracks.get(TRACK_ID) == _track()
-        assert uow.plans.get(PLAN_ID) == _plan()
-        assert uow.plan_actions.get(ACTION_ID) == _plan_action(ACTION_ID, SORT_ORDER_EARLY)
-        assert uow.runs.get(RUN_ID) == _run()
-        assert uow.file_events.get(EVENT_ID) == event
-        assert uow.check_runs.latest(LIBRARY_ID) == check_run
-        assert uow.check_issues.query_page(LIBRARY_ID, issue_type=None, page=PageRequest()).items == (check_issue,)
-
-
-def test_track_stat_baseline_migration_preserves_existing_tracks_with_null_baseline(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Existing Track rows remain intact and ineligible for stat trust after migration."""
-    database_file = default_application_paths(tmp_path).database_file
-    packaged_migrations = migration_runner.load_packaged_migrations()
-    prior_migrations = tuple(
-        migration for migration in packaged_migrations if migration.name < STAT_BASELINE_MIGRATION_NAME
-    )
-
-    with monkeypatch.context() as patched:
-        patched.setattr(migration_runner, "load_packaged_migrations", lambda: prior_migrations)
-        migrate_database(database_file)
-        _insert_track_before_stat_baseline_migration(database_file)
-
-    migrate_database(database_file)
-
-    assert STAT_BASELINE_MIGRATION_NAME in _applied_migrations(database_file)
-    assert _table_columns(database_file)["size"] == "INTEGER"
-    assert _table_columns(database_file)["mtime"] == "TEXT"
-    with SQLiteUnitOfWork(database_file) as uow:
-        assert uow.tracks.get(TRACK_ID) == _track(size=None, mtime=None)
-
-
-def test_track_stat_baseline_migration_rejects_negative_size(tmp_path: Path) -> None:
+def test_track_schema_rejects_negative_size(tmp_path: Path) -> None:
     """The Track stat-baseline column rejects negative persisted sizes."""
     database_file = default_application_paths(tmp_path).database_file
     with SQLiteUnitOfWork(database_file) as uow:
@@ -710,8 +581,8 @@ def test_track_stat_baseline_migration_rejects_negative_size(tmp_path: Path) -> 
         )
 
 
-def test_undo_provenance_migration_creates_columns_foreign_keys_and_indexes(tmp_path: Path) -> None:
-    """Fresh databases expose the implemented Undo provenance and single-use indexes."""
+def test_baseline_creates_undo_provenance_constraints_and_indexes(tmp_path: Path) -> None:
+    """Fresh databases expose Undo provenance and single-use constraints directly."""
     database_file = default_application_paths(tmp_path).database_file
 
     migrate_database(database_file)
@@ -735,103 +606,6 @@ def test_undo_provenance_migration_creates_columns_foreign_keys_and_indexes(tmp_
         **_index_flags(database_file, "runs"),
     }
     assert {name: index_flags[name] for name in UNDO_PROVENANCE_INDEX_FLAGS} == UNDO_PROVENANCE_INDEX_FLAGS
-
-
-def test_undo_provenance_migration_backfills_provable_legacy_history(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """One proven legacy source Run and FileEvent become durable Undo provenance."""
-    database_file = default_application_paths(tmp_path).database_file
-    _migrate_before_undo_provenance(database_file, monkeypatch)
-    _insert_legacy_undo_history(database_file, source_candidate_count=1)
-
-    migrate_database(database_file)
-
-    assert UNDO_PROVENANCE_MIGRATION_NAME in _applied_migrations(database_file)
-    with sqlite3.connect(database_file) as connection:
-        plan_row = cast(
-            "tuple[str] | None",
-            connection.execute(
-                "SELECT source_run_id FROM plans WHERE plan_id = ?",
-                (str(UNDO_PLAN_ID),),
-            ).fetchone(),
-        )
-        action_row = cast(
-            "tuple[str] | None",
-            connection.execute(
-                "SELECT reverses_event_id FROM plan_actions WHERE action_id = ?",
-                (str(UNDO_ACTION_ID),),
-            ).fetchone(),
-        )
-    assert plan_row == (str(RUN_ID),)
-    assert action_row == (str(EVENT_ID),)
-
-
-@pytest.mark.parametrize("source_candidate_count", [0, 2], ids=["absent", "ambiguous"])
-def test_undo_provenance_migration_rolls_back_unprovable_legacy_history(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    source_candidate_count: int,
-) -> None:
-    """Absent or ambiguous legacy provenance fails without changing schema or managed rows."""
-    database_file = default_application_paths(tmp_path).database_file
-    _migrate_before_undo_provenance(database_file, monkeypatch)
-    _insert_legacy_undo_history(database_file, source_candidate_count=source_candidate_count)
-
-    with pytest.raises(sqlite3.IntegrityError, match="invalid = 0"):
-        migrate_database(database_file)
-
-    assert UNDO_PROVENANCE_MIGRATION_NAME not in _applied_migrations(database_file)
-    assert "source_run_id" not in _table_columns_for(database_file, "plans")
-    assert "reverses_event_id" not in _table_columns_for(database_file, "plan_actions")
-    assert _index_names(database_file).isdisjoint(UNDO_PROVENANCE_INDEXES)
-    with sqlite3.connect(database_file) as connection:
-        undo_plan_count = cast(
-            "tuple[int] | None",
-            connection.execute(
-                "SELECT COUNT(*) FROM plans WHERE plan_id = ?",
-                (str(UNDO_PLAN_ID),),
-            ).fetchone(),
-        )
-        undo_action_count = cast(
-            "tuple[int] | None",
-            connection.execute(
-                "SELECT COUNT(*) FROM plan_actions WHERE action_id = ?",
-                (str(UNDO_ACTION_ID),),
-            ).fetchone(),
-        )
-    assert undo_plan_count == (1,)
-    assert undo_action_count == (1,)
-
-
-@pytest.mark.parametrize(
-    "tamper_kind",
-    [
-        "event_completed_after_undo",
-        "run_completed_after_undo",
-        "source_action_path_mismatch",
-        "source_action_not_applied",
-        "source_plan_not_terminal",
-    ],
-)
-def test_undo_provenance_migration_rejects_inconsistent_legacy_evidence(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    tamper_kind: str,
-) -> None:
-    """Backfill refuses history that cannot prove the exact completed source mutation."""
-    database_file = default_application_paths(tmp_path).database_file
-    _migrate_before_undo_provenance(database_file, monkeypatch)
-    _insert_legacy_undo_history(database_file, source_candidate_count=1)
-    _tamper_legacy_undo_source(database_file, tamper_kind)
-
-    with pytest.raises(sqlite3.IntegrityError, match="invalid = 0"):
-        migrate_database(database_file)
-
-    assert UNDO_PROVENANCE_MIGRATION_NAME not in _applied_migrations(database_file)
-    assert "source_run_id" not in _table_columns_for(database_file, "plans")
-    assert "reverses_event_id" not in _table_columns_for(database_file, "plan_actions")
 
 
 def test_runs_reject_a_second_execution_attempt_for_one_plan(tmp_path: Path) -> None:
@@ -892,7 +666,7 @@ def test_ensure_database_migrated_loads_packaged_migrations_once(
     ensure_database_migrated(database_file)
 
     assert load_calls == 1
-    assert _table_names(database_file) >= REQUIRED_TABLES
+    assert _table_names(database_file) == REQUIRED_TABLES
 
 
 def test_ensure_database_migrated_recreates_deleted_database(tmp_path: Path) -> None:
@@ -903,7 +677,7 @@ def test_ensure_database_migrated_recreates_deleted_database(tmp_path: Path) -> 
     database_file.unlink()
     ensure_database_migrated(database_file)
 
-    assert _table_names(database_file) >= REQUIRED_TABLES
+    assert _table_names(database_file) == REQUIRED_TABLES
 
 
 def test_sqlite_unit_of_work_reenters_sequentially(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1083,7 +857,7 @@ def test_sqlite_repositories_round_trip_domain_models(tmp_path: Path) -> None:
 
 
 def test_sqlite_plan_action_unknown_to_binary_fails_closed_on_read(tmp_path: Path) -> None:
-    """A downgrade cannot decode or apply a persisted action type it does not understand."""
+    """An unknown persisted action type fails explicitly instead of becoming behavior."""
     database_file = default_application_paths(tmp_path).database_file
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library())
@@ -1311,6 +1085,7 @@ def _table_names(database_file: Path) -> set[str]:
             SELECT name
             FROM sqlite_master
             WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
             """
         ).fetchall()
     return {str(row[0]) for row in cast("list[tuple[object, ...]]", rows)}
@@ -1355,10 +1130,6 @@ def _index_names(database_file: Path) -> set[str]:
             """
         ).fetchall()
     return {str(row[0]) for row in cast("list[tuple[object, ...]]", rows)}
-
-
-def _table_columns(database_file: Path) -> dict[str, str]:
-    return _table_columns_for(database_file, "tracks")
 
 
 def _table_columns_for(database_file: Path, table_name: str) -> dict[str, str]:
@@ -1478,329 +1249,6 @@ def _assert_connection_closed(connection: sqlite3.Connection) -> None:
         _ = connection.execute("SELECT 1")
 
 
-def _insert_track_before_stat_baseline_migration(database_file: Path) -> None:
-    with sqlite3.connect(database_file) as connection:
-        _ = connection.execute(
-            """
-            INSERT INTO libraries (
-                library_id, root_path, path_policy_hash, registered_at, status, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(LIBRARY_ID),
-                LIBRARY_ROOT,
-                CONFIG_HASH,
-                BASE_TIME.isoformat(),
-                LibraryStatus.REGISTERED.value,
-                BASE_TIME.isoformat(),
-                BASE_TIME.isoformat(),
-            ),
-        )
-        _ = connection.execute(
-            """
-            INSERT INTO tracks (
-                track_id,
-                library_id,
-                current_path,
-                canonical_path,
-                content_hash,
-                metadata_hash,
-                metadata_json,
-                status,
-                first_seen_at,
-                last_seen_at,
-                updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(TRACK_ID),
-                str(LIBRARY_ID),
-                TARGET_PATH,
-                TARGET_PATH,
-                CONTENT_HASH,
-                METADATA_HASH,
-                '{"artist":"Artist","title":"Title"}',
-                TrackStatus.ACTIVE.value,
-                BASE_TIME.isoformat(),
-                BASE_TIME.isoformat(),
-                BASE_TIME.isoformat(),
-            ),
-        )
-
-
-def _migrate_before_undo_provenance(database_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    packaged_migrations = migration_runner.load_packaged_migrations()
-    prior_migrations = tuple(
-        migration for migration in packaged_migrations if migration.name < UNDO_PROVENANCE_MIGRATION_NAME
-    )
-    with monkeypatch.context() as patched:
-        patched.setattr(migration_runner, "load_packaged_migrations", lambda: prior_migrations)
-        migrate_database(database_file)
-
-
-def _insert_legacy_undo_history(database_file: Path, *, source_candidate_count: int) -> None:
-    source_candidates = (
-        (PLAN_ID, ACTION_ID, RUN_ID, EVENT_ID),
-        (SECOND_PLAN_ID, SECOND_ACTION_ID, SECOND_RUN_ID, SECOND_RUN_EVENT_ID),
-    )
-    with sqlite3.connect(database_file) as connection:
-        _ = connection.execute("PRAGMA foreign_keys = ON")
-        _ = connection.execute(
-            """
-            INSERT INTO libraries (
-                library_id, root_path, path_policy_hash, registered_at, status, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(LIBRARY_ID),
-                LIBRARY_ROOT,
-                CONFIG_HASH,
-                BASE_TIME.isoformat(),
-                LibraryStatus.REGISTERED.value,
-                BASE_TIME.isoformat(),
-                BASE_TIME.isoformat(),
-            ),
-        )
-        _ = connection.execute(
-            """
-            INSERT INTO tracks (
-                track_id,
-                library_id,
-                current_path,
-                canonical_path,
-                content_hash,
-                metadata_hash,
-                metadata_json,
-                status,
-                first_seen_at,
-                last_seen_at,
-                updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(TRACK_ID),
-                str(LIBRARY_ID),
-                TARGET_PATH,
-                TARGET_PATH,
-                CONTENT_HASH,
-                METADATA_HASH,
-                '{"artist":"Artist","title":"Title"}',
-                TrackStatus.ACTIVE.value,
-                BASE_TIME.isoformat(),
-                BASE_TIME.isoformat(),
-                BASE_TIME.isoformat(),
-            ),
-        )
-
-        for source_plan_id, source_action_id, source_run_id, source_event_id in source_candidates[
-            :source_candidate_count
-        ]:
-            _ = connection.execute(
-                """
-                INSERT INTO plans (
-                    plan_id,
-                    library_id,
-                    plan_type,
-                    status,
-                    created_at,
-                    config_hash,
-                    library_root_at_plan,
-                    summary_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(source_plan_id),
-                    str(LIBRARY_ID),
-                    PlanType.ADD.value,
-                    PlanStatus.APPLIED.value,
-                    BASE_TIME.isoformat(),
-                    CONFIG_HASH,
-                    LIBRARY_ROOT,
-                    "{}",
-                ),
-            )
-            _ = connection.execute(
-                """
-                INSERT INTO plan_actions (
-                    action_id,
-                    plan_id,
-                    library_id,
-                    track_id,
-                    action_type,
-                    source_path,
-                    target_path,
-                    content_hash_at_plan,
-                    metadata_hash_at_plan,
-                    status,
-                    reason,
-                    sort_order
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(source_action_id),
-                    str(source_plan_id),
-                    str(LIBRARY_ID),
-                    str(TRACK_ID),
-                    ActionType.MOVE.value,
-                    SOURCE_PATH,
-                    TARGET_PATH,
-                    CONTENT_HASH,
-                    METADATA_HASH,
-                    ActionStatus.APPLIED.value,
-                    None,
-                    SORT_ORDER_EARLY,
-                ),
-            )
-            _ = connection.execute(
-                """
-                INSERT INTO runs (
-                    run_id, plan_id, library_id, status, started_at, completed_at, error_summary
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(source_run_id),
-                    str(source_plan_id),
-                    str(LIBRARY_ID),
-                    RunStatus.SUCCEEDED.value,
-                    BASE_TIME.isoformat(),
-                    FINISHED_TIME.isoformat(),
-                    None,
-                ),
-            )
-            _ = connection.execute(
-                """
-                INSERT INTO file_events (
-                    event_id,
-                    library_id,
-                    run_id,
-                    plan_action_id,
-                    event_type,
-                    source_path,
-                    target_path,
-                    status,
-                    started_at,
-                    completed_at,
-                    error_code,
-                    error_message,
-                    sequence_no
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(source_event_id),
-                    str(LIBRARY_ID),
-                    str(source_run_id),
-                    str(source_action_id),
-                    FileEventType.MOVE_FILE.value,
-                    SOURCE_PATH,
-                    TARGET_PATH,
-                    FileEventStatus.SUCCEEDED.value,
-                    BASE_TIME.isoformat(),
-                    FINISHED_TIME.isoformat(),
-                    None,
-                    None,
-                    EVENT_SEQUENCE_EARLY,
-                ),
-            )
-
-        _ = connection.execute(
-            """
-            INSERT INTO plans (
-                plan_id,
-                library_id,
-                plan_type,
-                status,
-                created_at,
-                config_hash,
-                library_root_at_plan,
-                summary_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(UNDO_PLAN_ID),
-                str(LIBRARY_ID),
-                PlanType.UNDO.value,
-                PlanStatus.READY.value,
-                UNDO_CREATED_TIME.isoformat(),
-                CONFIG_HASH,
-                LIBRARY_ROOT,
-                "{}",
-            ),
-        )
-        _ = connection.execute(
-            """
-            INSERT INTO plan_actions (
-                action_id,
-                plan_id,
-                library_id,
-                track_id,
-                action_type,
-                source_path,
-                target_path,
-                content_hash_at_plan,
-                metadata_hash_at_plan,
-                status,
-                reason,
-                sort_order
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(UNDO_ACTION_ID),
-                str(UNDO_PLAN_ID),
-                str(LIBRARY_ID),
-                str(TRACK_ID),
-                ActionType.MOVE.value,
-                TARGET_PATH,
-                SOURCE_PATH,
-                CONTENT_HASH,
-                METADATA_HASH,
-                ActionStatus.PLANNED.value,
-                None,
-                SORT_ORDER_EARLY,
-            ),
-        )
-
-
-def _tamper_legacy_undo_source(database_file: Path, tamper_kind: str) -> None:
-    with sqlite3.connect(database_file) as connection:
-        if tamper_kind == "event_completed_after_undo":
-            _ = connection.execute(
-                "UPDATE file_events SET completed_at = ? WHERE event_id = ?",
-                (POST_UNDO_TIME.isoformat(), str(EVENT_ID)),
-            )
-        elif tamper_kind == "run_completed_after_undo":
-            _ = connection.execute(
-                "UPDATE runs SET completed_at = ? WHERE run_id = ?",
-                (POST_UNDO_TIME.isoformat(), str(RUN_ID)),
-            )
-        elif tamper_kind == "source_action_path_mismatch":
-            _ = connection.execute(
-                "UPDATE plan_actions SET target_path = ? WHERE action_id = ?",
-                ("Artist/Album/02_Other.flac", str(ACTION_ID)),
-            )
-        elif tamper_kind == "source_action_not_applied":
-            _ = connection.execute(
-                "UPDATE plan_actions SET status = ? WHERE action_id = ?",
-                (ActionStatus.FAILED.value, str(ACTION_ID)),
-            )
-        elif tamper_kind == "source_plan_not_terminal":
-            _ = connection.execute(
-                "UPDATE plans SET status = ? WHERE plan_id = ?",
-                (PlanStatus.READY.value, str(PLAN_ID)),
-            )
-        else:
-            raise AssertionError(tamper_kind)
-
-
 def _library() -> Library:
     return Library(
         library_id=LIBRARY_ID,
@@ -1909,118 +1357,6 @@ def _plan_action(
         sort_order=sort_order,
         artist_name_diagnostics=artist_name_diagnostics,
     )
-
-
-def _insert_plan_action_without_diagnostics(database_file: Path, action: PlanAction) -> None:
-    with sqlite3.connect(database_file) as connection:
-        _ = connection.execute("PRAGMA foreign_keys = ON")
-        _ = connection.execute(
-            """
-            INSERT INTO plan_actions (
-                action_id,
-                plan_id,
-                library_id,
-                track_id,
-                action_type,
-                source_path,
-                target_path,
-                reverses_event_id,
-                content_hash_at_plan,
-                metadata_hash_at_plan,
-                status,
-                reason,
-                sort_order
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(action.action_id),
-                str(action.plan_id),
-                str(action.library_id),
-                None if action.track_id is None else str(action.track_id),
-                action.action_type.value,
-                action.source_path,
-                action.target_path,
-                None if action.reverses_event_id is None else str(action.reverses_event_id),
-                action.content_hash_at_plan,
-                action.metadata_hash_at_plan,
-                action.status.value,
-                None if action.reason is None else action.reason.value,
-                action.sort_order,
-            ),
-        )
-
-
-def _insert_plan_without_source_root(database_file: Path, plan: Plan) -> None:
-    with sqlite3.connect(database_file) as connection:
-        _ = connection.execute("PRAGMA foreign_keys = ON")
-        _ = connection.execute(
-            """
-            INSERT INTO plans (
-                plan_id,
-                library_id,
-                source_run_id,
-                plan_type,
-                status,
-                created_at,
-                config_hash,
-                library_root_at_plan,
-                summary_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(plan.plan_id),
-                str(plan.library_id),
-                None if plan.source_run_id is None else str(plan.source_run_id),
-                plan.plan_type.value,
-                plan.status.value,
-                plan.created_at.isoformat(),
-                plan.config_hash,
-                plan.library_root_at_plan,
-                json.dumps(plan.summary),
-            ),
-        )
-
-
-def _insert_file_event_without_companion_asset(database_file: Path, event: FileEvent) -> None:
-    with sqlite3.connect(database_file) as connection:
-        _ = connection.execute("PRAGMA foreign_keys = ON")
-        _ = connection.execute(
-            """
-            INSERT INTO file_events (
-                event_id,
-                library_id,
-                run_id,
-                plan_action_id,
-                event_type,
-                source_path,
-                target_path,
-                status,
-                started_at,
-                completed_at,
-                error_code,
-                error_message,
-                sequence_no
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(event.event_id),
-                str(event.library_id),
-                str(event.run_id),
-                str(event.plan_action_id),
-                event.event_type.value,
-                event.source_path,
-                event.target_path,
-                event.status.value,
-                event.started_at.isoformat(),
-                None if event.completed_at is None else event.completed_at.isoformat(),
-                event.error_code,
-                event.error_message,
-                event.sequence_no,
-            ),
-        )
 
 
 def _run(*, run_id: RunId = RUN_ID, plan_id: PlanId = PLAN_ID) -> Run:

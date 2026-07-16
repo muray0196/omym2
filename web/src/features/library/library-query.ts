@@ -9,42 +9,16 @@ import {
   getTrackFacets,
   getTrackGroups,
   listTracks,
-  type ApiErrorCode,
-  type ApiFailureEnvelope,
   type PaginatedDataTrackResource,
   type TrackFacetsData,
   type TrackGroupsData,
   type TrackResource,
 } from "../../api/generated";
 import type { LibraryBrowseFilters } from "./library-url-state";
+import { inspectionDataOrThrow } from "../inspection/query-errors";
 
 export type LibraryTrack = TrackResource;
 export type LibraryTrackFacets = TrackFacetsData;
-export type LibraryTrackGroups = TrackGroupsData;
-
-export class LibraryApiError extends Error {
-  readonly envelope: ApiFailureEnvelope;
-
-  constructor(envelope: ApiFailureEnvelope) {
-    super("Library inspection returned a typed API failure.");
-    this.name = "LibraryApiError";
-    this.envelope = envelope;
-  }
-}
-
-export class LibraryTransportError extends Error {
-  constructor() {
-    super("The local OMYM2 service could not be reached.");
-    this.name = "LibraryTransportError";
-  }
-}
-
-export class LibraryUnexpectedDataError extends Error {
-  constructor() {
-    super("Library inspection returned no readable data.");
-    this.name = "LibraryUnexpectedDataError";
-  }
-}
 
 export function tracksInfiniteQuery(
   libraryId: string | undefined,
@@ -110,13 +84,6 @@ export function trackDetailQuery(trackId: string) {
   });
 }
 
-export function libraryErrorHasCode(error: Error, code: ApiErrorCode) {
-  return (
-    error instanceof LibraryApiError &&
-    error.envelope.errors.some((diagnostic) => diagnostic.code === code)
-  );
-}
-
 async function readTracksPage(
   libraryId: string | undefined,
   filters: LibraryBrowseFilters,
@@ -136,13 +103,7 @@ async function readTracksPage(
     },
   });
 
-  if (response.error !== undefined) {
-    throwLibraryResponseError(response.error, response.response);
-  }
-  if (response.data.data === null) {
-    throw new LibraryUnexpectedDataError();
-  }
-  return response.data.data;
+  return inspectionDataOrThrow(response, "Library inspection");
 }
 
 async function readTrackFacets(
@@ -159,13 +120,7 @@ async function readTrackFacets(
     },
   });
 
-  if (response.error !== undefined) {
-    throwLibraryResponseError(response.error, response.response);
-  }
-  if (response.data.data === null) {
-    throw new LibraryUnexpectedDataError();
-  }
-  return response.data.data;
+  return inspectionDataOrThrow(response, "Library inspection");
 }
 
 async function readTrackGroups(
@@ -187,13 +142,7 @@ async function readTrackGroups(
     },
   });
 
-  if (response.error !== undefined) {
-    throwLibraryResponseError(response.error, response.response);
-  }
-  if (response.data.data === null) {
-    throw new LibraryUnexpectedDataError();
-  }
-  return response.data.data;
+  return inspectionDataOrThrow(response, "Library inspection");
 }
 
 async function readTrack(
@@ -206,13 +155,7 @@ async function readTrack(
     signal,
   });
 
-  if (response.error !== undefined) {
-    throwLibraryResponseError(response.error, response.response);
-  }
-  if (response.data.data === null) {
-    throw new LibraryUnexpectedDataError();
-  }
-  return response.data.data;
+  return inspectionDataOrThrow(response, "Library inspection");
 }
 
 function parentKey(filters: LibraryBrowseFilters) {
@@ -223,14 +166,4 @@ function parentKey(filters: LibraryBrowseFilters) {
     return filters.albumKey;
   }
   return undefined;
-}
-
-function throwLibraryResponseError(
-  envelope: ApiFailureEnvelope,
-  response: Response | undefined,
-): never {
-  if (response === undefined) {
-    throw new LibraryTransportError();
-  }
-  throw new LibraryApiError(envelope);
 }

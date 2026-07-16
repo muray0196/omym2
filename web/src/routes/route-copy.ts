@@ -26,7 +26,6 @@ export const routeCopy = {
     errorTitle: "Overview data could not be loaded",
     errorBody:
       "Readiness remains available. Retry the persisted inspection requests.",
-    retry: "Try again",
     plansError: "Ready Plans could not be loaded.",
     historyError: "Recent History could not be loaded.",
     healthError: "Persisted Health could not be loaded.",

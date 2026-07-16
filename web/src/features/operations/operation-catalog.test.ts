@@ -1,6 +1,6 @@
 /**
  * Summary: Verifies complete Operation kind and result-kind presentation catalogs.
- * Why: Keeps every bundled value explicit and newer raw codes safely inspectable.
+ * Why: Keeps every bundled value explicit and exhaustively typed.
  */
 import { describe, expect, it } from "vitest";
 
@@ -119,48 +119,30 @@ const EXPECTED_STATUS_PRESENTATIONS = {
 } as const satisfies Record<OperationStatus, OperationCatalogPresentation>;
 
 describe("Operation catalog", () => {
-  it.each(Object.entries(EXPECTED_KIND_PRESENTATIONS))(
-    "maps the known %s Operation kind",
-    (value, expected) => {
-      expect(operationKindPresentation(value)).toEqual(expected);
-    },
-  );
+  it.each(
+    Object.entries(EXPECTED_KIND_PRESENTATIONS) as [
+      OperationKind,
+      OperationCatalogPresentation,
+    ][],
+  )("maps the known %s Operation kind", (value, expected) => {
+    expect(operationKindPresentation(value)).toEqual(expected);
+  });
 
-  it.each(Object.entries(EXPECTED_RESULT_PRESENTATIONS))(
-    "maps the known %s Operation result kind",
-    (value, expected) => {
-      expect(operationResultKindPresentation(value)).toEqual(expected);
-    },
-  );
+  it.each(
+    Object.entries(EXPECTED_RESULT_PRESENTATIONS) as [
+      OperationResultKind,
+      OperationCatalogPresentation,
+    ][],
+  )("maps the known %s Operation result kind", (value, expected) => {
+    expect(operationResultKindPresentation(value)).toEqual(expected);
+  });
 
-  it.each(Object.entries(EXPECTED_STATUS_PRESENTATIONS))(
-    "maps the known %s Operation status",
-    (value, expected) => {
-      expect(operationStatusPresentation(value)).toEqual(expected);
-    },
-  );
-
-  it("uses neutral information fallbacks that preserve unknown raw codes", () => {
-    expect(operationKindPresentation("future_operation_kind")).toEqual({
-      icon: "info",
-      label: "Unknown Operation kind: future_operation_kind",
-      meaning:
-        "This Operation kind is not recognized by this bundled interface.",
-      tone: "neutral",
-    });
-    expect(operationResultKindPresentation("future_result")).toEqual({
-      icon: "info",
-      label: "Unknown result: future_result",
-      meaning:
-        "This Operation result is not recognized by this bundled interface.",
-      tone: "neutral",
-    });
-    expect(operationStatusPresentation("future_operation_status")).toEqual({
-      icon: "info",
-      label: "Unknown status: future_operation_status",
-      meaning:
-        "This Operation status is not recognized by this bundled interface.",
-      tone: "neutral",
-    });
+  it.each(
+    Object.entries(EXPECTED_STATUS_PRESENTATIONS) as [
+      OperationStatus,
+      OperationCatalogPresentation,
+    ][],
+  )("maps the known %s Operation status", (value, expected) => {
+    expect(operationStatusPresentation(value)).toEqual(expected);
   });
 });

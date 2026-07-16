@@ -9,10 +9,7 @@ import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  ApiEnvelopeOperationResource,
-  OperationResource,
-} from "../../api/generated";
+import type { ApiEnvelopeOperationResource } from "../../api/generated";
 import { createQueryClient } from "../../app/query-client";
 import { queuedOperation } from "../../test/fixtures/operations";
 import { server } from "../../test/server";
@@ -27,34 +24,10 @@ import { OperationStatus } from "./operation-status";
 afterEach(() => vi.useRealTimers());
 
 describe("OperationStatus", () => {
-  it("maps known and unknown statuses to explicit presentation values", () => {
+  it("maps known statuses to explicit presentation values", () => {
     expect(operationStatusLabel("succeeded")).toBe("Completed");
     expect(operationStatusTone("succeeded")).toBe("success");
     expect(operationStatusIcon("succeeded")).toBe("check");
-    expect(operationStatusLabel("future_operation_status")).toBe(
-      "Unknown status: future_operation_status",
-    );
-    expect(operationStatusTone("future_operation_status")).toBe("neutral");
-    expect(operationStatusIcon("future_operation_status")).toBe("info");
-  });
-
-  it("renders an unknown raw status with the safe fallback icon", () => {
-    vi.useFakeTimers();
-    const { container } = render(
-      <QueryClientProvider client={createQueryClient()}>
-        <OperationStatus
-          initialOperation={unknownStatusOperation}
-          policy={pollingPolicy}
-          resultAction={() => null}
-        />
-      </QueryClientProvider>,
-    );
-
-    const badge = container.querySelector(
-      '[data-status="future_operation_status"]',
-    );
-    expect(badge).toHaveTextContent("Unknown status: future_operation_status");
-    expect(badge?.querySelector("svg")).not.toBeNull();
   });
 
   it("renders known Operation kind and result-kind evidence", () => {
@@ -86,39 +59,7 @@ describe("OperationStatus", () => {
     expect(result?.querySelector("svg")).not.toBeNull();
   });
 
-  it("renders unknown Operation kind and result-kind evidence centrally", () => {
-    const { container } = render(
-      <QueryClientProvider client={createQueryClient()}>
-        <OperationStatus
-          initialOperation={unknownCatalogOperation}
-          policy={pollingPolicy}
-          resultAction={() => null}
-        />
-      </QueryClientProvider>,
-    );
-
-    const kind = container.querySelector(
-      '[data-operation-kind="future_operation_kind"]',
-    );
-    expect(kind).toHaveTextContent(
-      "Unknown Operation kind: future_operation_kind",
-    );
-    expect(kind).toHaveTextContent(
-      "This Operation kind is not recognized by this bundled interface.",
-    );
-    expect(kind?.querySelector("svg")).not.toBeNull();
-
-    const result = container.querySelector(
-      '[data-operation-result-kind="future_result"]',
-    );
-    expect(result).toHaveTextContent("Unknown result: future_result");
-    expect(result).toHaveTextContent(
-      "This Operation result is not recognized by this bundled interface.",
-    );
-    expect(result?.querySelector("svg")).not.toBeNull();
-  });
-
-  it("backs off unchanged progress and recovers after connectivity loss", async () => {
+  it("backs off unchanged status and recovers after connectivity loss", async () => {
     vi.useFakeTimers();
     let polls = 0;
     server.use(
@@ -151,8 +92,7 @@ describe("OperationStatus", () => {
     );
     expect(polls).toBe(2);
     expect(screen.queryByText(/Connection lost/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/Working: server stage/)).toBeVisible();
-    expect(screen.getByText("future_scan_stage")).toBeVisible();
+    expect(screen.getAllByText("Running")).not.toHaveLength(0);
 
     await act(() => vi.advanceTimersByTimeAsync(pollingPolicy.initial_ms));
     expect(polls).toBe(3);
@@ -230,12 +170,6 @@ const activeOperation = {
     library_id: "018f0000-0000-7000-8000-000000000001",
     operation_id: "018f0000-0000-7000-8000-000000000020",
     plan_id: null,
-    progress: {
-      completed_units: 1,
-      message: null,
-      stage_code: "future_scan_stage",
-      total_units: 3,
-    },
     requested_at: "2026-07-13T00:00:00Z",
     result: null,
     run_id: null,
@@ -245,27 +179,10 @@ const activeOperation = {
   errors: [],
 } satisfies ApiEnvelopeOperationResource;
 
-const unknownStatusOperation = {
-  ...activeOperation.data,
-  status: "future_operation_status",
-} as unknown as OperationResource;
-
-const unknownCatalogOperation = {
-  ...activeOperation.data,
-  completed_at: "2026-07-13T00:00:02Z",
-  kind: "future_operation_kind",
-  result: { kind: "future_result" },
-  status: "succeeded",
-} as unknown as OperationResource;
-
 const completedOperation = {
   data: {
     ...activeOperation.data,
     completed_at: "2026-07-13T00:00:02Z",
-    progress: {
-      ...activeOperation.data.progress,
-      completed_units: 3,
-    },
     result: {
       kind: "plan_created",
       plan_id: "018f0000-0000-7000-8000-000000000021",
@@ -288,12 +205,6 @@ const interruptedOperation = {
         route: "/history/fixture-run",
       },
       retryable: false,
-    },
-    progress: {
-      completed_units: null,
-      message: null,
-      stage_code: null,
-      total_units: null,
     },
     result: null,
     status: "interrupted",

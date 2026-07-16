@@ -115,12 +115,6 @@ def test_get_operation_returns_active_and_terminal_resources(tmp_path: Path) -> 
         "library_id": None,
         "plan_id": None,
         "run_id": None,
-        "progress": {
-            "stage_code": None,
-            "completed_units": None,
-            "total_units": None,
-            "message": None,
-        },
         "result": None,
         "error": None,
         "requested_at": NOW.isoformat().replace("+00:00", "Z"),

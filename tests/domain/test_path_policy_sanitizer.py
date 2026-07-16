@@ -1,18 +1,18 @@
 """
-Summary: Tests migrated OMYM string sanitizer behavior.
-Why: Pins filename-safe normalization, byte limits, and path component fallback.
+Summary: Tests current OMYM2 filename sanitization behavior.
+Why: Pins portable normalization, configured byte limits, and safe fallbacks.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from omym2.config import SANITIZER_ALBUM_MAX_BYTES, SANITIZER_ARTIST_MAX_BYTES, SANITIZER_FALLBACK_TITLE
+from omym2.config import SANITIZER_FALLBACK_TITLE
+from omym2.domain.models.app_config import PathPolicyConfig
+from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.path_policy import (
-    sanitize_album_name,
-    sanitize_artist_name,
+    PathPolicy,
     sanitize_path_component,
-    sanitize_path_components,
     sanitize_string,
     sanitize_track_title,
 )
@@ -21,8 +21,8 @@ EXTENSION_STEM_LIMIT = 3
 FULL_COMPONENT_LIMIT = 11
 FULL_STEM_LIMIT = 7
 LONG_ALBUM = "B" * 100
-LONG_ARTIST = "A" * 60
-LONG_UNICODE_REPEAT = 80
+LONG_ARTIST = "A" * 100
+LONG_UNICODE_REPEAT = 200
 
 
 @pytest.mark.parametrize(
@@ -33,7 +33,7 @@ LONG_UNICODE_REPEAT = 80
         (0.0, ""),
         ("   ", ""),
         ("!!!", ""),
-        ("John's Song", "Johns-Song"),
+        ("John's Song", "John-s-Song"),
         ("Hello World!", "Hello-World"),
         ("A---B!!!C", "A-B-C"),
         ("---hello---", "hello"),
@@ -50,17 +50,18 @@ LONG_UNICODE_REPEAT = 80
         (12.5, "12-5"),
     ],
 )
-def test_sanitize_string_matches_migrated_golden_values(value: str | float | None, expected: str) -> None:
-    """The migrated sanitizer preserves Unicode letters after NFKC normalization."""
+def test_sanitize_string_normalizes_portable_golden_values(value: str | float | None, expected: str) -> None:
+    """The sanitizer preserves Unicode letters after deterministic NFKC normalization."""
     assert sanitize_string(value) == expected
 
 
 def test_sanitize_string_limits_utf8_bytes_after_sanitizing() -> None:
     """Byte limits are enforced after normalization and unsafe replacement."""
-    sanitized = sanitize_string("é" * LONG_UNICODE_REPEAT, max_length=SANITIZER_ARTIST_MAX_BYTES)
+    component_limit = PathPolicyConfig().max_filename_length
+    sanitized = sanitize_string("é" * LONG_UNICODE_REPEAT, max_length=component_limit)
 
-    assert sanitized == "é" * (SANITIZER_ARTIST_MAX_BYTES // len("é".encode()))
-    assert len(sanitized.encode()) == SANITIZER_ARTIST_MAX_BYTES
+    assert sanitized == "é" * (component_limit // len("é".encode()))
+    assert len(sanitized.encode()) == component_limit
     assert sanitize_string("ab-cd", max_length=EXTENSION_STEM_LIMIT) == "ab"
 
 
@@ -84,10 +85,25 @@ def test_preserved_extension_uses_fallback_when_sanitized_stem_is_empty() -> Non
     assert sanitize_path_component("!!!.flac", max_length=EXTENSION_STEM_LIMIT, preserve_extension=True) == "_.flac"
 
 
-def test_wrappers_apply_artist_album_limits_and_title_fallback() -> None:
-    """Wrapper helpers keep OMYM byte limits and title fallback behavior."""
-    assert sanitize_artist_name(LONG_ARTIST) == "A" * SANITIZER_ARTIST_MAX_BYTES
-    assert sanitize_album_name(LONG_ALBUM) == "B" * SANITIZER_ALBUM_MAX_BYTES
+def test_path_policy_applies_one_configured_component_limit() -> None:
+    """Artist, album, and filename components share the current configured limit."""
+    policy = PathPolicy(
+        PathPolicyConfig(
+            template="{artist}/{album}/{title}",
+            max_filename_length=FULL_COMPONENT_LIMIT,
+        )
+    )
+
+    path = policy.canonical_path(
+        TrackMetadata(title="Title", artist=LONG_ARTIST, album=LONG_ALBUM),
+        "flac",
+    )
+
+    assert path == "A" * FULL_COMPONENT_LIMIT + "/" + "B" * FULL_COMPONENT_LIMIT + "/Title.flac"
+
+
+def test_title_sanitizer_uses_a_nonempty_fallback() -> None:
+    """Title text that normalizes to empty still produces a usable filename."""
     assert sanitize_track_title("!!!") == SANITIZER_FALLBACK_TITLE
     assert sanitize_track_title(None) == SANITIZER_FALLBACK_TITLE
     assert sanitize_track_title(0.0) == SANITIZER_FALLBACK_TITLE
@@ -98,13 +114,6 @@ def test_path_component_sanitizer_uses_safe_fallback_for_non_empty_input() -> No
     assert sanitize_string("!!!") == ""
     assert sanitize_path_component("!!!") == "_"
     assert sanitize_path_component("   ") == "_"
-
-
-def test_path_components_preserve_extension_on_final_component_only() -> None:
-    """Path sanitization preserves the suffix only for the final component."""
-    assert sanitize_path_components("Artist Name/Album.Name/!!!.flac", max_length=FULL_COMPONENT_LIMIT) == (
-        "Artist-Name/Album-Name/_.flac"
-    )
 
 
 @pytest.mark.parametrize(

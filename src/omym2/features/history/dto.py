@@ -30,8 +30,8 @@ class ListRunsRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class GetRunHeaderRequest:
-    """Request to load one Run header by ID, without its durable FileEvents."""
+class GetRunDetailRequest:
+    """Request to load one Run with its current Undo capabilities."""
 
     run_id: RunId
 

@@ -116,12 +116,6 @@ describe("planning routes", () => {
           data: {
             ...completedPlanOperation().data,
             completed_at: null,
-            progress: {
-              completed_units: null,
-              message: null,
-              stage_code: null,
-              total_units: null,
-            },
             result: null,
             status: "running",
           },

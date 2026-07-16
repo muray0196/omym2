@@ -26,7 +26,6 @@ WIN32_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
 WIN32_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 WIN32_FILE_LIST_DIRECTORY = 0x00000001
 WIN32_FILE_READ_ATTRIBUTES = 0x00000080
-WIN32_FILE_SHARE_DELETE = 0x00000004
 WIN32_FILE_SHARE_READ = 0x00000001
 WIN32_FILE_SHARE_WRITE = 0x00000002
 WIN32_FILE_WRITE_ATTRIBUTES = 0x00000100
@@ -216,10 +215,6 @@ class Win32FileHandle(Protocol):
         """Return current state after optional path and exact-state verification."""
         ...
 
-    def matches_path(self, path: os.PathLike[str] | str) -> bool:
-        """Return whether the retained final path matches the lexical path."""
-        ...
-
     def delete_exact(self, *, expected_identity: Win32FileIdentity | None = None) -> None:
         """Mark this exact verified object for deletion when the handle closes."""
         ...
@@ -334,7 +329,6 @@ class _KernelFileIdentity:
     size: int
     creation_time_100ns: int
     last_write_time_100ns: int
-    change_time_100ns: int
     attributes: int
     reparse_tag: int
     is_directory: bool
@@ -391,10 +385,6 @@ class RetainedWin32Handle:
             raise FileNotFoundError(WIN32_PATH_CHANGED_MESSAGE)
         self.final_path = current_final_path
         return current
-
-    def matches_path(self, path: os.PathLike[str] | str) -> bool:
-        """Return whether the retained final path matches the lexical path."""
-        return self.final_path == normalize_win32_path(path)
 
     def delete_exact(self, *, expected_identity: Win32FileIdentity | None = None) -> None:
         """Mark this exact verified object for deletion when the handle closes."""
@@ -834,7 +824,6 @@ class _CtypesWin32HandleApi:
             size=cast("int", standard_info.end_of_file),
             creation_time_100ns=cast("int", basic_info.creation_time),
             last_write_time_100ns=cast("int", basic_info.last_write_time),
-            change_time_100ns=cast("int", basic_info.change_time),
             attributes=cast("int", attribute_info.file_attributes),
             reparse_tag=cast("int", attribute_info.reparse_tag),
             is_directory=bool(cast("int", standard_info.directory)),

@@ -16,12 +16,12 @@ from omym2.config import (
 from omym2.domain.models.app_config import AppConfig, ArtistNameConfig, PathPolicyConfig
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.track_metadata import TrackMetadata
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE
 from omym2.features.inspect.dto import InspectFileRequest
 from omym2.features.inspect.ports import InspectFilePorts
 from omym2.features.inspect.usecases.inspect_file import InspectFileUseCase
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 
 if TYPE_CHECKING:
     from omym2.domain.models.file_scan_entry import FileScanEntry

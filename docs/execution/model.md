@@ -3,7 +3,7 @@ type: Execution Spec
 title: Execution Model
 description: Defines Plan-centered audio, companion, and unprocessed-file execution, durable dependencies and FileEvents, shared exclusion, single-use Plans, and blocked-versus-failed behavior.
 tags: [execution-model, operation, plan, run, file-event, companions, unprocessed, exclusion]
-timestamp: 2026-07-16T04:51:16+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Execution Model
@@ -64,7 +64,7 @@ by durable Operations when executed as long-running state-changing work. The
 Web dispatches accepted work after returning `202`; the CLI may run the worker
 inline, but it persists the same Operation lifecycle and holds the same lock.
 
-An Operation records request acceptance, idempotency, progress, terminal
+An Operation records request acceptance, idempotency, lifecycle status, terminal
 result, and interruption. It is not evidence that a particular
 Library-managed file mutation happened. FileEvents remain the only mutation
 log and preserve

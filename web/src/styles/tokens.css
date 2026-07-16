@@ -25,7 +25,6 @@
   --radius-6: 6px;
   --radius-8: 8px;
   --radius-10: 10px;
-  --radius-16: 16px;
 
   --space-4: 4px;
   --space-8: 8px;
@@ -36,12 +35,10 @@
   --space-32: 32px;
   --space-40: 40px;
 
-  --target-default: 44px;
   --target-dense: 36px;
   --layer-notification: 30;
   --motion-control: 120ms;
   --motion-reduced: 0.01ms;
   --font-body: "Inter Variable", sans-serif;
   --font-mono: "JetBrains Mono Variable", monospace;
-  --focus-ring: 0 0 0 3px var(--color-canvas), 0 0 0 5px var(--color-blue);
 }

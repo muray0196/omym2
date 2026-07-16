@@ -24,6 +24,7 @@ from omym2.domain.models.app_config import (
     INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE,
     INVALID_ARTIST_ID_FALLBACK_MESSAGE,
     INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE,
+    INVALID_CONFIG_VERSION_MESSAGE,
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     AppConfig,
     ArtistIdConfig,
@@ -250,8 +251,8 @@ def test_toml_config_store_load_reparses_after_external_rewrite(tmp_path: Path) 
 def test_toml_config_store_load_reparses_same_size_rewrite_with_preserved_mtime(tmp_path: Path) -> None:
     """A metadata-preserving external rewrite still invalidates the cache."""
     config_path = tmp_path / CONFIG_FILE_NAME
-    first_text = f'version = 1\n\n[paths]\nlibrary = "{FIRST_SAME_SIZE_LIBRARY_PATH}"\n'
-    second_text = f'version = 1\n\n[paths]\nlibrary = "{SECOND_SAME_SIZE_LIBRARY_PATH}"\n'
+    first_text = f'version = 2\n\n[paths]\nlibrary = "{FIRST_SAME_SIZE_LIBRARY_PATH}"\n'
+    second_text = f'version = 2\n\n[paths]\nlibrary = "{SECOND_SAME_SIZE_LIBRARY_PATH}"\n'
     assert len(first_text.encode(CONFIG_FILE_ENCODING)) == len(second_text.encode(CONFIG_FILE_ENCODING))
     _ = config_path.write_text(first_text, encoding=CONFIG_FILE_ENCODING)
     store = TomlConfigStore(config_path)
@@ -285,13 +286,19 @@ def test_toml_config_text_round_trips_default_config() -> None:
     assert load_config_text(dump_config_toml(config)) == config
 
 
+def test_toml_config_rejects_pre_release_version_with_reset_guidance() -> None:
+    """Old pre-release Config is rejected instead of migrated or translated."""
+    with pytest.raises(ConfigStoreValidationError, match=INVALID_CONFIG_VERSION_MESSAGE):
+        _ = load_config_text("version = 1\n")
+
+
 def test_toml_config_store_validation_fails_invalid_path_policy(tmp_path: Path) -> None:
     """Adapter validation reports domain path policy errors through ConfigStore."""
     config_path = tmp_path / CONFIG_FILE_NAME
     _ = config_path.write_text(
         "\n".join(
             (
-                "version = 1",
+                "version = 2",
                 "",
                 "[path_policy]",
                 f"max_filename_length = {INVALID_MAX_FILENAME_LENGTH}",
@@ -308,7 +315,7 @@ def test_toml_config_store_validation_fails_invalid_disc_number_settings(tmp_pat
     """Adapter validation rejects unsupported path policy disc setting values."""
     config_path = tmp_path / CONFIG_FILE_NAME
     _ = config_path.write_text(
-        'version = 1\n\n[path_policy]\ndisc_number_style = "prefix"\ndisc_number_condition = "sometimes"',
+        'version = 2\n\n[path_policy]\ndisc_number_style = "prefix"\ndisc_number_condition = "sometimes"',
         encoding=CONFIG_FILE_ENCODING,
     )
 
@@ -323,7 +330,7 @@ def test_toml_config_store_validation_fails_invalid_artist_id_max_length(tmp_pat
     """Adapter validation reports domain artist ID max_length errors through ConfigStore."""
     config_path = tmp_path / CONFIG_FILE_NAME
     _ = config_path.write_text(
-        "version = 1\n\n[artist_ids]\nmax_length = 0\n",
+        "version = 2\n\n[artist_ids]\nmax_length = 0\n",
         encoding=CONFIG_FILE_ENCODING,
     )
 
@@ -335,7 +342,7 @@ def test_toml_config_store_validation_fails_invalid_artist_id_fallback_id(tmp_pa
     """Adapter validation reports a non-sanitizer-stable configured fallback_id."""
     config_path = tmp_path / CONFIG_FILE_NAME
     _ = config_path.write_text(
-        'version = 1\n\n[artist_ids]\nfallback_id = "N/A"\n',
+        'version = 2\n\n[artist_ids]\nfallback_id = "N/A"\n',
         encoding=CONFIG_FILE_ENCODING,
     )
 
@@ -349,7 +356,7 @@ def test_toml_config_store_validation_fails_invalid_artist_id_entry_value(tmp_pa
     _ = config_path.write_text(
         "\n".join(
             (
-                "version = 1",
+                "version = 2",
                 "",
                 "[artist_ids.entries]",
                 f'"{ARTIST_NAME}" = "../escape"',
@@ -370,7 +377,7 @@ def test_toml_config_store_validation_fails_invalid_artist_name_preference(
     """Artist display-name preferences require nonblank string values."""
     config_path = tmp_path / CONFIG_FILE_NAME
     _ = config_path.write_text(
-        f'version = 1\n\n[artist_names.preferences]\n"{ARTIST_NAME}" = {invalid_value}\n',
+        f'version = 2\n\n[artist_names.preferences]\n"{ARTIST_NAME}" = {invalid_value}\n',
         encoding=CONFIG_FILE_ENCODING,
     )
 
@@ -382,7 +389,7 @@ def test_toml_config_store_validation_fails_invalid_album_year_resolution(tmp_pa
     """Adapter validation rejects unknown album-year resolution methods."""
     config_path = tmp_path / CONFIG_FILE_NAME
     _ = config_path.write_text(
-        'version = 1\n\n[metadata]\nalbum_year_resolution = "median"\n',
+        'version = 2\n\n[metadata]\nalbum_year_resolution = "median"\n',
         encoding=CONFIG_FILE_ENCODING,
     )
 
@@ -390,27 +397,27 @@ def test_toml_config_store_validation_fails_invalid_album_year_resolution(tmp_pa
         _ = TomlConfigStore(config_path).load()
 
 
-def test_toml_config_store_validation_fails_removed_organize_only_misplaced_key(tmp_path: Path) -> None:
-    """A config file still containing the removed organize.only_misplaced key is rejected."""
+def test_toml_config_store_validation_rejects_unknown_nested_key(tmp_path: Path) -> None:
+    """The current config schema rejects unknown keys inside known sections."""
     config_path = tmp_path / CONFIG_FILE_NAME
     _ = config_path.write_text(
-        "version = 1\n\n[organize]\nonly_misplaced = true\n",
+        "version = 2\n\n[metadata]\nunsupported = true\n",
         encoding=CONFIG_FILE_ENCODING,
     )
 
-    with pytest.raises(ConfigStoreValidationError, match=r"Unknown config key: organize\.only_misplaced\."):
+    with pytest.raises(ConfigStoreValidationError, match=r"Unknown config key: metadata\.unsupported\."):
         _ = TomlConfigStore(config_path).load()
 
 
-def test_toml_config_store_validation_fails_removed_ui_section(tmp_path: Path) -> None:
-    """A config file still containing the removed UI section is rejected."""
+def test_toml_config_store_validation_rejects_unknown_top_level_section(tmp_path: Path) -> None:
+    """The current config schema rejects unknown top-level sections."""
     config_path = tmp_path / CONFIG_FILE_NAME
     _ = config_path.write_text(
-        'version = 1\n\n[ui]\ntheme = "dark"\nshow_advanced_settings = true\n',
+        'version = 2\n\n[unsupported]\nvalue = "unknown"\n',
         encoding=CONFIG_FILE_ENCODING,
     )
 
-    with pytest.raises(ConfigStoreValidationError, match="Unknown config key: ui"):
+    with pytest.raises(ConfigStoreValidationError, match="Unknown config key: unsupported"):
         _ = TomlConfigStore(config_path).load()
 
 
@@ -425,21 +432,21 @@ def test_toml_config_store_validation_fails_invalid_toml(tmp_path: Path) -> None
 
 def test_toml_config_text_loads_missing_artist_id_defaults() -> None:
     """Missing artist_ids config resolves to documented defaults."""
-    config = load_config_text("version = 1\n")
+    config = load_config_text("version = 2\n")
 
     assert config.artist_ids == ArtistIdConfig()
 
 
 def test_toml_config_text_loads_missing_artist_name_defaults() -> None:
     """Missing artist_names config resolves to an empty preference mapping."""
-    config = load_config_text("version = 1\n")
+    config = load_config_text("version = 2\n")
 
     assert config.artist_names == ArtistNameConfig()
 
 
 def test_toml_config_text_loads_missing_runtime_section_defaults() -> None:
-    """Existing version-1 files gain optional section defaults without a compatibility layer."""
-    config = load_config_text("version = 1\n")
+    """Omitted optional sections receive defaults within the current config schema."""
+    config = load_config_text("version = 2\n")
 
     assert config.musicbrainz == MusicBrainzConfig()
     assert config.fasttext == FastTextConfig()
@@ -488,7 +495,7 @@ def test_toml_config_text_loads_missing_runtime_section_defaults() -> None:
 def test_toml_config_store_rejects_invalid_runtime_controls(runtime_toml: str, expected_field: str) -> None:
     """Wrong types, ranges, choices, unsafe paths, and unknown runtime keys fail validation."""
     with pytest.raises(ConfigStoreValidationError, match=expected_field):
-        _ = load_config_text(f"version = 1\n\n{runtime_toml}\n")
+        _ = load_config_text(f"version = 2\n\n{runtime_toml}\n")
 
 
 def test_config_snapshot_gives_missing_storage_a_stable_revision_without_creating_file(tmp_path: Path) -> None:

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from omym2 import __version__
 from omym2.adapters.web.routes.api_context import (
     ApiContext,  # noqa: TC001  # FastAPI resolves dependency annotations at registration.
 )
@@ -28,7 +27,6 @@ from omym2.config import (
     WEB_API_BOOTSTRAP_ROUTE,
     WEB_CORRELATION_HEADER_NAME,
     WEB_SETTINGS_ROUTE,
-    WEB_STATUS_CATALOG_VERSION,
 )
 from omym2.features.bootstrap.dto import BootstrapCapabilities, BootstrapReason, BootstrapResult
 
@@ -74,9 +72,7 @@ def _bootstrap_envelope(result: BootstrapResult, csrf_token: str) -> ApiEnvelope
     snapshot = result.config_snapshot
     return ApiEnvelope[BootstrapData](
         data=BootstrapData(
-            app_version=__version__,
             csrf_token=csrf_token,
-            status_catalog_version=WEB_STATUS_CATALOG_VERSION,
             active_library=_library_resource(result),
             library_diagnostics=library_errors,
             config_validation=ConfigValidationResource(

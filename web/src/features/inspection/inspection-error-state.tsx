@@ -3,6 +3,7 @@
  * Why: Keeps diagnostics visible without treating failures as empty persisted state.
  */
 import { Button } from "../../ui/primitives/button";
+import { sharedCopy } from "../../ui/copy";
 import { InspectionApiError } from "./query-errors";
 import styles from "./inspection.module.css";
 
@@ -28,7 +29,7 @@ export function InspectionErrorState({
         ))}
       </ul>
       <Button onClick={onRetry} variant="secondary">
-        Try again
+        {sharedCopy.retry}
       </Button>
     </section>
   );

@@ -1,6 +1,6 @@
 /**
  * Summary: Polls retained Operations with backend-provided adaptive timing.
- * Why: Preserves durable progress across slow work and transient connectivity loss.
+ * Why: Preserves durable status across slow work and transient connectivity loss.
  */
 import { useEffect, useMemo, useState } from "react";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -44,7 +44,7 @@ export function useOperationPolling({
     if (operationId === null) return;
     if (
       initialOperation !== null &&
-      "progress" in initialOperation &&
+      "result" in initialOperation &&
       isTerminalOperation(initialOperation)
     )
       return;
@@ -140,16 +140,8 @@ function cappedBackoff(currentDelay: number, policy: OperationPollingPolicy) {
 
 function operationSnapshot(operation: OperationRef | OperationResource | null) {
   if (operation === null) return "";
-  if (!("progress" in operation)) return operation.status;
-  return JSON.stringify([
-    operation.status,
-    operation.progress.stage_code,
-    operation.progress.completed_units,
-    operation.progress.total_units,
-    operation.progress.message,
-    operation.result,
-    operation.error,
-  ]);
+  if (!("result" in operation)) return operation.status;
+  return JSON.stringify([operation.status, operation.result, operation.error]);
 }
 
 export function isTerminalOperation(operation: OperationResource) {

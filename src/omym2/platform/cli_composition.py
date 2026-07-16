@@ -41,7 +41,6 @@ from omym2.platform.feature_composition import (
     build_uow,
 )
 from omym2.platform.operation_composition import OperationRuntime
-from omym2.platform.runtime_context import runtime_context_for
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -63,20 +62,6 @@ def _build_web_app(config_path: Path, database_path: Path) -> FastAPI:
     from omym2.platform.web_composition import build_web_app  # noqa: PLC0415  # Intentional settings-only import.
 
     return build_web_app(config_path, database_path)
-
-
-def build_command_dependencies(
-    config_path: Path | None = None,
-    database_path: Path | None = None,
-) -> CommandDependencies:
-    """Build the full per-command dependency bundle for one CLI invocation.
-
-    Every eagerly built field runs on each invocation before command dispatch,
-    so it must stay side-effect-free at construction (no I/O, no optional
-    imports); anything heavier belongs behind one of the factory fields.
-    """
-    runtime = runtime_context_for(config_path, database_path)
-    return command_dependencies_for_runtime(runtime)
 
 
 def command_dependencies_for_runtime(runtime: RuntimeContext) -> CommandDependencies:

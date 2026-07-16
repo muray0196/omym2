@@ -1,6 +1,6 @@
 /**
  * Summary: Installs deterministic DOM, dialog, cleanup, and MSW test behavior.
- * Why: Keeps component tests browser-like without adding runtime compatibility code.
+ * Why: Keeps component tests browser-like without adding runtime shims.
  */
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";

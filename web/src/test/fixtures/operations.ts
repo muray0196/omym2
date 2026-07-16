@@ -34,12 +34,6 @@ export function completedPlanOperation(kind: OperationKind = "add_plan") {
       library_id: "018f0000-0000-7000-8000-000000000001",
       operation_id: OPERATION_ID,
       plan_id: CREATED_PLAN_ID,
-      progress: {
-        completed_units: 3,
-        message: "Plan persisted.",
-        stage_code: "future_planning_stage",
-        total_units: 3,
-      },
       requested_at: "2026-07-13T00:00:00Z",
       result: { kind: "plan_created", plan_id: CREATED_PLAN_ID },
       run_id: null,
@@ -58,12 +52,6 @@ export const completedCheckOperation = {
     library_id: "018f0000-0000-7000-8000-000000000001",
     operation_id: OPERATION_ID,
     plan_id: null,
-    progress: {
-      completed_units: 5,
-      message: "Findings saved.",
-      stage_code: "persisting_findings",
-      total_units: 5,
-    },
     requested_at: "2026-07-13T00:00:00Z",
     result: {
       check_run_ids: ["018f0000-0000-7000-8000-000000000022"],
@@ -85,12 +73,6 @@ export const completedRunOperation = {
     library_id: "018f0000-0000-7000-8000-000000000001",
     operation_id: OPERATION_ID,
     plan_id: CREATED_PLAN_ID,
-    progress: {
-      completed_units: 3,
-      message: "Run evidence persisted.",
-      stage_code: "apply_recorded_actions",
-      total_units: 3,
-    },
     requested_at: "2026-07-13T00:00:00Z",
     result: { kind: "run_completed", run_id: COMPLETED_RUN_ID },
     run_id: COMPLETED_RUN_ID,

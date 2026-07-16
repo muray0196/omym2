@@ -8,15 +8,11 @@ import {
   getCheckIssueFacets,
   getCheckIssueGroups,
   getCheckIssues,
-  type ApiFailureEnvelope,
   type CheckIssueFacetsData,
   type CheckIssueGroupsData,
   type CheckIssuesData,
 } from "../../api/generated";
-import {
-  InspectionUnexpectedDataError,
-  throwInspectionResponseError,
-} from "../inspection/query-errors";
+import { inspectionDataOrThrow } from "../inspection/query-errors";
 import type { HealthFilters } from "./health-url-state";
 
 const SURFACE = "Health";
@@ -81,7 +77,7 @@ async function readIssues(
       query: filters.query || undefined,
     },
   });
-  return dataOrThrow(response, "findings");
+  return inspectionDataOrThrow(response, `${SURFACE} findings`);
 }
 
 async function readFacets(
@@ -96,7 +92,7 @@ async function readFacets(
       query: filters.query || undefined,
     },
   });
-  return dataOrThrow(response, "facets");
+  return inspectionDataOrThrow(response, `${SURFACE} facets`);
 }
 
 async function readGroups(
@@ -115,25 +111,5 @@ async function readGroups(
       query: filters.query || undefined,
     },
   });
-  return dataOrThrow(response, "groups");
-}
-
-function dataOrThrow<Data>(
-  response: {
-    data?: { data: Data | null };
-    error?: ApiFailureEnvelope;
-    response?: Response;
-  },
-  label: string,
-): Data {
-  if (response.error !== undefined)
-    throwInspectionResponseError(
-      `${SURFACE} ${label}`,
-      response.error,
-      response.response,
-    );
-  const data = response.data?.data;
-  if (data == null)
-    throw new InspectionUnexpectedDataError(`${SURFACE} ${label}`);
-  return data;
+  return inspectionDataOrThrow(response, `${SURFACE} groups`);
 }

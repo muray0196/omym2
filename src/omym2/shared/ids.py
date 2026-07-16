@@ -8,8 +8,6 @@ from __future__ import annotations
 from typing import NewType
 from uuid import UUID, uuid7
 
-from omym2.config import UUID_VERSION
-
 ActionId = NewType("ActionId", UUID)
 CheckRunId = NewType("CheckRunId", UUID)
 CompanionAssetId = NewType("CompanionAssetId", UUID)
@@ -24,11 +22,6 @@ TrackId = NewType("TrackId", UUID)
 def new_uuid7() -> UUID:
     """Create a UUIDv7 value for stable internal identifiers."""
     return uuid7()
-
-
-def is_uuid7(value: UUID) -> bool:
-    """Return whether a UUID value uses the documented UUIDv7 version."""
-    return value.version == UUID_VERSION
 
 
 def new_action_id() -> ActionId:
@@ -79,8 +72,3 @@ def new_track_id() -> TrackId:
 def parse_uuid(raw_value: str) -> UUID:
     """Parse a persisted UUID string into a UUID value."""
     return UUID(raw_value)
-
-
-def id_to_string(value: UUID) -> str:
-    """Render a persisted ID value without shortening it."""
-    return str(value)

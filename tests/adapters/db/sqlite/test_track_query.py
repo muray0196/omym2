@@ -294,7 +294,7 @@ def test_group_page_orders_and_paginates_with_count_then_key_keyset(tmp_path: Pa
         for _ in range(TWO_GROUP_TOTAL):
             page = uow.tracks.group_page(
                 None,
-                TrackGrouping.ARTIST_ALBUM,
+                TrackGrouping.ARTIST,
                 None,
                 PageRequest(limit=1, cursor_key=cursor),
             )
@@ -305,8 +305,8 @@ def test_group_page_orders_and_paginates_with_count_then_key_keyset(tmp_path: Pa
                 break
             cursor = page.next_cursor_key
 
-    assert visited_keys == ["Nova\x1fDawn", "Echo Collective\x1fDusk"]
-    assert visited_labels == ["Nova — Dawn", "Echo Collective — Dusk"]
+    assert visited_keys == ['["Nova"]', '["Echo Collective"]']
+    assert visited_labels == ["Nova", "Echo Collective"]
 
 
 def test_hierarchy_group_page_uses_json_keys_metadata_fallbacks_and_parent_scope(tmp_path: Path) -> None:

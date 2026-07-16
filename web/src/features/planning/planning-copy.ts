@@ -38,7 +38,6 @@ export const planningCopy = {
     submit: "Create Refresh Plan",
   },
   disabled: "Operations are currently unavailable.",
-  required: "This field is required.",
   failure: "The Operation could not be started.",
   noBootstrap:
     "Startup state is unavailable. Restore the local service before starting work.",

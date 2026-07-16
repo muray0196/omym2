@@ -2,7 +2,10 @@
  * Summary: Centralizes product-default-language copy for Plan review and execution.
  * Why: Keeps recorded evidence, capability, and recovery wording consistent.
  */
-import type { ArtistNameResolutionIssue } from "../../api/generated";
+import type {
+  ArtistNameResolutionIssue,
+  ArtistNameResolutionProvenance,
+} from "../../api/generated";
 
 export const planCopy = {
   list: {
@@ -25,7 +28,6 @@ export const planCopy = {
     noPlansTitle: "No Plans have been recorded",
     noPlansBody:
       "Create an Add, Organize, Refresh, or Undo Plan to begin reviewable work.",
-    retry: "Try again",
     loadError: "Plans could not be loaded",
     resultCount: "matching Plans",
   },
@@ -40,7 +42,6 @@ export const planCopy = {
     notFoundTitle: "Plan not found",
     notFoundBody:
       "This Plan is not available in the recorded inspection data. Check the full Plan ID and try again.",
-    retry: "Try again",
     loadError: "Plan inspection could not be loaded",
     summary: "Recorded action summary",
     actions: "Recorded actions",
@@ -98,7 +99,6 @@ export const planCopy = {
     created: "Created",
     status: "Status",
     type: "Type",
-    total: "Total",
     planned: "Planned",
     blocked: "Blocked",
     applied: "Applied",
@@ -109,7 +109,6 @@ export const planCopy = {
     moveUnprocessed: "Move unprocessed",
     skip: "Skip",
     refreshMetadata: "Refresh metadata",
-    actionId: "Action ID",
     trackId: "Track ID",
     companionAssetId: "Companion asset ID",
     ownerActionId: "Owner action ID",
@@ -118,9 +117,6 @@ export const planCopy = {
     targetPath: "Target path",
     actionType: "Action type",
     reason: "Reason",
-    group: "Group",
-    count: "Count",
-    blockedCount: "Blocked",
     topReason: "Most common reason",
     artist: "Artist",
     albumArtist: "Album artist",
@@ -134,7 +130,7 @@ export const planCopy = {
       accepted_musicbrainz: "Accepted MusicBrainz result",
       new_musicbrainz: "New MusicBrainz result",
       original: "Original metadata",
-    },
+    } satisfies Record<ArtistNameResolutionProvenance, string>,
     issue: {
       missing_source: "Missing source name",
       composite_unsupported: "Composite name unsupported",
@@ -147,14 +143,5 @@ export const planCopy = {
       no_confident_match: "No confident match",
       ambiguous_match: "Ambiguous match",
     } satisfies Record<ArtistNameResolutionIssue, string>,
-  },
-  unknown: {
-    status: "Unknown status",
-    type: "Unknown type",
-    actionType: "Unknown action type",
-    reason: "Unknown reason",
-    grouping: "Unknown grouping",
-    artistNameProvenance: "Unknown provenance",
-    artistNameIssue: "Unknown issue",
   },
 } as const;

@@ -19,9 +19,7 @@ import type {
 } from "../../api/generated";
 import { createQueryClient } from "../../app/query-client";
 import { server } from "../../test/server";
-import { trackGroupingLabel, trackStatusLabel } from "./library-catalog";
 import { LibraryList } from "./library-list";
-import { TrackStatusBadge } from "./library-presentation";
 import { TrackDetail } from "./track-detail";
 
 const TRACK_ID = "018f0000-0000-7000-8000-000000000101";
@@ -78,7 +76,7 @@ describe("Library inspection", () => {
     useDefaultLibraryHandlers({ observedQueries });
 
     const { router } = renderLibrary(
-      `/library?query=So+What&status=active&group_by=artist_album&group_key=${encodeURIComponent(OPAQUE_ALBUM_KEY)}`,
+      `/library?query=So+What&status=active&group_by=artist&group_key=${encodeURIComponent(OPAQUE_ARTIST_KEY)}`,
     );
 
     expect(await screen.findByRole("link", { name: /So What/ })).toBeVisible();
@@ -89,8 +87,8 @@ describe("Library inspection", () => {
     const request = observedQueries.at(-1);
     expect(request?.get("query")).toBe("So What");
     expect(request?.get("status")).toBe("active");
-    expect(request?.get("group_by")).toBe("artist_album");
-    expect(request?.get("group_key")).toBe(OPAQUE_ALBUM_KEY);
+    expect(request?.get("group_by")).toBe("artist");
+    expect(request?.get("group_key")).toBe(OPAQUE_ARTIST_KEY);
     expect(request?.get("library_id")).toBe(LIBRARY_ID);
 
     expect(screen.getByRole("link", { name: /So What/ })).toHaveAttribute(
@@ -350,18 +348,6 @@ describe("Library inspection", () => {
     expect(alert).toHaveTextContent("Library Tracks could not be loaded");
     expect(alert).toHaveTextContent("Persisted Track state is unavailable.");
     expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();
-  });
-
-  it("keeps unknown status and grouping values visible and neutral", () => {
-    render(<TrackStatusBadge value="future_status" />);
-
-    expect(screen.getByText("Unknown status: future_status")).toBeVisible();
-    expect(trackStatusLabel("future_status")).toBe(
-      "Unknown status: future_status",
-    );
-    expect(trackGroupingLabel("future_group")).toBe(
-      "Unknown grouping: future_group",
-    );
   });
 });
 

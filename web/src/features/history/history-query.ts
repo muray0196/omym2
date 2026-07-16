@@ -11,7 +11,6 @@ import {
   getRunEventFacets,
   getRunEventGroups,
   getRunEvents,
-  type ApiFailureEnvelope,
   type FileEventFacetsData,
   type FileEventGroupsData,
   type PaginatedDataFileEventResource,
@@ -19,10 +18,7 @@ import {
   type RunDetailData,
   type RunFacetsData,
 } from "../../api/generated";
-import {
-  InspectionUnexpectedDataError,
-  throwInspectionResponseError,
-} from "../inspection/query-errors";
+import { inspectionDataOrThrow } from "../inspection/query-errors";
 import type { EventFilters, HistoryFilters } from "./history-url-state";
 
 const SURFACE = "History";
@@ -113,7 +109,7 @@ async function readHistory(
       status: filters.status,
     },
   });
-  return dataOrThrow(response, "Run list");
+  return inspectionDataOrThrow(response, `${SURFACE} Run list`);
 }
 
 async function readHistoryFacets(
@@ -125,7 +121,7 @@ async function readHistoryFacets(
     query: { library_id: libraryId || undefined },
     signal,
   });
-  return dataOrThrow(response, "Run facets");
+  return inspectionDataOrThrow(response, `${SURFACE} Run facets`);
 }
 
 async function readRun(
@@ -137,7 +133,7 @@ async function readRun(
     path: { run_id: runId },
     signal,
   });
-  return dataOrThrow(response, "Run detail");
+  return inspectionDataOrThrow(response, `${SURFACE} Run detail`);
 }
 
 async function readRunEvents(
@@ -152,7 +148,7 @@ async function readRunEvents(
     query: { cursor, status: filters.status },
     signal,
   });
-  return dataOrThrow(response, "FileEvents");
+  return inspectionDataOrThrow(response, `${SURFACE} FileEvents`);
 }
 
 async function readRunEventFacets(
@@ -164,7 +160,7 @@ async function readRunEventFacets(
     path: { run_id: runId },
     signal,
   });
-  return dataOrThrow(response, "FileEvent facets");
+  return inspectionDataOrThrow(response, `${SURFACE} FileEvent facets`);
 }
 
 async function readRunEventGroups(
@@ -178,25 +174,5 @@ async function readRunEventGroups(
     query: { cursor, group_by: "target_directory" },
     signal,
   });
-  return dataOrThrow(response, "FileEvent groups");
-}
-
-function dataOrThrow<Data>(
-  response: {
-    data?: { data: Data | null };
-    error?: ApiFailureEnvelope;
-    response?: Response;
-  },
-  label: string,
-): Data {
-  if (response.error !== undefined)
-    throwInspectionResponseError(
-      `${SURFACE} ${label}`,
-      response.error,
-      response.response,
-    );
-  const data = response.data?.data;
-  if (data == null)
-    throw new InspectionUnexpectedDataError(`${SURFACE} ${label}`);
-  return data;
+  return inspectionDataOrThrow(response, `${SURFACE} FileEvent groups`);
 }

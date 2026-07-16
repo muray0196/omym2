@@ -17,7 +17,6 @@ from omym2.features.history.dto import (
     RunCapabilityReason,
     RunDetailResult,
 )
-from omym2.features.history.usecases.get_run_header import RUN_NOT_FOUND_MESSAGE, RunNotFoundError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -25,9 +24,16 @@ if TYPE_CHECKING:
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
-    from omym2.features.history.dto import GetRunHeaderRequest
+    from omym2.features.history.dto import GetRunDetailRequest
     from omym2.features.history.ports import HistoryPorts
     from omym2.shared.ids import ActionId, LibraryId, RunId
+
+
+RUN_NOT_FOUND_MESSAGE = "Run was not found."
+
+
+class RunNotFoundError(ValueError):
+    """Raised when a requested Run ID is unknown."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +42,7 @@ class GetRunDetailUseCase:
 
     ports: HistoryPorts
 
-    def execute(self, request: GetRunHeaderRequest) -> RunDetailResult:
+    def execute(self, request: GetRunDetailRequest) -> RunDetailResult:
         """Return one Run detail without mutating history or reading the filesystem."""
         with self.ports.uow as uow:
             run = uow.runs.get(request.run_id)

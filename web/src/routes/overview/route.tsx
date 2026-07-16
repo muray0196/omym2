@@ -17,6 +17,7 @@ import {
 import { BootstrapContext } from "../../features/bootstrap/bootstrap-context";
 import { runStatusLabel } from "../../features/history/history-catalog";
 import { LibraryStatusBadge } from "../../features/library/library-presentation";
+import { sharedCopy } from "../../ui/copy";
 import { PageHeader } from "../../ui/primitives/page-header";
 import { routeCopy } from "../route-copy";
 import styles from "../route.module.css";
@@ -77,7 +78,7 @@ export function Component() {
             onClick={() => void overview.refetch()}
             type="button"
           >
-            {routeCopy.overview.retry}
+            {sharedCopy.retry}
           </button>
         </section>
       ) : null}

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from omym2.adapters.desktop.server import UvicornDesktopServer
+from omym2.config import CONFIG_VERSION
 from omym2.platform.web_composition import build_web_app
 from scripts import config
 from scripts.desktop import smoke_windows_package as desktop_smoke
@@ -398,7 +399,7 @@ def test_native_smoke_deletes_each_application_copy_without_deleting_state(tmp_p
     _delete_application_copy_and_require_state(extraction, config_file, database_file, database_sha256)
 
     assert not extraction.exists()
-    assert tomllib.loads(config_file.read_text(encoding="utf-8"))["version"] == 1
+    assert tomllib.loads(config_file.read_text(encoding="utf-8"))["version"] == CONFIG_VERSION
     assert database_file.is_file()
 
 

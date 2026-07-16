@@ -19,15 +19,12 @@ from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.artist_id import generate_artist_id
 from omym2.domain.services.artist_name import ArtistNameProjector
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 from omym2.shared.paths import ESCAPING_LIBRARY_PATH_MESSAGE
 
 ALBUM = "Example Album"
 ALBUM_ARTIST = "Aimer"
-CONTENT = b"content"
-DIFFERENT_CONTENT = b"different content"
 DISC_NUMBER = 1
 EDGE_BUDGET_FINAL_COMPONENT = "S.flac"
 EXPECTED_CANONICAL_PATH = "Aimer/2024_Example-Album/1-03_Example-Song.flac"
@@ -219,9 +216,9 @@ def test_canonical_path_artist_id_entry_cannot_escape_library_root() -> None:
     """A saved artist_id entry cannot introduce parent-directory path components.
 
     ArtistIdConfig normally rejects unsafe entry values at construction, so
-    this bypasses validation with object.__setattr__ to simulate a future code
-    path handing PathPolicy unvalidated config (e.g. a legacy persisted value
-    written before entry validation existed).
+    this bypasses validation with object.__setattr__ to verify that PathPolicy
+    still fails safely if an internal caller violates the validated-config
+    boundary.
     """
     metadata = _track_metadata()
 
@@ -463,12 +460,6 @@ def test_metadata_fingerprint_changes_when_metadata_changes() -> None:
 
     assert calculate_metadata_fingerprint(metadata) == calculate_metadata_fingerprint(metadata)
     assert calculate_metadata_fingerprint(metadata) != calculate_metadata_fingerprint(changed_metadata)
-
-
-def test_content_fingerprint_changes_when_content_changes() -> None:
-    """Content fingerprints are stable for equal bytes and change for different bytes."""
-    assert calculate_content_fingerprint(CONTENT) == calculate_content_fingerprint(CONTENT)
-    assert calculate_content_fingerprint(CONTENT) != calculate_content_fingerprint(DIFFERENT_CONTENT)
 
 
 def test_collision_policy_blocks_existing_target() -> None:

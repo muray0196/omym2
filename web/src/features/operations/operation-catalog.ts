@@ -1,6 +1,6 @@
 /**
  * Summary: Maps durable Operation catalog values to labels, meanings, tones, and icons.
- * Why: Keeps known and newer server values visible without inferring lifecycle behavior.
+ * Why: Gives every coordinated Operation enum value one exhaustive presentation.
  */
 import type {
   OperationKind,
@@ -10,8 +10,7 @@ import type {
 import type { IconName } from "../../ui/icon";
 import { operationCopy } from "./operation-copy";
 
-export type OperationTone =
-  "info" | "success" | "warning" | "danger" | "neutral";
+export type OperationTone = "info" | "success" | "warning" | "danger";
 
 export type OperationCatalogPresentation = Readonly<{
   icon: IconName;
@@ -127,56 +126,32 @@ const OPERATION_STATUS_PRESENTATIONS = {
   },
 } satisfies Record<OperationStatus, OperationCatalogPresentation>;
 
-export function operationStatusLabel(value: string) {
+export function operationStatusLabel(value: OperationStatus) {
   return operationStatusPresentation(value).label;
 }
 
-export function operationStatusTone(value: string): OperationTone {
+export function operationStatusTone(value: OperationStatus): OperationTone {
   return operationStatusPresentation(value).tone;
 }
 
-export function operationStatusIcon(value: string): IconName {
+export function operationStatusIcon(value: OperationStatus): IconName {
   return operationStatusPresentation(value).icon;
 }
 
 export function operationStatusPresentation(
-  value: string,
+  value: OperationStatus,
 ): OperationCatalogPresentation {
-  return (
-    OPERATION_STATUS_PRESENTATIONS[value as OperationStatus] ?? {
-      icon: "info",
-      label: `${operationCopy.unknownStatus}: ${value}`,
-      meaning:
-        "This Operation status is not recognized by this bundled interface.",
-      tone: "neutral",
-    }
-  );
+  return OPERATION_STATUS_PRESENTATIONS[value];
 }
 
 export function operationKindPresentation(
-  value: string,
+  value: OperationKind,
 ): OperationCatalogPresentation {
-  return (
-    OPERATION_KIND_PRESENTATIONS[value as OperationKind] ?? {
-      icon: "info",
-      label: operationCopy.unknownKind(value),
-      meaning:
-        "This Operation kind is not recognized by this bundled interface.",
-      tone: "neutral",
-    }
-  );
+  return OPERATION_KIND_PRESENTATIONS[value];
 }
 
 export function operationResultKindPresentation(
-  value: string,
+  value: OperationResultKind,
 ): OperationCatalogPresentation {
-  return (
-    OPERATION_RESULT_PRESENTATIONS[value as OperationResultKind] ?? {
-      icon: "info",
-      label: operationCopy.unknownResult(value),
-      meaning:
-        "This Operation result is not recognized by this bundled interface.",
-      tone: "neutral",
-    }
-  );
+  return OPERATION_RESULT_PRESENTATIONS[value];
 }

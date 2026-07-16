@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from posixpath import dirname
 from typing import TYPE_CHECKING
 
-from omym2.features.history.usecases.get_run_header import RUN_NOT_FOUND_MESSAGE, RunNotFoundError
+from omym2.features.history.usecases.get_run_detail import RUN_NOT_FOUND_MESSAGE, RunNotFoundError
 from omym2.shared.pagination import GroupCount, paginate_group_counts
 
 if TYPE_CHECKING:

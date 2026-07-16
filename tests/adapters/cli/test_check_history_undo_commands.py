@@ -33,13 +33,13 @@ from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.check.dto import CheckLibraryRequest, CheckLibraryResult
 from omym2.features.common_ports import ExclusiveOperationBusyError, ExclusiveOperationRequest
 from omym2.platform.cli_entry_point import run_cli as main
 from omym2.shared.ids import ActionId, CompanionAssetId, EventId, LibraryId, PlanId, RunId, TrackId
 from omym2.shared.pagination import PageRequest
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -273,7 +273,13 @@ def test_undo_command_creates_external_restore_plan(
     stderr = StringIO()
     _patch_metadata_reader(monkeypatch)
 
-    exit_code = main(["undo", str(RUN_ID)], stdout=stdout, stderr=stderr, database_path=app_paths.database_file)
+    exit_code = main(
+        ["undo", str(RUN_ID)],
+        stdout=stdout,
+        stderr=stderr,
+        config_path=app_paths.config_file,
+        database_path=app_paths.database_file,
+    )
 
     assert exit_code == SUCCESS_EXIT_CODE
     assert "Undo plan created:" in stdout.getvalue()
@@ -303,7 +309,11 @@ def test_undo_apply_restores_external_file_and_marks_track_removed(
     monkeypatch.setattr(sys, "stdin", StringIO("y\n"))
 
     exit_code = main(
-        ["undo", str(RUN_ID), "--apply"], stdout=stdout, stderr=stderr, database_path=app_paths.database_file
+        ["undo", str(RUN_ID), "--apply"],
+        stdout=stdout,
+        stderr=stderr,
+        config_path=app_paths.config_file,
+        database_path=app_paths.database_file,
     )
 
     assert exit_code == SUCCESS_EXIT_CODE

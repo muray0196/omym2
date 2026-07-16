@@ -6,15 +6,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useParams } from "react-router-dom";
 
 import { PageHeader } from "../../ui/primitives/page-header";
+import { InspectionErrorState } from "../inspection/inspection-error-state";
+import { inspectionErrorHasCode } from "../inspection/query-errors";
 import { libraryCopy } from "./library-copy";
-import { LibraryErrorState } from "./library-error-state";
 import styles from "./library-inspection.module.css";
 import { DefinitionItem, TrackStatusBadge } from "./library-presentation";
-import {
-  libraryErrorHasCode,
-  trackDetailQuery,
-  type LibraryTrack,
-} from "./library-query";
+import { trackDetailQuery, type LibraryTrack } from "./library-query";
 import {
   displayNumberPair,
   displaySize,
@@ -27,7 +24,7 @@ export function TrackDetail() {
   const location = useLocation();
   const query = useQuery(trackDetailQuery(trackId));
   const isNotFound =
-    query.isError && libraryErrorHasCode(query.error, "track_not_found");
+    query.isError && inspectionErrorHasCode(query.error, "track_not_found");
   const heading = query.isSuccess
     ? (query.data.metadata.title ?? libraryCopy.detail.untitled)
     : isNotFound
@@ -66,10 +63,9 @@ export function TrackDetail() {
             <p>{libraryCopy.detail.notFoundBody}</p>
           </section>
         ) : (
-          <LibraryErrorState
+          <InspectionErrorState
             error={query.error}
             onRetry={() => void query.refetch()}
-            retryLabel={libraryCopy.detail.retry}
             title={libraryCopy.detail.loadError}
           />
         )

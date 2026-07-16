@@ -27,7 +27,8 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.run import RunStatus
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
 from omym2.features.check.dto import CheckLibraryRequest
-from omym2.platform.cli_composition import build_command_dependencies
+from omym2.platform.cli_composition import command_dependencies_for_runtime
+from omym2.platform.runtime_context import runtime_context_for
 from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId
 
 if TYPE_CHECKING:
@@ -67,7 +68,7 @@ def test_cli_check_persists_succeeded_operation_with_result(tmp_path: Path) -> N
         )
         uow.commit()
 
-    dependencies = build_command_dependencies(config_path, database_path)
+    dependencies = command_dependencies_for_runtime(runtime_context_for(config_path, database_path))
     check_result = dependencies.check.check_library(CheckLibraryRequest(trust_stat=False))
 
     with sqlite3.connect(database_path) as connection:
@@ -133,7 +134,7 @@ def test_cli_apply_persists_atomic_claim_and_succeeded_operation_result(tmp_path
         )
         uow.commit()
 
-    dependencies = build_command_dependencies(config_path, database_path)
+    dependencies = command_dependencies_for_runtime(runtime_context_for(config_path, database_path))
     run = dependencies.apply.apply_plan(PLAN_ID)
 
     with sqlite3.connect(database_path) as connection:

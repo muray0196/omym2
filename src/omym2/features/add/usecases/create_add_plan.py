@@ -52,7 +52,7 @@ from omym2.domain.services.companion_recovery import (
     find_recoverable_companions,
 )
 from omym2.domain.services.config_fingerprint import (
-    STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
+    STALE_LIBRARY_MESSAGE as _STALE_LIBRARY_MESSAGE,
 )
 from omym2.domain.services.config_fingerprint import (
     calculate_config_fingerprint,
@@ -945,7 +945,7 @@ def _select_registered_library(
         if selected_library.status != LibraryStatus.REGISTERED:
             raise AddLibrarySelectionError(SELECTED_LIBRARY_NOT_REGISTERED_MESSAGE)
         if is_path_policy_stale(selected_library.path_policy_hash, path_policy_hash):
-            raise AddLibrarySelectionError(STALE_LIBRARY_MESSAGE)
+            raise AddLibrarySelectionError(_STALE_LIBRARY_MESSAGE)
         return selected_library
 
     registered_libraries = tuple(
@@ -958,7 +958,7 @@ def _select_registered_library(
 
     library = registered_libraries[0]
     if is_path_policy_stale(library.path_policy_hash, path_policy_hash):
-        raise AddLibrarySelectionError(STALE_LIBRARY_MESSAGE)
+        raise AddLibrarySelectionError(_STALE_LIBRARY_MESSAGE)
     return library
 
 

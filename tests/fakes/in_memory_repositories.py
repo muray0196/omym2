@@ -6,7 +6,7 @@ Why: Lets feature tests exercise ports before SQLite adapters exist.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Self
 
 from omym2.domain.models.file_event import FileEventStatus
@@ -14,12 +14,7 @@ from omym2.domain.models.operation import Operation, OperationLookup, OperationS
 from omym2.domain.models.plan import PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus
 from omym2.domain.models.track import TrackGrouping
-from omym2.features.check.usecases.group_check_issues import (
-    common_path_root_for_check_issue,
-    derive_check_issue_group_key,
-)
 from omym2.features.common_ports import CheckIssueGroup, PlanActionGroupRow
-from omym2.features.tracks.usecases.group_tracks import derive_track_group_key, track_group_member_sort_key
 from omym2.shared.pagination import (
     INVALID_CURSOR_MESSAGE,
     CursorDecodeError,
@@ -29,6 +24,12 @@ from omym2.shared.pagination import (
     paginate_group_counts,
 )
 from omym2.shared.text import ascii_lower
+from tests.fakes.grouping import (
+    common_path_root_for_check_issue,
+    derive_check_issue_group_key,
+    derive_track_group_key,
+    track_group_member_sort_key,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
@@ -467,7 +468,7 @@ class InMemoryPlanRepository:
         if plan is None or plan.status is not expected_status:
             return False
         if replacement_status is PlanStatus.APPLYING:
-            replacement = plan.mark_applying()
+            replacement = replace(plan, status=PlanStatus.APPLYING)
         elif replacement_status is PlanStatus.CANCELLED:
             replacement = plan.mark_cancelled()
         else:

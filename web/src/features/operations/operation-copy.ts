@@ -1,21 +1,16 @@
 /**
  * Summary: Centralizes product-default-language durable Operation copy.
- * Why: Keeps progress, disconnection, and terminal announcements consistent.
+ * Why: Keeps status, disconnection, and terminal announcements consistent.
  */
 export const operationCopy = {
-  accepted: "Operation accepted. Waiting for progress.",
+  accepted: "Operation accepted. Waiting for completion.",
   queued: "Queued",
   running: "Running",
   succeeded: "Completed",
   failed: "Failed",
   interrupted: "Interrupted",
-  unknownStatus: "Unknown status",
   disconnected: "Connection lost. OMYM2 will keep polling this Operation.",
-  progress: "Operation progress",
-  units: (completed: number, total: number) =>
-    `${completed} of ${total} units complete`,
-  unknownStage: "Working",
-  stageCode: "server stage",
+  status: "Operation status",
   expired:
     "This Operation result has expired. Inspect the current Plans, History, or Health state before starting new work.",
   unexpected: "The Operation status could not be read.",
@@ -25,8 +20,6 @@ export const operationCopy = {
   checkCompleted: (issueCount: number) =>
     `Check completed with ${issueCount} findings.`,
   runCompleted: "Apply completed. Opening the Run in History.",
-  unknownKind: (kind: string) => `Unknown Operation kind: ${kind}`,
-  unknownResult: (kind: string) => `Unknown result: ${kind}`,
   associations: "Related persisted state",
   inspectPlan: "Inspect related Plan",
   inspectRun: "Inspect related Run",
@@ -35,7 +28,7 @@ export const operationCopy = {
   recoveryEyebrow: "Durable work",
   recoveryTitle: "Operation recovery",
   recoveryDescription:
-    "This address reloads persisted progress without resending the original mutation.",
+    "This address reloads persisted status without resending the original mutation.",
   loading: "Loading Operation…",
   pollingUnavailable:
     "Startup polling policy is unavailable. Restore the local service and reload this Operation.",

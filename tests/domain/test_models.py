@@ -73,7 +73,7 @@ def test_library_identity_is_not_derived_from_root_path() -> None:
         updated_at=BASE_TIME,
     )
 
-    relinked_library = library.with_root_path(UPDATED_LIBRARY_ROOT, FINISHED_TIME)
+    relinked_library = replace(library, root_path=UPDATED_LIBRARY_ROOT, updated_at=FINISHED_TIME)
 
     assert relinked_library.library_id == library_id
     assert relinked_library.root_path == UPDATED_LIBRARY_ROOT
@@ -97,7 +97,7 @@ def test_track_id_is_not_derived_from_path_hash_or_metadata() -> None:
     """Updating track path state preserves the original Track ID."""
     track = _track(current_path=NORMALIZED_PATH, canonical_path=NORMALIZED_PATH)
 
-    updated_track = track.with_paths(UPDATED_PATH, UPDATED_PATH, FINISHED_TIME)
+    updated_track = replace(track, current_path=UPDATED_PATH, canonical_path=UPDATED_PATH, updated_at=FINISHED_TIME)
 
     assert updated_track.track_id == track.track_id
     assert updated_track.current_path == UPDATED_PATH
@@ -113,7 +113,7 @@ def test_track_normalizes_and_preserves_stat_baseline() -> None:
         mtime=observed_mtime,
     )
 
-    updated_track = track.with_paths(UPDATED_PATH, UPDATED_PATH, FINISHED_TIME)
+    updated_track = replace(track, current_path=UPDATED_PATH, canonical_path=UPDATED_PATH, updated_at=FINISHED_TIME)
 
     assert track.size == TRACK_SIZE
     assert track.mtime == BASE_TIME
@@ -174,7 +174,7 @@ def test_plan_terminal_status_blocks_reapply_by_state() -> None:
         library_root_at_plan=LIBRARY_ROOT,
     )
 
-    applied_plan = plan.mark_applying().mark_applied()
+    applied_plan = replace(plan, status=PlanStatus.APPLYING).mark_applied()
 
     assert applied_plan.status == PlanStatus.APPLIED
     assert applied_plan.is_terminal
@@ -184,7 +184,7 @@ def test_plan_action_uses_blocked_for_plan_time_issue_and_failed_for_apply_time_
     """Blocked and failed are separate status outcomes with explicit reasons."""
     action = _plan_action(ActionStatus.PLANNED, None)
 
-    blocked_action = action.mark_blocked(PlanActionReason.TARGET_EXISTS)
+    blocked_action = replace(action, status=ActionStatus.BLOCKED, reason=PlanActionReason.TARGET_EXISTS)
     failed_action = action.mark_failed(PlanActionReason.SOURCE_CHANGED)
 
     assert blocked_action.status == ActionStatus.BLOCKED
@@ -202,7 +202,7 @@ def test_plan_action_uses_blocked_for_plan_time_issue_and_failed_for_apply_time_
 )
 def test_plan_action_preserves_companion_planning_block_reasons(reason: PlanActionReason) -> None:
     """Companion owner and association failures remain distinct review-time reasons."""
-    blocked_action = _plan_action(ActionStatus.PLANNED, None).mark_blocked(reason)
+    blocked_action = replace(_plan_action(ActionStatus.PLANNED, None), status=ActionStatus.BLOCKED, reason=reason)
 
     assert blocked_action.status is ActionStatus.BLOCKED
     assert blocked_action.reason is reason
@@ -241,7 +241,7 @@ def test_plan_action_status_transitions_preserve_artist_name_diagnostics() -> No
 
     transitioned = (
         action.mark_applied(),
-        action.mark_blocked(PlanActionReason.TARGET_EXISTS),
+        replace(action, status=ActionStatus.BLOCKED, reason=PlanActionReason.TARGET_EXISTS),
         action.mark_failed(PlanActionReason.SOURCE_CHANGED),
     )
 

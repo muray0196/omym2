@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
 from omym2.config import CONFIG_FILE_NAME
 from omym2.domain.models.track_metadata import TrackMetadata
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.platform.cli_entry_point import run_cli as main
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -5,14 +5,16 @@ Why: Keeps Health browsing available without filesystem I/O or recomputation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID  # noqa: TC003  # FastAPI resolves query annotations at registration.
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse  # noqa: TC002  # FastAPI resolves route return annotations.
 
-from omym2.adapters.web.routes.api_context import ApiContext  # noqa: TC001  # FastAPI resolves dependencies.
+from omym2.adapters.web.routes.api_context import (  # FastAPI resolves dependencies.
+    ApiContext,
+    CheckRouteContext,
+)
 from omym2.adapters.web.routes.read_query import (
     CORRELATION_HEADER_SCHEMA,
     INVALID_CURSOR_MESSAGE,
@@ -53,37 +55,21 @@ from omym2.shared.ids import LibraryId
 from omym2.shared.pagination import CursorDecodeError, encode_cursor
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from omym2.domain.models.check_issue import CheckIssue
-    from omym2.features.check.dto import (
-        CheckIssueFacetsResult,
-        ListCheckIssuesResult,
-    )
-    from omym2.features.common_ports import CheckIssueGroup
     from omym2.shared.pagination import Page
 
 CHECK_HANDLERS_UNAVAILABLE_MESSAGE = "Check route handlers are unavailable."
 
 
-@dataclass(frozen=True, slots=True)
-class CheckRouteHandlers:
-    """Read-only persisted Check handlers supplied by the composition root."""
-
-    list_check_issues: Callable[[ListCheckIssuesRequest], ListCheckIssuesResult]
-    get_check_issue_facets: Callable[[CheckIssueFacetsRequest], CheckIssueFacetsResult]
-    group_check_issues: Callable[[GroupCheckIssuesRequest], Page[CheckIssueGroup]]
-
-
-def get_check_route_handlers(context: ApiContext) -> CheckRouteHandlers:
+def get_check_route_handlers(context: ApiContext) -> CheckRouteContext:
     """Resolve Check-specific collaborators from the shared route context."""
-    handlers = getattr(context, "check", None)
+    handlers = context.check
     if handlers is None:
         raise RuntimeError(CHECK_HANDLERS_UNAVAILABLE_MESSAGE)
-    return cast("CheckRouteHandlers", cast("object", handlers))
+    return handlers
 
 
-type CheckContext = Annotated[CheckRouteHandlers, Depends(get_check_route_handlers)]
+type CheckContext = Annotated[CheckRouteContext, Depends(get_check_route_handlers)]
 
 
 def create_check_router() -> APIRouter:

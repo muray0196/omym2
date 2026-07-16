@@ -1,15 +1,16 @@
 /**
- * Summary: Maps Plan catalog values to visible labels and neutral presentation tones.
- * Why: Preserves forward-compatible unknown values without inferring permitted operations.
+ * Summary: Maps closed Plan catalogs to visible labels and presentation tones.
+ * Why: Gives every coordinated generated enum value an exhaustive presentation.
  */
-import { planCopy } from "./plan-copy";
 import type {
   ActionStatus,
   ActionType,
+  PlanActionGrouping,
   PlanActionReason,
   PlanStatus,
   PlanType,
 } from "../../api/generated";
+import { catalogValueOrThrow } from "../../ui/catalog";
 import type { IconName } from "../../ui/icon";
 
 export type PlanTone = "info" | "success" | "warning" | "danger" | "neutral";
@@ -233,7 +234,7 @@ const ACTION_GROUPING_LABELS = {
   status: "Status",
   block_reason: "Block reason",
   extension: "File extension",
-} as const;
+} as const satisfies Record<PlanActionGrouping, string>;
 
 export function planStatusLabel(value: string) {
   return planStatusPresentation(value).label;
@@ -248,11 +249,7 @@ export function planStatusIcon(value: string): IconName {
 }
 
 export function planStatusPresentation(value: string): PlanCatalogPresentation {
-  return presentationFor(
-    value,
-    PLAN_STATUS_PRESENTATIONS,
-    planCopy.unknown.status,
-  );
+  return catalogValueOrThrow("Plan status", value, PLAN_STATUS_PRESENTATIONS);
 }
 
 export function actionStatusLabel(value: string) {
@@ -270,10 +267,10 @@ export function actionStatusIcon(value: string): IconName {
 export function actionStatusPresentation(
   value: string,
 ): PlanCatalogPresentation {
-  return presentationFor(
+  return catalogValueOrThrow(
+    "PlanAction status",
     value,
     ACTION_STATUS_PRESENTATIONS,
-    planCopy.unknown.status,
   );
 }
 
@@ -282,7 +279,7 @@ export function planTypeLabel(value: string) {
 }
 
 export function planTypePresentation(value: string): PlanCatalogPresentation {
-  return presentationFor(value, PLAN_TYPE_PRESENTATIONS, planCopy.unknown.type);
+  return catalogValueOrThrow("Plan type", value, PLAN_TYPE_PRESENTATIONS);
 }
 
 export function actionTypeLabel(value: string) {
@@ -290,10 +287,10 @@ export function actionTypeLabel(value: string) {
 }
 
 export function actionTypePresentation(value: string): PlanCatalogPresentation {
-  return presentationFor(
+  return catalogValueOrThrow(
+    "PlanAction type",
     value,
     ACTION_TYPE_PRESENTATIONS,
-    planCopy.unknown.actionType,
   );
 }
 
@@ -305,43 +302,39 @@ export function reasonLabel(value: string | null) {
 }
 
 export function reasonPresentation(value: string): PlanCatalogPresentation {
-  return presentationFor(value, REASON_PRESENTATIONS, planCopy.unknown.reason);
+  return catalogValueOrThrow("PlanAction reason", value, REASON_PRESENTATIONS);
 }
 
 export function actionGroupingLabel(value: string) {
-  return labelFor(value, ACTION_GROUPING_LABELS, planCopy.unknown.grouping);
+  return catalogValueOrThrow(
+    "PlanAction grouping",
+    value,
+    ACTION_GROUPING_LABELS,
+  );
 }
 
 export function actionGroupValueLabel(
-  groupBy: string,
+  groupBy: PlanActionGrouping,
   key: string,
   serverLabel: string,
 ) {
-  if (groupBy === "status") return actionStatusLabel(key);
-  if (groupBy === "action_type") return actionTypeLabel(key);
-  if (groupBy === "block_reason") return reasonLabel(key);
+  if (groupBy === "status") {
+    return catalogValueOrThrow(
+      "PlanAction status",
+      key,
+      ACTION_STATUS_PRESENTATIONS,
+    ).label;
+  }
+  if (groupBy === "action_type") {
+    return catalogValueOrThrow(
+      "PlanAction type",
+      key,
+      ACTION_TYPE_PRESENTATIONS,
+    ).label;
+  }
+  if (groupBy === "block_reason") {
+    return catalogValueOrThrow("PlanAction reason", key, REASON_PRESENTATIONS)
+      .label;
+  }
   return serverLabel;
-}
-
-function labelFor(
-  value: string,
-  labels: Record<string, string>,
-  unknownPrefix: string,
-) {
-  return labels[value] ?? `${unknownPrefix}: ${value}`;
-}
-
-function presentationFor(
-  value: string,
-  presentations: Partial<Record<string, PlanCatalogPresentation>>,
-  unknownPrefix: string,
-): PlanCatalogPresentation {
-  return (
-    presentations[value] ?? {
-      icon: "info",
-      label: `${unknownPrefix}: ${value}`,
-      meaning: `No bundled presentation is available for the raw stable code ${value}.`,
-      tone: "neutral",
-    }
-  );
 }

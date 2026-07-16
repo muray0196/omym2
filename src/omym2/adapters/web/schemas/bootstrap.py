@@ -42,9 +42,7 @@ class OperationPollingPolicy(ApiModel):
 class BootstrapData(ApiModel):
     """Initial application state returned even when recovery is required."""
 
-    app_version: str
     csrf_token: str
-    status_catalog_version: int
     active_library: LibraryResource | None
     library_diagnostics: tuple[ApiError, ...]
     config_validation: ConfigValidationResource

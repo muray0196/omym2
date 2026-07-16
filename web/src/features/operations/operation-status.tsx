@@ -1,5 +1,5 @@
 /**
- * Summary: Presents durable Operation progress, connectivity, and typed results.
+ * Summary: Presents durable Operation status, connectivity, and typed results.
  * Why: Gives planning and Check routes one accessible asynchronous status surface.
  */
 import { useEffect, useRef, type ReactNode } from "react";
@@ -10,6 +10,7 @@ import type {
   OperationRef,
   OperationResource,
   OperationResultResource,
+  OperationStatus as OperationStatusValue,
 } from "../../api/generated";
 import { Icon } from "../../ui/icon";
 import { useLiveAnnouncement } from "../../ui/primitives/live-announcement-context";
@@ -47,7 +48,7 @@ export function OperationStatus({
   const polling = useOperationPolling({ initialOperation, policy });
   const operation =
     polling.data ??
-    ("progress" in initialOperation ? initialOperation : undefined);
+    ("result" in initialOperation ? initialOperation : undefined);
   const status = operation?.status ?? initialOperation.status;
   const kindPresentation = operationKindPresentation(initialOperation.kind);
   const terminalError = operation?.error;
@@ -77,13 +78,10 @@ export function OperationStatus({
   }, [onSucceeded, onTerminal, operation]);
 
   return (
-    <section
-      className={styles.panel}
-      aria-labelledby="operation-progress-title"
-    >
+    <section className={styles.panel} aria-labelledby="operation-status-title">
       {announce === null ? <LiveRegion>{announcement}</LiveRegion> : null}
       <div className={styles.heading}>
-        <h2 id="operation-progress-title">{operationCopy.progress}</h2>
+        <h2 id="operation-status-title">{operationCopy.status}</h2>
         <span
           className={`${styles.status} ${operationToneClass(status)}`}
           data-status={status}
@@ -101,20 +99,6 @@ export function OperationStatus({
           {operationCopy.disconnected}
         </p>
       ) : null}
-      {status === "queued" || status === "running" ? (
-        <OperationStage stageCode={operation?.progress.stage_code ?? null} />
-      ) : null}
-      {operation?.progress.completed_units !== null &&
-      operation?.progress.completed_units !== undefined &&
-      operation.progress.total_units !== null ? (
-        <p>
-          {operationCopy.units(
-            operation.progress.completed_units,
-            operation.progress.total_units,
-          )}
-        </p>
-      ) : null}
-      {operation?.progress.message ? <p>{operation.progress.message}</p> : null}
       {terminalError ? (
         <div className={styles.error} role="alert">
           <strong>{operationStatusLabel(status)}</strong>
@@ -185,18 +169,6 @@ function OperationCatalogEvidence({
   );
 }
 
-function OperationStage({ stageCode }: { stageCode: string | null }) {
-  if (stageCode === null) {
-    return <p>{operationCopy.unknownStage}</p>;
-  }
-  return (
-    <p>
-      {operationCopy.unknownStage}: {operationCopy.stageCode}{" "}
-      <code className={styles.stageCode}>{stageCode}</code>
-    </p>
-  );
-}
-
 function OperationAssociations({
   operation,
 }: {
@@ -236,7 +208,7 @@ function isTerminalStatus(status: OperationResource["status"]) {
   );
 }
 
-function operationToneClass(status: string) {
+function operationToneClass(status: OperationStatusValue) {
   const tone = operationStatusTone(status);
   switch (tone) {
     case "info":
@@ -247,8 +219,6 @@ function operationToneClass(status: string) {
       return styles.toneWarning;
     case "danger":
       return styles.toneDanger;
-    case "neutral":
-      return styles.toneNeutral;
   }
 }
 
@@ -262,8 +232,6 @@ function catalogToneClass(tone: OperationCatalogPresentation["tone"]) {
       return styles.toneWarning;
     case "danger":
       return styles.toneDanger;
-    case "neutral":
-      return styles.toneNeutral;
   }
 }
 
@@ -274,10 +242,6 @@ function announcementFor(
   if (connectivity === "disconnected") return operationCopy.disconnected;
   if (operation === undefined) return operationCopy.accepted;
   if (operation.status === "succeeded") {
-    const resultKind =
-      operation.result === null
-        ? null
-        : (operation.result as { kind: string }).kind;
     if (operation.result?.kind === "plan_created")
       return operationCopy.planCreated;
     if (operation.result?.kind === "registered_without_plan")
@@ -286,11 +250,9 @@ function announcementFor(
       return operationCopy.checkCompleted(operation.result.issue_count);
     if (operation.result?.kind === "run_completed")
       return operationCopy.runCompleted;
-    if (resultKind !== null)
-      return operationResultKindPresentation(resultKind).label;
     return operationCopy.succeeded;
   }
   if (operation.status === "failed" || operation.status === "interrupted")
     return operation.error?.message ?? operationStatusLabel(operation.status);
-  return operation.progress.message ?? operationStatusLabel(operation.status);
+  return operationStatusLabel(operation.status);
 }

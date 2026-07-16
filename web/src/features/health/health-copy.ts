@@ -21,7 +21,6 @@ export const healthCopy = {
   loading: "Loading persisted Health findings…",
   empty: "No persisted findings match these filters.",
   error: "Persisted Health findings could not be loaded",
-  retry: "Try again",
   facets: "Issue type counts",
   groups: "Finding groups",
   findings: "Persisted findings",
@@ -43,5 +42,4 @@ export const healthCopy = {
     completed: (issueCount: number, runCount: number) =>
       `Saved ${issueCount} findings across ${runCount} Check runs. Persisted Health has been refreshed.`,
   },
-  unknown: { issueType: "Unknown issue type", grouping: "Unknown grouping" },
 } as const;

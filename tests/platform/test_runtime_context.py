@@ -41,11 +41,13 @@ def test_runtime_context_for_falls_back_to_default_application_paths(
     expected_paths = default_application_paths()
 
     runtime = runtime_context_for()
+    lock = runtime.exclusive_operation_lock
 
     assert runtime.config_file == expected_paths.config_file
     assert runtime.database_file == expected_paths.database_file
     assert runtime.application_root == expected_paths.app_root
-    assert runtime.exclusive_operation_lock.lock_file == expected_paths.exclusive_operation_lock_file
+    assert isinstance(lock, FilesystemExclusiveOperationLock)
+    assert lock.lock_file == expected_paths.exclusive_operation_lock_file
 
 
 def test_runtime_context_for_infers_standard_overridden_application_root(tmp_path: Path) -> None:
@@ -53,9 +55,11 @@ def test_runtime_context_for_infers_standard_overridden_application_root(tmp_pat
     expected_paths = default_application_paths(tmp_path)
 
     runtime = runtime_context_for(expected_paths.config_file, expected_paths.database_file)
+    lock = runtime.exclusive_operation_lock
 
     assert runtime.application_root == tmp_path
-    assert runtime.exclusive_operation_lock.lock_file == expected_paths.exclusive_operation_lock_file
+    assert isinstance(lock, FilesystemExclusiveOperationLock)
+    assert lock.lock_file == expected_paths.exclusive_operation_lock_file
 
 
 def test_runtime_context_for_anchors_lock_to_effective_database_when_only_config_is_overridden(
@@ -71,9 +75,13 @@ def test_runtime_context_for_anchors_lock_to_effective_database_when_only_config
 
     default_runtime = runtime_context_for()
     overridden_runtime = runtime_context_for(custom_root / ".config" / "config.toml")
+    default_lock = default_runtime.exclusive_operation_lock
+    overridden_lock = overridden_runtime.exclusive_operation_lock
 
     assert overridden_runtime.database_file == default_paths.database_file
-    assert overridden_runtime.exclusive_operation_lock.lock_file == default_runtime.exclusive_operation_lock.lock_file
+    assert isinstance(default_lock, FilesystemExclusiveOperationLock)
+    assert isinstance(overridden_lock, FilesystemExclusiveOperationLock)
+    assert overridden_lock.lock_file == default_lock.lock_file
 
 
 def test_runtime_context_for_calls_default_application_paths_exactly_once(

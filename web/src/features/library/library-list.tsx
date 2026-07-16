@@ -8,14 +8,15 @@ import { Link, useLocation } from "react-router-dom";
 
 import { bootstrapQuery } from "../bootstrap/bootstrap-query";
 import { useCursorPage, type CursorPageNavigation } from "../../ui/cursor-page";
+import { sharedCopy } from "../../ui/copy";
 import { Button } from "../../ui/primitives/button";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
 import { PageHeader } from "../../ui/primitives/page-header";
 import { VisuallyHidden } from "../../ui/primitives/visually-hidden";
 import toolbarStyles from "../../ui/primitives/toolbar.module.css";
+import { InspectionErrorState } from "../inspection/inspection-error-state";
 import { trackGroupingLabel, trackStatusLabel } from "./library-catalog";
 import { libraryCopy } from "./library-copy";
-import { LibraryErrorState } from "./library-error-state";
 import styles from "./library-inspection.module.css";
 import { TrackStatusBadge } from "./library-presentation";
 import {
@@ -26,7 +27,6 @@ import {
   type LibraryTrackFacets,
 } from "./library-query";
 import {
-  rootGroupingOptions,
   trackStatusOptions,
   useLibraryBrowseFilters,
 } from "./library-url-state";
@@ -117,10 +117,9 @@ export function LibraryList() {
           ) : tracks.isPending ? (
             <LoadingState message={libraryCopy.list.loading} />
           ) : tracks.isError ? (
-            <LibraryErrorState
+            <InspectionErrorState
               error={tracks.error}
               onRetry={() => void tracks.refetch()}
-              retryLabel={libraryCopy.list.retry}
               title={libraryCopy.list.loadError}
             />
           ) : (
@@ -219,35 +218,6 @@ function LibraryFilters({
           ))}
         </select>
       </label>
-      {browse.filters.view === "groups" ? (
-        <label className={toolbarStyles.wideControl} htmlFor="library-grouping">
-          <VisuallyHidden>{libraryCopy.list.groupingLabel}</VisuallyHidden>
-          <select
-            id="library-grouping"
-            name="library-grouping"
-            onChange={(event) => {
-              const selected = rootGroupingOptions.find(
-                (option) => option.value === event.target.value,
-              );
-              if (selected !== undefined) {
-                browse.changeRootGrouping(selected.value);
-              }
-            }}
-            value={
-              browse.filters.groupBy === "artist_album"
-                ? "artist_album"
-                : "artist"
-            }
-          >
-            {rootGroupingOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-
       <div className={toolbarStyles.actions}>
         {browse.hasActiveFilters ? (
           <Button onClick={browse.resetFilters} variant="quiet">
@@ -264,7 +234,7 @@ function LibraryFilters({
           <div className={styles.inlineError} role="alert">
             <p>{libraryCopy.list.facetsError}</p>
             <Button onClick={onRetryFacets} variant="quiet">
-              {libraryCopy.list.retry}
+              {sharedCopy.retry}
             </Button>
           </div>
         </div>
@@ -345,7 +315,7 @@ function GroupBrowser({
         <div className={styles.inlineError} role="alert">
           <p>{libraryCopy.list.groupsError}</p>
           <Button onClick={onRetry} variant="quiet">
-            {libraryCopy.list.retry}
+            {sharedCopy.retry}
           </Button>
         </div>
       ) : groups.length === 0 ? (

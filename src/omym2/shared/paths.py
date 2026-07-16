@@ -46,12 +46,3 @@ def normalize_library_relative_path(raw_path: str) -> str:
         raise ValueError(EMPTY_LIBRARY_PATH_MESSAGE)
 
     return LOGICAL_PATH_SEPARATOR.join(normalized_parts)
-
-
-def is_library_relative_path(raw_path: str) -> bool:
-    """Return whether a path can be stored as Library-root-relative."""
-    try:
-        _ = normalize_library_relative_path(raw_path)
-    except ValueError:
-        return False
-    return True

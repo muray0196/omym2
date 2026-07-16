@@ -18,6 +18,8 @@ from omym2.platform.artist_name_composition import ArtistNameRuntime
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from omym2.features.common_ports import ExclusiveOperationLock
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeContext:
@@ -28,7 +30,7 @@ class RuntimeContext:
     database_file: Path
     config_store: TomlConfigStore
     metadata_reader: MutagenMetadataReader
-    exclusive_operation_lock: FilesystemExclusiveOperationLock
+    exclusive_operation_lock: ExclusiveOperationLock
     artist_name_runtime: ArtistNameRuntime
 
 

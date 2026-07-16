@@ -28,8 +28,8 @@ from omym2.adapters.fs.source_inventory_reader import (
 )
 from omym2.adapters.fs.win32_file_handles import default_win32_file_handle_backend, stat_change_marker_ns
 from omym2.domain.models.file_snapshot import FilesystemIdentity
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.features.common_ports import SourceInventoryRequest
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 from tests.fakes.runtime import FixedClock
 
 if TYPE_CHECKING:

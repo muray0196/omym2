@@ -46,9 +46,9 @@ from omym2.features.apply.usecases.claim_apply import ClaimApplyUseCase
 from omym2.features.check.dto import CheckLibraryRequest
 from omym2.features.check.ports import CheckLibraryPorts
 from omym2.features.check.usecases.check_library import CheckLibraryUseCase
-from omym2.features.history.dto import GetRunHeaderRequest, ListRunEventsRequest, ListRunsRequest
+from omym2.features.history.dto import GetRunDetailRequest, ListRunEventsRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
-from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase
+from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
 from omym2.features.history.usecases.list_run_events import ListRunEventsUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.undo.dto import CreateUndoPlanRequest
@@ -1053,7 +1053,7 @@ def _assert_run_history(
     event_types: tuple[FileEventType, ...],
 ) -> None:
     ports = HistoryPorts(SQLiteUnitOfWork(database_file))
-    header = GetRunHeaderUseCase(ports).execute(GetRunHeaderRequest(run_id))
+    header = GetRunDetailUseCase(ports).execute(GetRunDetailRequest(run_id)).run
     events = ListRunEventsUseCase(ports).execute(ListRunEventsRequest(run_id=run_id))
     assert header.status is status
     assert tuple(event.event_id for event in events.items) == event_ids

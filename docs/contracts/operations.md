@@ -1,15 +1,15 @@
 ---
 type: Contract
 title: Durable Operation Contract
-description: Defines durable background Operation identity, lifecycle, idempotency, progress, polling, retention, and restart recovery including unprocessed-file mutation evidence.
-tags: [operations, idempotency, polling, progress, recovery, unprocessed, desktop]
-timestamp: 2026-07-16T04:51:16+09:00
+description: Defines durable background Operation identity, lifecycle, idempotency, status polling, retention, and restart recovery including unprocessed-file mutation evidence.
+tags: [operations, idempotency, polling, recovery, unprocessed, desktop]
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Durable Operation Contract
 
 This document is authoritative for durable background Operation identity,
-lifecycle, idempotency, progress, polling, retention, Operation-level restart
+lifecycle, idempotency, status polling, retention, Operation-level restart
 recovery, and cancellation policy. Each execution specification owns recovery
 of the domain records for its operation kind.
 
@@ -23,7 +23,7 @@ Reviewed audio, companion, and unprocessed-file mutation ordering remains author
 ## Operation Versus FileEvent
 
 An `Operation` is the durable record of one accepted background request. It
-exists so a client can recover after a lost response, poll progress, and inspect
+exists so a client can recover after a lost response, poll status, and inspect
 an interruption after a process restart.
 
 A `FileEvent` is the durable evidence for one attempted audio, companion, or
@@ -128,30 +128,23 @@ The raw request body is not retained merely to implement idempotency. Paths and
 other request values are represented only by the canonical fingerprint and by
 the domain records that the accepted operation legitimately creates.
 
-## Progress
-
-Progress contains:
-
-* a stable snake_case `stage_code` or `null`;
-* `completed_units` and `total_units`, either both non-null or both null;
-* an optional redacted message that is safe to display locally.
-
-Counts are monotonic within one stage and satisfy
-`0 <= completed_units <= total_units`. A worker that cannot report real counts
-uses null counts; neither backend nor frontend fabricates a percentage.
-Unknown stage codes use a generic presentation and remain pollable.
-
 ## Polling
 
-Polling is the only initial progress transport. An accepted response supplies
+Polling is the only Operation-status transport. An accepted response supplies
 the status URL in `Location` and an Operation reference with
 `poll_after_ms = 500`.
 
 The client waits 0.5 seconds before the first poll. An unchanged Operation
-snapshot doubles the interval up to 5 seconds. A status, stage, count, result,
-or error change resets the interval to 0.5 seconds. A connectivity failure uses
+snapshot doubles the interval up to 5 seconds. A status, result, or error
+change resets the interval to 0.5 seconds. A connectivity failure uses
 the same capped backoff while the UI reports disconnection; it never causes an
 automatic mutation retry.
+
+The pre-release stage/count/message scaffold had no production producer and
+was removed. The current domain, SQLite row, Web resource, and SPA represent
+only lifecycle status, typed result, and typed failure states that the running
+application can produce. Progress may return only as a complete feature with
+an authoritative producer and coordinated persistence and UI contracts.
 
 The backend owns these tunables in `src/omym2/config.py`; Python production
 code and tests import the named values rather than repeat literals. Bootstrap
@@ -169,7 +162,7 @@ OPERATION_TOMBSTONE_RETENTION_DAYS = 30
 
 ## Retention And Lookup
 
-The full terminal Operation, typed result or error, progress, and idempotency
+The full terminal Operation, typed result or error, and idempotency
 record remain available for 24 hours after `completed_at`.
 
 After 24 hours, the result/error payload may be removed, but a minimal

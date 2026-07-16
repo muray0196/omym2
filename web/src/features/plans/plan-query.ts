@@ -14,7 +14,6 @@ import {
   groupPlanActions,
   listPlanActions,
   listPlans,
-  type ApiFailureEnvelope,
   type PaginatedDataPlanActionResource,
   type PaginatedDataPlanSummary,
   type PlanDetailData,
@@ -23,6 +22,7 @@ import {
   type PlanActionResource,
   type PlanSummary as GeneratedPlanSummary,
 } from "../../api/generated";
+import { inspectionDataOrThrow } from "../inspection/query-errors";
 import type { PlanActionFilters, PlanListFilters } from "./plan-url-state";
 
 export type PlanSummary = GeneratedPlanSummary;
@@ -31,30 +31,6 @@ export type PlanActionPage = PaginatedDataPlanActionResource;
 export type PlanActionFacets = PlanActionFacetsData;
 export type PlanActionGroups = PlanActionGroupsData;
 export type PlanDetail = PlanDetailData;
-
-export class PlansApiError extends Error {
-  readonly envelope: ApiFailureEnvelope;
-
-  constructor(envelope: ApiFailureEnvelope) {
-    super("Plan inspection returned a typed API failure.");
-    this.name = "PlansApiError";
-    this.envelope = envelope;
-  }
-}
-
-export class PlansTransportError extends Error {
-  constructor() {
-    super("Plan inspection could not reach the local service.");
-    this.name = "PlansTransportError";
-  }
-}
-
-export class PlansUnexpectedDataError extends Error {
-  constructor() {
-    super("Plan inspection returned no readable data.");
-    this.name = "PlansUnexpectedDataError";
-  }
-}
 
 export function plansInfiniteQuery(filters: PlanListFilters) {
   return infiniteQueryOptions<
@@ -164,27 +140,6 @@ export function planActionGroupsInfiniteQuery(
   });
 }
 
-export function planActionGroupsQuery(
-  planId: string,
-  filters: PlanActionFilters,
-) {
-  return queryOptions({
-    enabled: planId.length > 0,
-    queryFn: ({ signal }) =>
-      readPlanActionGroupsPage(planId, filters, undefined, signal),
-    queryKey: [
-      "plans",
-      planId,
-      "groups",
-      filters.groupBy,
-      filters.query,
-      filters.status ?? null,
-      filters.actionType ?? null,
-      filters.reason ?? null,
-    ] as const,
-  });
-}
-
 async function readPlansPage(
   filters: PlanListFilters,
   cursor: string | undefined,
@@ -202,13 +157,7 @@ async function readPlansPage(
     },
   });
 
-  if (response.error !== undefined) {
-    throwPlanResponseError(response.error, response.response);
-  }
-  if (response.data.data === null) {
-    throw new PlansUnexpectedDataError();
-  }
-  return response.data.data;
+  return inspectionDataOrThrow(response, "Plan inspection");
 }
 
 async function readPlanDetail(
@@ -221,13 +170,7 @@ async function readPlanDetail(
     signal,
   });
 
-  if (response.error !== undefined) {
-    throwPlanResponseError(response.error, response.response);
-  }
-  if (response.data.data === null) {
-    throw new PlansUnexpectedDataError();
-  }
-  return response.data.data;
+  return inspectionDataOrThrow(response, "Plan inspection");
 }
 
 async function readPlanActionsPage(
@@ -251,13 +194,7 @@ async function readPlanActionsPage(
     },
   });
 
-  if (response.error !== undefined) {
-    throwPlanResponseError(response.error, response.response);
-  }
-  if (response.data.data === null) {
-    throw new PlansUnexpectedDataError();
-  }
-  return response.data.data;
+  return inspectionDataOrThrow(response, "Plan inspection");
 }
 
 async function readPlanActionFacets(
@@ -277,13 +214,7 @@ async function readPlanActionFacets(
     },
   });
 
-  if (response.error !== undefined) {
-    throwPlanResponseError(response.error, response.response);
-  }
-  if (response.data.data === null) {
-    throw new PlansUnexpectedDataError();
-  }
-  return response.data.data;
+  return inspectionDataOrThrow(response, "Plan inspection");
 }
 
 async function readPlanActionGroupsPage(
@@ -306,21 +237,5 @@ async function readPlanActionGroupsPage(
     },
   });
 
-  if (response.error !== undefined) {
-    throwPlanResponseError(response.error, response.response);
-  }
-  if (response.data.data === null) {
-    throw new PlansUnexpectedDataError();
-  }
-  return response.data.data;
-}
-
-function throwPlanResponseError(
-  envelope: ApiFailureEnvelope,
-  response: Response | undefined,
-): never {
-  if (response === undefined) {
-    throw new PlansTransportError();
-  }
-  throw new PlansApiError(envelope);
+  return inspectionDataOrThrow(response, "Plan inspection");
 }

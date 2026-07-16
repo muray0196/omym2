@@ -31,7 +31,7 @@ HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 NON_SLUG_CHAR_PATTERN = re.compile(r"[^\w\s-]")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 EXTERNAL_LINK_PREFIXES = ("http://", "https://", "mailto:")
-DELETED_LEGACY_DOCS_SEGMENT = "okf"
+RETIRED_DOCS_SEGMENT = "okf"
 MIN_QUOTED_LENGTH = 2
 QUOTE_CHARACTERS = frozenset({'"', "'"})
 TYPE_FIELD = "type"
@@ -78,13 +78,13 @@ def test_links_resolve() -> None:
     assert not failures, "Broken links:\n" + "\n".join(failures)
 
 
-def test_no_deleted_legacy_docs_links() -> None:
-    """No doc links into the deleted legacy docs directory."""
+def test_no_retired_docs_links() -> None:
+    """No doc links into the retired docs directory."""
     failures: list[str] = []
     for path in _all_markdown_files():
-        failures.extend(_deleted_legacy_docs_link_failures(path))
+        failures.extend(_retired_docs_link_failures(path))
 
-    assert not failures, "Links into deleted legacy docs directory:\n" + "\n".join(failures)
+    assert not failures, "Links into retired docs directory:\n" + "\n".join(failures)
 
 
 def test_directories_listed_in_parent_index() -> None:
@@ -357,10 +357,10 @@ def _slugify(heading_text: str) -> str:
     return WHITESPACE_PATTERN.sub("-", without_punctuation.strip())
 
 
-# --- test_no_deleted_legacy_docs_links -----------------------------------------------------------
+# --- test_no_retired_docs_links -----------------------------------------------------------------
 
 
-def _deleted_legacy_docs_link_failures(path: Path) -> list[str]:
+def _retired_docs_link_failures(path: Path) -> list[str]:
     relative = _relative_to_docs(path)
     text = path.read_text(encoding="utf-8")
     failures: list[str] = []
@@ -368,8 +368,8 @@ def _deleted_legacy_docs_link_failures(path: Path) -> list[str]:
         if raw_target.startswith(EXTERNAL_LINK_PREFIXES):
             continue
         target_path_part = raw_target.partition("#")[0]
-        if target_path_part and DELETED_LEGACY_DOCS_SEGMENT in Path(target_path_part).parts:
-            failures.append(f"{relative}: links into deleted legacy docs directory: {raw_target!r}")
+        if target_path_part and RETIRED_DOCS_SEGMENT in Path(target_path_part).parts:
+            failures.append(f"{relative}: links into retired docs directory: {raw_target!r}")
     return failures
 
 

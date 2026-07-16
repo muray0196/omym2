@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Naming
 description: Authoritative Python naming conventions for OMYM2 modules, classes, functions, and constants, including banned vague names and per-layer naming rules for domain, features, and adapters.
 tags: [naming-conventions, python, code-style, architecture]
-timestamp: 2026-07-11T21:32:22+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Source Naming
@@ -59,7 +59,6 @@ domain/services/
   artist_id.py
   config_fingerprint.py
   metadata_fingerprint.py
-  content_fingerprint.py
 ```
 
 Even under `domain/services/`, do not append `_service.py` to file names. The directory already indicates that they are services.

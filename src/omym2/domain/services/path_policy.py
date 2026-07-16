@@ -20,10 +20,7 @@ from omym2.config import (
     PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT,
     PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES,
     PATH_POLICY_TRACK_NUMBER_WIDTH,
-    SANITIZER_ALBUM_MAX_BYTES,
     SANITIZER_ALLOWED_EXTENSION_PATTERN,
-    SANITIZER_APOSTROPHE,
-    SANITIZER_ARTIST_MAX_BYTES,
     SANITIZER_FALLBACK_TITLE,
     SANITIZER_HYPHEN_RUN_PATTERN,
     SANITIZER_REPLACEMENT,
@@ -195,7 +192,7 @@ class PathPolicy:
         value = metadata.album or self.config.unknown_album
         if not self.config.sanitize:
             return value
-        return self._path_component(value, SANITIZER_ALBUM_MAX_BYTES)
+        return self._path_component(value)
 
     def _title(self, metadata: TrackMetadata) -> str:
         if metadata.title is None or metadata.title.strip() == "":
@@ -232,7 +229,7 @@ class PathPolicy:
     def _artist_component(self, value: str) -> str:
         if not self.config.sanitize:
             return value
-        return self._path_component(value, SANITIZER_ARTIST_MAX_BYTES)
+        return self._path_component(value)
 
     def _path_component(self, value: str, max_length: int | None = None) -> str:
         cache_key = (value, max_length)
@@ -249,7 +246,7 @@ def sanitize_string(
     *,
     preserve_extension: bool = False,
 ) -> str:
-    """Sanitize text using the migrated OMYM filename pipeline.
+    """Normalize text into one portable OMYM2 filename component.
 
     Args:
         value: Text-like value supplied by metadata or wrapper code.
@@ -266,16 +263,6 @@ def sanitize_string(
     base_text, extension_suffix = _split_preserved_extension(raw_text, preserve_extension=preserve_extension)
     sanitized_base = _sanitize_base_text(base_text)
     return _limit_sanitized_with_extension(sanitized_base, extension_suffix, max_length)
-
-
-def sanitize_artist_name(value: str | float | None) -> str:
-    """Sanitize artist text using the migrated artist byte limit."""
-    return sanitize_string(value, max_length=SANITIZER_ARTIST_MAX_BYTES)
-
-
-def sanitize_album_name(value: str | float | None) -> str:
-    """Sanitize album text using the migrated album byte limit."""
-    return sanitize_string(value, max_length=SANITIZER_ALBUM_MAX_BYTES)
 
 
 def sanitize_track_title(value: str | float | None, max_length: int | None = None) -> str:
@@ -303,24 +290,6 @@ def sanitize_path_component(
     # Path generation cannot store empty non-final components. Keep the generic
     # sanitizer empty-result behavior, but give path components a stable name.
     return PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT
-
-
-def sanitize_path_components(value: str | float | None, max_length: int | None = None) -> str:
-    """Sanitize a logical path, preserving an allowed extension on the final component."""
-    if not value:
-        return ""
-
-    raw_components = str(value).split(LOGICAL_PATH_SEPARATOR)
-    final_index = len(raw_components) - 1
-    sanitized_components = [
-        sanitize_path_component(
-            component,
-            max_length=max_length,
-            preserve_extension=index == final_index,
-        )
-        for index, component in enumerate(raw_components)
-    ]
-    return LOGICAL_PATH_SEPARATOR.join(component for component in sanitized_components if component != "")
 
 
 def _normalize_extension_suffix(file_extension: str) -> str:
@@ -357,11 +326,10 @@ def _normalize_generated_path(raw_stem: str, extension_suffix: str, config: Path
 
 
 def _sanitize_base_text(value: str) -> str:
-    # NFKC folds compatibility characters while preserving letters from
-    # non-Latin scripts, matching the legacy OMYM sanitizer behavior.
+    # NFKC gives canonically equivalent metadata one deterministic path while
+    # preserving letters from non-Latin scripts.
     normalized = unicodedata.normalize("NFKC", value)
-    without_apostrophes = normalized.replace(SANITIZER_APOSTROPHE, "")
-    replaced = _UNSAFE_PATTERN.sub(SANITIZER_REPLACEMENT, without_apostrophes)
+    replaced = _UNSAFE_PATTERN.sub(SANITIZER_REPLACEMENT, normalized)
     collapsed = _HYPHEN_RUN_PATTERN.sub(SANITIZER_REPLACEMENT, replaced)
     return collapsed.strip(SANITIZER_REPLACEMENT)
 

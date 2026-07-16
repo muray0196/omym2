@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.output import write_line, write_usage
-from omym2.features.history.dto import GetRunHeaderRequest, ListRunEventsRequest, ListRunsRequest
-from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase, RunNotFoundError
+from omym2.features.history.dto import GetRunDetailRequest, ListRunEventsRequest, ListRunsRequest
+from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase, RunNotFoundError
 from omym2.features.history.usecases.list_run_events import ListRunEventsUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.shared.ids import RunId, parse_uuid
@@ -88,7 +88,7 @@ def _run_history_detail(
         return ERROR_EXIT_CODE
 
     try:
-        run = GetRunHeaderUseCase(ports).execute(GetRunHeaderRequest(run_id))
+        run = GetRunDetailUseCase(ports).execute(GetRunDetailRequest(run_id)).run
         events = _fetch_run_events(ports, run_id)
     except RunNotFoundError as exc:
         write_line(stderr, str(exc))

@@ -22,7 +22,9 @@ from omym2.features.artist_names.dto import (
     ArtistNameProviderCandidate,
     ArtistNameSearchResult,
 )
-from omym2.platform.artist_ids_composition import build_artist_ids_command_ports
+from omym2.platform.artist_ids_composition import artist_ids_command_ports_for
+from omym2.platform.operation_composition import OperationRuntime
+from omym2.platform.runtime_context import runtime_context_for
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,6 +36,12 @@ RESOLVED_ARTIST = "Kenshi Yonezu"
 ENGLISH_ARTIST = "John Smith"
 MODEL_LOAD_ERROR = "model cannot be loaded"
 MUSICBRAINZ_ARTIST_ID = "db2f4f3a-f0c2-4c96-bea3-636f4b44f57b"
+
+
+def _artist_ids_command_ports(config_path: Path, database_path: Path):
+    """Build real command ports for one isolated CLI test root."""
+    runtime = runtime_context_for(config_path, database_path)
+    return artist_ids_command_ports_for(runtime, OperationRuntime(runtime))
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +82,7 @@ def test_artist_ids_generate_command_saves_generated_entry(tmp_path: Path) -> No
         ["generate", ENGLISH_ARTIST],
         stdout,
         stderr,
-        build_artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
+        _artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
     )
 
     assert exit_code == 0
@@ -94,7 +102,7 @@ def test_artist_ids_generate_command_uses_injected_japanese_dependencies(tmp_pat
         ["generate", JAPANESE_ARTIST],
         stdout,
         stderr,
-        build_artist_ids_command_ports(config_path, database_path),
+        _artist_ids_command_ports(config_path, database_path),
         ArtistIdsCommandDependencies(
             language_predictor=_JapanesePredictor(),
             artist_name_provider=_Provider(),
@@ -128,7 +136,7 @@ def test_artist_ids_generate_command_preserves_existing_without_overwrite(tmp_pa
         ["generate", ENGLISH_ARTIST],
         stdout,
         stderr,
-        build_artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
+        _artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
     )
 
     assert exit_code == 0
@@ -140,7 +148,7 @@ def test_artist_ids_generate_command_reports_invalid_persisted_config(tmp_path: 
     """The CLI reports invalid persisted TOML config as a controlled error, not a traceback."""
     config_path = tmp_path / "config.toml"
     _ = config_path.write_text(
-        'version = 1\n[artist_ids]\nmax_length = 0\nfallback_id = "NOART"\n',
+        'version = 2\n[artist_ids]\nmax_length = 0\nfallback_id = "NOART"\n',
         encoding=CONFIG_FILE_ENCODING,
     )
     stdout = StringIO()
@@ -150,7 +158,7 @@ def test_artist_ids_generate_command_reports_invalid_persisted_config(tmp_path: 
         ["generate", ENGLISH_ARTIST],
         stdout,
         stderr,
-        build_artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
+        _artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
     )
 
     assert exit_code == 1
@@ -176,7 +184,7 @@ def test_artist_ids_generate_command_reports_missing_fasttext_dependency(
         ["generate", "--fasttext-model", str(tmp_path / "lid.bin"), ENGLISH_ARTIST],
         stdout,
         stderr,
-        build_artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
+        _artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
     )
 
     assert exit_code == 1
@@ -207,7 +215,7 @@ def test_artist_ids_generate_command_reports_fasttext_model_load_failure(
         ["generate", "--fasttext-model", str(tmp_path / "missing.bin"), ENGLISH_ARTIST],
         stdout,
         stderr,
-        build_artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
+        _artist_ids_command_ports(config_path, tmp_path / "omym2.db"),
     )
 
     assert exit_code == 1

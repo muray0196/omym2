@@ -39,6 +39,17 @@ INSERT_MIGRATION_SQL: Final = """
 INSERT INTO schema_migrations (migration_name, applied_at)
 VALUES (?, ?)
 """
+SELECT_USER_TABLES_SQL: Final = """
+SELECT name AS migration_name
+FROM sqlite_master
+WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+ORDER BY name
+"""
+SCHEMA_MIGRATIONS_TABLE_NAME: Final = "schema_migrations"
+PRE_RELEASE_DATABASE_RESET_MESSAGE: Final = (
+    "Unsupported pre-release database state at {database_path}. "
+    "Delete the SQLite database and restart OMYM2 to create the current baseline."
+)
 
 _MIGRATED_DATABASE_KEYS: Final[set[str]] = set()
 _MIGRATION_CACHE_LOCK: Final = threading.Lock()
@@ -50,6 +61,10 @@ class SQLiteMigration:
 
     name: str
     sql: str
+
+
+class PreReleaseDatabaseResetRequiredError(RuntimeError):
+    """Raised when SQLite state predates the current clean baseline."""
 
 
 def ensure_database_migrated(database_path: str | PathLike[str]) -> None:
@@ -79,9 +94,17 @@ def migrate_database(database_path: str | PathLike[str]) -> None:
     Path(database_path).parent.mkdir(parents=True, exist_ok=True)
     connection = open_sqlite_connection(database_path)
     try:
-        _ = connection.execute(CREATE_MIGRATIONS_TABLE_SQL)
-        applied_migrations = _applied_migration_names(connection)
-        for migration in load_packaged_migrations():
+        migrations = load_packaged_migrations()
+        table_names = _user_table_names(connection)
+        if SCHEMA_MIGRATIONS_TABLE_NAME not in table_names:
+            if table_names:
+                raise _reset_required(database_path)
+            _ = connection.execute(CREATE_MIGRATIONS_TABLE_SQL)
+            applied_migrations: tuple[str, ...] = ()
+        else:
+            applied_migrations = _applied_migration_names(connection)
+        _validate_migration_state(database_path, table_names, applied_migrations, migrations)
+        for migration in migrations:
             if migration.name not in applied_migrations:
                 _apply_migration(connection, migration)
     finally:
@@ -104,10 +127,35 @@ def load_packaged_migrations() -> tuple[SQLiteMigration, ...]:
     )
 
 
-def _applied_migration_names(connection: sqlite3.Connection) -> set[str]:
+def _applied_migration_names(connection: sqlite3.Connection) -> tuple[str, ...]:
     raw_rows = cast("list[object]", connection.execute(SELECT_APPLIED_MIGRATIONS_SQL).fetchall())
     rows = tuple(cast("sqlite3.Row", row) for row in raw_rows)
-    return {_migration_name_from_row(row) for row in rows}
+    return tuple(_migration_name_from_row(row) for row in rows)
+
+
+def _user_table_names(connection: sqlite3.Connection) -> frozenset[str]:
+    raw_rows = cast("list[object]", connection.execute(SELECT_USER_TABLES_SQL).fetchall())
+    rows = tuple(cast("sqlite3.Row", row) for row in raw_rows)
+    return frozenset(_migration_name_from_row(row) for row in rows)
+
+
+def _validate_migration_state(
+    database_path: str | PathLike[str],
+    table_names: frozenset[str],
+    applied_migrations: tuple[str, ...],
+    packaged_migrations: tuple[SQLiteMigration, ...],
+) -> None:
+    application_tables = table_names.difference({SCHEMA_MIGRATIONS_TABLE_NAME})
+    packaged_names = tuple(migration.name for migration in packaged_migrations)
+    applied_count = len(applied_migrations)
+    if (application_tables and not applied_migrations) or applied_migrations != packaged_names[:applied_count]:
+        raise _reset_required(database_path)
+
+
+def _reset_required(database_path: str | PathLike[str]) -> PreReleaseDatabaseResetRequiredError:
+    return PreReleaseDatabaseResetRequiredError(
+        PRE_RELEASE_DATABASE_RESET_MESSAGE.format(database_path=Path(database_path).resolve())
+    )
 
 
 def _apply_migration(connection: sqlite3.Connection, migration: SQLiteMigration) -> None:

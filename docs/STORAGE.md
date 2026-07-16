@@ -3,7 +3,7 @@ type: Storage Design
 title: Storage
 description: Defines application-root selection, TOML ownership, provider cadence, managed companion state, trackless unprocessed-file evidence, durable file mutations, and path responsibilities.
 tags: [storage, sqlite, toml, persistence, artist-names, musicbrainz, companions, unprocessed, desktop]
-timestamp: 2026-07-16T04:51:16+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Storage
@@ -110,6 +110,10 @@ for later resolver calls.
 
 OMYM2 uses a single application database.
 
+The packaged schema starts from one 2026-07-16 clean baseline. Databases from
+earlier pre-release builds are not upgraded or adopted; delete the SQLite file
+and restart OMYM2 when the migration runner reports unsupported state.
+
 The DB records OMYM2's last known managed state, scheduled plans, execution
 attempts, durable background-request Operations, durable Library-managed file
 mutation logs, and persisted check diagnostics.
@@ -172,13 +176,13 @@ The detailed persistence and browsing contract is in
 ## Durable Background Operations
 
 An Operation is SQLite state for one accepted background request. It preserves
-idempotent acceptance, progress, typed completion or failure, and interruption
-evidence across a lost response or process restart. It may link to a Library,
+idempotent acceptance, lifecycle status, typed completion or failure, and
+interruption evidence across a lost response or process restart. It may link to a Library,
 Plan, or Run, but it never replaces those records.
 
 A FileEvent has a narrower safety role: it is durable evidence for one attempted
 audio, companion, or unprocessed-file mutation and is persisted as `pending`
-immediately before that mutation. Operation progress or completion cannot
+immediately before that mutation. Operation status or completion cannot
 stand in for a FileEvent. The authoritative distinction and lifecycle are in
 [Durable Operation Contract](contracts/operations.md#operation-versus-fileevent);
 the persistence and polling decision is recorded in
