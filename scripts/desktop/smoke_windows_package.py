@@ -1623,8 +1623,11 @@ def _verify_local_only_settings(base_url: str) -> dict[str, object]:
 
 
 def _verify_no_provider_requests(database_file: Path) -> dict[str, object]:
+    # Read-only URI mode plus closing(): sqlite3's connection context manager
+    # only ends the transaction, and SQLite denies share-delete, so a handle
+    # left to garbage collection blocks workspace deletion with WinError 32.
     try:
-        with sqlite3.connect(database_file) as connection:
+        with contextlib.closing(sqlite3.connect(f"file:{database_file.as_posix()}?mode=ro", uri=True)) as connection:
             row = cast(
                 "tuple[int] | None",
                 connection.execute(

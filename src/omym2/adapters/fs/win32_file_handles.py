@@ -24,6 +24,7 @@ WIN32_FILE_ATTRIBUTE_READONLY = 0x00000001
 WIN32_FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
 WIN32_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
 WIN32_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
+WIN32_FILE_LIST_DIRECTORY = 0x00000001
 WIN32_FILE_READ_ATTRIBUTES = 0x00000080
 WIN32_FILE_SHARE_DELETE = 0x00000004
 WIN32_FILE_SHARE_READ = 0x00000001
@@ -497,9 +498,11 @@ class CtypesWin32FileHandleBackend:
 
     def open_directory(self, path: os.PathLike[str] | str) -> Win32FileHandle:
         """Open and require one ordinary directory."""
+        # LIST_DIRECTORY data access enrolls the retained handle in NT share
+        # arbitration; attributes-only handles never block a parent rename.
         return self._open(
             path,
-            desired_access=WIN32_FILE_READ_ATTRIBUTES,
+            desired_access=WIN32_FILE_READ_ATTRIBUTES | WIN32_FILE_LIST_DIRECTORY,
             share_mode=WIN32_FILE_SHARE_READ | WIN32_FILE_SHARE_WRITE,
             creation_disposition=WIN32_OPEN_EXISTING,
             expected_directory=True,
@@ -605,6 +608,18 @@ def default_win32_file_handle_backend() -> Win32FileHandleBackend | None:
     return CtypesWin32FileHandleBackend()
 
 
+def stat_change_marker_ns(stat_result: os.stat_result) -> int:
+    """Return the change marker compared across observation boundaries.
+
+    Python 3.14 maps Windows st_ctime to NTFS ChangeTime, which by-name stats
+    can report stale for freshly written files; creation time is the stable
+    Windows marker with the same replaced-object detection value.
+    """
+    if os.name == "nt":
+        return cast("int", getattr(stat_result, "st_birthtime_ns"))  # noqa: B009  # Hidden from POSIX type stubs.
+    return stat_result.st_ctime_ns
+
+
 def normalize_win32_path(path: os.PathLike[str] | str) -> str:
     """Normalize DOS, extended DOS, and UNC spellings for final-path checks."""
     value = _string_path(path).replace("/", "\\")
@@ -678,7 +693,7 @@ def _query_identity(
         inode = stat_result.st_ino
         size = stat_result.st_size
         mtime_ns = stat_result.st_mtime_ns
-        ctime_ns = stat_result.st_ctime_ns
+        ctime_ns = stat_change_marker_ns(stat_result)
     return Win32FileIdentity(
         device_id=device_id,
         inode=inode,

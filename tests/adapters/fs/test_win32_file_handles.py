@@ -20,6 +20,7 @@ from omym2.adapters.fs.win32_file_handles import (
     WIN32_FILE_ATTRIBUTE_REPARSE_POINT,
     WIN32_FILE_FLAG_BACKUP_SEMANTICS,
     WIN32_FILE_FLAG_OPEN_REPARSE_POINT,
+    WIN32_FILE_LIST_DIRECTORY,
     WIN32_FILE_READ_ATTRIBUTES,
     WIN32_FILE_SHARE_DELETE,
     WIN32_FILE_SHARE_READ,
@@ -238,9 +239,11 @@ def test_backend_opens_directory_with_no_follow_and_no_delete_sharing(tmp_path: 
     with backend.open_directory(directory_path) as handle:
         assert handle.identity.is_directory
 
-    [(opened_path, _access, share_mode, disposition, flags)] = api.create_calls
+    [(opened_path, access, share_mode, disposition, flags)] = api.create_calls
     assert opened_path == str(directory_path)
     assert disposition == WIN32_OPEN_EXISTING
+    # LIST_DIRECTORY is what makes NT enforce the no-delete sharing below.
+    assert access == WIN32_FILE_READ_ATTRIBUTES | WIN32_FILE_LIST_DIRECTORY
     assert share_mode == WIN32_FILE_SHARE_READ | WIN32_FILE_SHARE_WRITE
     assert not share_mode & WIN32_FILE_SHARE_DELETE
     assert flags == WIN32_FILE_FLAG_OPEN_REPARSE_POINT | WIN32_FILE_FLAG_BACKUP_SEMANTICS
