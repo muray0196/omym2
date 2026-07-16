@@ -6,7 +6,7 @@ Why: Prevents duplicate execution and preserves only durable evidence after proc
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, override
 from uuid import UUID
@@ -33,7 +33,7 @@ from omym2.features.plans.usecases.cancel_plan import CancelPlanUseCase, PlanCan
 from omym2.features.plans.usecases.get_plan_header import PlanNotFoundError
 from omym2.shared.ids import ActionId, EventId, LibraryId, OperationId, PlanId, RunId
 from tests.fakes.in_memory_repositories import InMemoryPlanRepository, InMemoryUnitOfWork
-from tests.fakes.runtime import FixedClock, SequenceIdGenerator
+from tests.fakes.runtime import FixedClock, SequenceIdGenerator, UnusedFileContentSnapshotReader
 
 if TYPE_CHECKING:
     from omym2.domain.models.file_snapshot import FileSnapshot, FilesystemIdentity
@@ -258,10 +258,10 @@ def test_reconcile_apply_interrupts_queued_or_running_operation_with_confirmed_s
 
 
 def test_reconcile_apply_preserves_pending_and_derives_partial_from_confirmed_action_evidence() -> None:
-    """Unknown mutation evidence stays pending while other durable success makes the Run partial."""
+    """Companion success and interruption evidence produce a partial Run without rewriting pending events."""
     uow = _claimed_apply_uow(OperationStatus.RUNNING)
-    uow.plan_actions.save(_action(ACTION_IDS[0], ActionType.MOVE, ActionStatus.APPLIED))
-    uow.plan_actions.save(_action(ACTION_IDS[1], ActionType.MOVE, ActionStatus.PLANNED))
+    uow.plan_actions.save(_action(ACTION_IDS[0], ActionType.MOVE_LYRICS, ActionStatus.APPLIED))
+    uow.plan_actions.save(_action(ACTION_IDS[1], ActionType.MOVE_ARTWORK, ActionStatus.PLANNED))
     uow.plan_actions.save(_action(ACTION_IDS[2], ActionType.REFRESH_METADATA, ActionStatus.PLANNED))
     uow.plan_actions.save(
         _action(
@@ -323,6 +323,28 @@ def test_reconcile_apply_derives_failure_without_confirmed_eligible_success_and_
     assert _stored_event(uow).status is FileEventStatus.PENDING
     assert _stored_operation(uow) == first_operation
     assert uow.commit_count == SINGLE_COMMIT_COUNT
+
+
+def test_reconcile_unprocessed_interruption_preserves_pending_and_fails_action() -> None:
+    """Restart recovery never infers the outcome of a collected-file mutation."""
+    uow = _claimed_apply_uow(OperationStatus.RUNNING)
+    uow.plan_actions.save(_action(ACTION_IDS[0], ActionType.MOVE_UNPROCESSED, ActionStatus.PLANNED))
+    uow.file_events.save(
+        replace(
+            _pending_event(ACTION_IDS[0]),
+            event_type=FileEventType.MOVE_UNPROCESSED_FILE,
+        )
+    )
+
+    repaired = ReconcileOperationsUseCase(_operation_ports(uow)).execute()
+
+    assert repaired == (OPERATION_ID,)
+    action = _stored_action(uow, ACTION_IDS[0])
+    assert action.status is ActionStatus.FAILED
+    assert action.reason is PlanActionReason.OPERATION_INTERRUPTED
+    assert _stored_event(uow).status is FileEventStatus.PENDING
+    assert _stored_plan(uow).status is PlanStatus.FAILED
+    assert _stored_run(uow).status is RunStatus.FAILED
 
 
 @dataclass(slots=True)
@@ -417,6 +439,7 @@ def _claim_ports(uow: InMemoryUnitOfWork) -> ApplyPlanPorts:
         uow=uow,
         file_mover=UnusedFileMover(),
         file_snapshot_reader=UnusedSnapshotReader(),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         path_resolver=UnusedPathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(

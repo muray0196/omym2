@@ -1,6 +1,6 @@
 """
 Summary: Defines durable Library file mutation events.
-Why: Preserves evidence before and after apply mutates music files.
+Why: Preserves evidence before and after apply mutates managed files.
 """
 
 from __future__ import annotations
@@ -16,13 +16,16 @@ from omym2.shared.time import as_utc
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from omym2.shared.ids import ActionId, EventId, LibraryId, RunId
+    from omym2.shared.ids import ActionId, CompanionAssetId, EventId, LibraryId, RunId
 
 
 class FileEventType(StrEnum):
     """Supported durable operation event types."""
 
     MOVE_FILE = "move_file"
+    MOVE_LYRICS_FILE = "move_lyrics_file"
+    MOVE_ARTWORK_FILE = "move_artwork_file"
+    MOVE_UNPROCESSED_FILE = "move_unprocessed_file"
 
 
 class FileEventStatus(StrEnum):
@@ -35,7 +38,7 @@ class FileEventStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class FileEvent:
-    """Durable operation log entry for one Library music file mutation."""
+    """Durable operation log entry for one Library-managed file mutation."""
 
     event_id: EventId
     library_id: LibraryId
@@ -50,6 +53,7 @@ class FileEvent:
     error_code: str | None
     error_message: str | None
     sequence_no: int
+    companion_asset_id: CompanionAssetId | None = None
 
     def __post_init__(self) -> None:
         """Normalize path references and timestamps for durable history."""
@@ -90,4 +94,5 @@ class FileEvent:
             error_code=error_code,
             error_message=error_message,
             sequence_no=self.sequence_no,
+            companion_asset_id=self.companion_asset_id,
         )

@@ -38,14 +38,24 @@ from omym2.domain.models.artist_name_resolution import (
 )
 from omym2.domain.models.check_issue import CheckIssue, CheckIssueType
 from omym2.domain.models.check_run import CheckRun
+from omym2.domain.models.companion_asset import CompanionAsset, CompanionAssetKind, CompanionAssetStatus
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
+from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionDependency
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
-from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, PlanId, RunId, TrackId
+from omym2.shared.ids import (
+    ActionId,
+    CheckRunId,
+    CompanionAssetId,
+    EventId,
+    LibraryId,
+    PlanId,
+    RunId,
+    TrackId,
+)
 from omym2.shared.pagination import PageRequest
 
 if TYPE_CHECKING:
@@ -62,6 +72,12 @@ MUSICBRAINZ_ARTIST_ID = "db2f4f3a-f0c2-4c96-bea3-636f4b44f57b"
 ACCEPTED_ARTIST_NAMES_MIGRATION_NAME = "202607150001_accepted_artist_names.sql"
 CHECK_ISSUE_COUNT = 1
 CHECK_RUN_ID = CheckRunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345684"))
+COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345689"))
+COMPANION_ASSETS_MIGRATION_NAME = "202607160003_companion_assets.sql"
+PLAN_SOURCE_COMPANION_CHECK_MIGRATION_NAME = "202607160004_plan_source_and_companion_check.sql"
+COMPANION_CONTENT_HASH = "companion-content-hash"
+COMPANION_SOURCE_PATH = "Artist/Album/cover.jpg"
+COMPANION_TARGET_PATH = "Artist/Album 2/cover.jpg"
 CONFIG_HASH = "config-hash"
 CONTENT_HASH = "content-hash"
 EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
@@ -108,10 +124,12 @@ TRACK_TITLE = "Title"
 
 REQUIRED_TABLES = {
     "accepted_artist_names",
+    "companion_assets",
     "file_events",
     "libraries",
     "operations",
     "plan_actions",
+    "plan_action_dependencies",
     "plans",
     "runs",
     "schema_migrations",
@@ -208,8 +226,8 @@ def test_plan_action_diagnostics_migration_preserves_existing_actions(
         with SQLiteUnitOfWork(database_file) as uow:
             uow.libraries.save(_library())
             uow.tracks.save(_track())
-            uow.plans.save(_plan())
             uow.commit()
+        _insert_plan_without_source_root(database_file, _plan())
         _insert_plan_action_without_diagnostics(database_file, existing_action)
 
     migrate_database(database_file)
@@ -218,6 +236,244 @@ def test_plan_action_diagnostics_migration_preserves_existing_actions(
     assert _table_columns_for(database_file, "plan_actions")["artist_name_diagnostics_json"] == "TEXT"
     with SQLiteUnitOfWork(database_file) as uow:
         assert uow.plan_actions.get(ACTION_ID) == existing_action
+
+
+def test_companion_asset_migration_preserves_existing_execution_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The additive companion migration retains existing Tracks, actions, and events with null asset links."""
+    database_file = default_application_paths(tmp_path).database_file
+    packaged_migrations = migration_runner.load_packaged_migrations()
+    prior_migrations = tuple(
+        migration for migration in packaged_migrations if migration.name < COMPANION_ASSETS_MIGRATION_NAME
+    )
+    existing_action = _plan_action(ACTION_ID, SORT_ORDER_EARLY)
+    existing_event = _file_event(EVENT_ID, ACTION_ID, EVENT_SEQUENCE_EARLY)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(migration_runner, "load_packaged_migrations", lambda: prior_migrations)
+        with SQLiteUnitOfWork(database_file) as uow:
+            uow.libraries.save(_library())
+            uow.tracks.save(_track())
+            uow.commit()
+        _insert_plan_without_source_root(database_file, _plan())
+        with SQLiteUnitOfWork(database_file) as uow:
+            uow.runs.save(_run())
+            uow.commit()
+        _insert_plan_action_without_diagnostics(database_file, existing_action)
+        _insert_file_event_without_companion_asset(database_file, existing_event)
+
+    migrate_database(database_file)
+
+    assert COMPANION_ASSETS_MIGRATION_NAME in _applied_migrations(database_file)
+    assert _table_columns_for(database_file, "plan_actions")["companion_asset_id"] == "TEXT"
+    assert _table_columns_for(database_file, "plan_actions")["owner_action_id"] == "TEXT"
+    assert _table_columns_for(database_file, "file_events")["companion_asset_id"] == "TEXT"
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.tracks.get(TRACK_ID) == _track()
+        assert uow.plan_actions.get(ACTION_ID) == existing_action
+        assert uow.file_events.get(EVENT_ID) == existing_event
+        assert uow.companion_assets.list_by_library(LIBRARY_ID) == ()
+
+
+def test_companion_asset_migration_creates_foreign_keys_and_indexes(tmp_path: Path) -> None:
+    """Companion tables, preallocated audit links, owner constraints, and indexes are explicit."""
+    database_file = default_application_paths(tmp_path).database_file
+
+    migrate_database(database_file)
+
+    companion_columns = _table_columns_for(database_file, "companion_assets")
+    assert companion_columns == {
+        "companion_asset_id": "TEXT",
+        "library_id": "TEXT",
+        "kind": "TEXT",
+        "owner_track_id": "TEXT",
+        "current_path": "TEXT",
+        "canonical_path": "TEXT",
+        "content_hash": "TEXT",
+        "size": "INTEGER",
+        "mtime": "TEXT",
+        "status": "TEXT",
+        "first_seen_at": "TEXT",
+        "last_seen_at": "TEXT",
+        "updated_at": "TEXT",
+    }
+    assert ("library_id", "libraries", "library_id", "RESTRICT") in _foreign_keys(database_file, "companion_assets")
+    assert ("owner_track_id", "tracks", "track_id", "RESTRICT") in _foreign_keys(database_file, "companion_assets")
+    plan_action_foreign_keys = _foreign_keys(database_file, "plan_actions")
+    file_event_foreign_keys = _foreign_keys(database_file, "file_events")
+    assert not any(column == "companion_asset_id" for column, *_ in plan_action_foreign_keys)
+    assert ("owner_action_id", "plan_actions", "action_id", "SET NULL") in plan_action_foreign_keys
+    assert not any(column == "companion_asset_id" for column, *_ in file_event_foreign_keys)
+    assert {
+        "plan_actions_owner_same_plan_insert",
+        "plan_actions_owner_same_plan_update",
+    } <= _trigger_names(database_file)
+    assert _index_columns(database_file, "idx_companion_assets_library_current_path") == (
+        "library_id",
+        "current_path",
+        "companion_asset_id",
+    )
+    assert _index_columns(database_file, "idx_plan_action_dependencies_depends_on") == (
+        "depends_on_action_id",
+        "action_id",
+    )
+
+
+def test_sqlite_companion_assets_and_execution_links_round_trip(tmp_path: Path) -> None:
+    """SQLite restores companion state, semantic action/event kinds, ownership, and dependencies verbatim."""
+    database_file = default_application_paths(tmp_path).database_file
+    companion_asset = _companion_asset()
+    owner_action = _plan_action(ACTION_ID, SORT_ORDER_EARLY)
+    companion_action = replace(
+        _plan_action(SECOND_ACTION_ID, SORT_ORDER_LATE),
+        action_type=ActionType.MOVE_ARTWORK,
+        source_path=COMPANION_SOURCE_PATH,
+        target_path=COMPANION_TARGET_PATH,
+        metadata_hash_at_plan=None,
+        companion_asset_id=COMPANION_ASSET_ID,
+        owner_action_id=ACTION_ID,
+    )
+    dependency = PlanActionDependency(
+        plan_id=PLAN_ID,
+        action_id=SECOND_ACTION_ID,
+        depends_on_action_id=ACTION_ID,
+    )
+    companion_event = replace(
+        _file_event(EVENT_ID, SECOND_ACTION_ID, EVENT_SEQUENCE_EARLY),
+        event_type=FileEventType.MOVE_ARTWORK_FILE,
+        source_path=COMPANION_SOURCE_PATH,
+        target_path=COMPANION_TARGET_PATH,
+        companion_asset_id=COMPANION_ASSET_ID,
+    )
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.companion_assets.save(companion_asset)
+        uow.plans.save(_plan())
+        uow.plan_actions.save(owner_action)
+        uow.plan_actions.save(companion_action)
+        uow.plan_action_dependencies.save(dependency)
+        uow.runs.save(_run())
+        uow.file_events.save(companion_event)
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.companion_assets.get(COMPANION_ASSET_ID) == companion_asset
+        assert uow.companion_assets.list_by_library(LIBRARY_ID) == (companion_asset,)
+        assert uow.plan_actions.get(SECOND_ACTION_ID) == companion_action
+        assert uow.plan_action_dependencies.list_by_action(SECOND_ACTION_ID) == (dependency,)
+        assert uow.file_events.get(EVENT_ID) == companion_event
+
+
+def test_plan_source_and_companion_check_links_round_trip_without_asset_row(tmp_path: Path) -> None:
+    """A READY Plan retains its source root and Check can name a preallocated companion identity."""
+    database_file = default_application_paths(tmp_path).database_file
+    plan = replace(_plan(), source_root_at_plan="/incoming")
+    issue = replace(_check_issue(), companion_asset_id=COMPANION_ASSET_ID)
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.plans.save(plan)
+        uow.check_runs.save(_check_run())
+        uow.check_issues.save_many(CHECK_RUN_ID, (issue,))
+        uow.commit()
+
+    assert PLAN_SOURCE_COMPANION_CHECK_MIGRATION_NAME in _applied_migrations(database_file)
+    assert _table_columns_for(database_file, "plans")["source_root_at_plan"] == "TEXT"
+    assert _table_columns_for(database_file, "check_issues")["companion_asset_id"] == "TEXT"
+    assert not any(column == "companion_asset_id" for column, *_ in _foreign_keys(database_file, "check_issues"))
+    assert _index_columns(database_file, "idx_check_issues_companion_asset") == (
+        "companion_asset_id",
+        "issue_seq",
+    )
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.plans.get(PLAN_ID) == plan
+        assert uow.companion_assets.get(COMPANION_ASSET_ID) is None
+        assert uow.check_issues.query_page(
+            LIBRARY_ID,
+            issue_type=None,
+            page=PageRequest(),
+        ).items == (issue,)
+
+
+def test_sqlite_plan_action_dependency_rejects_cross_plan_reference(tmp_path: Path) -> None:
+    """A durable dependency cannot connect actions from different reviewed Plans."""
+    database_file = default_application_paths(tmp_path).database_file
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.plans.save(_plan())
+        uow.plans.save(_plan(plan_id=SECOND_PLAN_ID))
+        uow.plan_actions.save(_plan_action(ACTION_ID, SORT_ORDER_EARLY))
+        uow.plan_actions.save(_plan_action(SECOND_ACTION_ID, SORT_ORDER_EARLY, plan_id=SECOND_PLAN_ID))
+        uow.commit()
+
+    with pytest.raises(sqlite3.IntegrityError), SQLiteUnitOfWork(database_file) as uow:
+        uow.plan_action_dependencies.save(
+            PlanActionDependency(
+                plan_id=PLAN_ID,
+                action_id=ACTION_ID,
+                depends_on_action_id=SECOND_ACTION_ID,
+            )
+        )
+
+
+def test_sqlite_plan_action_owner_rejects_cross_plan_reference(tmp_path: Path) -> None:
+    """A durable owner action cannot belong to a different reviewed Plan."""
+    database_file = default_application_paths(tmp_path).database_file
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.plans.save(_plan())
+        uow.plans.save(_plan(plan_id=SECOND_PLAN_ID))
+        uow.plan_actions.save(_plan_action(ACTION_ID, SORT_ORDER_EARLY))
+        uow.plan_actions.save(_plan_action(SECOND_ACTION_ID, SORT_ORDER_EARLY, plan_id=SECOND_PLAN_ID))
+        uow.commit()
+
+    with pytest.raises(sqlite3.IntegrityError), SQLiteUnitOfWork(database_file) as uow:
+        uow.plan_actions.save(
+            replace(
+                _plan_action(UNDO_ACTION_ID, SORT_ORDER_LATE),
+                owner_action_id=SECOND_ACTION_ID,
+            )
+        )
+
+
+@pytest.mark.parametrize("moved_action_id", [ACTION_ID, UNDO_ACTION_ID])
+def test_sqlite_plan_action_owner_rejects_cross_plan_update(
+    tmp_path: Path,
+    moved_action_id: ActionId,
+) -> None:
+    """Changing an owner or owned action's Plan cannot split the durable ownership pair."""
+    database_file = default_application_paths(tmp_path).database_file
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.plans.save(_plan())
+        uow.plans.save(_plan(plan_id=SECOND_PLAN_ID))
+        uow.plan_actions.save(_plan_action(ACTION_ID, SORT_ORDER_EARLY))
+        uow.plan_actions.save(
+            replace(
+                _plan_action(UNDO_ACTION_ID, SORT_ORDER_LATE),
+                owner_action_id=ACTION_ID,
+            )
+        )
+        uow.commit()
+
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute("PRAGMA foreign_keys = ON")
+        with pytest.raises(sqlite3.IntegrityError):
+            _ = connection.execute(
+                "UPDATE plan_actions SET plan_id = ? WHERE action_id = ?",
+                (str(SECOND_PLAN_ID), str(moved_action_id)),
+            )
 
 
 def test_sqlite_accepted_artist_names_are_sticky_and_round_trip_provenance(tmp_path: Path) -> None:
@@ -826,6 +1082,27 @@ def test_sqlite_repositories_round_trip_domain_models(tmp_path: Path) -> None:
         assert uow.file_events.list_by_library(LIBRARY_ID) == (event_early, event_late)
 
 
+def test_sqlite_plan_action_unknown_to_binary_fails_closed_on_read(tmp_path: Path) -> None:
+    """A downgrade cannot decode or apply a persisted action type it does not understand."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.tracks.save(_track())
+        uow.plans.save(_plan())
+        uow.plan_actions.save(_plan_action(ACTION_ID, SORT_ORDER_EARLY))
+        uow.commit()
+
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute(
+            "UPDATE plan_actions SET action_type = ? WHERE action_id = ?",
+            ("future_file_move", str(ACTION_ID)),
+        )
+        connection.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow, pytest.raises(ValueError, match="future_file_move"):
+        _ = uow.plan_actions.list_by_plan(PLAN_ID)
+
+
 def test_sqlite_plan_actions_round_trip_typed_artist_name_diagnostics(tmp_path: Path) -> None:
     """PlanAction persistence restores the complete typed naming review snapshot."""
     database_file = default_application_paths(tmp_path).database_file
@@ -1118,6 +1395,12 @@ def _foreign_keys(database_file: Path, table_name: str) -> set[tuple[str, str, s
             (table_name,),
         ).fetchall()
     return {(str(row[0]), str(row[1]), str(row[2]), str(row[3])) for row in cast("list[tuple[object, ...]]", rows)}
+
+
+def _trigger_names(database_file: Path) -> set[str]:
+    with sqlite3.connect(database_file) as connection:
+        rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'").fetchall()
+    return {str(row[0]) for row in cast("list[tuple[object, ...]]", rows)}
 
 
 def _applied_migrations(database_file: Path) -> set[str]:
@@ -1548,6 +1831,24 @@ def _track(*, size: int | None = TRACK_SIZE, mtime: datetime | None = BASE_TIME)
     )
 
 
+def _companion_asset() -> CompanionAsset:
+    return CompanionAsset(
+        companion_asset_id=COMPANION_ASSET_ID,
+        library_id=LIBRARY_ID,
+        kind=CompanionAssetKind.ARTWORK,
+        owner_track_id=TRACK_ID,
+        current_path=COMPANION_SOURCE_PATH,
+        canonical_path=COMPANION_TARGET_PATH,
+        content_hash=COMPANION_CONTENT_HASH,
+        size=TRACK_SIZE,
+        mtime=BASE_TIME,
+        status=CompanionAssetStatus.ACTIVE,
+        first_seen_at=BASE_TIME,
+        last_seen_at=BASE_TIME,
+        updated_at=BASE_TIME,
+    )
+
+
 def _check_run() -> CheckRun:
     return CheckRun(
         check_run_id=CHECK_RUN_ID,
@@ -1646,6 +1947,78 @@ def _insert_plan_action_without_diagnostics(database_file: Path, action: PlanAct
                 action.status.value,
                 None if action.reason is None else action.reason.value,
                 action.sort_order,
+            ),
+        )
+
+
+def _insert_plan_without_source_root(database_file: Path, plan: Plan) -> None:
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute("PRAGMA foreign_keys = ON")
+        _ = connection.execute(
+            """
+            INSERT INTO plans (
+                plan_id,
+                library_id,
+                source_run_id,
+                plan_type,
+                status,
+                created_at,
+                config_hash,
+                library_root_at_plan,
+                summary_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(plan.plan_id),
+                str(plan.library_id),
+                None if plan.source_run_id is None else str(plan.source_run_id),
+                plan.plan_type.value,
+                plan.status.value,
+                plan.created_at.isoformat(),
+                plan.config_hash,
+                plan.library_root_at_plan,
+                json.dumps(plan.summary),
+            ),
+        )
+
+
+def _insert_file_event_without_companion_asset(database_file: Path, event: FileEvent) -> None:
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute("PRAGMA foreign_keys = ON")
+        _ = connection.execute(
+            """
+            INSERT INTO file_events (
+                event_id,
+                library_id,
+                run_id,
+                plan_action_id,
+                event_type,
+                source_path,
+                target_path,
+                status,
+                started_at,
+                completed_at,
+                error_code,
+                error_message,
+                sequence_no
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(event.event_id),
+                str(event.library_id),
+                str(event.run_id),
+                str(event.plan_action_id),
+                event.event_type.value,
+                event.source_path,
+                event.target_path,
+                event.status.value,
+                event.started_at.isoformat(),
+                None if event.completed_at is None else event.completed_at.isoformat(),
+                event.error_code,
+                event.error_message,
+                event.sequence_no,
             ),
         )
 

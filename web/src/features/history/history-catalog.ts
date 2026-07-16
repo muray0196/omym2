@@ -74,6 +74,24 @@ const EVENT_TYPE_PRESENTATIONS = {
     meaning: "Records one attempted Library music file move.",
     tone: "info",
   },
+  move_lyrics_file: {
+    icon: "info",
+    label: "Move lyrics file",
+    meaning: "Records one attempted managed lyrics-file move.",
+    tone: "info",
+  },
+  move_artwork_file: {
+    icon: "info",
+    label: "Move artwork file",
+    meaning: "Records one attempted managed artwork-file move.",
+    tone: "info",
+  },
+  move_unprocessed_file: {
+    icon: "info",
+    label: "Move unprocessed file",
+    meaning: "Records one attempted reviewed unprocessed-file move.",
+    tone: "info",
+  },
 } satisfies Record<FileEventType, HistoryCatalogPresentation>;
 
 export function runStatusLabel(value: string) {

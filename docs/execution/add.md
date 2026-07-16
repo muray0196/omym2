@@ -1,14 +1,16 @@
 ---
 type: Execution Spec
 title: Add Execution
-description: Defines add plan creation from an Incoming/source scan against the sole registered Library, including artist-name resolution diagnostics, duplicate-hash skips, missing-metadata and target-conflict blocks, and add --apply orchestration.
-tags: [add, plan-creation, library-registration, artist-names, apply]
-timestamp: 2026-07-16T00:44:26+09:00
+description: Defines Add planning for incoming audio, companions, and opt-in unprocessed leftovers, including claim precedence, rooted exclusions, full persistence, preview-only limits, and apply orchestration.
+tags: [add, plan-creation, library-registration, artist-names, companions, unprocessed, apply]
+timestamp: 2026-07-16T04:51:16+09:00
 ---
 
 # Add Execution
 
-This document is authoritative for add plan creation, Incoming/source scan behavior, the registered Library gate, duplicate-hash skips, missing-metadata blocks, target-conflict blocks, and `add --apply` orchestration.
+This document is authoritative for Add Plan creation, Incoming/source scan
+behavior, companion claims, the registered Library gate, duplicate-hash skips,
+review-time blocks, and `add --apply` orchestration.
 
 Common execution rules are in [model.md](model.md). Apply rules are in [apply.md](apply.md). Command syntax is summarized in [../COMMANDS.md](../COMMANDS.md).
 
@@ -62,10 +64,24 @@ The add plan creation behavior includes:
 * check duplicate hashes against known active Library tracks and skip duplicates with `duplicate_hash`
 * block missing required metadata for incoming files
 * block target conflicts according to [Target Collision Safety](#target-collision-safety)
+* request complete regular-file source inventory only when companion or
+  unprocessed processing is enabled; when both are disabled, preserve the
+  native audio-only planning path, including its Windows behavior
+* classify companion claims whenever either feature requests inventory; when
+  companion processing is enabled, create reviewed lyrics/artwork actions
+  after their audio actions, otherwise retain classification only
+* when unprocessed collection is enabled, classify every remaining eligible
+  regular file only after audio and companion classification claims, and
+  record one reviewed content-only action per leftover
 * refuse mixed artist naming when an executable incoming move proves that an active existing Track requires Organize reconciliation
-* persist Plan and PlanActions
+* persist the Plan, every PlanAction, and companion dependency edges; a result
+  preview limit never drops actions
 
 REMOVED Library tracks are excluded from duplicate-hash and target-conflict judgment, matching refresh, check, and album-year resolution.
+
+The Plan records the exact selected source directory as
+`source_root_at_plan`. External companion and unprocessed snapshots and later
+Apply/Check/Undo observations must remain anchored below that root.
 
 Before target generation, eligible candidate artist and album-artist values are
 sent as one ordered batch through the shared `ArtistNameResolutionReader`.
@@ -83,6 +99,91 @@ review diagnostics. Candidates blocked before resolution record no diagnostic
 pair. Duplicate skips and later target-conflict blocks retain the resolution
 evidence that informed their recorded target calculation.
 
+## Companion Planning
+
+Whenever companion or unprocessed processing requests regular, non-symlink
+source inventory, Add applies the shared deterministic
+[Companion Association](../DOMAIN.md#companion-association) policy to establish
+claims:
+
+* one unambiguous same-stem `.lrc` becomes one `move_lyrics` action after
+  its audio owner;
+* each associated `.jpg` or `.png` source becomes one
+  `move_artwork` action, preserving its basename below the one common target
+  directory;
+* artwork records one deterministic semantic owner and durable dependencies on
+  every associated audio action.
+
+Companions use rooted content-only snapshots. Their actions record
+`content_hash_at_plan`, leave `metadata_hash_at_plan` null, and preallocate
+`companion_asset_id`; no CompanionAsset row is created during Add planning.
+Ambiguous ownership or target parents, a blocked owner, failed observation, or
+a target conflict produces a reviewable blocked companion action. A companion
+whose owner is blocked uses `companion_owner_blocked`; ambiguous association
+uses `companion_association_ambiguous`.
+
+When companion processing is disabled, newly classified claims create no
+companion actions, dependencies, asset IDs, or content snapshots. If
+unprocessed processing is enabled independently, those classification-only
+claims still reserve recognized `.lrc`, `.jpg`, and `.png` entries from
+leftovers. This toggle does not delete or alter managed companion state, change
+recorded Plan sources or events, or suppress recorded recovery, History, Check,
+or Undo diagnostics.
+
+### Failed Companion Recovery
+
+Add may create a new companion-only Plan for an external source left by a
+definitively failed companion action. Eligibility requires the same evidence
+as `failed_companion_source_exists`: a terminal failed/partially failed source
+Plan, definitive failure evidence with no pending companion FileEvent,
+succeeded owning audio provenance, and an active same-Library owner Track. The
+selected Add root must exactly match the source Plan's retained
+`source_root_at_plan`, and the source must still exist safely below it.
+
+The recovery action reuses the recorded companion identity and existing owner
+Track. Its audio work already succeeded in the earlier Run, so the new Plan
+does not invent an owner audio action or dependency. This is reviewed
+replanning, not automatic retry; unknown pending outcomes are never eligible.
+
+## Unprocessed Planning
+
+Unprocessed collection runs only when `unprocessed.enabled` is true for this
+new Add Plan. When false, Add creates no `move_unprocessed` actions or
+content-only leftover observations. Changing the setting later does not alter
+the recorded Plan.
+
+The selected source root must remain outside the Library. Inventory is
+regular-file-only and no-follow. The destination subtree, nested Library,
+OMYM2-owned Config/data/log paths, and numeric rotated logs are excluded as
+defined by
+[Add Source Inventory And Collection Protection](../contracts/path-identity-storage.md#add-source-inventory-and-collection-protection).
+The application root itself is not a blanket exclusion; ordinary siblings of
+the exact protected paths remain candidates.
+
+Claim precedence is deterministic:
+
+1. every music-scanner claim, including blocked and duplicate-skip audio;
+2. every lyrics/artwork classification claim, including reservation-only and
+   blocked claims or claims merged into failed-companion recovery; and
+3. only then the remaining inventory as unprocessed leftovers.
+
+Each leftover receives a rooted content-only snapshot. Its action is
+trackless, companion-free, dependency-free, and metadata-free. Source and
+target are absolute, with the target shaped exactly as
+`<source-root>/<unprocessed.directory>/<source-relative-path>`. Missing,
+unstable, unreadable, or invalid observations remain visible as blocked actions
+with `source_missing`, `source_changed`, or `invalid_path`. A target entering
+the Library or an internal protected path is blocked with `invalid_path`; any
+existing target entry, including a dangling symlink, is blocked with
+`target_exists`.
+
+Actions are appended after audio and companion actions in deterministic source
+order, and every candidate is persisted. The Plan summary records both
+`unprocessed_actions` and `unprocessed_preview_limit`. The latter controls only
+the deterministic CLI result excerpt described in
+[Commands](../COMMANDS.md#add); normal Plan review, Apply, and API pagination
+still expose the complete action set.
+
 ## Target Collision Safety
 
 This section is authoritative for add-time target-conflict checks. The
@@ -97,13 +198,13 @@ true:
 | Planning observation | Required result |
 | --- | --- |
 | An active Track in the target Library has the same normalized `current_path` as the generated target. | Block the candidate. REMOVED Tracks do not occupy a target for this DB check. |
-| Two or more otherwise eligible move candidates in the same add batch resolve to the same normalized target. | Block every candidate that claims that target. |
+| Two or more otherwise eligible audio or companion move candidates in the same add batch resolve to the same normalized target. | Block every candidate that claims that target. |
 | A filesystem entry already exists at the generated target after it is resolved against the Library root. | Block the candidate, even when no Track records that path. |
 
 The logical comparisons are exact normalized Library-root-relative string
 matches. They intentionally do not fold case or Unicode; the path contract
 defines that boundary. Add never renames a candidate or overwrites a target to
-resolve a collision.
+resolve a collision. Active managed CompanionAsset paths also occupy targets.
 
 Plan-time checks can become stale. Apply therefore atomically claims the
 recorded target through its exclusive-create FileMover before moving a file. A

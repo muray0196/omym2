@@ -13,30 +13,68 @@ from omym2.config import (
     ALBUM_YEAR_RESOLUTION_OLDEST,
     CONFIG_VERSION,
     DEFAULT_ALBUM_YEAR_RESOLUTION,
+    DEFAULT_COMPANIONS_ENABLED,
+    DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE,
+    DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES,
+    DEFAULT_LOGGING_LEVEL,
+    DEFAULT_LOGGING_RETENTION_FILES,
+    DEFAULT_LOGGING_ROTATION_MAX_BYTES,
+    DEFAULT_MUSICBRAINZ_APPLICATION_NAME,
+    DEFAULT_MUSICBRAINZ_CACHE_POLICY,
+    DEFAULT_MUSICBRAINZ_CONTACT,
+    DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS,
+    DEFAULT_MUSICBRAINZ_RETRY_LIMIT,
+    DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS,
     DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION,
     DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE,
     DEFAULT_PATH_POLICY_TEMPLATE,
     DEFAULT_UNKNOWN_ALBUM,
     DEFAULT_UNKNOWN_ARTIST,
+    DEFAULT_UNPROCESSED_DIRECTORY,
+    DEFAULT_UNPROCESSED_ENABLED,
+    DEFAULT_UNPROCESSED_RESULT_PREVIEW_LIMIT,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
 )
 from omym2.domain.models.app_config import (
     INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE,
     INVALID_ARTIST_ID_FALLBACK_MESSAGE,
     INVALID_ARTIST_NAME_PREFERENCE_MESSAGE,
     INVALID_CONFIG_VERSION_MESSAGE,
+    INVALID_FASTTEXT_MINIMUM_CONFIDENCE_MESSAGE,
+    INVALID_FASTTEXT_MODEL_PATH_MESSAGE,
+    INVALID_HASHING_READ_CHUNK_SIZE_MESSAGE,
+    INVALID_LOGGING_DESTINATION_MESSAGE,
+    INVALID_LOGGING_LEVEL_MESSAGE,
+    INVALID_LOGGING_RETENTION_FILES_MESSAGE,
+    INVALID_LOGGING_ROTATION_MAX_BYTES_MESSAGE,
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     INVALID_METADATA_ALBUM_YEAR_RESOLUTION_MESSAGE,
+    INVALID_MUSICBRAINZ_APPLICATION_NAME_MESSAGE,
+    INVALID_MUSICBRAINZ_CACHE_POLICY_MESSAGE,
+    INVALID_MUSICBRAINZ_CONTACT_MESSAGE,
+    INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE,
+    INVALID_MUSICBRAINZ_RETRY_LIMIT_MESSAGE,
+    INVALID_MUSICBRAINZ_TIMEOUT_MESSAGE,
     INVALID_PATH_POLICY_DISC_NUMBER_CONDITION_MESSAGE,
     INVALID_PATH_POLICY_DISC_NUMBER_STYLE_MESSAGE,
     INVALID_PATH_POLICY_TEMPLATE_EXTENSION_MESSAGE,
     INVALID_PATH_POLICY_TEMPLATE_PLACEHOLDER_MESSAGE,
     INVALID_PATH_POLICY_UNKNOWN_ALBUM_MESSAGE,
     INVALID_PATH_POLICY_UNKNOWN_ARTIST_MESSAGE,
+    INVALID_UNPROCESSED_DIRECTORY_MESSAGE,
+    INVALID_UNPROCESSED_RESULT_PREVIEW_LIMIT_MESSAGE,
     AppConfig,
     ArtistIdConfig,
     ArtistNameConfig,
+    CompanionsConfig,
+    FastTextConfig,
+    HashingConfig,
+    LoggingConfig,
     MetadataConfig,
+    MusicBrainzConfig,
     PathPolicyConfig,
+    UnprocessedConfig,
 )
 
 INVALID_CONFIG_VERSION = CONFIG_VERSION + 1
@@ -63,6 +101,152 @@ def test_config_loads_default() -> None:
     assert config.path_policy.unknown_album == DEFAULT_UNKNOWN_ALBUM
     assert config.path_policy.disc_number_style == DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE
     assert config.path_policy.disc_number_condition == DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION
+    assert config.musicbrainz == MusicBrainzConfig(
+        enabled=False,
+        application_name=DEFAULT_MUSICBRAINZ_APPLICATION_NAME,
+        contact=DEFAULT_MUSICBRAINZ_CONTACT,
+        timeout_seconds=DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS,
+        retry_limit=DEFAULT_MUSICBRAINZ_RETRY_LIMIT,
+        rate_limit_seconds=DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS,
+        cache_policy=DEFAULT_MUSICBRAINZ_CACHE_POLICY,
+    )
+    assert config.fasttext == FastTextConfig(model_path=None, minimum_confidence=DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE)
+    assert config.hashing == HashingConfig(read_chunk_size_bytes=DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES)
+    assert config.logging == LoggingConfig(
+        destination=None,
+        level=DEFAULT_LOGGING_LEVEL,
+        rotation_max_bytes=DEFAULT_LOGGING_ROTATION_MAX_BYTES,
+        retention_files=DEFAULT_LOGGING_RETENTION_FILES,
+    )
+    assert config.companions == CompanionsConfig(enabled=DEFAULT_COMPANIONS_ENABLED)
+    assert config.unprocessed == UnprocessedConfig(
+        enabled=DEFAULT_UNPROCESSED_ENABLED,
+        directory=DEFAULT_UNPROCESSED_DIRECTORY,
+        result_preview_limit=DEFAULT_UNPROCESSED_RESULT_PREVIEW_LIMIT,
+    )
+
+
+@pytest.mark.parametrize(
+    ("keywords", "message"),
+    [
+        ({"application_name": "   "}, INVALID_MUSICBRAINZ_APPLICATION_NAME_MESSAGE),
+        ({"contact": ""}, INVALID_MUSICBRAINZ_CONTACT_MESSAGE),
+        ({"timeout_seconds": 0.0}, INVALID_MUSICBRAINZ_TIMEOUT_MESSAGE),
+        ({"timeout_seconds": float("nan")}, INVALID_MUSICBRAINZ_TIMEOUT_MESSAGE),
+        ({"timeout_seconds": float("inf")}, INVALID_MUSICBRAINZ_TIMEOUT_MESSAGE),
+        ({"retry_limit": -1}, INVALID_MUSICBRAINZ_RETRY_LIMIT_MESSAGE),
+        ({"rate_limit_seconds": 0.5}, INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE),
+        ({"rate_limit_seconds": float("nan")}, INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE),
+        ({"rate_limit_seconds": float("inf")}, INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE),
+        ({"cache_policy": "none"}, INVALID_MUSICBRAINZ_CACHE_POLICY_MESSAGE),
+    ],
+)
+def test_musicbrainz_config_rejects_invalid_controls(keywords: dict[str, object], message: str) -> None:
+    """MusicBrainz settings enforce identity, bounds, and the closed cache policy."""
+    with pytest.raises(ValueError, match=message):
+        _ = MusicBrainzConfig(**keywords)  # pyright: ignore[reportArgumentType]  # Parameterized invalid values.
+
+
+@pytest.mark.parametrize("minimum_confidence", [float("nan"), -0.1, 1.1])
+def test_fasttext_config_rejects_invalid_confidence(minimum_confidence: float) -> None:
+    """fastText confidence is finite and bounded to the prediction probability range."""
+    with pytest.raises(ValueError, match=INVALID_FASTTEXT_MINIMUM_CONFIDENCE_MESSAGE):
+        _ = FastTextConfig(minimum_confidence=minimum_confidence)
+
+
+def test_fasttext_config_rejects_blank_optional_model_path() -> None:
+    """An explicitly configured model path cannot be blank."""
+    with pytest.raises(ValueError, match=INVALID_FASTTEXT_MODEL_PATH_MESSAGE):
+        _ = FastTextConfig(model_path="   ")
+
+
+def test_hashing_config_rejects_nonpositive_chunk_size() -> None:
+    """Hashing must advance through a positive read chunk."""
+    with pytest.raises(ValueError, match=INVALID_HASHING_READ_CHUNK_SIZE_MESSAGE):
+        _ = HashingConfig(read_chunk_size_bytes=0)
+
+
+@pytest.mark.parametrize(
+    "destination",
+    ["", ".", "/logs/app.log", "C:/logs/app.log", "../app.log", "logs/../app.log", "./logs/app.log", "logs\\app.log"],
+)
+def test_logging_config_rejects_non_normalized_or_non_relative_destination(destination: str) -> None:
+    """Log destinations cannot escape or depend on platform-specific path syntax."""
+    with pytest.raises(ValueError, match=INVALID_LOGGING_DESTINATION_MESSAGE):
+        _ = LoggingConfig(destination=destination)
+
+
+def test_logging_config_accepts_normalized_application_relative_destination() -> None:
+    """A normalized logical file path remains anchored by runtime composition."""
+    assert LoggingConfig(destination="logs/omym2.log").destination == "logs/omym2.log"
+
+
+@pytest.mark.parametrize(
+    ("keywords", "message"),
+    [
+        ({"level": "TRACE"}, INVALID_LOGGING_LEVEL_MESSAGE),
+        ({"rotation_max_bytes": 0}, INVALID_LOGGING_ROTATION_MAX_BYTES_MESSAGE),
+        ({"retention_files": 0}, INVALID_LOGGING_RETENTION_FILES_MESSAGE),
+    ],
+)
+def test_logging_config_rejects_invalid_controls(keywords: dict[str, object], message: str) -> None:
+    """Logging severity, rotation, and retention use closed positive controls."""
+    with pytest.raises(ValueError, match=message):
+        _ = LoggingConfig(**keywords)  # pyright: ignore[reportArgumentType]  # Parameterized invalid values.
+
+
+@pytest.mark.parametrize(
+    "directory",
+    [
+        "",
+        " ",
+        ".",
+        "..",
+        "/absolute",
+        "nested/path",
+        "nested\\path",
+        "C:",
+        "name.",
+        "name ",
+        "CON",
+        "con.txt",
+        "AUX.json",
+        "COM1",
+        "LPT9.log",
+        "bad:name",
+        "bad*name",
+        "control\x1fcharacter",
+    ],
+)
+def test_unprocessed_config_rejects_nonportable_directory_component(directory: str) -> None:
+    """The destination is one portable relative directory component on every platform."""
+    with pytest.raises(ValueError, match=INVALID_UNPROCESSED_DIRECTORY_MESSAGE):
+        _ = UnprocessedConfig(directory=directory)
+
+
+@pytest.mark.parametrize(
+    "result_preview_limit",
+    [
+        UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN - 1,
+        UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX + 1,
+        True,
+        1.5,
+    ],
+)
+def test_unprocessed_config_rejects_noninteger_or_out_of_bounds_preview_limit(
+    result_preview_limit: object,
+) -> None:
+    """Preview size remains an integer inside the centralized inclusive bounds."""
+    with pytest.raises(ValueError, match=INVALID_UNPROCESSED_RESULT_PREVIEW_LIMIT_MESSAGE):
+        _ = UnprocessedConfig(
+            result_preview_limit=result_preview_limit  # pyright: ignore[reportArgumentType]  # Invalid test value.
+        )
+
+
+def test_unprocessed_config_accepts_portable_directory_components_and_preview_bounds() -> None:
+    """Unicode, spaces, and both inclusive preview bounds remain valid portable values."""
+    assert UnprocessedConfig(directory="Review Later", result_preview_limit=UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN)
+    assert UnprocessedConfig(directory="レビュー待ち", result_preview_limit=UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX)
 
 
 def test_config_default_artist_id_entries_are_immutable_and_per_instance() -> None:

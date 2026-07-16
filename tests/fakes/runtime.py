@@ -16,7 +16,19 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from datetime import datetime
 
-    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
+    from omym2.domain.models.file_snapshot import FileContentSnapshot
+    from omym2.features.common_ports import FileSystemPath, SourceInventoryEntry, SourceInventoryRequest
+    from omym2.shared.ids import (
+        ActionId,
+        CheckRunId,
+        CompanionAssetId,
+        EventId,
+        LibraryId,
+        OperationId,
+        PlanId,
+        RunId,
+        TrackId,
+    )
 
 EMPTY_SEQUENCE_MESSAGE = "No deterministic IDs remain for this type."
 
@@ -35,6 +47,24 @@ class FixedClock:
     def now(self) -> datetime:
         """Return the fixed timestamp."""
         return self.current_time
+
+
+class UnusedFileContentSnapshotReader:
+    """Content-snapshot fake that rejects use outside companion tests."""
+
+    def capture(self, path: FileSystemPath, *, root: FileSystemPath) -> FileContentSnapshot:
+        """Fail because the surrounding test must not observe companion files."""
+        del path, root
+        raise AssertionError
+
+
+class EmptySourceInventoryReader:
+    """Source-inventory fake returning no regular files."""
+
+    def scan(self, request: SourceInventoryRequest) -> tuple[SourceInventoryEntry, ...]:
+        """Return an empty deterministic inventory."""
+        del request
+        return ()
 
 
 @dataclass(slots=True)
@@ -79,6 +109,7 @@ class SequenceIdGenerator:
     library_ids: deque[LibraryId] = field(default_factory=deque)
     check_run_ids: deque[CheckRunId] = field(default_factory=deque)
     track_ids: deque[TrackId] = field(default_factory=deque)
+    companion_asset_ids: deque[CompanionAssetId] = field(default_factory=deque)
     plan_ids: deque[PlanId] = field(default_factory=deque)
     action_ids: deque[ActionId] = field(default_factory=deque)
     run_ids: deque[RunId] = field(default_factory=deque)
@@ -96,6 +127,10 @@ class SequenceIdGenerator:
     def new_track_id(self) -> TrackId:
         """Return the next deterministic Track ID."""
         return _pop_next(self.track_ids)
+
+    def new_companion_asset_id(self) -> CompanionAssetId:
+        """Return the next deterministic companion-asset ID."""
+        return _pop_next(self.companion_asset_ids)
 
     def new_plan_id(self) -> PlanId:
         """Return the next deterministic Plan ID."""

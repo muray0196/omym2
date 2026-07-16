@@ -7,7 +7,14 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from omym2.shared.ids import id_to_string, is_uuid7, new_library_id, new_track_id, parse_uuid
+from omym2.shared.ids import (
+    id_to_string,
+    is_uuid7,
+    new_companion_asset_id,
+    new_library_id,
+    new_track_id,
+    parse_uuid,
+)
 
 EXPECTED_UUID_VERSION = 7
 
@@ -28,6 +35,15 @@ def test_track_id_is_generated_by_uuid7_helper() -> None:
     assert isinstance(track_id, UUID)
     assert track_id.version == EXPECTED_UUID_VERSION
     assert is_uuid7(track_id)
+
+
+def test_companion_asset_id_is_generated_by_uuid7_helper() -> None:
+    """Companion asset IDs are generated independently as UUIDv7 values."""
+    companion_asset_id = new_companion_asset_id()
+
+    assert isinstance(companion_asset_id, UUID)
+    assert companion_asset_id.version == EXPECTED_UUID_VERSION
+    assert is_uuid7(companion_asset_id)
 
 
 def test_uuid_string_round_trip_keeps_full_identifier() -> None:

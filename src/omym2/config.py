@@ -136,7 +136,7 @@ WEB_API_NOT_FOUND_MESSAGE: Final = "Web API endpoint was not found."  # unknown 
 WEB_METHOD_NOT_ALLOWED_MESSAGE: Final = "Method is not allowed for this endpoint."  # unsupported HTTP method text
 WEB_UI_NOT_FOUND_MESSAGE: Final = "Web UI route was not found."  # rejected UI fallback response text
 WEB_URL_SCHEME: Final = "http"  # scheme used for the local Web UI browser URL
-WEB_STATUS_CATALOG_VERSION: Final = 1  # bundled Web status and reason catalog version
+WEB_STATUS_CATALOG_VERSION: Final = 3  # bundled Web status and reason catalog version
 MILLISECONDS_PER_SECOND: Final = 1000  # conversion factor from seconds to milliseconds
 WEB_PRODUCTION_ALLOWED_HOSTS: Final = ("127.0.0.1", "localhost")  # accepted production Host header values
 WEB_HTML_ACCEPT_MEDIA_TYPE: Final = "text/html"  # media type required for SPA fallback
@@ -232,6 +232,50 @@ DEFAULT_COLLISION_ON_DUPLICATE_HASH: Final = "skip"  # duplicate content policy 
 DEFAULT_COLLISION_ON_MISSING_METADATA: Final = "block"  # missing metadata policy name
 DEFAULT_ARTIST_ID_MAX_LENGTH: Final = 8  # maximum generated artist ID length, characters
 DEFAULT_ARTIST_ID_FALLBACK: Final = "NOART"  # artist ID used when source text has no usable characters
+MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE: Final = "sticky_positive"  # persist accepted positive provider results
+ALLOWED_MUSICBRAINZ_CACHE_POLICIES: Final = frozenset(
+    {MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE}
+)  # supported provider-result cache policies
+DEFAULT_MUSICBRAINZ_ENABLED: Final = False  # opt-in automatic MusicBrainz lookup default
+DEFAULT_MUSICBRAINZ_APPLICATION_NAME: Final = "OMYM2"  # application identity sent to MusicBrainz
+DEFAULT_MUSICBRAINZ_CONTACT: Final = "https://github.com/muray0196/omym2"  # MusicBrainz contact identity
+DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS: Final = 5.0  # MusicBrainz request timeout, seconds, > 0
+DEFAULT_MUSICBRAINZ_RETRY_LIMIT: Final = 1  # retries after the initial MusicBrainz request, attempts, >= 0
+DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS: Final = 1.0  # delay between MusicBrainz requests, seconds, >= 1
+DEFAULT_MUSICBRAINZ_CACHE_POLICY: Final = (
+    MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE  # accepted positive provider-result cache behavior
+)
+DEFAULT_FASTTEXT_MODEL_PATH: Final[str | None] = None  # optional fastText model path
+DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE: Final = 0.8  # minimum accepted fastText confidence, 0..1
+FASTTEXT_MINIMUM_CONFIDENCE_MIN: Final = 0.0  # lowest accepted fastText confidence
+FASTTEXT_MINIMUM_CONFIDENCE_MAX: Final = 1.0  # highest accepted fastText confidence
+DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES: Final = 1_048_576  # file hash read chunk size, bytes, >= 1
+LOGGING_LEVEL_DEBUG: Final = "DEBUG"  # diagnostic logging level
+LOGGING_LEVEL_INFO: Final = "INFO"  # informational logging level
+LOGGING_LEVEL_WARNING: Final = "WARNING"  # warning logging level
+LOGGING_LEVEL_ERROR: Final = "ERROR"  # error logging level
+LOGGING_LEVEL_CRITICAL: Final = "CRITICAL"  # critical logging level
+ALLOWED_LOGGING_LEVELS: Final = frozenset(
+    {
+        LOGGING_LEVEL_DEBUG,
+        LOGGING_LEVEL_INFO,
+        LOGGING_LEVEL_WARNING,
+        LOGGING_LEVEL_ERROR,
+        LOGGING_LEVEL_CRITICAL,
+    }
+)  # supported persisted logging levels
+DEFAULT_LOGGING_DESTINATION: Final[str | None] = None  # application-data default log destination
+DEFAULT_LOGGING_LEVEL: Final = DESKTOP_LOG_LEVEL  # persisted logging level default
+DEFAULT_LOGGING_ROTATION_MAX_BYTES: Final = DESKTOP_LOG_MAX_BYTES  # log rotation threshold, bytes, >= 1
+DEFAULT_LOGGING_RETENTION_FILES: Final = DESKTOP_LOG_BACKUP_COUNT  # retained rotated log files, files, >= 1
+DEFAULT_COMPANIONS_ENABLED: Final = False  # opt-in companion lyrics and artwork processing default
+DEFAULT_UNPROCESSED_ENABLED: Final = False  # opt-in unprocessed-file collection default
+DEFAULT_UNPROCESSED_DIRECTORY: Final = "Unprocessed"  # unprocessed destination directory component
+UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN: Final = 1  # minimum reviewed unprocessed result count, files
+UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX: Final = 500  # maximum reviewed unprocessed result count, files
+DEFAULT_UNPROCESSED_RESULT_PREVIEW_LIMIT: Final = 100  # default reviewed unprocessed result count, files
+PORTABLE_PATH_CONTROL_CHARACTER_LIMIT: Final = 32  # first non-control Unicode code point allowed in path components
+PORTABLE_PATH_FORBIDDEN_CHARACTERS: Final = frozenset('<>:"/\\|?*')  # Windows-invalid path component chars
 ARTIST_ID_ALLOWED_PATTERN: Final = r"[A-Za-z0-9]+"  # characters kept while normalizing artist ID input
 ARTIST_ID_ENTRY_VALUE_PATTERN: Final = (
     r"^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*$"  # saved artist ID entry values accepted as sanitizer-stable
@@ -239,22 +283,21 @@ ARTIST_ID_ENTRY_VALUE_PATTERN: Final = (
 ARTIST_ID_SPLIT_PATTERN: Final = r"[\s-]+"  # separators that divide artist names into allocation words
 ARTIST_ID_MULTI_ARTIST_SEPARATOR: Final = ","  # separator between source artist names in metadata text
 ARTIST_ID_VOWELS: Final = frozenset("AEIOU")  # vowels deprioritized after the first character in a word
-ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE: Final = (
-    "OMYM2_ARTIST_NAME_FASTTEXT_MODEL_PATH"  # process opt-in path for automatic artist naming
-)
 FASTTEXT_JAPANESE_LABEL: Final = "__label__ja"  # fastText label that means Japanese text
-ARTIST_NAME_LANGUAGE_CONFIDENCE_MIN: Final = 0.8  # minimum fastText confidence for automatic naming, 0..1
-ARTIST_NAME_LANGUAGE_CONFIDENCE_MAX: Final = 1.0  # maximum valid fastText confidence for automatic naming
+ARTIST_NAME_LANGUAGE_CONFIDENCE_MIN: Final = (
+    DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE  # minimum fastText confidence for automatic naming, 0..1
+)
+ARTIST_NAME_LANGUAGE_CONFIDENCE_MAX: Final = FASTTEXT_MINIMUM_CONFIDENCE_MAX  # maximum valid fastText confidence
 ARTIST_NAME_COMPOSITE_SEPARATOR: Final = ","  # unsupported multi-artist separator during initial resolution
 MUSICBRAINZ_API_BASE_URL: Final = "https://musicbrainz.org/ws/2"  # MusicBrainz web service base URL
 MUSICBRAINZ_ARTIST_SEARCH_LIMIT: Final = 5  # artist search result cap per lookup
 MUSICBRAINZ_ARTIST_MATCH_SCORE_MIN: Final = 95  # minimum accepted artist search score, 0..100
 MUSICBRAINZ_ARTIST_AMBIGUITY_MARGIN: Final = 5  # inclusive score gap that keeps distinct identities ambiguous
-MUSICBRAINZ_RATE_LIMIT_SECONDS: Final = 1.0  # minimum delay between MusicBrainz requests
-MUSICBRAINZ_TIMEOUT_SECONDS: Final = 5.0  # MusicBrainz HTTP timeout, seconds
+MUSICBRAINZ_RATE_LIMIT_SECONDS: Final = DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS  # minimum delay between requests
+MUSICBRAINZ_TIMEOUT_SECONDS: Final = DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS  # MusicBrainz HTTP timeout, seconds
 MUSICBRAINZ_USER_AGENT: Final = "OMYM2/0.1 (https://github.com/muray0196/omym2)"  # MusicBrainz client UA
 CONTENT_FINGERPRINT_ALGORITHM: Final = "sha256"  # content fingerprint hash algorithm
-CONTENT_HASH_READ_CHUNK_SIZE_BYTES: Final = 1_048_576  # file hash read chunk size, bytes, positive
+CONTENT_HASH_READ_CHUNK_SIZE_BYTES: Final = DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES  # hash read chunk size, bytes
 FILE_SNAPSHOT_CAPTURE_MIN_WORKER_COUNT: Final = 1  # minimum parallel snapshot captures, workers, >= 1
 FILE_SNAPSHOT_CAPTURE_WORKER_COUNT: Final = 8  # maximum parallel snapshot captures, workers, >= 1
 CONFIG_FINGERPRINT_ALGORITHM: Final = "sha256"  # config fingerprint hash algorithm

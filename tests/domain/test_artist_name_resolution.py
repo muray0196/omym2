@@ -36,6 +36,7 @@ def test_artist_name_resolution_values_are_stable_strings() -> None:
         "missing_source",
         "composite_unsupported",
         "non_latin_required",
+        "automatic_lookup_disabled",
         "detector_unavailable",
         "not_japanese",
         "low_language_confidence",

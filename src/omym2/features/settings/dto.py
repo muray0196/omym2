@@ -88,6 +88,10 @@ class SettingsChoicesResult:
     target_exists_policies: tuple[str, ...]
     duplicate_hash_policies: tuple[str, ...]
     missing_metadata_policies: tuple[str, ...]
+    musicbrainz_cache_policies: tuple[str, ...]
+    logging_levels: tuple[str, ...]
+    unprocessed_result_preview_limit_min: int
+    unprocessed_result_preview_limit_max: int
     path_placeholders: tuple[str, ...]
 
 
@@ -99,7 +103,7 @@ class SettingsValidationIssue:
     message: str
 
 
-type SettingsChangeValue = str | int | bool | None
+type SettingsChangeValue = str | int | float | bool | None
 
 
 @dataclass(frozen=True, slots=True)

@@ -35,7 +35,7 @@ from omym2.features.plans.usecases.get_plan_capabilities import PlanCapabilities
 from omym2.features.plans.usecases.get_plan_header import PlanNotFoundError
 from omym2.features.tracks.dto import TrackStatusFacetsResult
 from omym2.features.tracks.usecases.get_track import TrackNotFoundError
-from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
+from omym2.shared.ids import ActionId, CompanionAssetId, LibraryId, OperationId, PlanId, TrackId
 from omym2.shared.pagination import FacetValue, GroupCount, Page
 
 if TYPE_CHECKING:
@@ -48,6 +48,8 @@ LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345670"))
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345671"))
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345672"))
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345673"))
+OWNER_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345675"))
+COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345676"))
 OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345674"))
 PLAN_NOT_FOUND_MESSAGE = "Plan was not found."
 TRACK_NOT_FOUND_MESSAGE = "Track was not found."
@@ -83,6 +85,9 @@ def test_plan_routes_return_typed_browse_and_detail_resources() -> None:
     assert detail_data["active_operation_id"] == str(OPERATION_ID)
     action = _objects(actions_data, "items")[0]
     assert action["source_path"] == "Artist/old.flac"
+    assert action["companion_asset_id"] == str(COMPANION_ASSET_ID)
+    assert action["owner_action_id"] == str(OWNER_ACTION_ID)
+    assert action["depends_on_action_ids"] == [str(OWNER_ACTION_ID)]
     assert action["artist_name_diagnostics"] == {
         "artist": {
             "source_name": "宇多田ヒカル",
@@ -137,6 +142,7 @@ def test_plan_detail_returns_typed_not_found_envelope() -> None:
             get_plan_action_summaries=handlers.get_plan_action_summaries,
             get_plan_capabilities=handlers.get_plan_capabilities,
             list_plan_actions=handlers.list_plan_actions,
+            get_plan_action_dependencies=handlers.get_plan_action_dependencies,
             get_plan_action_facets=handlers.get_plan_action_facets,
             group_plan_actions=handlers.group_plan_actions,
             cancel_plan=handlers.cancel_plan,
@@ -228,6 +234,7 @@ def _plan_handlers() -> PlanRouteHandlers:
             disabled_reasons=(),
         ),
         list_plan_actions=lambda _request: Page(items=(action,), next_cursor_key=None, total=1),
+        get_plan_action_dependencies=lambda _request: {ACTION_ID: (OWNER_ACTION_ID,)},
         get_plan_action_facets=lambda _request: PlanActionFacetsResult(
             status_facets=(FacetValue(ActionStatus.PLANNED.value, 1),),
             action_type_facets=(FacetValue(ActionType.MOVE.value, 1),),
@@ -297,6 +304,8 @@ def _action() -> PlanAction:
         status=ActionStatus.PLANNED,
         reason=None,
         sort_order=1,
+        companion_asset_id=COMPANION_ASSET_ID,
+        owner_action_id=OWNER_ACTION_ID,
         artist_name_diagnostics=ArtistNameDiagnostics(
             artist=ArtistNameResolutionDiagnostic(
                 source_name="宇多田ヒカル",

@@ -14,7 +14,6 @@ from uuid import UUID
 from omym2.config import (
     ARTIST_NAME_COMPOSITE_SEPARATOR,
     ARTIST_NAME_LANGUAGE_CONFIDENCE_MAX,
-    ARTIST_NAME_LANGUAGE_CONFIDENCE_MIN,
     FASTTEXT_JAPANESE_LABEL,
     MUSICBRAINZ_ARTIST_AMBIGUITY_MARGIN,
     MUSICBRAINZ_ARTIST_MATCH_SCORE_MIN,
@@ -127,12 +126,15 @@ class ResolveArtistNamesUseCase:
         if source_name is None or source_key is None:
             return _original_resolution(source, ArtistNameResolutionIssue.MISSING_SOURCE), None
         eligibility_issue = _source_eligibility_issue(source_key)
+        if eligibility_issue is None and not self.ports.automatic_lookup_enabled:
+            eligibility_issue = ArtistNameResolutionIssue.AUTOMATIC_LOOKUP_DISABLED
         if eligibility_issue is None:
             prediction = self.ports.language_predictor.predict_language(source_key)
             eligibility_issue = _prediction_issue(
                 available=prediction.available,
                 label=prediction.label,
                 confidence=prediction.confidence,
+                minimum_confidence=self.ports.minimum_confidence,
             )
         if eligibility_issue is not None:
             return _original_resolution(source, eligibility_issue), None
@@ -302,6 +304,7 @@ def _prediction_issue(
     available: bool,
     label: str | None,
     confidence: float | None,
+    minimum_confidence: float,
 ) -> ArtistNameResolutionIssue | None:
     if not available:
         return ArtistNameResolutionIssue.DETECTOR_UNAVAILABLE
@@ -310,7 +313,7 @@ def _prediction_issue(
     if (
         confidence is None
         or not isfinite(confidence)
-        or not ARTIST_NAME_LANGUAGE_CONFIDENCE_MIN <= confidence <= ARTIST_NAME_LANGUAGE_CONFIDENCE_MAX
+        or not minimum_confidence <= confidence <= ARTIST_NAME_LANGUAGE_CONFIDENCE_MAX
     ):
         return ArtistNameResolutionIssue.LOW_LANGUAGE_CONFIDENCE
     return None

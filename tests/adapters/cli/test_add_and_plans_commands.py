@@ -6,6 +6,7 @@ Why: Verifies add Plan creation, inspection, and apply orchestration.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime
 from io import StringIO
 from typing import TYPE_CHECKING, Never, override
@@ -15,26 +16,30 @@ from omym2.adapters.artist_ids.musicbrainz_artist_lookup import MusicBrainzArtis
 from omym2.adapters.cli.commands.add import AddCommandDependencies, run_add_command
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.default_config import default_app_config
+from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
-from omym2.config import ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE
 from omym2.domain.models.artist_name_resolution import ArtistNameResolutionProvenance
 from omym2.domain.models.file_event import FileEventStatus
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType
+from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.run import RunStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.artist_name import derive_artist_name_source_key
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
 from omym2.features.add.dto import CreateAddPlanRequest
+from omym2.features.add.usecases.create_add_plan import (
+    SUMMARY_MOVE_ACTIONS_KEY,
+    SUMMARY_UNPROCESSED_PREVIEW_LIMIT_KEY,
+)
 from omym2.features.artist_names.dto import (
     ArtistLanguagePrediction,
     ArtistNameProviderCandidate,
     ArtistNameSearchResult,
 )
 from omym2.platform.cli_entry_point import run_cli as main
-from omym2.shared.ids import LibraryId, PlanId
+from omym2.shared.ids import ActionId, LibraryId, PlanId
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -44,6 +49,14 @@ if TYPE_CHECKING:
     from omym2.features.common_ports import FileSystemPath
 
 AUDIO_CONTENT = b"fake audio bytes"
+ACTION_IDS = tuple(
+    ActionId(UUID(value))
+    for value in (
+        "018f6a4f-3c2d-7b8a-9abc-def01234567a",
+        "018f6a4f-3c2d-7b8a-9abc-def01234567b",
+        "018f6a4f-3c2d-7b8a-9abc-def01234567c",
+    )
+)
 APPLY_MODEL_LOAD_MESSAGE = "Apply must not load the automatic artist-name model."
 APPLY_PROVIDER_LOOKUP_MESSAGE = "Apply must not contact the artist-name provider."
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
@@ -99,6 +112,115 @@ def test_add_command_passes_normalized_source_path_to_request() -> None:
 
     assert exit_code == SUCCESS_EXIT_CODE
     assert captured_requests == [CreateAddPlanRequest(source_path=NORMALIZED_SOURCE_PATH)]
+
+
+def test_add_command_previews_only_the_deterministic_unprocessed_limit() -> None:
+    """CLI output truncates presentation while the returned Plan still carries every action."""
+    actions = tuple(
+        PlanAction(
+            action_id=action_id,
+            plan_id=PLAN_ID,
+            library_id=LIBRARY_ID,
+            track_id=None,
+            action_type=ActionType.MOVE_UNPROCESSED,
+            source_path=f"/incoming/{name}.txt",
+            target_path=f"/incoming/Unprocessed/{name}.txt",
+            content_hash_at_plan=f"hash-{name}",
+            metadata_hash_at_plan=None,
+            status=ActionStatus.PLANNED,
+            reason=None,
+            sort_order=sort_order,
+        )
+        for action_id, name, sort_order in zip(
+            ACTION_IDS,
+            ("c", "a", "b"),
+            (30, 10, 20),
+            strict=True,
+        )
+    )
+    plan = replace(
+        _empty_plan(PlanType.ADD),
+        summary={"unprocessed_preview_limit": "2"},
+        actions=actions,
+    )
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = run_add_command(
+        [],
+        stdout,
+        stderr,
+        AddCommandDependencies(
+            create_add_plan=lambda _request: plan,
+            apply_plan=_unexpected_apply,
+            normalize_source_path=str,
+        ),
+    )
+
+    assert exit_code == SUCCESS_EXIT_CODE
+    assert stderr.getvalue() == ""
+    assert stdout.getvalue().splitlines()[-4:] == [
+        "unprocessed_actions: 3",
+        "unprocessed: /incoming/a.txt -> /incoming/Unprocessed/a.txt",
+        "unprocessed: /incoming/b.txt -> /incoming/Unprocessed/b.txt",
+        "unprocessed_truncated: 1",
+    ]
+    assert len(plan.actions) == len(ACTION_IDS)
+
+
+def test_add_command_reports_all_planned_mutation_types_as_moves() -> None:
+    """CLI move count matches the authoritative mixed Add Plan summary."""
+    action_types = (ActionType.MOVE, ActionType.MOVE_LYRICS, ActionType.MOVE_UNPROCESSED)
+    actions = tuple(
+        PlanAction(
+            action_id=action_id,
+            plan_id=PLAN_ID,
+            library_id=LIBRARY_ID,
+            track_id=None,
+            action_type=action_type,
+            source_path=f"/incoming/source-{sort_order}",
+            target_path=f"target-{sort_order}",
+            content_hash_at_plan=f"hash-{sort_order}",
+            metadata_hash_at_plan=None,
+            status=ActionStatus.PLANNED,
+            reason=None,
+            sort_order=sort_order,
+        )
+        for action_id, action_type, sort_order in zip(ACTION_IDS, action_types, (1, 2, 3), strict=True)
+    )
+    plan = replace(
+        _empty_plan(PlanType.ADD),
+        summary={
+            SUMMARY_MOVE_ACTIONS_KEY: str(len(actions)),
+            SUMMARY_UNPROCESSED_PREVIEW_LIMIT_KEY: "0",
+        },
+        actions=actions,
+    )
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = run_add_command(
+        [],
+        stdout,
+        stderr,
+        AddCommandDependencies(
+            create_add_plan=lambda _request: plan,
+            apply_plan=_unexpected_apply,
+            normalize_source_path=str,
+        ),
+    )
+
+    assert exit_code == SUCCESS_EXIT_CODE
+    assert stderr.getvalue() == ""
+    assert stdout.getvalue().splitlines() == [
+        f"Add plan created: {PLAN_ID}",
+        "actions: 3",
+        "move_actions: 3",
+        "skip_actions: 0",
+        "blocked_actions: 0",
+        "unprocessed_actions: 1",
+        "unprocessed_truncated: 1",
+    ]
 
 
 def test_add_command_creates_plan_and_plans_command_displays_it(
@@ -185,11 +307,11 @@ def test_add_command_creates_plan_and_plans_command_displays_it(
     assert detail_stderr.getvalue() == ""
 
 
-def test_add_command_runtime_opt_in_records_new_musicbrainz_target_and_cache(
+def test_add_command_persisted_opt_in_records_new_musicbrainz_target_and_cache(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Normal CLI Add uses the shared lazy model/provider path only after explicit opt-in."""
+    """Normal CLI Add uses the shared lazy model/provider path after persisted opt-in."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     incoming_root = tmp_path / "incoming"
@@ -236,7 +358,7 @@ def test_add_command_runtime_opt_in_records_new_musicbrainz_target_and_cache(
         build_predictor,
     )
     monkeypatch.setattr(MusicBrainzArtistLookup, "search_artists", search_artists)
-    monkeypatch.setenv(ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE, str(model_path))
+    _enable_automatic_artist_name_lookup(app_paths.config_file, model_path)
 
     exit_code = main(
         ["add", str(incoming_root)],
@@ -302,13 +424,18 @@ def test_apply_command_applies_existing_plan(
     with SQLiteUnitOfWork(app_paths.database_file) as uow:
         plan = uow.plans.list_by_library(LIBRARY_ID)[0]
 
-    _forbid_automatic_artist_name_lookup(monkeypatch, tmp_path / "apply-must-not-load.ftz")
+    _forbid_automatic_artist_name_lookup(
+        monkeypatch,
+        app_paths.config_file,
+        tmp_path / "apply-must-not-load.ftz",
+    )
     apply_stdout = StringIO()
     apply_stderr = StringIO()
     apply_exit_code = main(
         ["apply", str(plan.plan_id), "--yes"],
         stdout=apply_stdout,
         stderr=apply_stderr,
+        config_path=app_paths.config_file,
         database_path=app_paths.database_file,
     )
 
@@ -522,7 +649,23 @@ class _JapanesePredictor:
         return ArtistLanguagePrediction(label="__label__ja", confidence=0.99, available=True)
 
 
-def _forbid_automatic_artist_name_lookup(monkeypatch: pytest.MonkeyPatch, model_path: Path) -> None:
+def _enable_automatic_artist_name_lookup(config_path: Path, model_path: Path) -> None:
+    """Persist the Stage 3 controls used by composition-level naming tests."""
+    store = TomlConfigStore(config_path)
+    snapshot = store.read_snapshot()
+    configured = replace(
+        snapshot.config,
+        musicbrainz=replace(snapshot.config.musicbrainz, enabled=True),
+        fasttext=replace(snapshot.config.fasttext, model_path=str(model_path)),
+    )
+    _ = store.save(configured, expected_config_revision=snapshot.config_revision)
+
+
+def _forbid_automatic_artist_name_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+    config_path: Path,
+    model_path: Path,
+) -> None:
     """Make any model load or provider request fail the current Apply test."""
 
     def fail_model_load(*, model_path: Path | None = None) -> Never:
@@ -533,7 +676,7 @@ def _forbid_automatic_artist_name_lookup(monkeypatch: pytest.MonkeyPatch, model_
         del source_name
         raise AssertionError(APPLY_PROVIDER_LOOKUP_MESSAGE)
 
-    monkeypatch.setenv(ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE, str(model_path))
+    _enable_automatic_artist_name_lookup(config_path, model_path)
     monkeypatch.setattr(
         "omym2.adapters.artist_ids.fasttext_language_detector.FastTextLanguageDetector",
         fail_model_load,

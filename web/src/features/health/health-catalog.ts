@@ -45,6 +45,61 @@ const ISSUE_PRESENTATIONS = {
     meaning: "A managed Track is not stored at its current canonical path.",
     tone: "warning",
   },
+  companion_file_missing: {
+    icon: "warning",
+    label: "Companion file is missing",
+    meaning:
+      "A managed companion asset's recorded current path is missing on disk.",
+    tone: "danger",
+  },
+  companion_content_hash_changed: {
+    icon: "warning",
+    label: "Companion content changed",
+    meaning:
+      "A managed companion file no longer matches its recorded content hash.",
+    tone: "danger",
+  },
+  companion_current_path_differs_from_canonical_path: {
+    icon: "warning",
+    label: "Companion path differs from canonical path",
+    meaning: "A managed companion asset is not stored at its canonical path.",
+    tone: "warning",
+  },
+  companion_owner_missing: {
+    icon: "warning",
+    label: "Companion owner is missing",
+    meaning:
+      "A managed companion asset no longer has its recorded owning Track.",
+    tone: "danger",
+  },
+  unmanaged_companion_exists: {
+    icon: "warning",
+    label: "Unmanaged companion exists",
+    meaning:
+      "A companion file exists without a managed companion-asset record.",
+    tone: "warning",
+  },
+  failed_companion_source_exists: {
+    icon: "warning",
+    label: "Failed companion source remains",
+    meaning:
+      "A definitively failed companion source remains eligible for a new reviewed Plan.",
+    tone: "danger",
+  },
+  unprocessed_file_missing: {
+    icon: "warning",
+    label: "Unprocessed file is missing",
+    meaning:
+      "A reviewed unprocessed-file target is missing; inspect its durable History before taking action.",
+    tone: "danger",
+  },
+  unprocessed_content_hash_changed: {
+    icon: "warning",
+    label: "Unprocessed file content changed",
+    meaning:
+      "A reviewed unprocessed-file target no longer matches its recorded hash; inspect its durable History.",
+    tone: "danger",
+  },
   duplicate_candidate: {
     icon: "warning",
     label: "Duplicate candidate",

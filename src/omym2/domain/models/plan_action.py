@@ -14,13 +14,18 @@ from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
     from omym2.domain.models.artist_name_resolution import ArtistNameDiagnostics
-    from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, TrackId
+    from omym2.shared.ids import ActionId, CompanionAssetId, EventId, LibraryId, PlanId, TrackId
+
+SELF_PLAN_ACTION_DEPENDENCY_MESSAGE = "A PlanAction cannot depend on itself."
 
 
 class ActionType(StrEnum):
     """Supported planned action types."""
 
     MOVE = "move"
+    MOVE_LYRICS = "move_lyrics"
+    MOVE_ARTWORK = "move_artwork"
+    MOVE_UNPROCESSED = "move_unprocessed"
     SKIP = "skip"
     REFRESH_METADATA = "refresh_metadata"
 
@@ -43,6 +48,9 @@ class PlanActionReason(StrEnum):
     SOURCE_MISSING = "source_missing"
     SOURCE_CHANGED = "source_changed"
     DUPLICATE_HASH = "duplicate_hash"
+    COMPANION_OWNER_BLOCKED = "companion_owner_blocked"
+    COMPANION_ASSOCIATION_AMBIGUOUS = "companion_association_ambiguous"
+    COMPANION_DEPENDENCY_FAILED = "companion_dependency_failed"
     OPERATION_INTERRUPTED = "operation_interrupted"
 
 
@@ -64,6 +72,8 @@ class PlanAction:
     sort_order: int
     reverses_event_id: EventId | None = None
     artist_name_diagnostics: ArtistNameDiagnostics | None = None
+    companion_asset_id: CompanionAssetId | None = None
+    owner_action_id: ActionId | None = None
 
     def __post_init__(self) -> None:
         """Normalize Library-managed path references stored in the action."""
@@ -100,4 +110,20 @@ class PlanAction:
             sort_order=self.sort_order,
             reverses_event_id=self.reverses_event_id,
             artist_name_diagnostics=self.artist_name_diagnostics,
+            companion_asset_id=self.companion_asset_id,
+            owner_action_id=self.owner_action_id,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class PlanActionDependency:
+    """One recorded dependency between actions in the same reviewed Plan."""
+
+    plan_id: PlanId
+    action_id: ActionId
+    depends_on_action_id: ActionId
+
+    def __post_init__(self) -> None:
+        """Reject a dependency cycle of length one."""
+        if self.action_id == self.depends_on_action_id:
+            raise ValueError(SELF_PLAN_ACTION_DEPENDENCY_MESSAGE)

@@ -8,7 +8,7 @@ export const settingsCopy = {
   eyebrow: "Configuration",
   title: "Settings",
   description:
-    "Edit paths and planning policy. Save applies valid changes; Review changes previews the diff.",
+    "Edit paths, planning policy, integrations, and runtime controls. Save applies valid changes; Review changes previews the diff.",
   loading: "Loading Settings…",
   loadError: "Settings could not be loaded",
   retry: "Try again",
@@ -67,6 +67,52 @@ export const settingsCopy = {
   targetExists: "When a target exists",
   duplicateHash: "When a duplicate hash exists",
   missingMetadata: "When required metadata is missing",
+  musicbrainzTitle: "MusicBrainz",
+  musicbrainzHelp:
+    "Configure optional artist-name lookup. The application name and contact identify this installation to MusicBrainz; disabling lookup keeps naming local-only.",
+  musicbrainzEnabled: "Enable MusicBrainz lookup",
+  musicbrainzApplicationName: "Application name",
+  musicbrainzContact: "Contact",
+  musicbrainzTimeout: "Request timeout (seconds)",
+  musicbrainzRetryLimit: "Retry limit",
+  musicbrainzRateLimit: "Rate limit (seconds)",
+  musicbrainzCachePolicy: "Accepted-result cache policy",
+  fasttextTitle: "fastText",
+  fasttextHelp:
+    "Choose an optional language-identification model and the minimum confidence required to use its result.",
+  fasttextModelPath: "Model path",
+  fasttextModelPathHelp:
+    "Leave empty to disable fastText language identification.",
+  fasttextMinimumConfidence: "Minimum confidence",
+  hashingTitle: "Hashing",
+  hashingHelp:
+    "Adjust how much file data is read at a time. This affects hashing performance, not content-hash identity.",
+  hashingReadChunkSize: "Read chunk size (bytes)",
+  loggingTitle: "Logging",
+  loggingHelp:
+    "Choose where application logs are written and how rotated log files are retained.",
+  loggingDestination: "Relative log destination",
+  loggingDestinationHelp:
+    "Leave empty to use the application-data default destination.",
+  loggingLevel: "Log level",
+  loggingRotationMaxBytes: "Rotation size (bytes)",
+  loggingRetentionFiles: "Retained files",
+  loggingRestart:
+    "Restart required: logging changes take effect the next time the application starts.",
+  companionsTitle: "Companion assets",
+  companionsHelp:
+    "Control whether newly created plans may include associated lyrics and artwork files.",
+  companionsEnabled: "Enable companion lyrics and artwork",
+  unprocessedTitle: "Unprocessed files",
+  unprocessedHelp:
+    "Control reviewed collection of files that are not claimed by music or companion processing.",
+  unprocessedEnabled: "Enable unprocessed-file collection",
+  unprocessedDirectory: "Destination directory name",
+  unprocessedDirectoryHelp:
+    "Use one portable relative folder name. Separators, roots, dot references, trailing dots or spaces, and Windows reserved names are rejected.",
+  unprocessedResultPreviewLimit: "Result preview limit",
+  unprocessedResultPreviewLimitHelp:
+    "Choose how many reviewed unprocessed results are shown at once. Allowed range:",
   previewTitle: "Path preview",
   previewBody:
     "Preview updates automatically from this draft and the sample metadata below without reading persisted state.",

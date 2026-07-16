@@ -13,7 +13,13 @@ import pytest
 
 from omym2.adapters.config import toml_config_store
 from omym2.adapters.config.toml_config_store import TomlConfigStore, dump_config_toml, load_config_text
-from omym2.config import ALBUM_YEAR_RESOLUTION_OLDEST, CONFIG_FILE_ENCODING
+from omym2.config import (
+    ALBUM_YEAR_RESOLUTION_OLDEST,
+    CONFIG_FILE_ENCODING,
+    MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
+)
 from omym2.domain.models.app_config import (
     INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE,
     INVALID_ARTIST_ID_FALLBACK_MESSAGE,
@@ -22,9 +28,15 @@ from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
     ArtistNameConfig,
+    CompanionsConfig,
+    FastTextConfig,
+    HashingConfig,
+    LoggingConfig,
     MetadataConfig,
+    MusicBrainzConfig,
     PathPolicyConfig,
     PathsConfig,
+    UnprocessedConfig,
 )
 from omym2.features.common_ports import (
     ConfigRevisionMismatchError,
@@ -47,6 +59,8 @@ SECOND_SAME_SIZE_LIBRARY_PATH = "/music/b"
 DISC_NUMBER_STYLE_D_PREFIXED = "d_prefixed"
 DISC_NUMBER_CONDITION_MULTIPLE_DISCS = "multiple_discs"
 REPLACE_FAILURE_MESSAGE = "injected Config replace failure"
+UNPROCESSED_DIRECTORY = "Review Later"
+UNPROCESSED_PREVIEW_LIMIT = 250
 
 
 def test_toml_config_store_loads_default_when_config_missing(tmp_path: Path) -> None:
@@ -79,6 +93,66 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
     )
     assert f'"{ARTIST_NAME}" = "{ARTIST_ID}"' in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
     assert f'"{ARTIST_NAME}" = "{PREFERRED_ARTIST_NAME}"' in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
+
+
+def test_toml_config_store_round_trips_runtime_controls_and_floats(tmp_path: Path) -> None:
+    """All optional Stage 3 sections serialize deterministically and reload without loss."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    config = AppConfig(
+        musicbrainz=MusicBrainzConfig(
+            enabled=True,
+            application_name="OMYM2 Tests",
+            contact="tests@example.invalid",
+            timeout_seconds=2.5,
+            retry_limit=3,
+            rate_limit_seconds=1.25,
+            cache_policy=MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE,
+        ),
+        fasttext=FastTextConfig(model_path="models/lid.176.ftz", minimum_confidence=0.65),
+        hashing=HashingConfig(read_chunk_size_bytes=4_096),
+        logging=LoggingConfig(
+            destination="logs/omym2.log",
+            level="DEBUG",
+            rotation_max_bytes=2_048,
+            retention_files=5,
+        ),
+    )
+
+    _save_current(store, config)
+
+    config_text = config_path.read_text(encoding=CONFIG_FILE_ENCODING)
+    assert "[musicbrainz]" in config_text
+    assert "timeout_seconds = 2.5" in config_text
+    assert "rate_limit_seconds = 1.25" in config_text
+    assert "[fasttext]" in config_text
+    assert "minimum_confidence = 0.65" in config_text
+    assert "[hashing]" in config_text
+    assert "[logging]" in config_text
+    assert store.load() == config
+
+
+def test_toml_config_store_round_trips_opt_in_collection_controls(tmp_path: Path) -> None:
+    """Optional companion and unprocessed sections serialize completely and reload without loss."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    store = TomlConfigStore(config_path)
+    config = AppConfig(
+        companions=CompanionsConfig(enabled=True),
+        unprocessed=UnprocessedConfig(
+            enabled=True,
+            directory=UNPROCESSED_DIRECTORY,
+            result_preview_limit=UNPROCESSED_PREVIEW_LIMIT,
+        ),
+    )
+
+    _save_current(store, config)
+
+    config_text = config_path.read_text(encoding=CONFIG_FILE_ENCODING)
+    assert "[companions]\nenabled = true" in config_text
+    assert "[unprocessed]\nenabled = true" in config_text
+    assert f'directory = "{UNPROCESSED_DIRECTORY}"' in config_text
+    assert f"result_preview_limit = {UNPROCESSED_PREVIEW_LIMIT}" in config_text
+    assert store.load() == config
 
 
 def test_toml_config_store_saves_and_loads_disc_number_settings(tmp_path: Path) -> None:
@@ -361,6 +435,60 @@ def test_toml_config_text_loads_missing_artist_name_defaults() -> None:
     config = load_config_text("version = 1\n")
 
     assert config.artist_names == ArtistNameConfig()
+
+
+def test_toml_config_text_loads_missing_runtime_section_defaults() -> None:
+    """Existing version-1 files gain optional section defaults without a compatibility layer."""
+    config = load_config_text("version = 1\n")
+
+    assert config.musicbrainz == MusicBrainzConfig()
+    assert config.fasttext == FastTextConfig()
+    assert config.hashing == HashingConfig()
+    assert config.logging == LoggingConfig()
+    assert config.companions == CompanionsConfig()
+    assert config.unprocessed == UnprocessedConfig()
+
+
+@pytest.mark.parametrize(
+    ("runtime_toml", "expected_field"),
+    [
+        ('[musicbrainz]\nenabled = "yes"', "musicbrainz.enabled"),
+        ('[musicbrainz]\napplication_name = " "', "musicbrainz.application_name"),
+        ('[musicbrainz]\ntimeout_seconds = "5"', "musicbrainz.timeout_seconds"),
+        ("[musicbrainz]\ntimeout_seconds = 0.0", "timeout_seconds"),
+        ("[musicbrainz]\ntimeout_seconds = inf", "timeout_seconds"),
+        ("[musicbrainz]\nretry_limit = -1", "retry_limit"),
+        ("[musicbrainz]\nrate_limit_seconds = 0.5", "rate_limit_seconds"),
+        ("[musicbrainz]\nrate_limit_seconds = inf", "rate_limit_seconds"),
+        ('[musicbrainz]\ncache_policy = "none"', "musicbrainz.cache_policy"),
+        ("[musicbrainz]\nunknown = true", "musicbrainz.unknown"),
+        ('[fasttext]\nmodel_path = ""', "fasttext.model_path"),
+        ("[fasttext]\nminimum_confidence = nan", "minimum_confidence"),
+        ("[hashing]\nread_chunk_size_bytes = false", "hashing.read_chunk_size_bytes"),
+        ('[logging]\ndestination = "../outside.log"', "destination"),
+        ('[logging]\nlevel = "TRACE"', "logging.level"),
+        ("[logging]\nrotation_max_bytes = 0", "rotation_max_bytes"),
+        ("[logging]\nretention_files = 0", "retention_files"),
+        ('[companions]\nenabled = "yes"', "companions.enabled"),
+        ("[companions]\nunknown = true", "companions.unknown"),
+        ('[unprocessed]\nenabled = "yes"', "unprocessed.enabled"),
+        ('[unprocessed]\ndirectory = "nested/path"', "directory"),
+        (
+            f"[unprocessed]\nresult_preview_limit = {UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN - 1}",
+            "result_preview_limit",
+        ),
+        (
+            f"[unprocessed]\nresult_preview_limit = {UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX + 1}",
+            "result_preview_limit",
+        ),
+        ("[unprocessed]\nresult_preview_limit = false", "unprocessed.result_preview_limit"),
+        ("[unprocessed]\nunknown = true", "unprocessed.unknown"),
+    ],
+)
+def test_toml_config_store_rejects_invalid_runtime_controls(runtime_toml: str, expected_field: str) -> None:
+    """Wrong types, ranges, choices, unsafe paths, and unknown runtime keys fail validation."""
+    with pytest.raises(ConfigStoreValidationError, match=expected_field):
+        _ = load_config_text(f"version = 1\n\n{runtime_toml}\n")
 
 
 def test_config_snapshot_gives_missing_storage_a_stable_revision_without_creating_file(tmp_path: Path) -> None:

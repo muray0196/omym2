@@ -17,20 +17,34 @@ from typing import TYPE_CHECKING
 from omym2.adapters.config.config_validator import (
     ADD_SECTION,
     ALBUM_YEAR_RESOLUTION_KEY,
+    APPLICATION_NAME_KEY,
     ARTIST_IDS_SECTION,
     ARTIST_NAMES_SECTION,
     AUTO_APPLY_KEY,
+    CACHE_POLICY_KEY,
     COLLISION_SECTION,
+    COMPANIONS_SECTION,
+    CONTACT_KEY,
     DEFAULT_MODE_KEY,
+    DESTINATION_KEY,
+    DIRECTORY_KEY,
     DISC_NUMBER_CONDITION_KEY,
     DISC_NUMBER_STYLE_KEY,
+    ENABLED_KEY,
     ENTRIES_KEY,
     FALLBACK_ID_KEY,
+    FASTTEXT_SECTION,
+    HASHING_SECTION,
     INCOMING_KEY,
+    LEVEL_KEY,
     LIBRARY_KEY,
+    LOGGING_SECTION,
     MAX_FILENAME_LENGTH_KEY,
     MAX_LENGTH_KEY,
     METADATA_SECTION,
+    MINIMUM_CONFIDENCE_KEY,
+    MODEL_PATH_KEY,
+    MUSICBRAINZ_SECTION,
     ON_DUPLICATE_HASH_KEY,
     ON_MISSING_METADATA_KEY,
     ON_TARGET_EXISTS_KEY,
@@ -39,14 +53,22 @@ from omym2.adapters.config.config_validator import (
     PATHS_SECTION,
     PREFER_ALBUM_ARTIST_KEY,
     PREFERENCES_KEY,
+    RATE_LIMIT_SECONDS_KEY,
+    READ_CHUNK_SIZE_BYTES_KEY,
     REFRESH_SECTION,
     REQUIRE_ALBUM_KEY,
     REQUIRE_ARTIST_KEY,
     REQUIRE_TITLE_KEY,
+    RESULT_PREVIEW_LIMIT_KEY,
+    RETENTION_FILES_KEY,
+    RETRY_LIMIT_KEY,
+    ROTATION_MAX_BYTES_KEY,
     SANITIZE_KEY,
     TEMPLATE_KEY,
+    TIMEOUT_SECONDS_KEY,
     UNKNOWN_ALBUM_KEY,
     UNKNOWN_ARTIST_KEY,
+    UNPROCESSED_SECTION,
     VERSION_KEY,
     validate_config_data,
 )
@@ -367,6 +389,56 @@ def dump_config_toml(config: AppConfig) -> str:
             (ON_MISSING_METADATA_KEY, config.collision.on_missing_metadata),
         ),
     )
+    _append_section(
+        lines,
+        MUSICBRAINZ_SECTION,
+        (
+            (ENABLED_KEY, config.musicbrainz.enabled),
+            (APPLICATION_NAME_KEY, config.musicbrainz.application_name),
+            (CONTACT_KEY, config.musicbrainz.contact),
+            (TIMEOUT_SECONDS_KEY, config.musicbrainz.timeout_seconds),
+            (RETRY_LIMIT_KEY, config.musicbrainz.retry_limit),
+            (RATE_LIMIT_SECONDS_KEY, config.musicbrainz.rate_limit_seconds),
+            (CACHE_POLICY_KEY, config.musicbrainz.cache_policy),
+        ),
+    )
+    _append_section(
+        lines,
+        FASTTEXT_SECTION,
+        (
+            (MODEL_PATH_KEY, config.fasttext.model_path),
+            (MINIMUM_CONFIDENCE_KEY, config.fasttext.minimum_confidence),
+        ),
+    )
+    _append_section(
+        lines,
+        HASHING_SECTION,
+        ((READ_CHUNK_SIZE_BYTES_KEY, config.hashing.read_chunk_size_bytes),),
+    )
+    _append_section(
+        lines,
+        LOGGING_SECTION,
+        (
+            (DESTINATION_KEY, config.logging.destination),
+            (LEVEL_KEY, config.logging.level),
+            (ROTATION_MAX_BYTES_KEY, config.logging.rotation_max_bytes),
+            (RETENTION_FILES_KEY, config.logging.retention_files),
+        ),
+    )
+    _append_section(
+        lines,
+        COMPANIONS_SECTION,
+        ((ENABLED_KEY, config.companions.enabled),),
+    )
+    _append_section(
+        lines,
+        UNPROCESSED_SECTION,
+        (
+            (ENABLED_KEY, config.unprocessed.enabled),
+            (DIRECTORY_KEY, config.unprocessed.directory),
+            (RESULT_PREVIEW_LIMIT_KEY, config.unprocessed.result_preview_limit),
+        ),
+    )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -390,6 +462,8 @@ def _format_toml_value(value: object) -> str:
         return "true" if value else "false"
     if isinstance(value, int):
         return str(value)
+    if isinstance(value, float):
+        return repr(value)
     if isinstance(value, str):
         return json.dumps(value)
     raise TypeError(UNSUPPORTED_TOML_VALUE_MESSAGE)

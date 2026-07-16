@@ -14,10 +14,16 @@ from omym2.domain.models.app_config import (
     ArtistNameConfig,
     CollisionConfig,
     CommandConfig,
+    CompanionsConfig,
+    FastTextConfig,
+    HashingConfig,
+    LoggingConfig,
     MetadataConfig,
+    MusicBrainzConfig,
     OrganizeConfig,
     PathPolicyConfig,
     PathsConfig,
+    UnprocessedConfig,
 )
 from omym2.domain.models.track_metadata import TrackMetadata
 
@@ -106,6 +112,95 @@ class CollisionConfigResource(ApiModel):
     on_missing_metadata: str
 
 
+class MusicBrainzConfigResource(ApiModel):
+    """Persisted MusicBrainz enablement, identity, request, and cache controls."""
+
+    enabled: bool
+    application_name: str
+    contact: str
+    timeout_seconds: float
+    retry_limit: int
+    rate_limit_seconds: float
+    cache_policy: str
+
+    def to_domain(self) -> MusicBrainzConfig:
+        """Validate and convert the complete MusicBrainz settings draft."""
+        return MusicBrainzConfig(
+            enabled=self.enabled,
+            application_name=self.application_name,
+            contact=self.contact,
+            timeout_seconds=self.timeout_seconds,
+            retry_limit=self.retry_limit,
+            rate_limit_seconds=self.rate_limit_seconds,
+            cache_policy=self.cache_policy,
+        )
+
+
+class FastTextConfigResource(ApiModel):
+    """Persisted fastText model and confidence controls."""
+
+    model_path: str | None
+    minimum_confidence: float
+
+    def to_domain(self) -> FastTextConfig:
+        """Validate and convert the complete fastText settings draft."""
+        return FastTextConfig(model_path=self.model_path, minimum_confidence=self.minimum_confidence)
+
+
+class HashingConfigResource(ApiModel):
+    """Persisted streaming content-hash controls."""
+
+    read_chunk_size_bytes: int
+
+    def to_domain(self) -> HashingConfig:
+        """Validate and convert the complete hashing settings draft."""
+        return HashingConfig(read_chunk_size_bytes=self.read_chunk_size_bytes)
+
+
+class LoggingConfigResource(ApiModel):
+    """Persisted logging destination, severity, rotation, and retention controls."""
+
+    destination: str | None
+    level: str
+    rotation_max_bytes: int
+    retention_files: int
+
+    def to_domain(self) -> LoggingConfig:
+        """Validate and convert the complete logging settings draft."""
+        return LoggingConfig(
+            destination=self.destination,
+            level=self.level,
+            rotation_max_bytes=self.rotation_max_bytes,
+            retention_files=self.retention_files,
+        )
+
+
+class CompanionsConfigResource(ApiModel):
+    """Persisted opt-in control for companion lyrics and artwork."""
+
+    enabled: bool
+
+    def to_domain(self) -> CompanionsConfig:
+        """Convert the complete companion settings draft."""
+        return CompanionsConfig(enabled=self.enabled)
+
+
+class UnprocessedConfigResource(ApiModel):
+    """Persisted controls for reviewed unprocessed-file collection."""
+
+    enabled: bool
+    directory: str
+    result_preview_limit: int
+
+    def to_domain(self) -> UnprocessedConfig:
+        """Validate and convert the complete unprocessed settings draft."""
+        return UnprocessedConfig(
+            enabled=self.enabled,
+            directory=self.directory,
+            result_preview_limit=self.result_preview_limit,
+        )
+
+
 class AppConfigResource(ApiModel):
     """Complete supported AppConfig representation."""
 
@@ -119,6 +214,12 @@ class AppConfigResource(ApiModel):
     artist_names: ArtistNameConfigResource
     metadata: MetadataConfigResource
     collision: CollisionConfigResource
+    musicbrainz: MusicBrainzConfigResource
+    fasttext: FastTextConfigResource
+    hashing: HashingConfigResource
+    logging: LoggingConfigResource
+    companions: CompanionsConfigResource
+    unprocessed: UnprocessedConfigResource
 
     @classmethod
     def from_domain(cls, config: AppConfig) -> AppConfigResource:
@@ -158,6 +259,32 @@ class AppConfigResource(ApiModel):
                 on_duplicate_hash=config.collision.on_duplicate_hash,
                 on_missing_metadata=config.collision.on_missing_metadata,
             ),
+            musicbrainz=MusicBrainzConfigResource(
+                enabled=config.musicbrainz.enabled,
+                application_name=config.musicbrainz.application_name,
+                contact=config.musicbrainz.contact,
+                timeout_seconds=config.musicbrainz.timeout_seconds,
+                retry_limit=config.musicbrainz.retry_limit,
+                rate_limit_seconds=config.musicbrainz.rate_limit_seconds,
+                cache_policy=config.musicbrainz.cache_policy,
+            ),
+            fasttext=FastTextConfigResource(
+                model_path=config.fasttext.model_path,
+                minimum_confidence=config.fasttext.minimum_confidence,
+            ),
+            hashing=HashingConfigResource(read_chunk_size_bytes=config.hashing.read_chunk_size_bytes),
+            logging=LoggingConfigResource(
+                destination=config.logging.destination,
+                level=config.logging.level,
+                rotation_max_bytes=config.logging.rotation_max_bytes,
+                retention_files=config.logging.retention_files,
+            ),
+            companions=CompanionsConfigResource(enabled=config.companions.enabled),
+            unprocessed=UnprocessedConfigResource(
+                enabled=config.unprocessed.enabled,
+                directory=config.unprocessed.directory,
+                result_preview_limit=config.unprocessed.result_preview_limit,
+            ),
         )
 
     def to_domain(self) -> AppConfig:
@@ -189,6 +316,12 @@ class AppConfigResource(ApiModel):
                 on_duplicate_hash=self.collision.on_duplicate_hash,
                 on_missing_metadata=self.collision.on_missing_metadata,
             ),
+            musicbrainz=self.musicbrainz.to_domain(),
+            fasttext=self.fasttext.to_domain(),
+            hashing=self.hashing.to_domain(),
+            logging=self.logging.to_domain(),
+            companions=self.companions.to_domain(),
+            unprocessed=self.unprocessed.to_domain(),
         )
 
 
@@ -202,6 +335,10 @@ class SettingsChoices(ApiModel):
     target_exists_policies: tuple[str, ...]
     duplicate_hash_policies: tuple[str, ...]
     missing_metadata_policies: tuple[str, ...]
+    musicbrainz_cache_policies: tuple[str, ...]
+    logging_levels: tuple[str, ...]
+    unprocessed_result_preview_limit_min: int
+    unprocessed_result_preview_limit_max: int
     path_placeholders: tuple[str, ...]
 
 
@@ -219,7 +356,7 @@ class PathPreview(ApiModel):
     errors: tuple[ApiError, ...]
 
 
-type SettingsChangeValue = str | int | bool | None
+type SettingsChangeValue = str | int | float | bool | None
 
 
 class SettingsChange(ApiModel):

@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Status And Reason Catalog
-description: Defines the versioned status, reason, action, event, check, and durable-operation catalogs plus required unknown-value and status presentation behavior.
-tags: [status, reason-codes, catalog, execution, operations]
-timestamp: 2026-07-13T00:31:39+09:00
+description: Defines the versioned Track and CompanionAsset statuses, Plan action/reason, unprocessed FileEvent and CheckIssue values, durable-operation catalogs, triage, and presentation behavior.
+tags: [status, reason-codes, catalog, execution, companions, unprocessed, operations]
+timestamp: 2026-07-16T04:51:16+09:00
 ---
 
 # Status And Reason Catalog
@@ -16,11 +16,21 @@ Domain concepts are in [../DOMAIN.md](../DOMAIN.md). Execution state transitions
 
 ## Catalog Version
 
-The catalog version returned by Bootstrap is integer `1`. It versions the
+The catalog version returned by Bootstrap is integer `3`. It versions the
 closed catalogs in this document as one bundled client/server contract. Adding,
 removing, or redefining a closed value increments the version in the same
 coordinated change. It does not version the open FileEvent error-code or
 Operation stage-code schemas.
+
+Version 2 adds companion closed values. Binaries bundled with version 1 must
+not apply Plans containing them; the backup, ready-Plan cleanup, and
+manual-review downgrade procedure is authoritative in
+[Stage 4 And 5 Backup And Downgrade](db-schema.md#stage-4-and-5-backup-and-downgrade).
+
+Version 3 adds `move_unprocessed`, `move_unprocessed_file`,
+`unprocessed_file_missing`, and `unprocessed_content_hash_changed`. Version 1
+or 2 binaries must not read current Stage 5 state or apply a Plan containing
+these values; they must use the matched backup/downgrade procedure above.
 
 ## Library Status
 
@@ -44,6 +54,27 @@ removed
 
 `missing` is reported by `check` in the initial version rather than automatically persisted as Track status.
 
+## CompanionAsset Kind
+
+Field: `CompanionAsset.kind`.
+
+```text
+lyrics
+artwork
+```
+
+## CompanionAsset Status
+
+Field: `CompanionAsset.status`.
+
+```text
+active
+removed
+```
+
+`removed` retains the stable asset identity and its last managed
+Library-relative paths after an external Add Undo.
+
 ## Plan Status
 
 Field: `Plan.status`.
@@ -64,13 +95,20 @@ Field: `PlanAction.action_type`.
 
 ```text
 move
+move_lyrics
+move_artwork
+move_unprocessed
 skip
 refresh_metadata
 ```
 
 `conflict` and `error` are not action types.
 
-`refresh_metadata` reingests Track metadata and hashes for an unchanged path without a Library music file mutation.
+`move_lyrics` and `move_artwork` are metadata-free companion mutations.
+`move_unprocessed` is a trackless, dependency-free, content-only mutation
+between two absolute paths below a retained Add source root.
+`refresh_metadata` reingests Track metadata and hashes for an unchanged path
+without a file mutation.
 
 ## PlanAction Status
 
@@ -96,10 +134,19 @@ invalid_path
 source_missing
 source_changed
 duplicate_hash
+companion_owner_blocked
+companion_association_ambiguous
+companion_dependency_failed
 operation_interrupted
 ```
 
 Plan creation problems are blocked. Apply-time precondition failures are failed.
+`companion_owner_blocked` means a usable owning audio action/target was not
+available at review time. `companion_association_ambiguous` means lyrics had
+multiple possible owners or directory artwork's audio targets did not share
+one parent. `companion_dependency_failed` is an Apply-time failure recorded
+before observation or mutation when a durable dependency or semantic owner is
+not successfully applied.
 `operation_interrupted` marks an eligible action whose completion could not be
 confirmed after worker dispatch failure or process restart. A related pending
 FileEvent remains the authority for an unknown mutation outcome.
@@ -121,6 +168,9 @@ Field: `FileEvent.event_type`.
 
 ```text
 move_file
+move_lyrics_file
+move_artwork_file
+move_unprocessed_file
 ```
 
 ## FileEvent Status
@@ -133,7 +183,9 @@ succeeded
 failed
 ```
 
-FileEvents are created only for attempted Library music file mutations.
+FileEvents are created only for attempted reviewed audio, companion, or
+unprocessed-file mutations. `move_unprocessed_file` carries no Track or
+CompanionAsset identity.
 
 ## FileEvent Error Code
 
@@ -171,6 +223,14 @@ unmanaged_file_exists
 content_hash_changed
 metadata_hash_changed
 current_path_differs_from_canonical_path
+companion_file_missing
+companion_content_hash_changed
+companion_current_path_differs_from_canonical_path
+companion_owner_missing
+unmanaged_companion_exists
+failed_companion_source_exists
+unprocessed_file_missing
+unprocessed_content_hash_changed
 duplicate_candidate
 plan_source_changed
 pending_file_event_exists
@@ -178,6 +238,36 @@ library_unregistered
 library_stale
 library_blocked
 ```
+
+`failed_companion_source_exists` is a recovery finding, not proof of an
+unrecorded success. It requires definitive non-pending failure evidence for a
+terminal companion action, succeeded owner-audio provenance, an active
+same-Library owner Track, and a safely rooted source that still exists. It
+permits creation of a new reviewed Plan; it never authorizes automatic repair.
+Its `detail` is `add` for an exact-root external recovery and `organize` for a
+Library-relative recovery. This stable scope drives suggested-command grouping
+on both POSIX and Windows; clients must not infer it from path spelling.
+
+`unprocessed_file_missing` and `unprocessed_content_hash_changed` describe the
+target of an unreversed succeeded `move_unprocessed_file` event. Both have
+`error` severity and map to the `history` command family with label
+`omym2 history`. They intentionally do not suggest Refresh, Add, or automatic
+repair because the Plan/FileEvent pair, not a managed Track row, is the durable
+evidence.
+
+## Stage 5 Presentation Labels
+
+The product-default labels for the new closed values are:
+
+| Value | Label | Tone |
+| --- | --- | --- |
+| `move_unprocessed` | Move unprocessed file | info |
+| `move_unprocessed_file` | Move unprocessed file | info |
+| `unprocessed_file_missing` | Unprocessed file is missing | danger |
+| `unprocessed_content_hash_changed` | Unprocessed file content changed | danger |
+
+The two findings present an explicit History-review remediation and never an
+automatic repair control.
 
 ## Operation Kind
 
@@ -253,6 +343,13 @@ Presentation follows these rules:
 
 * Skip actions become applied without FileEvent.
 * `refresh_metadata` actions become applied without FileEvent; the Track is updated in place.
+* Companion actions require every recorded dependency before filesystem
+  observation and create a typed pending FileEvent before mutation.
+* Unprocessed actions require exact retained-root path shape and content hash,
+  create a typed pending FileEvent, and never create managed Track or
+  CompanionAsset state.
+* A successful companion move creates or advances its CompanionAsset; failed
+  and pending mutations do not.
 * Blocked actions remain blocked during apply.
 * Precondition failures before mutation do not create FileEvents.
 * Terminal Plans are single-use.

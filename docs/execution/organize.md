@@ -1,14 +1,17 @@
 ---
 type: Execution Spec
 title: Organize Execution
-description: Defines organize registration and artist-name reconciliation diagnostics, Plan creation, and the explicit unique-Track size+mtime trust-stat optimization and fallback rules.
-tags: [organize, library-registration, plan-creation, artist-names, path-policy]
-timestamp: 2026-07-16T00:44:26+09:00
+description: Defines Organize registration and reconciliation for audio and associated companions, reviewed dependencies, clean DB-only registration, and trust-stat rules.
+tags: [organize, library-registration, plan-creation, artist-names, companions, path-policy]
+timestamp: 2026-07-16T03:44:47+09:00
 ---
 
 # Organize Execution
 
-This document is authoritative for `organize --library PATH`, first Library registration, existing Library rescan, unregistered path refusal, clean Library registration without mutation plan, organize Plan creation, and registration after successful apply.
+This document is authoritative for `organize --library PATH`, first Library
+registration, existing Library rescan, companion registration/planning,
+unregistered path refusal, clean registration without a mutation Plan, and
+registration after successful Apply.
 
 Common execution rules are in [model.md](model.md). Path identity rules are in [../contracts/path-identity-storage.md](../contracts/path-identity-storage.md).
 
@@ -73,7 +76,9 @@ Plain `omym2 organize` is allowed only when exactly one known Library can be sel
 
 If files need to move or blocking actions must be reviewed, `organize` creates an organize Plan. `organize` does not move files directly except through `--apply` orchestration.
 
-If no moves are needed and no blocking issues exist, `organize` can register the Library without creating a mutation Plan because DB-only Library state updates are not Library music file mutations.
+If no moves are needed and no blocking issues exist, `organize` can register
+the Library without creating a mutation Plan because DB-only Library, Track,
+and CompanionAsset updates are not file mutations.
 
 If the organize Plan is applied successfully and no blocking Library-state issues remain, the Library becomes registered. Updating Library state after apply is a DB-only state change and does not create a FileEvent.
 
@@ -83,9 +88,43 @@ Blocking issues include:
 
 * missing required metadata
 * canonical path conflicts
+* companion association, ownership, observation, or target conflicts
 * invalid paths
 * missing source files
 * other problems preventing safe acceptance
+
+## Companion Reconciliation
+
+When `companions.enabled` is true, Organize classifies the Library inventory
+with the shared [Companion Association](../DOMAIN.md#companion-association)
+policy after calculating audio targets. Companion files use rooted content-only
+snapshots and never enter music metadata or stat-trust processing.
+
+An already canonical companion is persisted directly as an active
+CompanionAsset only after its owning Track has been established in the same
+transaction. This is a DB-only registration and creates neither a PlanAction
+nor FileEvent. A misplaced companion instead becomes one reviewed
+`move_lyrics` or `move_artwork` action after the relevant audio actions,
+with a stable asset ID, semantic owner, and every durable dependency.
+
+Existing matching CompanionAsset identity and `first_seen_at` are preserved.
+Active companion paths participate in collision judgment. A blocked companion
+keeps the Organize Plan reviewable but leaves the Library `blocked`; the
+Library cannot become registered until no blocking audio or companion action
+remains.
+
+When companion processing is disabled, Organize creates no new companion state
+or actions and leaves existing managed assets unchanged.
+
+### Failed Companion Recovery
+
+Organize may create a companion-only recovery action when a definitive failed
+companion source is Library-relative, still exists safely below the current
+Library root, and retains valid succeeded owner-audio provenance plus an active
+same-Library owner Track. It reuses the recorded companion identity and owner
+Track without manufacturing an already-completed audio action or dependency.
+Pending or otherwise ambiguous outcomes remain manual-review-only and are not
+replanned.
 
 ## Trust-Stat Optimization
 
@@ -104,4 +143,4 @@ When an eligible source is accepted, organize updates that same unique active Tr
 
 Accepted organize candidates persist their snapshot size and modification time. This backfills existing null baselines only after full verification; an eligible trusted candidate preserves its already verified baseline.
 
-The opt-in can miss a content or metadata edit that preserves both size and modification time. Users who need full integrity verification omit the flag. If `--apply` is also selected, apply still performs its mandatory full source-hash precondition before any Track update or Library music file mutation.
+The opt-in can miss a content or metadata edit that preserves both size and modification time. Users who need full integrity verification omit the flag. If `--apply` is also selected, apply still performs its mandatory full source-hash precondition before any Track update or Library-managed file mutation.

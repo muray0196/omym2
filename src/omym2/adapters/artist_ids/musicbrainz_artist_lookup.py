@@ -10,12 +10,14 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from http.client import HTTPException
+from math import isfinite
 from typing import Protocol, Self, cast
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from uuid import UUID
 
 from omym2.config import (
+    DEFAULT_MUSICBRAINZ_RETRY_LIMIT,
     MUSICBRAINZ_API_BASE_URL,
     MUSICBRAINZ_ARTIST_SEARCH_LIMIT,
     MUSICBRAINZ_RATE_LIMIT_SECONDS,
@@ -33,6 +35,11 @@ type Clock = Callable[[], float]
 type Sleeper = Callable[[float], None]
 
 RATE_LIMIT_BELOW_PROVIDER_MINIMUM_MESSAGE = "MusicBrainz rate limiting must be at least the provider minimum."
+INVALID_TIMEOUT_MESSAGE = "MusicBrainz timeout must be positive."
+INVALID_RETRY_LIMIT_MESSAGE = "MusicBrainz retry limit must be non-negative."
+INVALID_USER_AGENT_MESSAGE = "MusicBrainz user agent must not be empty."
+RETRY_LOOP_EXHAUSTED_MESSAGE = "MusicBrainz retry loop exhausted without a result."
+RETRYABLE_PROVIDER_ERRORS = (OSError, TimeoutError, HTTPException)
 
 
 class _HttpResponse(Protocol):
@@ -51,6 +58,14 @@ class _HttpResponse(Protocol):
         ...
 
 
+class ProviderRequestCadence(Protocol):
+    """Coordinate the minimum delay between provider requests."""
+
+    def wait_for_request(self, minimum_interval_seconds: float) -> None:
+        """Wait until and reserve the next permitted provider request."""
+        ...
+
+
 def _urlopen(request: Request, timeout: float) -> _HttpResponse:
     return cast("_HttpResponse", urlopen(request, timeout=timeout))  # noqa: S310 - URL is built from the MusicBrainz HTTPS base URL.
 
@@ -62,16 +77,24 @@ class MusicBrainzArtistLookup:
     base_url: str = MUSICBRAINZ_API_BASE_URL
     user_agent: str = MUSICBRAINZ_USER_AGENT
     timeout_seconds: float = MUSICBRAINZ_TIMEOUT_SECONDS
+    retry_limit: int = DEFAULT_MUSICBRAINZ_RETRY_LIMIT
     rate_limit_seconds: float = MUSICBRAINZ_RATE_LIMIT_SECONDS
     search_limit: int = MUSICBRAINZ_ARTIST_SEARCH_LIMIT
     url_open: UrlOpen = _urlopen
     clock: Clock = time.monotonic
     sleeper: Sleeper = time.sleep
+    request_cadence: ProviderRequestCadence | None = None
     _last_request_at: float | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
-        """Reject throttling intervals below MusicBrainz's provider minimum."""
-        if self.rate_limit_seconds < MUSICBRAINZ_RATE_LIMIT_SECONDS:
+        """Reject invalid provider identity and bounded request controls."""
+        if self.user_agent.strip() == "":
+            raise ValueError(INVALID_USER_AGENT_MESSAGE)
+        if not isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
+            raise ValueError(INVALID_TIMEOUT_MESSAGE)
+        if self.retry_limit < 0:
+            raise ValueError(INVALID_RETRY_LIMIT_MESSAGE)
+        if not isfinite(self.rate_limit_seconds) or self.rate_limit_seconds < MUSICBRAINZ_RATE_LIMIT_SECONDS:
             raise ValueError(RATE_LIMIT_BELOW_PROVIDER_MINIMUM_MESSAGE)
 
     def search_artists(self, source_name: str) -> ArtistNameSearchResult:
@@ -89,20 +112,28 @@ class MusicBrainzArtistLookup:
         return ArtistNameSearchResult(available=True, candidates=candidates)
 
     def _request_artist_search(self, source_artist: str) -> object:
-        self._rate_limit()
         query = urlencode({"query": source_artist, "fmt": "json", "limit": str(self.search_limit)})
         request = Request(  # noqa: S310 - URL is built from the MusicBrainz HTTPS base URL.
             f"{self.base_url.rstrip('/')}/artist?{query}",
             headers={"User-Agent": self.user_agent, "Accept": "application/json"},
         )
-        try:
-            with self.url_open(request, self.timeout_seconds) as response:
-                raw_payload = response.read()
-        finally:
-            self._last_request_at = self.clock()
-        return cast("object", json.loads(raw_payload.decode("utf-8")))
+        for attempt in range(self.retry_limit + 1):
+            try:
+                self._rate_limit()
+                with self.url_open(request, self.timeout_seconds) as response:
+                    raw_payload = response.read()
+                return cast("object", json.loads(raw_payload.decode("utf-8")))
+            except RETRYABLE_PROVIDER_ERRORS:
+                if attempt >= self.retry_limit:
+                    raise
+            finally:
+                self._last_request_at = self.clock()
+        raise AssertionError(RETRY_LOOP_EXHAUSTED_MESSAGE)
 
     def _rate_limit(self) -> None:
+        if self.request_cadence is not None:
+            self.request_cadence.wait_for_request(self.rate_limit_seconds)
+            return
         if self._last_request_at is None:
             return
         elapsed = self.clock() - self._last_request_at

@@ -26,6 +26,8 @@ import {
   issueTypePresentation,
 } from "./health-catalog";
 
+const COMPANION_ASSET_ID = "018f6a4f-3c2d-7b8a-9abc-def012345713";
+
 describe("Health inspection", () => {
   it("drills into an opaque server group without starting the available Check control", async () => {
     let drillDownSeen = false;
@@ -52,6 +54,7 @@ describe("Health inspection", () => {
       screen.getAllByText("Pending FileEvent requires review").length,
     ).toBeGreaterThan(0);
     expect(screen.getByText(/Findings checked/i)).toBeVisible();
+    expect(screen.getByText(COMPANION_ASSET_ID)).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: /Warnings/i }));
 
     await waitFor(() => expect(drillDownSeen).toBe(true));
@@ -77,6 +80,9 @@ describe("Health inspection", () => {
     expect(healthGroupValueLabel("severity", "warning", "Warnings")).toBe(
       "Warnings",
     );
+    expect(
+      healthGroupValueLabel("suggested_command", "history", "omym2 history"),
+    ).toBe("omym2 history");
     expect(issueTypePresentation("future_issue")).toMatchObject({
       icon: "info",
       label: "Unknown issue type: future_issue",
@@ -91,6 +97,14 @@ describe("Health inspection", () => {
       ["content_hash_changed", "danger"],
       ["metadata_hash_changed", "warning"],
       ["current_path_differs_from_canonical_path", "warning"],
+      ["companion_file_missing", "danger"],
+      ["companion_content_hash_changed", "danger"],
+      ["companion_current_path_differs_from_canonical_path", "warning"],
+      ["companion_owner_missing", "danger"],
+      ["unmanaged_companion_exists", "warning"],
+      ["failed_companion_source_exists", "danger"],
+      ["unprocessed_file_missing", "danger"],
+      ["unprocessed_content_hash_changed", "danger"],
       ["duplicate_candidate", "warning"],
       ["plan_source_changed", "warning"],
       ["pending_file_event_exists", "warning"],
@@ -103,6 +117,32 @@ describe("Health inspection", () => {
       expect(presentation.meaning).not.toBe("");
       expect(presentation.tone).toBe(tone);
     }
+  });
+
+  it("routes broken unprocessed-file evidence to History review", async () => {
+    server.use(
+      http.get("*/api/check", () => HttpResponse.json(unprocessedCheckIssues)),
+      http.get("*/api/check/facets", () =>
+        HttpResponse.json(unprocessedCheckFacets),
+      ),
+      http.get("*/api/check/groups", () =>
+        HttpResponse.json(unprocessedCheckGroups),
+      ),
+    );
+    renderRoute("/health?group_by=suggested_command");
+
+    expect(
+      await screen.findByText("Unprocessed file is missing"),
+    ).toBeVisible();
+    expect(await screen.findByText("omym2 history")).toBeVisible();
+    expect(screen.getByText("History review required")).toBeVisible();
+    expect(
+      screen.getByText(/no automatic refresh or Add repair is safe/i),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open History" })).toHaveAttribute(
+      "href",
+      "/history",
+    );
   });
 
   it("bounds both Health collections and resets them for a changed filter", async () => {
@@ -217,6 +257,7 @@ const checkIssues = {
     checked_at: "2026-07-13T00:00:00Z",
     items: [
       {
+        companion_asset_id: COMPANION_ASSET_ID,
         issue_type: "pending_file_event_exists",
         library_id: "018f6a4f-3c2d-7b8a-9abc-def012345711",
         path: "Artist/Track.flac",
@@ -253,12 +294,55 @@ const checkGroups = {
   errors: [],
 } satisfies ApiEnvelopeCheckIssueGroupsData;
 
+const unprocessedCheckIssues = {
+  data: {
+    checked_at: "2026-07-16T00:00:00Z",
+    items: [
+      {
+        companion_asset_id: null,
+        issue_type: "unprocessed_file_missing",
+        library_id: "018f6a4f-3c2d-7b8a-9abc-def012345711",
+        path: "/incoming/unprocessed/notes.txt",
+        track_id: null,
+        plan_id: null,
+        detail: "Recorded unprocessed-file target is missing.",
+      },
+    ],
+    page: { limit: 100, next_cursor: null, total: 1 },
+  },
+  errors: [],
+} satisfies ApiEnvelopeCheckIssuesData;
+const unprocessedCheckFacets = {
+  data: {
+    checked_at: "2026-07-16T00:00:00Z",
+    facets: { issue_type: [{ value: "unprocessed_file_missing", count: 1 }] },
+    total: 1,
+  },
+  errors: [],
+} satisfies ApiEnvelopeCheckIssueFacetsData;
+const unprocessedCheckGroups = {
+  data: {
+    group_by: "suggested_command",
+    items: [
+      {
+        key: "history",
+        label: "omym2 history",
+        count: 1,
+        common_path_root: "/",
+      },
+    ],
+    page: { limit: 100, next_cursor: null, total: 1 },
+  },
+  errors: [],
+} satisfies ApiEnvelopeCheckIssueGroupsData;
+
 const HEALTH_CURSOR = "opaque-health-cursor";
 const firstCheckIssuePage = {
   data: {
     checked_at: "2026-07-13T00:00:00Z",
     items: [
       {
+        companion_asset_id: null,
         issue_type: "pending_file_event_exists",
         library_id: "018f6a4f-3c2d-7b8a-9abc-def012345711",
         path: "Artist/First.flac",
@@ -276,6 +360,7 @@ const secondCheckIssuePage = {
     checked_at: "2026-07-13T00:00:00Z",
     items: [
       {
+        companion_asset_id: null,
         issue_type: "db_file_missing",
         library_id: "018f6a4f-3c2d-7b8a-9abc-def012345711",
         path: "Artist/Second.flac",

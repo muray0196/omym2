@@ -23,15 +23,23 @@ from omym2.domain.models.artist_name_resolution import (
 )
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
 from omym2.platform.cli_entry_point import run_cli as main
-from omym2.shared.ids import ActionId, LibraryId, PlanId
+from omym2.shared.ids import ActionId, CompanionAssetId, LibraryId, PlanId
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 CONFIG_HASH = "config-hash"
+COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456c1"))
+COMPANION_PLAN_ACTION_COUNT = 3
 ERROR_EXIT_CODE = 1
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def0123456a0"))
 LIBRARY_ROOT = "/music/library"
@@ -329,6 +337,22 @@ def test_plans_detail_shows_recorded_artist_name_diagnostics(tmp_path: Path) -> 
     assert "issue: detector_unavailable" in output
 
 
+def test_plans_detail_text_exposes_companion_ownership_and_durable_dependencies(tmp_path: Path) -> None:
+    """Default detail names companion identity, semantic owner, and every recorded dependency."""
+    database_file = _database_file(tmp_path)
+    _seed_companion_plan(database_file)
+    stdout, stderr = StringIO(), StringIO()
+
+    exit_code = main(["plans", str(PLAN_ID_1)], stdout=stdout, stderr=stderr, database_path=database_file)
+
+    assert exit_code == SUCCESS_EXIT_CODE
+    assert stderr.getvalue() == ""
+    output = stdout.getvalue()
+    assert f"    companion_asset_id: {COMPANION_ASSET_ID}" in output
+    assert f"    owner_action_id: {ACTION_ID_1}" in output
+    assert f"    depends_on_action_ids: [{ACTION_ID_1}, {ACTION_ID_2}]" in output
+
+
 @pytest.mark.parametrize(
     "extra_args",
     [
@@ -384,7 +408,15 @@ def test_plans_detail_summary_tallies_live_action_counts(tmp_path: Path) -> None
     assert exit_code == SUCCESS_EXIT_CODE
     output = stdout.getvalue()
     expected_status_block = "action_status_counts:\n  planned: 2\n  blocked: 1\n  applied: 0\n  failed: 0\n"
-    expected_type_block = "action_type_counts:\n  move: 2\n  skip: 1\n  refresh_metadata: 0\n"
+    expected_type_block = (
+        "action_type_counts:\n"
+        "  move: 2\n"
+        "  move_lyrics: 0\n"
+        "  move_artwork: 0\n"
+        "  move_unprocessed: 0\n"
+        "  skip: 1\n"
+        "  refresh_metadata: 0\n"
+    )
     assert expected_status_block in output
     assert expected_type_block in output
     assert "summary:\n  action_count: 3\n" in output
@@ -633,6 +665,9 @@ def test_plans_detail_json_emits_full_payload_with_null_fields(tmp_path: Path) -
                 "status": "planned",
                 "reason": None,
                 "sort_order": 0,
+                "companion_asset_id": None,
+                "owner_action_id": None,
+                "depends_on_action_ids": [],
                 "artist_name_diagnostics": {
                     "artist": {
                         "source_name": "宇多田ヒカル",
@@ -661,6 +696,9 @@ def test_plans_detail_json_emits_full_payload_with_null_fields(tmp_path: Path) -
                 "status": "planned",
                 "reason": None,
                 "sort_order": 1,
+                "companion_asset_id": None,
+                "owner_action_id": None,
+                "depends_on_action_ids": [],
                 "artist_name_diagnostics": None,
             },
         ],
@@ -707,11 +745,39 @@ def test_plans_detail_json_blocked_only_filters_actions_and_keeps_total(tmp_path
                 "status": "blocked",
                 "reason": "target_exists",
                 "sort_order": 1,
+                "companion_asset_id": None,
+                "owner_action_id": None,
+                "depends_on_action_ids": [],
                 "artist_name_diagnostics": None,
             }
         ],
         "total_action_count": 3,
     }
+
+
+def test_plans_detail_json_filter_keeps_recorded_companion_dependencies(tmp_path: Path) -> None:
+    """Filtered JSON keeps dependency IDs even when the dependency actions are hidden."""
+    database_file = _database_file(tmp_path)
+    _seed_companion_plan(database_file)
+    stdout, stderr = StringIO(), StringIO()
+
+    exit_code = main(
+        ["plans", str(PLAN_ID_1), "--blocked-only", "--json"],
+        stdout=stdout,
+        stderr=stderr,
+        database_path=database_file,
+    )
+
+    assert exit_code == SUCCESS_EXIT_CODE
+    assert stderr.getvalue() == ""
+    payload = _json_payload(stdout.getvalue())
+    actions = cast("list[dict[str, object]]", payload["actions"])
+    assert len(actions) == 1
+    assert actions[0]["action_id"] == str(ACTION_ID_3)
+    assert actions[0]["companion_asset_id"] == str(COMPANION_ASSET_ID)
+    assert actions[0]["owner_action_id"] == str(ACTION_ID_1)
+    assert actions[0]["depends_on_action_ids"] == [str(ACTION_ID_1), str(ACTION_ID_2)]
+    assert payload["total_action_count"] == COMPANION_PLAN_ACTION_COUNT
 
 
 def test_plans_detail_json_invalid_plan_id_keeps_stdout_empty() -> None:
@@ -755,6 +821,7 @@ def _seed(
     *,
     plans: tuple[Plan, ...] = (),
     actions: tuple[PlanAction, ...] = (),
+    dependencies: tuple[PlanActionDependency, ...] = (),
 ) -> None:
     with SQLiteUnitOfWork(database_file) as uow:
         uow.libraries.save(_library())
@@ -762,6 +829,8 @@ def _seed(
             uow.plans.save(plan)
         for action in actions:
             uow.plan_actions.save(action)
+        for dependency in dependencies:
+            uow.plan_action_dependencies.save(dependency)
         uow.commit()
 
 
@@ -778,6 +847,47 @@ def _seed_mixed_action_plan(database_file: Path) -> None:
                 reason=PlanActionReason.TARGET_EXISTS,
             ),
             _action(ACTION_ID_3, status=ActionStatus.FAILED, sort_order=2),
+        ),
+    )
+
+
+def _seed_companion_plan(database_file: Path) -> None:
+    """Persist one filtered companion action with semantic and durable ownership evidence."""
+    _seed(
+        database_file,
+        plans=(
+            _plan(
+                PLAN_ID_1,
+                created_at=BASE_TIME,
+                summary={"action_count": str(COMPANION_PLAN_ACTION_COUNT)},
+            ),
+        ),
+        actions=(
+            _action(ACTION_ID_1, status=ActionStatus.PLANNED, sort_order=0),
+            _action(ACTION_ID_2, status=ActionStatus.PLANNED, sort_order=1),
+            _action(
+                ACTION_ID_3,
+                status=ActionStatus.BLOCKED,
+                sort_order=2,
+                action_type=ActionType.MOVE_ARTWORK,
+                reason=PlanActionReason.TARGET_EXISTS,
+                source_path="/incoming/cover.jpg",
+                target_path="Artist/Album/cover.jpg",
+                companion_asset_id=COMPANION_ASSET_ID,
+                owner_action_id=ACTION_ID_1,
+            ),
+        ),
+        dependencies=(
+            PlanActionDependency(
+                plan_id=PLAN_ID_1,
+                action_id=ACTION_ID_3,
+                depends_on_action_id=ACTION_ID_1,
+            ),
+            PlanActionDependency(
+                plan_id=PLAN_ID_1,
+                action_id=ACTION_ID_3,
+                depends_on_action_id=ACTION_ID_2,
+            ),
         ),
     )
 
@@ -824,6 +934,8 @@ def _action(  # noqa: PLR0913 - test fixture spans the full diff/summary action 
     source_path: str | None = "Source/Track.flac",
     target_path: str | None = "Target/Track.flac",
     artist_name_diagnostics: ArtistNameDiagnostics | None = None,
+    companion_asset_id: CompanionAssetId | None = None,
+    owner_action_id: ActionId | None = None,
 ) -> PlanAction:
     return PlanAction(
         action_id=action_id,
@@ -839,6 +951,8 @@ def _action(  # noqa: PLR0913 - test fixture spans the full diff/summary action 
         reason=reason,
         sort_order=sort_order,
         artist_name_diagnostics=artist_name_diagnostics,
+        companion_asset_id=companion_asset_id,
+        owner_action_id=owner_action_id,
     )
 
 

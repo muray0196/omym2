@@ -5,6 +5,7 @@ Why: Protects identity, path storage, and execution status semantics.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
@@ -15,15 +16,23 @@ from omym2.domain.models.artist_name_resolution import (
     ArtistNameResolutionIssue,
     ArtistNameResolutionProvenance,
 )
+from omym2.domain.models.companion_asset import CompanionAsset, CompanionAssetKind, CompanionAssetStatus
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.shared.ids import (
     new_action_id,
+    new_companion_asset_id,
     new_event_id,
     new_library_id,
     new_plan_id,
@@ -36,6 +45,7 @@ BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 FINISHED_TIME = BASE_TIME + timedelta(minutes=5)
 CONFIG_HASH = "config-hash"
 CONTENT_HASH = "content-hash"
+COMPANION_PATH = "Artist/Album/01_Title.lrc"
 ERROR_CODE = "move_failed"
 ERROR_MESSAGE = "move failed"
 LIBRARY_ROOT = "/music/library"
@@ -122,6 +132,36 @@ def test_track_rejects_negative_stat_baseline_size() -> None:
         )
 
 
+def test_companion_asset_normalizes_library_paths_without_changing_identity() -> None:
+    """CompanionAsset identity remains stable while managed paths normalize."""
+    companion_asset = _companion_asset(current_path="./Artist//Album/01_Title.lrc")
+
+    relocated = replace(companion_asset, current_path="Artist/Album 2/01_Title.lrc")
+
+    assert companion_asset.current_path == COMPANION_PATH
+    assert companion_asset.canonical_path == COMPANION_PATH
+    assert relocated.companion_asset_id == companion_asset.companion_asset_id
+
+
+def test_companion_asset_rejects_absolute_managed_path_and_negative_size() -> None:
+    """Companion assets enforce relative Library paths and valid stat baselines."""
+    with pytest.raises(ValueError, match=ROOTED_LIBRARY_PATH_MESSAGE):
+        _ = _companion_asset(current_path=f"/{COMPANION_PATH}")
+
+    with pytest.raises(ValueError, match="must not be negative"):
+        _ = _companion_asset(current_path=COMPANION_PATH, size=-1)
+
+
+def test_companion_asset_normalizes_observation_timestamps_to_utc() -> None:
+    """Companion asset stat and lifecycle timestamps use the shared UTC contract."""
+    observed_time = datetime(2026, 1, 1, 9, tzinfo=timezone(timedelta(hours=9)))
+
+    companion_asset = _companion_asset(current_path=COMPANION_PATH, mtime=observed_time)
+
+    assert companion_asset.mtime == BASE_TIME
+    assert companion_asset.first_seen_at == BASE_TIME
+
+
 def test_plan_terminal_status_blocks_reapply_by_state() -> None:
     """Applied Plans are terminal according to the single-use policy."""
     plan = Plan(
@@ -153,6 +193,21 @@ def test_plan_action_uses_blocked_for_plan_time_issue_and_failed_for_apply_time_
     assert failed_action.reason == PlanActionReason.SOURCE_CHANGED
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        PlanActionReason.COMPANION_OWNER_BLOCKED,
+        PlanActionReason.COMPANION_ASSOCIATION_AMBIGUOUS,
+    ],
+)
+def test_plan_action_preserves_companion_planning_block_reasons(reason: PlanActionReason) -> None:
+    """Companion owner and association failures remain distinct review-time reasons."""
+    blocked_action = _plan_action(ActionStatus.PLANNED, None).mark_blocked(reason)
+
+    assert blocked_action.status is ActionStatus.BLOCKED
+    assert blocked_action.reason is reason
+
+
 def test_plan_action_stores_final_target_path_with_extension() -> None:
     """PlanAction records the reviewed final target path, including extension."""
     action = _plan_action(ActionStatus.PLANNED, None)
@@ -164,6 +219,8 @@ def test_plan_action_stores_final_target_path_with_extension() -> None:
 def test_plan_action_status_transitions_preserve_artist_name_diagnostics() -> None:
     """Apply-time status updates cannot erase the naming evidence reviewed with an action."""
     diagnostics = _artist_name_diagnostics()
+    companion_asset_id = new_companion_asset_id()
+    owner_action_id = new_action_id()
     action = PlanAction(
         action_id=new_action_id(),
         plan_id=new_plan_id(),
@@ -178,6 +235,8 @@ def test_plan_action_status_transitions_preserve_artist_name_diagnostics() -> No
         reason=None,
         sort_order=SORT_ORDER,
         artist_name_diagnostics=diagnostics,
+        companion_asset_id=companion_asset_id,
+        owner_action_id=owner_action_id,
     )
 
     transitioned = (
@@ -187,6 +246,20 @@ def test_plan_action_status_transitions_preserve_artist_name_diagnostics() -> No
     )
 
     assert all(item.artist_name_diagnostics == diagnostics for item in transitioned)
+    assert all(item.companion_asset_id == companion_asset_id for item in transitioned)
+    assert all(item.owner_action_id == owner_action_id for item in transitioned)
+
+
+def test_plan_action_dependency_rejects_self_dependency() -> None:
+    """A recorded PlanAction dependency cannot name the same action on both sides."""
+    action_id = new_action_id()
+
+    with pytest.raises(ValueError, match="cannot depend on itself"):
+        _ = PlanActionDependency(
+            plan_id=new_plan_id(),
+            action_id=action_id,
+            depends_on_action_id=action_id,
+        )
 
 
 def test_run_completion_records_failed_state() -> None:
@@ -231,6 +304,32 @@ def test_file_event_records_pending_before_result() -> None:
     assert failed_event.error_code == ERROR_CODE
 
 
+def test_companion_file_event_result_preserves_asset_identity() -> None:
+    """Companion event completion retains its explicit asset and mutation kind."""
+    companion_asset_id = new_companion_asset_id()
+    event = FileEvent(
+        event_id=new_event_id(),
+        library_id=new_library_id(),
+        run_id=new_run_id(),
+        plan_action_id=new_action_id(),
+        event_type=FileEventType.MOVE_LYRICS_FILE,
+        source_path=COMPANION_PATH,
+        target_path="Artist/Album 2/01_Title.lrc",
+        status=FileEventStatus.PENDING,
+        started_at=BASE_TIME,
+        completed_at=None,
+        error_code=None,
+        error_message=None,
+        sequence_no=SEQUENCE_NO,
+        companion_asset_id=companion_asset_id,
+    )
+
+    succeeded_event = event.mark_succeeded(FINISHED_TIME)
+
+    assert succeeded_event.event_type is FileEventType.MOVE_LYRICS_FILE
+    assert succeeded_event.companion_asset_id == companion_asset_id
+
+
 def _track(
     current_path: str,
     canonical_path: str,
@@ -249,6 +348,29 @@ def _track(
         mtime=mtime,
         metadata=TrackMetadata(title="Title", artist="Artist"),
         status=TrackStatus.ACTIVE,
+        first_seen_at=BASE_TIME,
+        last_seen_at=BASE_TIME,
+        updated_at=BASE_TIME,
+    )
+
+
+def _companion_asset(
+    *,
+    current_path: str,
+    size: int | None = TRACK_SIZE,
+    mtime: datetime | None = BASE_TIME,
+) -> CompanionAsset:
+    return CompanionAsset(
+        companion_asset_id=new_companion_asset_id(),
+        library_id=new_library_id(),
+        kind=CompanionAssetKind.LYRICS,
+        owner_track_id=new_track_id(),
+        current_path=current_path,
+        canonical_path=COMPANION_PATH,
+        content_hash=CONTENT_HASH,
+        size=size,
+        mtime=mtime,
+        status=CompanionAssetStatus.ACTIVE,
         first_seen_at=BASE_TIME,
         last_seen_at=BASE_TIME,
         updated_at=BASE_TIME,

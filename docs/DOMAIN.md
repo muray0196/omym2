@@ -1,9 +1,9 @@
 ---
 type: Domain Model
 title: Domain
-description: Defines OMYM2's core entities, including raw track metadata, artist-name source keys, batch resolution, Plan review diagnostics and projections, durable Operations, Track stat baselines, snapshot boundaries, and UUIDv7 identity policy.
-tags: [domain-model, entities, invariants, artist-names, operations, id-design]
-timestamp: 2026-07-16T00:44:26+09:00
+description: Defines OMYM2's core entities, including metadata, companion identity, trackless unprocessed-file evidence, Plan dependencies, durable mutations, snapshots, and UUIDv7 identity policy.
+tags: [domain-model, entities, invariants, artist-names, companions, unprocessed, operations, id-design]
+timestamp: 2026-07-16T04:51:16+09:00
 ---
 
 # Domain
@@ -201,16 +201,20 @@ and continues to execute only the recorded paths.
 A cache miss is eligible for a new MusicBrainz lookup only when all of these
 conditions hold:
 
+* persisted automatic lookup is enabled
 * the complete source contains at least one alphabetic code point and every
   alphabetic code point is non-Latin
 * the source does not contain the ASCII comma (`U+002C`); comma-composite
   values remain unresolved by automatic lookup
 * fastText returns the exact label `__label__ja` with finite confidence in the
-  inclusive range from `0.8` through `1.0`
+  inclusive range from the persisted `fasttext.minimum_confidence` through
+  `1.0`; the default minimum is `0.8`
 
 Preferences and accepted cache entries still apply to comma-composite or
-otherwise ineligible values. An absent model, an unusable prediction, or a
-confidence below the threshold disables only the new provider lookup; it does
+otherwise ineligible values. Persisted opt-out records
+`automatic_lookup_disabled`; an absent runtime/model or unusable prediction
+records `detector_unavailable`; confidence below the threshold records
+`low_language_confidence`. Each disables only the new provider lookup and does
 not disable preference or cache resolution.
 
 ### Deterministic MusicBrainz acceptance
@@ -347,11 +351,92 @@ reuse the last verified hashes and metadata; apply always captures the source.
 
 Allowed Track status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#track-status). `missing` is reported by `check` in the initial version rather than automatically persisted as Track status.
 
+## CompanionAsset
+
+The current managed state of one lyrics or artwork file associated with a
+Track. A CompanionAsset is not a Track: it has its own stable
+`companion_asset_id`, carries no music metadata, and never changes
+`track_id` identity or meaning.
+
+Representative fields:
+
+* companion_asset_id
+* library_id
+* kind (`lyrics` or `artwork`)
+* owner_track_id
+* current_path
+* canonical_path
+* content_hash
+* size and mtime (nullable)
+* status (`active` or `removed`)
+* first_seen_at, last_seen_at, and updated_at
+
+`current_path` and `canonical_path` are normalized Library-root-relative
+paths even after an external Add Undo marks the asset removed. Identity is
+independent from path, hash, owner action, and Plan history. Organize may
+create or refresh an already canonical asset from a verified observation
+without a file mutation. A successful relocation preserves the ID and
+`first_seen_at`; failed or unknown mutations never advance managed state.
+
+### Companion Association
+
+Companion classification is deterministic over regular, non-symlink source
+inventory:
+
+* a case-insensitive `.lrc` suffix is lyrics and associates with the single
+  same-directory audio candidate having the same stem;
+* a case-insensitive `.jpg` or `.png` suffix is directory artwork and is
+  represented once per source file, not once per Track;
+* artwork uses the first audio candidate in source-path order as its semantic
+  owner and depends on every audio candidate in that source directory;
+* artwork has a target only when every associated audio target has the same
+  parent, and it preserves its source basename below that parent.
+
+An ambiguous lyrics owner or divergent artwork target parents produce a
+reviewable blocked companion action rather than a guessed association.
+Planning records the semantic owner separately from every execution dependency.
+
+When companion processing is enabled, Add may turn these claims into new
+companion actions. When unprocessed processing alone requests inventory, the
+same classification reserves recognized companion paths from leftover
+collection but creates no companion action, content snapshot, asset ID, or
+dependency. Check performs this classification for unmanaged-companion
+discovery only when companion processing is enabled; managed assets and
+recorded Plan/event diagnostics are checked regardless of the current toggle.
+
+## Unprocessed Collection Evidence
+
+An unprocessed file is a regular, non-symlink Add source left unclaimed after
+audio and companion classification. Unprocessed-only Add inventory still uses
+classification-only companion claims, so a recognized `.lrc`, `.jpg`, or
+`.png` path is not a leftover even when new companion actions are disabled.
+Collection does not create a third kind of managed Library entity: the file is
+neither a Track nor a CompanionAsset and has no stable entity ID, owner,
+metadata, or Library-relative managed path.
+
+Its durable identity is the reviewed `PlanAction.action_id` followed by the
+attempted `FileEvent.event_id`. A forward `move_unprocessed` action records:
+
+* `track_id`, `companion_asset_id`, and `owner_action_id` as null;
+* no dependencies or artist-name diagnostics;
+* an absolute source and absolute target anchored below the Plan's retained
+  `source_root_at_plan`;
+* a target shaped exactly as
+  `<source-root>/<portable-directory>/<source-relative-path>`;
+* `content_hash_at_plan` from a rooted content-only snapshot and a null
+  `metadata_hash_at_plan`.
+
+The inverse action keeps the same trackless, content-only shape and swaps the
+recorded paths only after exact succeeded-event provenance is proven. Current
+Config does not relabel either path.
+
 ## Plan
 
 A scheduled set of actions before execution.
 
-A Plan describes what OMYM2 intends to do, but no Library music file mutation has occurred yet. Plan creation is the boundary between calculation and execution.
+A Plan describes what OMYM2 intends to do, but no Library-managed file
+mutation has occurred yet. Plan creation is the boundary between calculation
+and execution.
 
 Representative fields:
 
@@ -362,6 +447,7 @@ Representative fields:
 * created_at
 * config_hash
 * library_root_at_plan
+* source_root_at_plan (nullable)
 * source_run_id (nullable; set only for undo Plans)
 * summary
 * actions
@@ -375,7 +461,14 @@ Plan types:
 
 Allowed Plan status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#plan-status).
 
-Execution summary: a Plan stores reviewed action data, including `library_root_at_plan`, for later apply. The authoritative apply contract is in [execution/apply.md](execution/apply.md), including stale-root handling in [Apply-Time Precondition Failures](execution/apply.md#apply-time-precondition-failures).
+Execution summary: a Plan stores reviewed action data, including
+`library_root_at_plan`, for later apply. An Add Plan also retains
+`source_root_at_plan` so absolute external audio, companion, and unprocessed
+sources and targets remain anchored to the exact reviewed source root. An Undo
+Plan copies that root from the source Plan when reversing an external import;
+Organize and Refresh leave it null. The authoritative apply contract is in
+[execution/apply.md](execution/apply.md), including stale-root handling in
+[Apply-Time Precondition Failures](execution/apply.md#apply-time-precondition-failures).
 
 A Plan is single-use in the initial version.
 
@@ -385,7 +478,7 @@ Plans have no source Run.
 
 ## PlanAction
 
-A planned action for one file or one managed track inside a Plan.
+A planned action for one file or one managed Track inside a Plan.
 
 PlanAction separates the kind of intended operation from its current status and from the reason why it may be blocked.
 
@@ -399,13 +492,20 @@ Representative fields:
 * source_path
 * target_path
 * reverses_event_id (nullable; set only for Undo actions)
+* companion_asset_id (nullable)
+* owner_action_id (nullable)
 * content_hash_at_plan
 * metadata_hash_at_plan
 * status
 * reason
 * sort_order
 
-Path representation summary: for Library music file destinations, `target_path` is stored as a normalized path relative to the owning Library root. `target_path` may be absolute only for an undo Plan that restores an imported file back outside the Library. `source_path` is stored as a Library-root-relative path when it points to an already managed Library file, and as an absolute path when it points outside the Library, such as an Incoming file. The authoritative storage policy is in [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
+Path representation summary: managed Library destinations are stored as
+normalized paths relative to the owning Library root. External Add sources are
+absolute. A reviewed unprocessed action stores both paths as absolute values
+below the retained source root; an Undo of an external import also has an
+absolute target. The authoritative storage policy is in
+[contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 
 File operations must resolve path references through PathResolver.
 
@@ -417,7 +517,19 @@ Issues detected during plan creation are represented as `blocked`. Precondition 
 
 `conflict` and `error` are not action types. They are represented as status and reason.
 
-`track_id` may be nullable for PlanActions that target files not yet registered as Tracks, such as new files in an add plan.
+`track_id` may be nullable for PlanActions that target files not yet registered
+as Tracks, such as new files in an Add Plan. It is necessarily null for an
+unprocessed-file action because collection creates no Track.
+
+Lyrics and artwork actions preallocate or reuse `companion_asset_id`; Plan
+creation does not create managed companion state before a reviewed mutation
+succeeds. The semantic owner is the existing `track_id`, an optional same-Plan
+audio `owner_action_id`, or both when the Track already exists. Apply resolves
+the final owner Track from this evidence. The separate durable PlanAction
+dependency relation records every action that must be applied first.
+Dependencies are same-Plan, cannot point to the action itself, and are not
+inferred from sort order or ownership. Shared artwork can therefore have one
+semantic owner while depending on every associated audio action.
 
 Each Undo PlanAction records the succeeded source FileEvent it reverses in
 `reverses_event_id`. Non-Undo actions leave it null. This durable provenance
@@ -447,7 +559,8 @@ A Run is not merely a historical label. It is the parent unit for FileEvents and
 
 ## FileEvent
 
-A durable mutation-log entry for one Library music file mutation.
+A durable mutation-log entry for one reviewed audio, companion, or
+unprocessed-file mutation.
 
 Execution summary: FileEvent creation and result updates follow [execution/model.md](execution/model.md#fileevent-behavior) and [execution/apply.md](execution/apply.md#fileevent-status).
 
@@ -466,10 +579,18 @@ Representative fields:
 * error_code
 * error_message
 * sequence_no
+* companion_asset_id (nullable)
 
 Allowed FileEvent types, statuses, and error-code policy are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#fileevent-event-type).
 
-DB-only state changes such as registering or updating Tracks are not FileEvents. They are performed by usecases and persisted in tracks / plan_actions / runs.
+Companion events retain `companion_asset_id` and use their closed lyrics or
+artwork event type. DB-only state changes such as registering an already
+canonical Track or CompanionAsset are not FileEvents.
+
+An unprocessed event uses `move_unprocessed_file`, retains absolute paths below
+the source Plan's root, and has no Track or CompanionAsset identity. Its
+succeeded state is durable evidence for Check and Undo, not managed Library
+state.
 
 FileEvents are used for:
 
@@ -483,6 +604,10 @@ FileEvents are used for:
 An inconsistency detected between OMYM2's last known managed state and the actual filesystem state.
 
 Allowed issue types are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#checkissue-issue-type).
+
+A finding may identify a Track, Plan, or CompanionAsset. Companion findings
+retain nullable `companion_asset_id`; unmanaged companion findings have no
+managed asset identity.
 
 CheckIssue is calculated by `check` from DB and filesystem observations, then persisted as part of the owning Library's latest CheckRun (below) so Web and CLI browsing read stored findings instead of recomputing them on every request.
 
@@ -541,17 +666,24 @@ file change. Operation lifecycle and recovery are authoritative in
 The following invariants belong to the domain / usecase layer, not to adapters:
 
 * A Track has a stable `track_id` independent from path, canonical path, content hash, and metadata hash.
+* A CompanionAsset has a stable `companion_asset_id` and is not a Track.
 * A Library has stable identity independent of its current root path.
 * Library-managed records belong to exactly one Library through `library_id`.
-* The initial implementation generates `library_id` and `track_id` as UUIDv7.
+* The initial implementation generates Library, Track, CompanionAsset, Plan,
+  action, event, Run, CheckRun, and Operation IDs as UUIDv7.
 * A Plan is reviewed and applied through recorded PlanActions.
 * A Plan is single-use in the initial version.
 * Applying a Plan must not recalculate target paths from the latest AppConfig.
 * Artist display-name resolution and projection must not mutate raw
   TrackMetadata or alter artist-ID lookup keys.
-* `canonical_path` and Track `current_path` are Library-root-relative paths, not absolute paths.
-* Library music file mutations must be represented by FileEvents.
-* FileEvents represent Library music file mutations only, not DB-only updates.
+* Track and CompanionAsset current/canonical paths are Library-root-relative.
+* Reviewed audio, companion, and unprocessed-file mutations must be represented
+  by FileEvents.
+* FileEvents represent file mutations only, not DB-only updates.
+* A companion mutation may execute only after every recorded dependency has
+  applied successfully.
+* An unprocessed mutation is trackless, metadata-free, dependency-free, and
+  anchored to the retained Add source root.
 * Conflict judgment is not performed by DB repositories.
 * PathPolicy is pure and does not check filesystem existence.
 * Absolute path resolution is performed at I/O boundaries through PathResolver.
@@ -568,6 +700,7 @@ The initial implementation uses UUIDv7 for stable internal IDs.
 
 ```text
 track_id        UUIDv7 generated when a Track is first recorded as managed state
+companion_asset_id UUIDv7 allocated for one managed lyrics or artwork identity
 library_id      UUIDv7 generated when a Library is first recorded
 plan_id         UUIDv7 generated when a Plan is created
 run_id          UUIDv7 generated when an apply attempt starts
@@ -590,6 +723,7 @@ The concepts are separated.
 
 ```text
 track_id        stable internal ID in OMYM2
+companion_asset_id stable internal ID for one managed companion asset
 library_id      stable internal ID for the owning Library
 content_hash    hash of the current file contents
 metadata_hash   hash of the current metadata

@@ -126,6 +126,25 @@ const ACTION_TYPE_PRESENTATIONS = {
     meaning: "Moves one Library music file from its recorded source to target.",
     tone: "info",
   },
+  move_lyrics: {
+    icon: "info",
+    label: "Move lyrics",
+    meaning: "Moves one managed lyrics file with its associated Track.",
+    tone: "info",
+  },
+  move_artwork: {
+    icon: "info",
+    label: "Move artwork",
+    meaning: "Moves one managed artwork file under its deterministic owner.",
+    tone: "info",
+  },
+  move_unprocessed: {
+    icon: "info",
+    label: "Move unprocessed file",
+    meaning:
+      "Moves one reviewed unclaimed file into the configured unprocessed area.",
+    tone: "info",
+  },
   skip: {
     icon: "close",
     label: "Skip",
@@ -176,6 +195,27 @@ const REASON_PRESENTATIONS = {
     label: "Duplicate content hash",
     meaning: "Another managed Track has the same recorded content hash.",
     tone: "warning",
+  },
+  companion_owner_blocked: {
+    icon: "warning",
+    label: "Companion owner blocked",
+    meaning:
+      "The companion file cannot proceed because its owning audio action is blocked.",
+    tone: "warning",
+  },
+  companion_association_ambiguous: {
+    icon: "warning",
+    label: "Companion association is ambiguous",
+    meaning:
+      "The companion file could not be associated with one owner deterministically.",
+    tone: "warning",
+  },
+  companion_dependency_failed: {
+    icon: "warning",
+    label: "Companion dependency failed",
+    meaning:
+      "A required action did not complete, so this companion mutation was not attempted.",
+    tone: "danger",
   },
   operation_interrupted: {
     icon: "warning",

@@ -115,6 +115,13 @@ describe("PlanDetail", () => {
     expect(
       screen.queryByText("01912345-6789-7abc-8def-012345678911"),
     ).not.toBeInTheDocument();
+    const unprocessedAction = screen
+      .getByText("01912345-6789-7abc-8def-012345678915")
+      .closest("li");
+    expect(unprocessedAction).not.toBeNull();
+    expect(
+      within(unprocessedAction!).getByText("Move unprocessed file"),
+    ).toBeVisible();
 
     await user.click(
       screen.getByRole("button", {

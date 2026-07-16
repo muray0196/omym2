@@ -1,9 +1,9 @@
 ---
 type: Execution Spec
 title: Apply Execution
-description: Defines atomic Apply acceptance, descriptor-anchored source and target verification, state transitions, Track baseline writes, FileEvent ordering, interruption, and Library-root preconditions.
-tags: [apply, atomic-claim, plan-state, run, operation, file-event]
-timestamp: 2026-07-13T22:03:37+09:00
+description: Defines atomic Apply for audio, companion, unprocessed, and metadata actions, including recorded-config independence, retained-object verification, durable events, managed-state updates, and interruption.
+tags: [apply, atomic-claim, plan-state, run, operation, file-event, companions, unprocessed]
+timestamp: 2026-07-16T06:02:32+09:00
 ---
 
 # Apply Execution
@@ -34,13 +34,17 @@ Expected Apply flow:
 5. Mark the Operation running and process PlanActions in order:
    a. Leave blocked actions blocked.
    b. Mark skip actions as applied without creating a FileEvent or mutating files.
-   c. For each planned move or refresh_metadata action, verify preconditions.
-   d. If a precondition fails, mark the PlanAction as failed without executing a Library music file mutation.
-   e. For a refresh_metadata action, update the Track in place and mark the action applied without creating a FileEvent or mutating files.
-   f. For a move action, record a FileEvent as pending.
-   g. Execute the Library music file mutation.
-   h. Update the FileEvent to succeeded or failed.
-   i. Update Tracks and PlanActions as needed.
+   c. Before observing a planned file/metadata action, require every durable
+      same-Plan dependency to be applied.
+   d. For each planned audio, companion, or unprocessed move, or
+      refresh_metadata action, verify its type-specific preconditions.
+   e. If a precondition fails, mark the PlanAction failed without a file mutation.
+   f. For refresh_metadata, update the Track in place without a FileEvent.
+   g. For an audio, companion, or unprocessed move, record its typed FileEvent
+      as pending.
+   h. Execute the recorded file mutation.
+   i. Update the FileEvent and PlanAction, plus Track or CompanionAsset only
+      when that action owns managed state.
 6. In one final transaction, mark the Run and Plan terminal and store the
    Operation's run_completed result as succeeded.
 7. Release the exclusive-operation lock.
@@ -59,27 +63,31 @@ capabilities were stale.
 
 A Plan may be applied even if it contains blocked PlanActions. `apply` executes eligible planned actions and ignores blocked actions.
 
-`apply` is the first implementation area that mutates Library music files.
+`apply` is the execution boundary that mutates reviewed audio, companion, and
+unprocessed files.
 
 Every live apply-time source capture carries an ephemeral filesystem identity
 token comprising device, inode, size, modification time, and change time.
-Apply carries the exact token across the pending FileEvent commit to the
-filesystem mutation boundary. A trusted snapshot reconstructed without live
-I/O has no token and cannot authorize a move; any token mismatch fails with
+Observation and mutation are separate retained-object boundaries: observation
+opens and verifies the live source before returning that token; after the
+pending FileEvent commit, mutation opens the source again and requires the same
+identity and content hash. A trusted snapshot reconstructed without live I/O
+has no token and cannot authorize a move; any token mismatch fails with
 `invalid_path`.
 
 Library-relative move sources and targets are independently anchored to the
-open Library root. Descendant directories are opened without following
-symlinks, parent-directory segments are rejected inside the boundary itself,
-the source file and its parent descriptor remain open, and the final target is
-created exclusively relative to its verified directory descriptor. The mover
-rechecks the complete source state and root containment before unlinking the
-source through the retained parent descriptor. External add sources are still
-copied from retained descriptors, and absolute Undo restore targets use only
-the separately verified external-target exception. A symlinked Library
-descendant or any pathname, metadata, or source-parent replacement before
-mutation must fail with `invalid_path` instead of redirecting or claiming a
-file outside the reviewed boundary.
+opened Library root. Descendants are traversed without following link-like
+entries, parent-directory segments are rejected inside the boundary itself,
+and the root, parent, source, and exclusively claimed target objects remain
+identified until the mutation finishes. The mover rechecks the complete source
+state and root containment before deleting the exact retained source object.
+External Add sources are still copied from a retained source object, and
+absolute Undo restore targets use only the separately verified external-target
+exception. A link-like Library descendant or any pathname, metadata, or
+source-parent replacement before mutation must fail with `invalid_path`
+instead of redirecting or claiming a file outside the reviewed boundary. The
+POSIX descriptor and native Windows retained-HANDLE mechanics are authoritative
+in the [Path Identity And Storage Contract](../contracts/path-identity-storage.md#retained-observation-and-mutation-boundary).
 
 An absolute move target is accepted only for an Undo PlanAction whose
 `reverses_event_id` identifies a succeeded external add/import FileEvent for the
@@ -89,15 +97,80 @@ path may differ from the original import target after later in-Library moves;
 that relocation does not invalidate the undo. Other absolute targets fail
 before FileEvent creation with `invalid_path`.
 
+### Companion Apply
+
+`move_lyrics` and `move_artwork` actions require a preallocated
+`companion_asset_id`. Apply validates every recorded dependency before any
+companion observation; missing, cross-Plan, or non-applied dependency/owner
+evidence fails the action with `companion_dependency_failed` and creates no
+FileEvent.
+
+Companion verification uses a metadata-free content snapshot anchored to the
+Library root or, for an external Add source, the exact
+`source_root_at_plan`. The recorded content hash and live filesystem identity
+must match. A new asset may be absent before its first successful import;
+existing assets must match the action's Library, kind, owner Track, active
+status, and recorded source path.
+
+After those preconditions, Apply commits `move_lyrics_file` or
+`move_artwork_file` as pending before invoking the same exclusive,
+no-overwrite FileMover. Success creates or advances the stable CompanionAsset
+with the verified content/stat snapshot. Failure updates only the event/action;
+it never creates or advances managed companion state.
+
+Companion Undo is additionally revalidated from the terminal source
+Plan/Run/event, action/event type, asset/owner identity, original dependencies,
+inverse dependency edges, timestamps, source root, and prior reversal history.
+An external Add restore must stay below the retained source root. On success
+the asset becomes `removed` while retaining its last Library-relative
+current/canonical paths.
+
+A companion-only recovery Plan belongs to its later Add/Organize Run. Its
+action can name an existing owner Track without `owner_action_id` or audio
+dependencies because the owning audio move succeeded in the earlier Run.
+Forward recovery Apply still requires that owner Track to be active. When
+Undoing the later recovery Run, Apply first verifies the recovered action's
+own succeeded typed FileEvent, including source, target, asset, and action
+identity. Only that owner-action-free inverse may accept the same-Library owner
+Track after it has become `removed`; same-Plan-owned inverses still require an
+active owner. No status is inferred across Runs.
+
+### Unprocessed Apply
+
+`move_unprocessed` is authorized entirely by the recorded Plan/action shape.
+Apply does not read the current unprocessed toggle, directory, preview limit,
+or other Config to recalculate it. Disabling collection after planning
+therefore does not disable a reviewed action.
+
+Before observation, Apply requires the exact retained source root, same Plan
+and Library identity, planned trackless action, null companion/owner/metadata/
+diagnostic fields, no dependencies, and both absolute paths. A forward Add
+target must be exactly
+`<source-root>/<recorded-portable-directory>/<source-relative-path>` and must
+not enter the Plan's recorded Library root. An Undo action must prove and swap
+the exact paths of one unreversed succeeded `move_unprocessed_file` event.
+Malformed, cross-root, relabelled, or Library-overlapping evidence fails with
+`invalid_path` before observation or FileEvent creation.
+
+Apply then captures a rooted content-only snapshot and compares its hash and
+live filesystem identity with `content_hash_at_plan`. It commits a
+`move_unprocessed_file` event as pending before invoking the exclusive-create,
+no-overwrite mover with both boundaries anchored to `source_root_at_plan`.
+Success advances only the FileEvent and PlanAction; it creates or updates no
+Track or CompanionAsset. A late target collision records `target_exists` on the
+failed typed event/action and preserves both user files. An unobserved outcome
+remains pending. Neither forward Apply nor inverse Apply removes newly empty
+source directories.
+
 ## Plan Status
 
 | From | Condition | To | Notes |
 | --- | --- | --- | --- |
-| `ready` | Atomic claim commits the Plan, running Run, and queued Operation | `applying` | This makes the Plan single-use before worker dispatch or any Library music file mutation. |
+| `ready` | Atomic claim commits the Plan, running Run, and queued Operation | `applying` | This makes the Plan single-use before worker dispatch or any Library-managed file mutation. |
 | `ready` | Current Library root differs from `library_root_at_plan` before a Run is created | `expired` | No Run or FileEvent is required because no apply attempt begins. |
-| `applying` | All eligible move and refresh_metadata actions succeed, or the Plan has no eligible move or refresh_metadata actions | `applied` | This includes skip-only and blocked-only Plans. Blocked actions remain blocked, and skip actions are marked applied. |
-| `applying` | At least one eligible move or refresh_metadata action succeeds and at least one eligible move or refresh_metadata action fails | `partial_failed` | The Run should also become `partial_failed`. |
-| `applying` | No eligible move or refresh_metadata action succeeds and at least one eligible move or refresh_metadata action fails | `failed` | This includes precondition failures that prevent all eligible mutations. |
+| `applying` | All eligible audio, companion, unprocessed, and refresh_metadata actions succeed, or none are eligible | `applied` | This includes skip-only and blocked-only Plans. Blocked actions remain blocked, and skip actions are marked applied. |
+| `applying` | At least one eligible audio, companion, unprocessed, or refresh_metadata action succeeds and at least one eligible action fails | `partial_failed` | The Run should also become `partial_failed`. |
+| `applying` | No eligible audio, companion, unprocessed, or refresh_metadata action succeeds and at least one eligible action fails | `failed` | This includes precondition or dependency failures that prevent all eligible mutations. |
 | `ready` | User cancels a not-yet-started Plan through lock-protected CAS | `cancelled` | Cancellation is a synchronous DB-only state change and creates no Operation or FileEvent. |
 
 Any terminal Plan status (`applied`, `partial_failed`, `failed`, `cancelled`, or `expired`) must not be applied again. Recovery or retry requires creating a new Plan from the current DB and filesystem state.
@@ -107,30 +180,37 @@ Any terminal Plan status (`applied`, `partial_failed`, `failed`, `cancelled`, or
 | From | Condition | To | Notes |
 | --- | --- | --- | --- |
 | none | Plan creation schedules a filesystem move | `planned` | The action is eligible for apply. |
+| none | Plan creation schedules associated lyrics or artwork | `planned` | Stable asset, owner, and dependency evidence is recorded before Apply. |
+| none | Add records an unprocessed leftover | `planned` | Exact source-root layout and content hash are recorded without managed identity. |
 | none | Plan creation detects a review-time issue | `blocked` | Examples include target conflicts, invalid paths, missing required metadata, missing sources, or changed sources. |
 | none | Plan creation records a duplicate hash skip | `planned` | The action type is `skip`; apply reports it but does not create a FileEvent or mutate files. |
 | none | Plan creation schedules a metadata-only reingest for an unchanged path | `planned` | The action type is `refresh_metadata`; apply updates the Track in place but does not create a FileEvent or mutate files. |
-| `planned` | Apply processes a skip action | `applied` | No FileEvent is created, and no Track mutation or Library music file mutation is performed. |
+| `planned` | Apply processes a skip action | `applied` | No FileEvent, Track mutation, or file mutation is performed. |
 | `planned` | Restart/dispatch reconciliation processes a recorded skip | `applied` | The no-mutation decision is determinate even though the Operation was interrupted. |
-| `planned` | Move or refresh_metadata precondition fails during apply before mutation | `failed` | No FileEvent is created when no Library music file mutation is attempted. |
-| `planned` | Restart/dispatch reconciliation cannot confirm a move or refresh_metadata action | `failed` | Reason is `operation_interrupted`; a related pending FileEvent remains pending and authoritative for unknown mutation outcome. |
-| `planned` | Apply processes a refresh_metadata action and its preconditions pass | `applied` | Track hashes and metadata are updated in place; no FileEvent is created and no Library music file mutation is performed. |
+| `planned` | An audio, companion, unprocessed, or refresh_metadata precondition fails before mutation | `failed` | No FileEvent is created when no file mutation is attempted. |
+| `planned` | A companion dependency or semantic owner is invalid or not applied | `failed` | Reason is `companion_dependency_failed`; no filesystem observation or FileEvent occurs. |
+| `planned` | Restart/dispatch reconciliation cannot confirm an audio, companion, unprocessed, or refresh_metadata action | `failed` | Reason is `operation_interrupted`; a related pending FileEvent remains pending and authoritative for unknown mutation outcome. |
+| `planned` | Apply processes a refresh_metadata action and its preconditions pass | `applied` | Track hashes and metadata are updated in place; no FileEvent or file mutation occurs. |
 | `planned` | Pending FileEvent is recorded and the move succeeds | `applied` | Track state is updated after the mutation succeeds. |
+| `planned` | A typed pending companion FileEvent is recorded and the move succeeds | `applied` | CompanionAsset state is created or advanced only after success. |
+| `planned` | A pending unprocessed FileEvent is recorded and the move succeeds | `applied` | No managed Track or CompanionAsset state is created. |
 | `planned` | Pending FileEvent is recorded and the move fails | `failed` | The FileEvent records the mutation failure details. |
 | `blocked` | Apply processes the Plan | `blocked` | Blocked actions are ignored by apply and remain blocked. |
 
 `skip` is an action type, not a status. A skip action records a reviewed non-mutating decision, such as `duplicate_hash`. During apply, it becomes `applied` without FileEvent creation.
 
-`refresh_metadata` is an action type for Tracks whose recalculated canonical path is unchanged but whose content hash or metadata hash changed after external tag correction. During apply, it verifies the same source preconditions as a move, then updates the Track hashes and metadata in place and becomes `applied` without FileEvent creation or Library music file mutation.
+`refresh_metadata` is an action type for Tracks whose recalculated canonical
+path is unchanged but whose content or metadata hash changed. It updates the
+Track in place without FileEvent creation or file mutation.
 
 ## Run Status
 
 | From | Condition | To | Notes |
 | --- | --- | --- | --- |
 | none | The atomic Apply claim commits | `running` | The Run and queued Operation are created together before worker dispatch, PlanAction processing, or mutation. |
-| `running` | All eligible move and refresh_metadata actions succeed, or the Plan has no eligible move or refresh_metadata actions | `succeeded` | This includes skip-only and blocked-only Plans. Blocked and skip actions do not make the Run fail. |
-| `running` | At least one eligible move or refresh_metadata action succeeds and at least one eligible move or refresh_metadata action fails | `partial_failed` | This preserves evidence for history, check, and undo. |
-| `running` | No eligible move or refresh_metadata action succeeds and at least one eligible move or refresh_metadata action fails | `failed` | This includes apply attempts stopped by precondition failures after the Run exists. |
+| `running` | All eligible audio, companion, unprocessed, and refresh_metadata actions succeed, or none are eligible | `succeeded` | This includes skip-only and blocked-only Plans. Blocked and skip actions do not make the Run fail. |
+| `running` | At least one eligible audio, companion, unprocessed, or refresh_metadata action succeeds and at least one eligible action fails | `partial_failed` | This preserves evidence for history, check, and undo. |
+| `running` | No eligible audio, companion, unprocessed, or refresh_metadata action succeeds and at least one eligible action fails | `failed` | This includes dependency and precondition failures after the Run exists. |
 
 A Run and Apply Operation are not created when Apply is rejected before the
 atomic claim, such as when the Plan is not `ready` or the Library root mismatch
@@ -143,13 +223,13 @@ eligible successes, and the Operation becomes `failed`.
 
 | From | Condition | To | Notes |
 | --- | --- | --- | --- |
-| none | A Library music file mutation is about to be attempted | `pending` | This must be persisted before the mutation starts. |
+| none | An audio, companion, or unprocessed mutation is about to be attempted | `pending` | This must be persisted before the mutation starts. |
 | `pending` | The mutation succeeds | `succeeded` | The corresponding PlanAction can then become `applied`. |
 | `pending` | The process observes a definite mutation failure | `failed` | The error fields capture the observable failure. An unobserved/crash outcome remains pending. |
 
-FileEvents are only for attempted Library music file mutations. Blocked actions,
-skip actions, refresh_metadata actions, and precondition failures before
-mutation do not create FileEvents. A refresh_metadata action becomes `applied`
+FileEvents are only for attempted audio, companion, or unprocessed mutations.
+Blocked actions, skip actions, refresh_metadata actions, and precondition
+failures before mutation do not create FileEvents. A refresh_metadata action becomes `applied`
 through a DB-only Track update, so a Run may succeed without creating any
 FileEvent. A process crash or lost mutation result leaves the FileEvent
 `pending`; reconciliation must not infer success or failure from filesystem
@@ -163,8 +243,10 @@ or a restart finds the Apply Operation queued/running, the Operation becomes
 
 Reconciliation uses only durable evidence. Every `pending` FileEvent remains
 pending and requires Check/manual review. Planned `skip` actions become
-`applied`; blocked actions remain blocked. Planned `move` and
-`refresh_metadata` actions become `failed` with `operation_interrupted`; that
+`applied`; blocked actions remain blocked. Planned `move`,
+`move_lyrics`, `move_artwork`, `move_unprocessed`, and `refresh_metadata`
+actions become
+`failed` with `operation_interrupted`; that
 reason records inability to confirm processing, not the pending mutation's
 outcome.
 
@@ -176,7 +258,9 @@ failed or roll the Plan back to `ready`.
 
 ## Apply-Time Precondition Failures
 
-Apply verifies apply-level preconditions before starting a Run and verifies per-action preconditions before each eligible planned move or refresh_metadata action.
+Apply verifies apply-level preconditions before starting a Run and verifies
+dependencies plus per-action preconditions before each eligible audio,
+companion, unprocessed, or refresh_metadata action.
 
 Apply-level precondition failures include:
 
@@ -185,25 +269,39 @@ Apply-level precondition failures include:
 | current Library root differs from `library_root_at_plan` before Run creation | mark Plan as expired; do not create Run or FileEvent |
 | current Library root differs from `library_root_at_plan` after Run creation | stop apply; mark Run and Plan as failed or partial_failed; do not create FileEvent for the mismatch |
 
-If a per-action precondition fails before a Library music file mutation, the PlanAction is marked `failed` without executing a Library music file mutation or Track update.
+If a per-action precondition fails before a file mutation, the PlanAction is
+marked `failed` without executing a file or managed-state update.
 
 Per-action apply-time precondition failures include:
 
 * source file missing at apply
 * source hash changed after plan creation at apply
 * absolute target is not verified external-import undo history
+* companion asset, owner, dependency, or source-root provenance changed after planning
+* unprocessed action is not the exact trackless content-only layout below its
+  retained source root, or its target enters the recorded Library root
 
-The Run is marked `failed` or `partial_failed` depending on whether prior eligible move or refresh_metadata actions succeeded.
+The Run is marked `failed` or `partial_failed` depending on whether prior
+eligible audio, companion, unprocessed, or refresh_metadata actions succeeded.
 
 ## Mandatory Source Verification And Track Baseline
 
-Apply has no stat-trust mode. Before every eligible move or `refresh_metadata`
-action, it captures a complete fresh source snapshot and compares its content
+Apply has no stat-trust mode. Before every eligible audio `move` or
+`refresh_metadata` action, it captures a complete fresh source snapshot and compares its content
 and metadata hashes with the recorded PlanAction. Both
 `content_hash_at_plan` and `metadata_hash_at_plan` are mandatory for either
 eligible action type; a missing or mismatched value fails the action as
 `source_changed` before any FileEvent, file mutation, or Track update. A
 matching persisted Track size and modification time never bypasses this gate.
+
+Companion actions instead capture a rooted `FileContentSnapshot`: they
+require the recorded content hash and live filesystem identity but
+intentionally carry no metadata hash or music metadata. Matching persisted
+companion stat values never bypasses this gate.
+
+Unprocessed actions use the same rooted content-only observation contract but
+have no persisted stat baseline or managed-state update. Both forward and
+inverse observations are anchored to `source_root_at_plan`.
 
 Apply passes the live snapshot's filesystem identity and content hash to the
 FileMover after the pending FileEvent commit. The mover verifies the retained
@@ -211,4 +309,8 @@ source bytes and, for copy fallback, the exclusively claimed target bytes
 against that hash before unlinking the source. A mismatch fails the move and
 removes the claimed target.
 
-After a successful move or `refresh_metadata` action, the Track update persists the complete snapshot's `size` and `mtime` together with its hashes and metadata. A successful move uses the pre-mutation source snapshot because the confirmed move preserves that file state at the recorded target. Failed preconditions and failed mutations do not update the Track baseline.
+After a successful audio move or `refresh_metadata` action, the Track update
+persists the complete snapshot's `size` and `mtime` together with its hashes
+and metadata. A successful companion move persists the content snapshot's
+hash/stat baseline on its CompanionAsset. Failed preconditions and failed
+mutations update neither baseline.

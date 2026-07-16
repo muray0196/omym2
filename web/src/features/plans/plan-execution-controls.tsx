@@ -294,7 +294,14 @@ function ExecutionImpact({ detail }: { detail: PlanDetailData }) {
 }
 
 function countActions(counts: PlanDetailData["summary"]["counts"]["planned"]) {
-  return counts.move + counts.refresh_metadata + counts.skip;
+  return (
+    counts.move +
+    counts.move_lyrics +
+    counts.move_artwork +
+    counts.move_unprocessed +
+    counts.refresh_metadata +
+    counts.skip
+  );
 }
 
 function CapabilityControl({

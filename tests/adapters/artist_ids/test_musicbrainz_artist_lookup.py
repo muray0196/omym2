@@ -76,7 +76,16 @@ class _Recorder:
         return _Response(self.payload)
 
 
+@dataclass(slots=True)
+class _CadenceRecorder:
+    intervals: list[float]
+
+    def wait_for_request(self, minimum_interval_seconds: float) -> None:
+        self.intervals.append(minimum_interval_seconds)
+
+
 MUSICBRAINZ_ARTIST_ID = "db2f4f3a-f0c2-4c96-bea3-636f4b44f57b"
+RETRIED_ATTEMPT_COUNT = 2
 
 
 def test_musicbrainz_lookup_returns_ordered_raw_candidate_facts() -> None:
@@ -138,7 +147,7 @@ def test_musicbrainz_lookup_reports_transport_error_unavailable() -> None:
         message = "network unavailable"
         raise OSError(message)
 
-    result = MusicBrainzArtistLookup(url_open=raise_os_error).search_artists("米津玄師")
+    result = MusicBrainzArtistLookup(url_open=raise_os_error, retry_limit=0).search_artists("米津玄師")
 
     assert result == ArtistNameSearchResult(available=False)
 
@@ -149,7 +158,7 @@ def test_musicbrainz_lookup_reports_truncated_response_unavailable() -> None:
     def open_truncated(_request: Request, _timeout: float) -> _TruncatedResponse:
         return _TruncatedResponse()
 
-    result = MusicBrainzArtistLookup(url_open=open_truncated).search_artists("米津玄師")
+    result = MusicBrainzArtistLookup(url_open=open_truncated, retry_limit=0).search_artists("米津玄師")
 
     assert result == ArtistNameSearchResult(available=False)
 
@@ -196,6 +205,7 @@ def test_musicbrainz_lookup_rate_limits_after_failed_attempt() -> None:
         clock=lambda: next(clock_values),
         sleeper=sleeps.append,
         rate_limit_seconds=1.0,
+        retry_limit=0,
     )
 
     assert lookup.search_artists("A") == ArtistNameSearchResult(available=False)
@@ -204,8 +214,53 @@ def test_musicbrainz_lookup_rate_limits_after_failed_attempt() -> None:
     assert sleeps == pytest.approx([0.8])
 
 
-def test_musicbrainz_lookup_rejects_rate_limit_below_provider_minimum() -> None:
-    """Callers cannot configure a request cadence faster than MusicBrainz permits."""
+def test_musicbrainz_lookup_retries_transport_failures_with_cadence_per_attempt() -> None:
+    """Configured retries reserve one provider cadence slot for every HTTP attempt."""
+    attempts = 0
+    cadence = _CadenceRecorder([])
+
+    def fail_once(_request: Request, _timeout: float) -> _Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            message = "temporary network failure"
+            raise OSError(message)
+        return _Response({"artists": []})
+
+    result = MusicBrainzArtistLookup(
+        url_open=fail_once,
+        retry_limit=1,
+        rate_limit_seconds=1.25,
+        request_cadence=cadence,
+    ).search_artists("米津玄師")
+
+    assert result == ArtistNameSearchResult(available=True)
+    assert attempts == RETRIED_ATTEMPT_COUNT
+    assert cadence.intervals == [1.25, 1.25]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"user_agent": "  "}, "user agent"),
+        ({"timeout_seconds": 0.0}, "timeout"),
+        ({"timeout_seconds": float("nan")}, "timeout"),
+        ({"timeout_seconds": float("inf")}, "timeout"),
+        ({"retry_limit": -1}, "retry limit"),
+    ],
+)
+def test_musicbrainz_lookup_rejects_invalid_request_controls(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    """Invalid identity, timeout, and retry values fail before provider I/O."""
+    with pytest.raises(ValueError, match=message):
+        _ = MusicBrainzArtistLookup(**overrides)  # pyright: ignore[reportArgumentType]
+
+
+@pytest.mark.parametrize("rate_limit_seconds", [0.5, float("nan"), float("inf")])
+def test_musicbrainz_lookup_rejects_invalid_rate_limit(rate_limit_seconds: float) -> None:
+    """Callers cannot configure a non-finite cadence or one faster than MusicBrainz permits."""
 
     with pytest.raises(ValueError, match="provider minimum"):
-        _ = MusicBrainzArtistLookup(rate_limit_seconds=0.5)
+        _ = MusicBrainzArtistLookup(rate_limit_seconds=rate_limit_seconds)

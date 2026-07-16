@@ -16,6 +16,7 @@ from omym2.config import (
     PLAN_ACTION_SORT_ORDER_START,
     PLAN_ACTION_SORT_ORDER_STEP,
 )
+from omym2.domain.models.companion_asset import CompanionAsset, CompanionAssetKind, CompanionAssetStatus
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.operation import (
     Operation,
@@ -25,16 +26,40 @@ from omym2.domain.models.operation import (
     RegisteredWithoutPlanResult,
 )
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
 from omym2.domain.services.artist_name import artist_name_diagnostics, artist_name_projections, artist_name_sources
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
+from omym2.domain.services.companion_association import (
+    CompanionAssociation,
+    CompanionAssociationResult,
+    CompanionAudioCandidate,
+    CompanionIssue,
+    CompanionIssueCode,
+    associate_companions,
+)
+from omym2.domain.services.companion_recovery import (
+    CompanionRecoveryEvidence,
+    RecoverableCompanion,
+    find_recoverable_companions,
+)
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 from omym2.domain.services.snapshot_baseline import snapshot_from_trusted_stat
-from omym2.features.common_ports import FileSnapshotCaptureRequest
+from omym2.features.common_ports import (
+    FileObservationChangedError,
+    FileObservationInvalidPathError,
+    FileSnapshotCaptureRequest,
+    SourceInventoryRequest,
+)
 from omym2.features.organize.dto import OrganizeLibraryResult
 from omym2.shared.paths import normalize_library_relative_path
 
@@ -45,11 +70,11 @@ if TYPE_CHECKING:
     from omym2.domain.models.app_config import AppConfig
     from omym2.domain.models.artist_name_resolution import ArtistNameDiagnostics
     from omym2.domain.models.file_scan_entry import FileScanEntry
-    from omym2.domain.models.file_snapshot import FileSnapshot
-    from omym2.features.common_ports import UnitOfWork
+    from omym2.domain.models.file_snapshot import FileContentSnapshot, FileSnapshot
+    from omym2.features.common_ports import SourceInventoryEntry, UnitOfWork
     from omym2.features.organize.dto import CreateOrganizePlanRequest
     from omym2.features.organize.ports import CreateOrganizePlanPorts
-    from omym2.shared.ids import LibraryId, OperationId, TrackId
+    from omym2.shared.ids import CompanionAssetId, LibraryId, OperationId, TrackId
 
 AMBIGUOUS_LIBRARY_SELECTION_MESSAGE = "Multiple known Libraries exist. Use organize --library PATH."
 NO_LIBRARY_SELECTION_MESSAGE = "No known Library can be selected. Use organize --library PATH."
@@ -63,6 +88,7 @@ SUMMARY_PLANNED_ACTIONS_KEY = "planned_actions"
 SUMMARY_TRACK_COUNT_KEY = "track_count"
 INCOMPLETE_CANDIDATE_MESSAGE = "Cannot record a Track for an incomplete organize candidate."
 RUNNING_OPERATION_REQUIRED_MESSAGE = "Organize completion requires its corresponding running Operation."
+CLAIMED_COMPANION_DECISION_MISSING_MESSAGE = "Claimed companion must have an association or issue."
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +114,13 @@ class CreateOrganizePlanUseCase:
             _ = _running_operation(uow, request.operation_id)
             library = self._select_library(uow, request.library_root, path_policy_hash, timestamp)
             existing_track_records = tuple(uow.tracks.list_by_library(library.library_id))
+            existing_companion_assets = tuple(uow.companion_assets.list_by_library(library.library_id))
+            recoverable_companions = _load_recoverable_companions(
+                uow,
+                library.library_id,
+                existing_track_records,
+                existing_companion_assets,
+            )
 
         trust_eligible_tracks = _unique_tracks_by_current_path(existing_track_records)
         existing_tracks = {track.current_path: track for track in existing_track_records}
@@ -114,6 +147,25 @@ class CreateOrganizePlanUseCase:
             for capture_input in capture_inputs
         )
         candidates = self._with_target_paths(candidates, config, path_policy)
+        inventory_entries = (
+            tuple(self.ports.source_inventory_reader.scan(SourceInventoryRequest(root=library.root_path)))
+            if config.companions.enabled
+            else ()
+        )
+        companion_candidates = (
+            self._companion_candidates(library, candidates, inventory_entries) if config.companions.enabled else ()
+        )
+        if config.companions.enabled:
+            companion_candidates = _merge_organize_companion_candidates(
+                companion_candidates,
+                self._recovery_companion_candidates(
+                    library,
+                    candidates,
+                    inventory_entries,
+                    existing_track_records,
+                    recoverable_companions,
+                ),
+            )
 
         with self.ports.uow as uow:
             operation = _running_operation(uow, request.operation_id)
@@ -121,8 +173,11 @@ class CreateOrganizePlanUseCase:
                 uow,
                 library,
                 candidates,
+                companion_candidates,
                 _OrganizePersistence(
                     existing_tracks=existing_tracks,
+                    existing_companion_assets=existing_companion_assets,
+                    inventory_entries=inventory_entries,
                     config_hash=config_hash,
                     timestamp=timestamp,
                 ),
@@ -332,28 +387,151 @@ class CreateOrganizePlanUseCase:
 
         return tuple(judged_candidates)
 
-    def _persist_result(
+    def _companion_candidates(
+        self,
+        library: Library,
+        candidates: Sequence[_OrganizeCandidate],
+        inventory_entries: Sequence[SourceInventoryEntry],
+    ) -> tuple[_OrganizeCompanionCandidate, ...]:
+        association_result = associate_companions(
+            tuple(CompanionAudioCandidate(candidate.source_path, candidate.target_path) for candidate in candidates),
+            tuple(entry.relative_path for entry in inventory_entries),
+        )
+        return self._claimed_companion_candidates(
+            library,
+            inventory_entries,
+            association_result,
+        )
+
+    def _claimed_companion_candidates(
+        self,
+        library: Library,
+        inventory_entries: Sequence[SourceInventoryEntry],
+        association_result: CompanionAssociationResult,
+    ) -> tuple[_OrganizeCompanionCandidate, ...]:
+        inventory_by_relative_path = {entry.relative_path: entry for entry in inventory_entries}
+        association_by_source = {
+            association.source_path: association for association in association_result.associations
+        }
+        issue_by_source = {issue.source_path: issue for issue in association_result.issues}
+        claimed: list[_OrganizeCompanionCandidate] = []
+        for source_path in sorted(association_result.claimed_source_paths):
+            entry = inventory_by_relative_path[source_path]
+            association = association_by_source.get(source_path)
+            issue = issue_by_source.get(source_path)
+            snapshot, observation_reason = self._capture_companion_snapshot(entry, library.root_path)
+            claimed.append(
+                _OrganizeCompanionCandidate(
+                    kind=_companion_kind(association, issue),
+                    source_path=source_path,
+                    target_path=None if association is None else association.target_path,
+                    owner_audio_source_path=(None if association is None else association.owner_audio_source_path),
+                    dependency_audio_source_paths=_companion_dependency_sources(association, issue),
+                    snapshot=snapshot,
+                    reason=observation_reason or _companion_issue_reason(issue),
+                )
+            )
+        return tuple(claimed)
+
+    def _capture_companion_snapshot(
+        self,
+        entry: SourceInventoryEntry,
+        library_root: str,
+    ) -> tuple[FileContentSnapshot | None, PlanActionReason | None]:
+        try:
+            return self.ports.file_content_snapshot_reader.capture(entry.path, root=library_root), None
+        except FileNotFoundError:
+            return None, PlanActionReason.SOURCE_MISSING
+        except FileObservationChangedError, OSError:
+            return None, PlanActionReason.SOURCE_CHANGED
+        except FileObservationInvalidPathError, ValueError:
+            return None, PlanActionReason.INVALID_PATH
+
+    def _recovery_companion_candidates(
+        self,
+        library: Library,
+        candidates: Sequence[_OrganizeCandidate],
+        inventory_entries: Sequence[SourceInventoryEntry],
+        existing_tracks: Sequence[Track],
+        recoverable_companions: Sequence[RecoverableCompanion],
+    ) -> tuple[_OrganizeCompanionCandidate, ...]:
+        inventory_by_path = {entry.relative_path: entry for entry in inventory_entries}
+        track_by_id = {track.track_id: track for track in existing_tracks}
+        candidates_by_source: dict[str, list[_OrganizeCandidate]] = {}
+        for candidate in candidates:
+            candidates_by_source.setdefault(candidate.source_path, []).append(candidate)
+
+        recoveries: list[_OrganizeCompanionCandidate] = []
+        for recovery in recoverable_companions:
+            if recovery.source_plan_type not in {PlanType.ORGANIZE, PlanType.REFRESH}:
+                continue
+            entry = inventory_by_path.get(recovery.source_path)
+            if entry is None or not _recovery_tracks_are_stable(
+                recovery,
+                track_by_id,
+                candidates_by_source,
+            ):
+                continue
+            snapshot, reason = self._capture_companion_snapshot(entry, library.root_path)
+            if reason is not None or snapshot is None or snapshot.content_hash != recovery.content_hash:
+                continue
+            recoveries.append(
+                _OrganizeCompanionCandidate(
+                    kind=recovery.kind,
+                    source_path=recovery.source_path,
+                    target_path=recovery.target_path,
+                    owner_audio_source_path=None,
+                    dependency_audio_source_paths=(),
+                    snapshot=snapshot,
+                    reason=None,
+                    companion_asset_id=recovery.companion_asset_id,
+                    owner_track_id=recovery.owner_track_id,
+                )
+            )
+        return tuple(recoveries)
+
+    def _persist_result(  # noqa: C901  # Audio, companion registration, and one-Plan persistence share one transaction.
         self,
         uow: UnitOfWork,
         library: Library,
         candidates: Sequence[_OrganizeCandidate],
+        companion_candidates: Sequence[_OrganizeCompanionCandidate],
         persistence: _OrganizePersistence,
     ) -> OrganizeLibraryResult:
         existing_tracks = persistence.existing_tracks
         timestamp = persistence.timestamp
         occupied_paths = OccupiedPaths.from_paths(
-            candidate.source_path for candidate in candidates if candidate.snapshot is not None
+            (
+                *(candidate.source_path for candidate in candidates if candidate.snapshot is not None),
+                *(entry.relative_path for entry in persistence.inventory_entries),
+                *(track.current_path for track in existing_tracks.values() if track.status is TrackStatus.ACTIVE),
+                *(
+                    asset.current_path
+                    for asset in persistence.existing_companion_assets
+                    if asset.status is CompanionAssetStatus.ACTIVE
+                ),
+            )
         )
-        target_sources = _target_sources(candidates)
+        target_counts = _target_counts(candidates, companion_candidates)
         action_records: list[_ActionRecord] = []
         tracks: list[Track] = []
+        track_by_source: dict[str, Track] = {}
+        audio_reason_by_source: dict[str, PlanActionReason | None] = {}
 
         for candidate in candidates:
-            action_reason = candidate.block_reason or _collision_reason(candidate, occupied_paths, target_sources)
+            action_reason = candidate.block_reason or self._collision_reason(
+                library,
+                source_path=candidate.source_path,
+                target_path=candidate.target_path,
+                occupied_paths=occupied_paths,
+                target_counts=target_counts,
+            )
+            audio_reason_by_source[candidate.source_path] = action_reason
             track = None
             if action_reason is None:
                 track = self._track_for_candidate(library.library_id, candidate, existing_tracks, timestamp)
                 tracks.append(track)
+                track_by_source[candidate.source_path] = track
 
             if action_reason is not None or candidate.target_path != candidate.source_path:
                 action_records.append(
@@ -364,18 +542,84 @@ class CreateOrganizePlanUseCase:
                     )
                 )
 
-        actions = self._actions(library, action_records)
+        track_by_id = {track.track_id: track for track in tracks}
+        companion_action_records: list[_CompanionActionRecord] = []
+        companion_assets: list[CompanionAsset] = []
+        for candidate in companion_candidates:
+            reason = _companion_owner_reason(
+                candidate,
+                audio_reason_by_source,
+                track_by_source,
+                track_by_id,
+            )
+            if reason is None:
+                reason = self._collision_reason(
+                    library,
+                    source_path=candidate.source_path,
+                    target_path=candidate.target_path,
+                    occupied_paths=occupied_paths,
+                    target_counts=target_counts,
+                )
+            owner_track = (
+                track_by_id.get(candidate.owner_track_id)
+                if candidate.owner_track_id is not None
+                else track_by_source.get(candidate.owner_audio_source_path or "")
+            )
+            existing_asset = _existing_companion_asset(
+                persistence.existing_companion_assets,
+                candidate,
+            )
+            companion_asset_id = (
+                candidate.companion_asset_id
+                or (None if existing_asset is None else existing_asset.companion_asset_id)
+                or self.ports.id_generator.new_companion_asset_id()
+            )
+            if (
+                reason is None
+                and candidate.target_path == candidate.source_path
+                and owner_track is not None
+                and candidate.snapshot is not None
+            ):
+                companion_assets.append(
+                    _registered_companion_asset(
+                        library,
+                        candidate,
+                        owner_track,
+                        companion_asset_id,
+                        existing_asset,
+                        timestamp,
+                    )
+                )
+                continue
+            companion_action_records.append(
+                _CompanionActionRecord(
+                    candidate=candidate,
+                    track_id=None if owner_track is None else owner_track.track_id,
+                    companion_asset_id=companion_asset_id,
+                    reason=reason,
+                )
+            )
+
+        actions, dependencies = self._actions(
+            library,
+            action_records,
+            companion_action_records,
+        )
         final_library = _final_library_state(library, actions, timestamp)
 
         uow.libraries.save(final_library)
         for track in tracks:
             uow.tracks.save(track)
+        for companion_asset in companion_assets:
+            uow.companion_assets.save(companion_asset)
 
         plan = self._plan(final_library, actions, persistence.config_hash, timestamp)
         if plan is not None:
             uow.plans.save(plan)
             for action in actions:
                 uow.plan_actions.save(action)
+            for dependency in dependencies:
+                uow.plan_action_dependencies.save(dependency)
 
         return OrganizeLibraryResult(
             library=final_library,
@@ -383,6 +627,32 @@ class CreateOrganizePlanUseCase:
             actions=actions,
             track_count=len(tracks),
         )
+
+    def _collision_reason(
+        self,
+        library: Library,
+        *,
+        source_path: str,
+        target_path: str | None,
+        occupied_paths: OccupiedPaths,
+        target_counts: dict[str, int],
+    ) -> PlanActionReason | None:
+        if target_path is None or target_path == source_path:
+            return None
+        decision = CollisionPolicy().decide(
+            target_path,
+            occupied_paths,
+            batch_target_count=target_counts[target_path],
+        )
+        if decision.kind is CollisionDecisionKind.BLOCKED:
+            return decision.reason
+        target_filesystem_path = self.ports.path_resolver.resolve_library_path(
+            library.root_path,
+            target_path,
+        )
+        if self.ports.file_presence.exists(target_filesystem_path):
+            return PlanActionReason.TARGET_EXISTS
+        return None
 
     def _track_for_candidate(
         self,
@@ -413,9 +683,14 @@ class CreateOrganizePlanUseCase:
             updated_at=timestamp,
         )
 
-    def _actions(self, library: Library, records: Sequence[_ActionRecord]) -> tuple[PlanAction, ...]:
-        if len(records) == 0:
-            return ()
+    def _actions(
+        self,
+        library: Library,
+        records: Sequence[_ActionRecord],
+        companion_records: Sequence[_CompanionActionRecord],
+    ) -> tuple[tuple[PlanAction, ...], tuple[PlanActionDependency, ...]]:
+        if len(records) == 0 and len(companion_records) == 0:
+            return (), ()
 
         plan_id = self.ports.id_generator.new_plan_id()
         actions: list[PlanAction] = []
@@ -442,7 +717,46 @@ class CreateOrganizePlanUseCase:
                 )
             )
             sort_order += PLAN_ACTION_SORT_ORDER_STEP
-        return tuple(actions)
+
+        audio_action_by_source = {action.source_path: action for action in actions if action.source_path is not None}
+        dependencies: list[PlanActionDependency] = []
+        for record in companion_records:
+            candidate = record.candidate
+            action_id = self.ports.id_generator.new_action_id()
+            owner_action = (
+                None
+                if candidate.owner_audio_source_path is None
+                else audio_action_by_source.get(candidate.owner_audio_source_path)
+            )
+            actions.append(
+                PlanAction(
+                    action_id=action_id,
+                    plan_id=plan_id,
+                    library_id=library.library_id,
+                    track_id=record.track_id,
+                    action_type=_companion_action_type(candidate.kind),
+                    source_path=candidate.source_path,
+                    target_path=candidate.target_path,
+                    content_hash_at_plan=(None if candidate.snapshot is None else candidate.snapshot.content_hash),
+                    metadata_hash_at_plan=None,
+                    status=(ActionStatus.PLANNED if record.reason is None else ActionStatus.BLOCKED),
+                    reason=record.reason,
+                    sort_order=sort_order,
+                    companion_asset_id=record.companion_asset_id,
+                    owner_action_id=None if owner_action is None else owner_action.action_id,
+                )
+            )
+            dependencies.extend(
+                PlanActionDependency(
+                    plan_id=plan_id,
+                    action_id=action_id,
+                    depends_on_action_id=dependency_action.action_id,
+                )
+                for source_path in candidate.dependency_audio_source_paths
+                if (dependency_action := audio_action_by_source.get(source_path)) is not None
+            )
+            sort_order += PLAN_ACTION_SORT_ORDER_STEP
+        return tuple(actions), tuple(dependencies)
 
     def _plan(
         self,
@@ -498,6 +812,21 @@ class _OrganizeCaptureInput:
 
 
 @dataclass(frozen=True, slots=True)
+class _OrganizeCompanionCandidate:
+    """One claimed Library companion and its reviewed planning evidence."""
+
+    kind: CompanionAssetKind
+    source_path: str
+    target_path: str | None
+    owner_audio_source_path: str | None
+    dependency_audio_source_paths: tuple[str, ...]
+    snapshot: FileContentSnapshot | None
+    reason: PlanActionReason | None
+    companion_asset_id: CompanionAssetId | None = None
+    owner_track_id: TrackId | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class _ActionRecord:
     """Intermediate action data before the shared Plan ID is generated."""
 
@@ -507,12 +836,78 @@ class _ActionRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class _CompanionActionRecord:
+    """Companion action inputs after owner Track and collision judgment."""
+
+    candidate: _OrganizeCompanionCandidate
+    track_id: TrackId | None
+    companion_asset_id: CompanionAssetId
+    reason: PlanActionReason | None
+
+
+@dataclass(frozen=True, slots=True)
 class _OrganizePersistence:
     """Inputs shared across organize Track and Plan persistence."""
 
     existing_tracks: dict[str, Track]
+    existing_companion_assets: tuple[CompanionAsset, ...]
+    inventory_entries: tuple[SourceInventoryEntry, ...]
     config_hash: str
     timestamp: datetime
+
+
+def _load_recoverable_companions(
+    uow: UnitOfWork,
+    library_id: LibraryId,
+    tracks: Sequence[Track],
+    companion_assets: Sequence[CompanionAsset],
+) -> tuple[RecoverableCompanion, ...]:
+    plans = tuple(uow.plans.list_by_library(library_id))
+    actions = tuple(action for plan in plans for action in uow.plan_actions.list_by_plan(plan.plan_id))
+    dependencies = tuple(
+        dependency for action in actions for dependency in uow.plan_action_dependencies.list_by_action(action.action_id)
+    )
+    return find_recoverable_companions(
+        CompanionRecoveryEvidence(
+            plans=plans,
+            actions=actions,
+            dependencies=dependencies,
+            runs=tuple(uow.runs.list_by_library(library_id)),
+            events=tuple(uow.file_events.list_by_library(library_id)),
+            tracks=tracks,
+            companion_assets=companion_assets,
+        )
+    )
+
+
+def _merge_organize_companion_candidates(
+    claimed: Sequence[_OrganizeCompanionCandidate],
+    recoveries: Sequence[_OrganizeCompanionCandidate],
+) -> tuple[_OrganizeCompanionCandidate, ...]:
+    claimed_paths = {candidate.source_path for candidate in claimed}
+    return (*claimed, *(candidate for candidate in recoveries if candidate.source_path not in claimed_paths))
+
+
+def _recovery_tracks_are_stable(
+    recovery: RecoverableCompanion,
+    tracks_by_id: dict[TrackId, Track],
+    candidates_by_source: dict[str, list[_OrganizeCandidate]],
+) -> bool:
+    for track_id in recovery.dependency_track_ids:
+        track = tracks_by_id.get(track_id)
+        if track is None:
+            return False
+        candidates = candidates_by_source.get(track.current_path, ())
+        if len(candidates) != 1:
+            return False
+        candidate = candidates[0]
+        if (
+            candidate.snapshot is None
+            or candidate.block_reason is not None
+            or candidate.target_path != candidate.source_path
+        ):
+            return False
+    return True
 
 
 def _running_operation(uow: UnitOfWork, operation_id: OperationId | None) -> Operation | None:
@@ -625,36 +1020,130 @@ def _path_generation_failure_reason(exc: ValueError) -> PlanActionReason:
     return PlanActionReason.INVALID_PATH
 
 
-def _target_sources(candidates: Sequence[_OrganizeCandidate]) -> dict[str, tuple[str, ...]]:
-    grouped: dict[str, list[str]] = {}
+def _target_counts(
+    candidates: Sequence[_OrganizeCandidate],
+    companion_candidates: Sequence[_OrganizeCompanionCandidate],
+) -> dict[str, int]:
+    target_counts: dict[str, int] = {}
     for candidate in candidates:
         if candidate.target_path is None:
             continue
-        grouped.setdefault(candidate.target_path, []).append(candidate.source_path)
-    return {target_path: tuple(source_paths) for target_path, source_paths in grouped.items()}
+        target_counts[candidate.target_path] = target_counts.get(candidate.target_path, 0) + 1
+    for candidate in companion_candidates:
+        if candidate.reason is not None or candidate.target_path is None:
+            continue
+        target_counts[candidate.target_path] = target_counts.get(candidate.target_path, 0) + 1
+    return target_counts
 
 
-def _collision_reason(
-    candidate: _OrganizeCandidate,
-    occupied_paths: OccupiedPaths,
-    target_sources: dict[str, tuple[str, ...]],
+def _companion_owner_reason(
+    candidate: _OrganizeCompanionCandidate,
+    audio_reason_by_source: dict[str, PlanActionReason | None],
+    track_by_source: dict[str, Track],
+    track_by_id: dict[TrackId, Track],
 ) -> PlanActionReason | None:
-    target_path = candidate.target_path
-    if target_path is None:
+    if candidate.reason is not None:
+        return candidate.reason
+    if candidate.owner_track_id is not None:
+        if candidate.target_path is None or candidate.owner_track_id not in track_by_id:
+            return PlanActionReason.COMPANION_OWNER_BLOCKED
         return None
+    owner_source = candidate.owner_audio_source_path
+    if (
+        candidate.target_path is None
+        or owner_source is None
+        or owner_source not in track_by_source
+        or any(
+            source_path not in audio_reason_by_source or audio_reason_by_source[source_path] is not None
+            for source_path in candidate.dependency_audio_source_paths
+        )
+    ):
+        return PlanActionReason.COMPANION_OWNER_BLOCKED
+    return None
 
-    decision = CollisionPolicy().decide(
-        target_path,
-        occupied_paths,
-        batch_target_count=len(target_sources[target_path]),
+
+def _existing_companion_asset(
+    companion_assets: Sequence[CompanionAsset],
+    candidate: _OrganizeCompanionCandidate,
+) -> CompanionAsset | None:
+    if candidate.companion_asset_id is not None:
+        return next(
+            (asset for asset in companion_assets if asset.companion_asset_id == candidate.companion_asset_id),
+            None,
+        )
+    return next(
+        (
+            asset
+            for asset in companion_assets
+            if asset.current_path == candidate.source_path and asset.kind is candidate.kind
+        ),
+        None,
     )
-    if decision.kind is CollisionDecisionKind.AVAILABLE:
-        return None
 
-    # A no-op rename onto the candidate's own current Library-relative path is
-    # never a conflict, even though that path is itself always present in
-    # occupied_paths (every candidate's own source_path is a member).
-    if target_path == candidate.source_path:
-        return None
 
-    return decision.reason
+def _registered_companion_asset(  # noqa: PLR0913  # Stable asset identity and owner state remain explicit inputs.
+    library: Library,
+    candidate: _OrganizeCompanionCandidate,
+    owner_track: Track,
+    companion_asset_id: CompanionAssetId,
+    existing_asset: CompanionAsset | None,
+    timestamp: datetime,
+) -> CompanionAsset:
+    snapshot = candidate.snapshot
+    target_path = candidate.target_path
+    if snapshot is None or target_path is None:
+        raise AssertionError(INCOMPLETE_CANDIDATE_MESSAGE)
+    return CompanionAsset(
+        companion_asset_id=companion_asset_id,
+        library_id=library.library_id,
+        kind=candidate.kind,
+        owner_track_id=owner_track.track_id,
+        current_path=candidate.source_path,
+        canonical_path=target_path,
+        content_hash=snapshot.content_hash,
+        size=snapshot.size,
+        mtime=snapshot.mtime,
+        status=CompanionAssetStatus.ACTIVE,
+        first_seen_at=timestamp if existing_asset is None else existing_asset.first_seen_at,
+        last_seen_at=timestamp,
+        updated_at=timestamp,
+    )
+
+
+def _companion_kind(
+    association: CompanionAssociation | None,
+    issue: CompanionIssue | None,
+) -> CompanionAssetKind:
+    if association is not None:
+        return association.kind
+    if issue is not None:
+        return issue.kind
+    raise AssertionError(CLAIMED_COMPANION_DECISION_MISSING_MESSAGE)
+
+
+def _companion_dependency_sources(
+    association: CompanionAssociation | None,
+    issue: CompanionIssue | None,
+) -> tuple[str, ...]:
+    if association is not None:
+        return association.dependency_audio_source_paths
+    if issue is not None:
+        return issue.dependency_audio_source_paths
+    return ()
+
+
+def _companion_issue_reason(issue: CompanionIssue | None) -> PlanActionReason | None:
+    if issue is None:
+        return None
+    if issue.code in {
+        CompanionIssueCode.OWNER_AMBIGUOUS,
+        CompanionIssueCode.TARGET_PARENT_MISMATCH,
+    }:
+        return PlanActionReason.COMPANION_ASSOCIATION_AMBIGUOUS
+    return PlanActionReason.COMPANION_OWNER_BLOCKED
+
+
+def _companion_action_type(kind: CompanionAssetKind) -> ActionType:
+    if kind is CompanionAssetKind.LYRICS:
+        return ActionType.MOVE_LYRICS
+    return ActionType.MOVE_ARTWORK

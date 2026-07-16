@@ -10,7 +10,7 @@ import json
 import struct
 import zipfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -103,6 +103,9 @@ def test_windows_archive_audit_rejects_traversal_before_extraction(tmp_path: Pat
         f"{ROOT}/node.exe",
         f"{ROOT}/PySide6/Qt6WebEngineCore.dll",
         f"{ROOT}/cefpython/libcef.dll",
+        f"{ROOT}/fasttext.cp314-win_amd64.pyd",
+        f"{ROOT}/models/lid.176.bin",
+        f"{ROOT}/models/lid.176.ftz",
         f"{ROOT}/src/omym2/config.py",
         f"{ROOT}/webview/lib/WebBrowserInterop.x64.dll",
     ],
@@ -111,7 +114,7 @@ def test_windows_archive_audit_rejects_runtime_and_source_leaks(
     tmp_path: Path,
     forbidden_member: str,
 ) -> None:
-    """Node, bundled Chromium or Qt, and source-checkout content cannot ship."""
+    """Forbidden runtimes, artist models, and source-checkout content cannot ship."""
     wheel = _write_wheel(tmp_path)
     archive = _write_archive(tmp_path, extra_files={forbidden_member: b"forbidden"})
 
@@ -131,6 +134,36 @@ def test_windows_archive_audit_rejects_wheel_resource_drift(tmp_path: Path) -> N
     archive = _write_archive(tmp_path, replacements={f"{ROOT}/{STATIC_INDEX}": b"changed"})
 
     with pytest.raises(WindowsPackageAuditError, match="resource differs"):
+        _ = audit_windows_package(
+            archive,
+            wheel,
+            _icon_path(),
+            _version_info_path(),
+            metadata_reader=_matching_metadata_reader,
+        )
+
+
+def test_windows_archive_audit_rejects_fasttext_runtime_inventory(tmp_path: Path) -> None:
+    """A frozen fastText distribution fails even without a plainly named runtime archive member."""
+    wheel = _write_wheel(tmp_path)
+    inventory = _runtime_inventory()
+    third_party = cast("list[object]", inventory["third_party"])
+    third_party.append(
+        {
+            "license_files": [],
+            "metadata_directory": "opaque-runtime-1.0.dist-info",
+            "name": "fasttext-wheel",
+            "version": "1.0",
+        }
+    )
+    archive = _write_archive(
+        tmp_path,
+        replacements={
+            f"{ROOT}/{config.DESKTOP_RUNTIME_INVENTORY_FILE_NAME}": json.dumps(inventory).encode(),
+        },
+    )
+
+    with pytest.raises(WindowsPackageAuditError, match="forbidden artist-naming runtime"):
         _ = audit_windows_package(
             archive,
             wheel,
@@ -337,28 +370,9 @@ def _write_archive(
 
 def _valid_archive_files(executable: bytes, wheel_sha256: str) -> dict[str, bytes]:
     python_license_digest = hashlib.sha256(PYTHON_LICENSE_BODY).hexdigest()
-    inventory: dict[str, object] = {
-        "project": {
-            "license_files": [],
-            "metadata_directory": f"omym2-{PACKAGE_VERSION}.dist-info",
-            "name": "omym2",
-            "version": PACKAGE_VERSION,
-        },
-        "project_license": "unresolved",
-        "python_runtime": {
-            "license_file": config.DESKTOP_PYTHON_RUNTIME_LICENSE_FILE_NAME,
-            "license_sha256": python_license_digest,
-            "version": "3.14.0",
-        },
-        "third_party": [
-            {
-                "license_files": [MUTAGEN_LICENSE],
-                "metadata_directory": MUTAGEN_METADATA_DIRECTORY,
-                "name": "mutagen",
-                "version": "1.47.0",
-            }
-        ],
-    }
+    inventory = _runtime_inventory()
+    python_runtime = cast("dict[str, object]", inventory["python_runtime"])
+    python_runtime["license_sha256"] = python_license_digest
     files = {f"{ROOT}/{name}": content for name, content in WHEEL_FILES.items()}
     files.update(
         {
@@ -376,6 +390,31 @@ def _valid_archive_files(executable: bytes, wheel_sha256: str) -> dict[str, byte
         }
     )
     return files
+
+
+def _runtime_inventory() -> dict[str, object]:
+    return {
+        "project": {
+            "license_files": [],
+            "metadata_directory": f"omym2-{PACKAGE_VERSION}.dist-info",
+            "name": "omym2",
+            "version": PACKAGE_VERSION,
+        },
+        "project_license": "unresolved",
+        "python_runtime": {
+            "license_file": config.DESKTOP_PYTHON_RUNTIME_LICENSE_FILE_NAME,
+            "license_sha256": hashlib.sha256(PYTHON_LICENSE_BODY).hexdigest(),
+            "version": "3.14.0",
+        },
+        "third_party": [
+            {
+                "license_files": [MUTAGEN_LICENSE],
+                "metadata_directory": MUTAGEN_METADATA_DIRECTORY,
+                "name": "mutagen",
+                "version": "1.47.0",
+            }
+        ],
+    }
 
 
 def _freeze_provenance(wheel_sha256: str) -> dict[str, object]:

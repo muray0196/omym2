@@ -8,7 +8,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.main import main as _dispatch_cli
-from omym2.platform.cli_composition import build_command_dependencies
+from omym2.platform.cli_composition import command_dependencies_for_runtime
+from omym2.platform.logging_composition import configure_runtime_logging
+from omym2.platform.runtime_context import runtime_context_for
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -24,7 +26,9 @@ def run_cli(
     database_path: Path | None = None,
 ) -> int:
     """Build the CLI dependency bundle for one invocation and run the CLI."""
-    dependencies = build_command_dependencies(config_path, database_path)
+    runtime = runtime_context_for(config_path, database_path)
+    _ = configure_runtime_logging(runtime)
+    dependencies = command_dependencies_for_runtime(runtime)
     return _dispatch_cli(argv, stdout, stderr, dependencies=dependencies)
 
 

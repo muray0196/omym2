@@ -240,6 +240,14 @@ export function Component() {
                         <dt>{historyCopy.labels.actionId}</dt>
                         <dd className={styles.id}>{event.plan_action_id}</dd>
                       </div>
+                      {event.companion_asset_id !== null ? (
+                        <div>
+                          <dt>{historyCopy.labels.companionAssetId}</dt>
+                          <dd className={styles.id}>
+                            {event.companion_asset_id}
+                          </dd>
+                        </div>
+                      ) : null}
                       <div>
                         <dt>{historyCopy.labels.source}</dt>
                         <dd className={styles.path}>{event.source_path}</dd>

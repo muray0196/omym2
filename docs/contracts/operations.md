@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Durable Operation Contract
-description: Defines durable background Operation identity, lifecycle, idempotency, progress, polling, retention, Operation-level restart recovery, and cancellation policy.
-tags: [operations, idempotency, polling, progress, recovery, desktop]
-timestamp: 2026-07-15T00:13:25+09:00
+description: Defines durable background Operation identity, lifecycle, idempotency, progress, polling, retention, and restart recovery including unprocessed-file mutation evidence.
+tags: [operations, idempotency, polling, progress, recovery, unprocessed, desktop]
+timestamp: 2026-07-16T04:51:16+09:00
 ---
 
 # Durable Operation Contract
@@ -17,7 +17,7 @@ The persisted table shape is owned by [db-schema.md](db-schema.md#operations).
 HTTP representations and errors are owned by [web-api.md](web-api.md). The
 choice of polling is recorded in
 [../decisions/0002-durable-operations-over-polling.md](../decisions/0002-durable-operations-over-polling.md).
-Library music file mutation ordering remains authoritative in
+Reviewed audio, companion, and unprocessed-file mutation ordering remains authoritative in
 [../execution/apply.md](../execution/apply.md).
 
 ## Operation Versus FileEvent
@@ -26,9 +26,10 @@ An `Operation` is the durable record of one accepted background request. It
 exists so a client can recover after a lost response, poll progress, and inspect
 an interruption after a process restart.
 
-A `FileEvent` is the durable evidence for one attempted Library music file
-mutation. It must be committed as `pending` immediately before that mutation.
-An Operation never replaces, batches, or weakens FileEvent ordering.
+A `FileEvent` is the durable evidence for one attempted audio, companion, or
+unprocessed-file mutation. It must be committed as `pending` immediately
+before that mutation. An Operation never replaces, batches, or weakens
+FileEvent ordering.
 
 ## Identity And Kinds
 
@@ -193,6 +194,13 @@ the owning execution specification for each candidate. In particular,
 [Apply's dispatch and restart rules](../execution/apply.md#dispatch-failure-and-restart)
 are authoritative for PlanAction, Plan, Run, and FileEvent recovery; this
 contract does not redefine those transitions.
+
+That recovery treats `move_unprocessed` like the other mutation-bearing action
+types: a planned action not durably confirmed becomes failed with
+`operation_interrupted`, while any typed pending event remains pending and
+manual-review-only. Reconciliation never resumes the move, rereads current
+unprocessed Config, deletes directories, or infers an outcome from the
+filesystem.
 
 All managed-state recovery and the Operation transition commit in one
 transaction. A candidate without kind-specific nonterminal state preserves any

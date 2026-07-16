@@ -33,9 +33,12 @@ from omym2.features.plans.dto import (
 
 
 class PlanActionTypeCounts(ApiModel):
-    """Counts for the three recorded PlanAction types within one status."""
+    """Counts for every recorded PlanAction type within one status."""
 
     move: NonNegativeCount
+    move_lyrics: NonNegativeCount
+    move_artwork: NonNegativeCount
+    move_unprocessed: NonNegativeCount
     skip: NonNegativeCount
     refresh_metadata: NonNegativeCount
 
@@ -128,6 +131,9 @@ class PlanActionResource(ApiModel):
     status: ActionStatus
     reason: PlanActionReason | None
     sort_order: int
+    companion_asset_id: UUID | None
+    owner_action_id: UUID | None
+    depends_on_action_ids: tuple[UUID, ...]
     artist_name_diagnostics: ArtistNameDiagnosticsResource | None
 
 

@@ -1,15 +1,15 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, Windows desktop CI expectations, suppressions, and Python runtime configuration policy.
+description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, Windows desktop CI expectations, suppressions, and runtime boundaries.
 tags: [development, tooling, quality-gates, validation, web, desktop]
-timestamp: 2026-07-16T01:53:29+09:00
+timestamp: 2026-07-16T03:30:43+09:00
 ---
 
 # Development Harness
 
 This document is authoritative for developer quality commands, validation gates,
-suppressions, and Python runtime configuration policy.
+suppressions, and runtime configuration boundaries.
 
 Product command behavior is defined in [COMMANDS.md](../COMMANDS.md). Test design is defined in [testing.md](testing.md). Application config and stored path policy are defined in [STORAGE.md](../STORAGE.md) and [contracts/](../contracts/).
 
@@ -234,31 +234,19 @@ Each suppression must include a brief justification comment explaining why the w
 
 ## Runtime Configuration
 
-Python/runtime configuration uses environment variables only.
+OMYM2 has no environment-variable override for artist naming, hashing, or
+logging. MusicBrainz enablement, provider bounds, fastText model selection and
+confidence, hash chunk size, and log behavior are persisted application
+settings governed by [Config Contract](../contracts/config.md). CLI,
+browser-hosted Web, and desktop composition read that same boundary.
 
-This does not change OMYM2 application configuration. Application config remains TOML-based and is governed by [contracts/config.md](../contracts/config.md).
-
-### Automatic Artist-Name Lookup Development Opt-In
-
-`OMYM2_ARTIST_NAME_FASTTEXT_MODEL_PATH` is the process-level development
-opt-in for new fastText-gated MusicBrainz artist-name lookups during Add,
-Organize, and Refresh Plan creation. Its value is a fastText language-model
-path; use an absolute path so CLI and browser-hosted Web processes select the
-same file. An unset, empty, or whitespace-only value keeps new provider
-lookups disabled while configured preferences and accepted cache rows remain
-available.
-
-The project does not install a fastText prediction runtime or distribute a
-model yet. When the variable is set, normal Plan composition creates one lazy
-predictor and one rate-limited provider per process. The optional `fasttext`
-module and model are loaded only when an otherwise eligible uncached source
-first needs language detection. Import, model-load, and model-open failures are
-reported to the resolver as detector unavailability, so Plan creation falls
-back to the original source and does not contact MusicBrainz. A load failure is
-remembered for the process instead of being retried for every candidate.
+The repository does not install a fastText prediction runtime or distribute a
+language model. Development may point persisted `fasttext.model_path` at a
+local model, but automatic lookup remains disabled until
+`musicbrainz.enabled = true`. A missing optional runtime or unusable model is a
+normal local-only fallback: the source value is preserved, no provider request
+is made, and detector failure is remembered for the process.
 
 Apply, Undo, Check, history, inspection, Track browsing, and Settings preview
-never invoke the predictor or provider. Persisted enablement, runtime tunables,
-model distribution, and packaged Windows support remain separate release work;
-this environment variable does not add a TOML key or enable packaged builds by
-default.
+never invoke the predictor or provider. Operational settings do not mark a
+Library stale, and already-reviewed Plans retain their recorded paths.

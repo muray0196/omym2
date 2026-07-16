@@ -213,6 +213,9 @@ function PlanSummaryTable({ summary }: { summary: PlanDetail["summary"] }) {
             <tr>
               <th scope="col">{planCopy.labels.status}</th>
               <th scope="col">{planCopy.labels.move}</th>
+              <th scope="col">{planCopy.labels.moveLyrics}</th>
+              <th scope="col">{planCopy.labels.moveArtwork}</th>
+              <th scope="col">{planCopy.labels.moveUnprocessed}</th>
               <th scope="col">{planCopy.labels.skip}</th>
               <th scope="col">{planCopy.labels.refreshMetadata}</th>
             </tr>
@@ -222,6 +225,9 @@ function PlanSummaryTable({ summary }: { summary: PlanDetail["summary"] }) {
               <tr key={row.label}>
                 <th scope="row">{row.label}</th>
                 <td>{row.counts.move}</td>
+                <td>{row.counts.move_lyrics}</td>
+                <td>{row.counts.move_artwork}</td>
+                <td>{row.counts.move_unprocessed}</td>
                 <td>{row.counts.skip}</td>
                 <td>{row.counts.refresh_metadata}</td>
               </tr>
@@ -460,6 +466,22 @@ function ActionRow({ action }: { action: PlanAction }) {
         <span>
           {planCopy.labels.trackId}: {action.track_id ?? "—"}
         </span>
+        {action.companion_asset_id !== null ? (
+          <span>
+            {planCopy.labels.companionAssetId}: {action.companion_asset_id}
+          </span>
+        ) : null}
+        {action.owner_action_id !== null ? (
+          <span>
+            {planCopy.labels.ownerActionId}: {action.owner_action_id}
+          </span>
+        ) : null}
+        {action.depends_on_action_ids.length > 0 ? (
+          <span>
+            {planCopy.labels.dependencyActionIds}:{" "}
+            {action.depends_on_action_ids.join(", ")}
+          </span>
+        ) : null}
       </div>
       <dl className={styles.pathList}>
         <div className={styles.pathItem}>

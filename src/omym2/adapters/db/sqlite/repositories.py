@@ -33,6 +33,11 @@ from omym2.domain.models.check_issue import (
     CheckIssueType,
 )
 from omym2.domain.models.check_run import CheckRun
+from omym2.domain.models.companion_asset import (
+    CompanionAsset,
+    CompanionAssetKind,
+    CompanionAssetStatus,
+)
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.operation import (
@@ -53,7 +58,13 @@ from omym2.domain.models.operation import (
     RunCompletedResult,
 )
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import (
     TRACK_GROUP_DISC_LABEL_PREFIX,
@@ -70,6 +81,7 @@ from omym2.features.common_ports import CheckIssueGroup, PlanActionGroupRow
 from omym2.shared.ids import (
     ActionId,
     CheckRunId,
+    CompanionAssetId,
     EventId,
     LibraryId,
     OperationId,
@@ -116,6 +128,8 @@ TRACK_SEARCH_WHERE_CLAUSE = f"""(
 PLAN_ACTION_SEARCH_COLUMN_NAMES = (
     "action_id",
     "track_id",
+    "companion_asset_id",
+    "owner_action_id",
     "source_path",
     "target_path",
     "content_hash_at_plan",
@@ -128,7 +142,23 @@ PLAN_SEARCH_COLUMN_NAMES = (
     "status",
 )
 RUN_SEARCH_COLUMN_NAMES = ("run_id", "plan_id", "library_id", "status", "error_summary")
-CHECK_ISSUE_SEARCH_COLUMN_NAMES = ("library_id", "path", "track_id", "plan_id", "detail")
+CHECK_ISSUE_SEARCH_COLUMN_NAMES = (
+    "library_id",
+    "path",
+    "track_id",
+    "plan_id",
+    "companion_asset_id",
+    "detail",
+)
+CHECK_ISSUE_EXTERNAL_PATH_CONDITION = """(
+                    substr(ci.path, 1, 1) = '/'
+                    OR substr(ci.path, 1, 2) = char(92, 92)
+                    OR (
+                        substr(ci.path, 1, 1) GLOB '[A-Za-z]'
+                        AND substr(ci.path, 2, 1) = ':'
+                        AND (substr(ci.path, 3, 1) = '/' OR substr(ci.path, 3, 1) = char(92))
+                    )
+                )"""
 TRACK_GROUP_SOURCE_SELECT = """
             SELECT
                 COALESCE(json_extract(metadata_json, '$.album_artist'), json_extract(metadata_json, '$.artist'), ?)
@@ -139,7 +169,7 @@ TRACK_GROUP_SOURCE_SELECT = """
 CHECK_ISSUE_PATH_ROOT_SELECT = f"""
                 CASE
                     WHEN ci.path IS NULL OR ci.path = '' THEN NULL
-                    WHEN substr(ci.path, 1, 1) = '/' THEN '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}'
+                    WHEN {CHECK_ISSUE_EXTERNAL_PATH_CONDITION} THEN '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}'
                     WHEN instr(ci.path, '/') = 0 THEN '{CHECK_ISSUE_GROUP_ROOT_KEY}'
                     ELSE substr(ci.path, 1, instr(ci.path, '/'))
                 END
@@ -147,7 +177,7 @@ CHECK_ISSUE_PATH_ROOT_SELECT = f"""
 CHECK_ISSUE_ARTIST_SEGMENT_SELECT = f"""
                 CASE
                     WHEN ci.path IS NULL OR ci.path = '' THEN NULL
-                    WHEN substr(ci.path, 1, 1) = '/' THEN '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}'
+                    WHEN {CHECK_ISSUE_EXTERNAL_PATH_CONDITION} THEN '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}'
                     WHEN instr(ci.path, '/') = 0 THEN '{CHECK_ISSUE_GROUP_ROOT_KEY}'
                     ELSE substr(ci.path, 1, instr(ci.path, '/') - 1)
                 END
@@ -155,7 +185,7 @@ CHECK_ISSUE_ARTIST_SEGMENT_SELECT = f"""
 CHECK_ISSUE_ALBUM_SEGMENT_SELECT = f"""
                 CASE
                     WHEN ci.path IS NULL OR ci.path = '' THEN NULL
-                    WHEN substr(ci.path, 1, 1) = '/' THEN '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}'
+                    WHEN {CHECK_ISSUE_EXTERNAL_PATH_CONDITION} THEN '{CHECK_ISSUE_GROUP_EXTERNAL_KEY}'
                     WHEN instr(ci.path, '/') = 0 THEN '{CHECK_ISSUE_GROUP_ROOT_KEY}'
                     WHEN instr(substr(ci.path, instr(ci.path, '/') + 1), '/') = 0 THEN '{CHECK_ISSUE_GROUP_ROOT_KEY}'
                     ELSE substr(
@@ -169,34 +199,74 @@ CHECK_ISSUE_SEVERITY_SELECT = """
                 CASE ci.issue_type
                     WHEN 'db_file_missing' THEN 'error'
                     WHEN 'content_hash_changed' THEN 'error'
+                    WHEN 'companion_file_missing' THEN 'error'
+                    WHEN 'companion_content_hash_changed' THEN 'error'
+                    WHEN 'companion_owner_missing' THEN 'error'
+                    WHEN 'failed_companion_source_exists' THEN 'error'
+                    WHEN 'unprocessed_file_missing' THEN 'error'
+                    WHEN 'unprocessed_content_hash_changed' THEN 'error'
                     WHEN 'library_stale' THEN 'info'
                     ELSE 'warning'
                 END
 """
 CHECK_ISSUE_COMMAND_KEY_SELECT = """
                 CASE
-                    WHEN ci.issue_type IN ('db_file_missing', 'content_hash_changed', 'metadata_hash_changed') THEN 'refresh'
+                    WHEN ci.issue_type IN (
+                        'db_file_missing',
+                        'content_hash_changed',
+                        'metadata_hash_changed',
+                        'companion_file_missing',
+                        'companion_content_hash_changed'
+                    ) THEN 'refresh'
                     WHEN ci.issue_type = 'unmanaged_file_exists' THEN 'add'
+                    WHEN ci.issue_type = 'failed_companion_source_exists' AND ci.detail = 'add'
+                        THEN 'add'
+                    WHEN ci.issue_type = 'failed_companion_source_exists' AND ci.detail = 'organize'
+                        THEN 'organize'
                     WHEN ci.issue_type IN (
                         'current_path_differs_from_canonical_path',
+                        'companion_current_path_differs_from_canonical_path',
+                        'companion_owner_missing',
+                        'unmanaged_companion_exists',
                         'duplicate_candidate',
                         'plan_source_changed'
                     ) THEN 'organize'
-                    WHEN ci.issue_type = 'pending_file_event_exists' THEN 'history'
+                    WHEN ci.issue_type IN (
+                        'pending_file_event_exists',
+                        'unprocessed_file_missing',
+                        'unprocessed_content_hash_changed'
+                    ) THEN 'history'
                     ELSE 'check'
                 END
 """
 CHECK_ISSUE_COMMAND_LABEL_SELECT = """
                 CASE
-                    WHEN ci.issue_type IN ('db_file_missing', 'content_hash_changed', 'metadata_hash_changed')
+                    WHEN ci.issue_type IN (
+                        'db_file_missing',
+                        'content_hash_changed',
+                        'metadata_hash_changed',
+                        'companion_file_missing',
+                        'companion_content_hash_changed'
+                    )
                         THEN 'omym2 refresh <file>'
                     WHEN ci.issue_type = 'unmanaged_file_exists' THEN 'omym2 add <path>'
+                    WHEN ci.issue_type = 'failed_companion_source_exists' AND ci.detail = 'add'
+                        THEN 'omym2 add <path>'
+                    WHEN ci.issue_type = 'failed_companion_source_exists' AND ci.detail = 'organize'
+                        THEN 'omym2 organize'
                     WHEN ci.issue_type IN (
                         'current_path_differs_from_canonical_path',
+                        'companion_current_path_differs_from_canonical_path',
+                        'companion_owner_missing',
+                        'unmanaged_companion_exists',
                         'duplicate_candidate',
                         'plan_source_changed'
                     ) THEN 'omym2 organize'
-                    WHEN ci.issue_type = 'pending_file_event_exists' THEN 'omym2 history'
+                    WHEN ci.issue_type IN (
+                        'pending_file_event_exists',
+                        'unprocessed_file_missing',
+                        'unprocessed_content_hash_changed'
+                    ) THEN 'omym2 history'
                     ELSE 'omym2 check'
                 END
 """
@@ -236,7 +306,7 @@ RUN_SELECT_FROM = """
 """
 PLAN_SELECT_FROM = """
             SELECT plan_id, library_id, source_run_id, plan_type, status, created_at, config_hash,
-                   library_root_at_plan, summary_json
+                   library_root_at_plan, source_root_at_plan, summary_json
             FROM plans
 """
 PLAN_ACTION_SELECT_FROM = """
@@ -245,6 +315,8 @@ PLAN_ACTION_SELECT_FROM = """
                 plan_id,
                 library_id,
                 track_id,
+                companion_asset_id,
+                owner_action_id,
                 action_type,
                 source_path,
                 target_path,
@@ -257,12 +329,30 @@ PLAN_ACTION_SELECT_FROM = """
                 sort_order
             FROM plan_actions
 """
+COMPANION_ASSET_SELECT_FROM = """
+            SELECT
+                companion_asset_id,
+                library_id,
+                kind,
+                owner_track_id,
+                current_path,
+                canonical_path,
+                content_hash,
+                size,
+                mtime,
+                status,
+                first_seen_at,
+                last_seen_at,
+                updated_at
+            FROM companion_assets
+"""
 CHECK_RUN_SELECT_FROM = """
             SELECT check_run_id, library_id, checked_at, total_count
             FROM check_runs
 """
 CHECK_ISSUE_SELECT_FROM = """
-            SELECT issue_seq, check_run_id, library_id, issue_type, path, track_id, plan_id, detail
+            SELECT issue_seq, check_run_id, library_id, issue_type, path, track_id, plan_id,
+                   companion_asset_id, detail
             FROM check_issues
 """
 FILE_EVENT_SELECT_FROM = """
@@ -271,6 +361,7 @@ FILE_EVENT_SELECT_FROM = """
                 library_id,
                 run_id,
                 plan_action_id,
+                companion_asset_id,
                 event_type,
                 source_path,
                 target_path,
@@ -507,9 +598,10 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
                 path,
                 track_id,
                 plan_id,
+                companion_asset_id,
                 detail
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -519,6 +611,7 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
                     issue.path,
                     None if issue.track_id is None else str(issue.track_id),
                     None if issue.plan_id is None else str(issue.plan_id),
+                    None if issue.companion_asset_id is None else str(issue.companion_asset_id),
                     issue.detail,
                 )
                 for issue in issues
@@ -597,7 +690,8 @@ class SQLiteCheckIssueRepository(_SQLiteRepository):
             self._connection,
             source_sql  # noqa: S608  # source SQL contains only static grouping expressions and bound filters
             + f"""
-            SELECT issue_seq, check_run_id, library_id, issue_type, path, track_id, plan_id, detail
+            SELECT issue_seq, check_run_id, library_id, issue_type, path, track_id, plan_id,
+                   companion_asset_id, detail
             FROM source
             WHERE group_key = ?{cursor_sql}
             ORDER BY issue_seq
@@ -1039,6 +1133,86 @@ class SQLiteTrackRepository(_SQLiteRepository):
         return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
 
+class SQLiteCompanionAssetRepository(_SQLiteRepository):
+    """SQLite implementation of CompanionAssetRepository."""
+
+    def get(self, companion_asset_id: CompanionAssetId) -> CompanionAsset | None:
+        """Return one managed companion asset by stable ID."""
+        row = _fetch_one(
+            self._connection,
+            COMPANION_ASSET_SELECT_FROM
+            + """
+            WHERE companion_asset_id = ?
+            """,
+            (str(companion_asset_id),),
+        )
+        return None if row is None else _companion_asset_from_row(row)
+
+    def list_by_library(self, library_id: LibraryId) -> tuple[CompanionAsset, ...]:
+        """Return companion assets owned by one Library in stable path order."""
+        rows = _fetch_all(
+            self._connection,
+            COMPANION_ASSET_SELECT_FROM
+            + """
+            WHERE library_id = ?
+            ORDER BY current_path, companion_asset_id
+            """,
+            (str(library_id),),
+        )
+        return tuple(_companion_asset_from_row(row) for row in rows)
+
+    def save(self, companion_asset: CompanionAsset) -> None:
+        """Persist companion state without recalculating identity or paths."""
+        _ = self._connection.execute(
+            """
+            INSERT INTO companion_assets (
+                companion_asset_id,
+                library_id,
+                kind,
+                owner_track_id,
+                current_path,
+                canonical_path,
+                content_hash,
+                size,
+                mtime,
+                status,
+                first_seen_at,
+                last_seen_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(companion_asset_id) DO UPDATE SET
+                library_id = excluded.library_id,
+                kind = excluded.kind,
+                owner_track_id = excluded.owner_track_id,
+                current_path = excluded.current_path,
+                canonical_path = excluded.canonical_path,
+                content_hash = excluded.content_hash,
+                size = excluded.size,
+                mtime = excluded.mtime,
+                status = excluded.status,
+                first_seen_at = excluded.first_seen_at,
+                last_seen_at = excluded.last_seen_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                str(companion_asset.companion_asset_id),
+                str(companion_asset.library_id),
+                companion_asset.kind.value,
+                str(companion_asset.owner_track_id),
+                companion_asset.current_path,
+                companion_asset.canonical_path,
+                companion_asset.content_hash,
+                companion_asset.size,
+                _optional_timestamp_to_text(companion_asset.mtime),
+                companion_asset.status.value,
+                _timestamp_to_text(companion_asset.first_seen_at),
+                _timestamp_to_text(companion_asset.last_seen_at),
+                _timestamp_to_text(companion_asset.updated_at),
+            ),
+        )
+
+
 class SQLitePlanRepository(_SQLiteRepository):
     """SQLite implementation of PlanRepository."""
 
@@ -1135,9 +1309,10 @@ class SQLitePlanRepository(_SQLiteRepository):
                 created_at,
                 config_hash,
                 library_root_at_plan,
+                source_root_at_plan,
                 summary_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(plan_id) DO UPDATE SET
                 library_id = excluded.library_id,
                 source_run_id = excluded.source_run_id,
@@ -1146,6 +1321,7 @@ class SQLitePlanRepository(_SQLiteRepository):
                 created_at = excluded.created_at,
                 config_hash = excluded.config_hash,
                 library_root_at_plan = excluded.library_root_at_plan,
+                source_root_at_plan = excluded.source_root_at_plan,
                 summary_json = excluded.summary_json
             """,
             (
@@ -1157,6 +1333,7 @@ class SQLitePlanRepository(_SQLiteRepository):
                 _timestamp_to_text(plan.created_at),
                 plan.config_hash,
                 plan.library_root_at_plan,
+                plan.source_root_at_plan,
                 _summary_to_json(plan.summary),
             ),
         )
@@ -1412,6 +1589,8 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 plan_id,
                 library_id,
                 track_id,
+                companion_asset_id,
+                owner_action_id,
                 action_type,
                 source_path,
                 target_path,
@@ -1423,11 +1602,13 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 reason,
                 sort_order
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(action_id) DO UPDATE SET
                 plan_id = excluded.plan_id,
                 library_id = excluded.library_id,
                 track_id = excluded.track_id,
+                companion_asset_id = excluded.companion_asset_id,
+                owner_action_id = excluded.owner_action_id,
                 action_type = excluded.action_type,
                 source_path = excluded.source_path,
                 target_path = excluded.target_path,
@@ -1444,6 +1625,8 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 str(action.plan_id),
                 str(action.library_id),
                 None if action.track_id is None else str(action.track_id),
+                None if action.companion_asset_id is None else str(action.companion_asset_id),
+                None if action.owner_action_id is None else str(action.owner_action_id),
                 action.action_type.value,
                 action.source_path,
                 action.target_path,
@@ -1458,6 +1641,40 @@ class SQLitePlanActionRepository(_SQLiteRepository):
                 action.status.value,
                 None if action.reason is None else action.reason.value,
                 action.sort_order,
+            ),
+        )
+
+
+class SQLitePlanActionDependencyRepository(_SQLiteRepository):
+    """SQLite implementation of PlanActionDependencyRepository."""
+
+    def list_by_action(self, action_id: ActionId) -> tuple[PlanActionDependency, ...]:
+        """Return one action's dependencies in stable dependency-ID order."""
+        rows = _fetch_all(
+            self._connection,
+            """
+            SELECT plan_id, action_id, depends_on_action_id
+            FROM plan_action_dependencies
+            WHERE action_id = ?
+            ORDER BY depends_on_action_id
+            """,
+            (str(action_id),),
+        )
+        return tuple(_plan_action_dependency_from_row(row) for row in rows)
+
+    def save(self, dependency: PlanActionDependency) -> None:
+        """Persist one immutable action dependency."""
+        _ = self._connection.execute(
+            """
+            INSERT INTO plan_action_dependencies (plan_id, action_id, depends_on_action_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(action_id, depends_on_action_id) DO UPDATE SET
+                plan_id = excluded.plan_id
+            """,
+            (
+                str(dependency.plan_id),
+                str(dependency.action_id),
+                str(dependency.depends_on_action_id),
             ),
         )
 
@@ -1891,6 +2108,7 @@ class SQLiteFileEventRepository(_SQLiteRepository):
                 library_id,
                 run_id,
                 plan_action_id,
+                companion_asset_id,
                 event_type,
                 source_path,
                 target_path,
@@ -1901,11 +2119,12 @@ class SQLiteFileEventRepository(_SQLiteRepository):
                 error_message,
                 sequence_no
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(event_id) DO UPDATE SET
                 library_id = excluded.library_id,
                 run_id = excluded.run_id,
                 plan_action_id = excluded.plan_action_id,
+                companion_asset_id = excluded.companion_asset_id,
                 event_type = excluded.event_type,
                 source_path = excluded.source_path,
                 target_path = excluded.target_path,
@@ -1921,6 +2140,7 @@ class SQLiteFileEventRepository(_SQLiteRepository):
                 str(event.library_id),
                 str(event.run_id),
                 str(event.plan_action_id),
+                None if event.companion_asset_id is None else str(event.companion_asset_id),
                 event.event_type.value,
                 event.source_path,
                 event.target_path,
@@ -1977,6 +2197,24 @@ def _track_from_row(row: sqlite3.Row) -> Track:
     )
 
 
+def _companion_asset_from_row(row: sqlite3.Row) -> CompanionAsset:
+    return CompanionAsset(
+        companion_asset_id=CompanionAssetId(parse_uuid(_row_text(row, "companion_asset_id"))),
+        library_id=LibraryId(parse_uuid(_row_text(row, "library_id"))),
+        kind=CompanionAssetKind(_row_text(row, "kind")),
+        owner_track_id=TrackId(parse_uuid(_row_text(row, "owner_track_id"))),
+        current_path=_row_text(row, "current_path"),
+        canonical_path=_row_text(row, "canonical_path"),
+        content_hash=_row_text(row, "content_hash"),
+        size=_row_optional_int(row, "size"),
+        mtime=_optional_timestamp_from_text(_row_optional_text(row, "mtime")),
+        status=CompanionAssetStatus(_row_text(row, "status")),
+        first_seen_at=_timestamp_from_text(_row_text(row, "first_seen_at")),
+        last_seen_at=_timestamp_from_text(_row_text(row, "last_seen_at")),
+        updated_at=_timestamp_from_text(_row_text(row, "updated_at")),
+    )
+
+
 def _check_run_from_row(row: sqlite3.Row) -> CheckRun:
     return CheckRun(
         check_run_id=CheckRunId(parse_uuid(_row_text(row, "check_run_id"))),
@@ -1989,12 +2227,14 @@ def _check_run_from_row(row: sqlite3.Row) -> CheckRun:
 def _check_issue_from_row(row: sqlite3.Row) -> CheckIssue:
     track_id = _row_optional_text(row, "track_id")
     plan_id = _row_optional_text(row, "plan_id")
+    companion_asset_id = _row_optional_text(row, "companion_asset_id")
     return CheckIssue(
         issue_type=CheckIssueType(_row_text(row, "issue_type")),
         library_id=LibraryId(parse_uuid(_row_text(row, "library_id"))),
         path=_row_optional_text(row, "path"),
         track_id=None if track_id is None else TrackId(parse_uuid(track_id)),
         plan_id=None if plan_id is None else PlanId(parse_uuid(plan_id)),
+        companion_asset_id=(None if companion_asset_id is None else CompanionAssetId(parse_uuid(companion_asset_id))),
         detail=_row_optional_text(row, "detail"),
     )
 
@@ -2009,6 +2249,7 @@ def _plan_from_row(row: sqlite3.Row) -> Plan:
         created_at=_timestamp_from_text(_row_text(row, "created_at")),
         config_hash=_row_text(row, "config_hash"),
         library_root_at_plan=_row_text(row, "library_root_at_plan"),
+        source_root_at_plan=_row_optional_text(row, "source_root_at_plan"),
         source_run_id=None if source_run_id is None else RunId(parse_uuid(source_run_id)),
         summary=_summary_from_json(_row_text(row, "summary_json")),
     )
@@ -2016,6 +2257,8 @@ def _plan_from_row(row: sqlite3.Row) -> Plan:
 
 def _plan_action_from_row(row: sqlite3.Row) -> PlanAction:
     track_id = _row_optional_text(row, "track_id")
+    companion_asset_id = _row_optional_text(row, "companion_asset_id")
+    owner_action_id = _row_optional_text(row, "owner_action_id")
     reverses_event_id = _row_optional_text(row, "reverses_event_id")
     reason = _row_optional_text(row, "reason")
     return PlanAction(
@@ -2023,6 +2266,8 @@ def _plan_action_from_row(row: sqlite3.Row) -> PlanAction:
         plan_id=PlanId(parse_uuid(_row_text(row, "plan_id"))),
         library_id=LibraryId(parse_uuid(_row_text(row, "library_id"))),
         track_id=None if track_id is None else TrackId(parse_uuid(track_id)),
+        companion_asset_id=(None if companion_asset_id is None else CompanionAssetId(parse_uuid(companion_asset_id))),
+        owner_action_id=None if owner_action_id is None else ActionId(parse_uuid(owner_action_id)),
         action_type=ActionType(_row_text(row, "action_type")),
         source_path=_row_optional_text(row, "source_path"),
         target_path=_row_optional_text(row, "target_path"),
@@ -2035,6 +2280,14 @@ def _plan_action_from_row(row: sqlite3.Row) -> PlanAction:
         reason=None if reason is None else PlanActionReason(reason),
         sort_order=_row_int(row, "sort_order"),
         reverses_event_id=None if reverses_event_id is None else EventId(parse_uuid(reverses_event_id)),
+    )
+
+
+def _plan_action_dependency_from_row(row: sqlite3.Row) -> PlanActionDependency:
+    return PlanActionDependency(
+        plan_id=PlanId(parse_uuid(_row_text(row, "plan_id"))),
+        action_id=ActionId(parse_uuid(_row_text(row, "action_id"))),
+        depends_on_action_id=ActionId(parse_uuid(_row_text(row, "depends_on_action_id"))),
     )
 
 
@@ -2068,11 +2321,13 @@ def _run_from_row(row: sqlite3.Row) -> Run:
 
 
 def _file_event_from_row(row: sqlite3.Row) -> FileEvent:
+    companion_asset_id = _row_optional_text(row, "companion_asset_id")
     return FileEvent(
         event_id=EventId(parse_uuid(_row_text(row, "event_id"))),
         library_id=LibraryId(parse_uuid(_row_text(row, "library_id"))),
         run_id=RunId(parse_uuid(_row_text(row, "run_id"))),
         plan_action_id=ActionId(parse_uuid(_row_text(row, "plan_action_id"))),
+        companion_asset_id=(None if companion_asset_id is None else CompanionAssetId(parse_uuid(companion_asset_id))),
         event_type=FileEventType(_row_text(row, "event_type")),
         source_path=_row_text(row, "source_path"),
         target_path=_row_text(row, "target_path"),
@@ -2541,6 +2796,7 @@ def _check_issue_group_source_sql(grouping: CheckIssueGrouping, where_sql: str) 
                     ci.path,
                     ci.track_id,
                     ci.plan_id,
+                    ci.companion_asset_id,
                     ci.detail,
                     {CHECK_ISSUE_PATH_ROOT_SELECT} AS path_root,
                     {CHECK_ISSUE_ARTIST_SEGMENT_SELECT} AS group_artist,
@@ -2559,6 +2815,7 @@ def _check_issue_group_source_sql(grouping: CheckIssueGrouping, where_sql: str) 
                     path,
                     track_id,
                     plan_id,
+                    companion_asset_id,
                     detail,
                     path_root,
                     {group_key_sql} AS group_key,

@@ -630,6 +630,9 @@ def _audit_archive_member(
     if basename in config.DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_BASENAMES:
         msg = f"Windows archive bundles a forbidden runtime: {member.as_posix()}"
         raise WindowsPackageAuditError(msg)
+    if member.suffix.casefold() in config.DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_SUFFIXES:
+        msg = f"Windows archive bundles a forbidden artist-naming model: {member.as_posix()}"
+        raise WindowsPackageAuditError(msg)
     if any(fragment in lowered for fragment in config.DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_FRAGMENTS):
         msg = f"Windows archive bundles a forbidden framework: {member.as_posix()}"
         raise WindowsPackageAuditError(msg)
@@ -845,6 +848,12 @@ def _audit_inventory_distribution(
     folded_name = name.casefold()
     if not name or not version or folded_name in seen_names:
         msg = f"Runtime inventory contains an invalid or duplicate distribution: {name!r}"
+        raise WindowsPackageAuditError(msg)
+    normalized_name = re.sub(r"[-_.]+", "-", folded_name)
+    if any(
+        normalized_name.startswith(prefix) for prefix in config.DESKTOP_WINDOWS_FORBIDDEN_RUNTIME_DISTRIBUTION_PREFIXES
+    ):
+        msg = f"Runtime inventory contains a forbidden artist-naming runtime: {name}=={version}."
         raise WindowsPackageAuditError(msg)
     metadata_path = _inventory_member_path(str(entry.get("metadata_directory", "")), expected_metadata_directory=True)
     metadata_member = support_root / metadata_path / "METADATA"

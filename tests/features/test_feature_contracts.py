@@ -14,10 +14,11 @@ import pytest
 
 from omym2.adapters.config.default_config import default_app_config
 from omym2.config import UUID_VERSION
+from omym2.domain.models.companion_asset import CompanionAsset, CompanionAssetKind, CompanionAssetStatus
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
+from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionDependency
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
@@ -32,9 +33,25 @@ from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.undo.dto import CreateUndoPlanRequest
 from omym2.features.undo.ports import CreateUndoPlanPorts
 from omym2.features.undo.usecases.create_undo_plan import CreateUndoPlanUseCase, UndoPlanError
-from omym2.shared.ids import ActionId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId, is_uuid7
+from omym2.shared.ids import (
+    ActionId,
+    CompanionAssetId,
+    EventId,
+    LibraryId,
+    OperationId,
+    PlanId,
+    RunId,
+    TrackId,
+    is_uuid7,
+)
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
-from tests.fakes.runtime import EMPTY_SEQUENCE_MESSAGE, FixedClock, SequenceIdGenerator
+from tests.fakes.runtime import (
+    EMPTY_SEQUENCE_MESSAGE,
+    EmptySourceInventoryReader,
+    FixedClock,
+    SequenceIdGenerator,
+    UnusedFileContentSnapshotReader,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -66,6 +83,7 @@ UNEXPECTED_IO_MESSAGE = "Feature contract tests must not call I/O fakes."
 
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
+COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345689"))
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 LATE_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
@@ -88,6 +106,7 @@ def test_uuid7_id_generator_returns_documented_id_versions() -> None:
     generated_ids = (
         generator.new_library_id(),
         generator.new_track_id(),
+        generator.new_companion_asset_id(),
         generator.new_plan_id(),
         generator.new_action_id(),
         generator.new_run_id(),
@@ -106,6 +125,7 @@ def test_fixed_clock_and_sequence_id_generator_are_deterministic() -> None:
     id_generator = SequenceIdGenerator(
         library_ids=deque((LIBRARY_ID,)),
         track_ids=deque((TRACK_ID,)),
+        companion_asset_ids=deque((COMPANION_ASSET_ID,)),
         plan_ids=deque((PLAN_ID,)),
         action_ids=deque((ACTION_ID,)),
         run_ids=deque((RUN_ID,)),
@@ -116,6 +136,7 @@ def test_fixed_clock_and_sequence_id_generator_are_deterministic() -> None:
     assert FixedClock(BASE_TIME).now() == BASE_TIME
     assert id_generator.new_library_id() == LIBRARY_ID
     assert id_generator.new_track_id() == TRACK_ID
+    assert id_generator.new_companion_asset_id() == COMPANION_ASSET_ID
     assert id_generator.new_plan_id() == PLAN_ID
     assert id_generator.new_action_id() == ACTION_ID
     assert id_generator.new_run_id() == RUN_ID
@@ -131,9 +152,15 @@ def test_in_memory_repositories_store_models_by_usecase_query_shape() -> None:
     uow = InMemoryUnitOfWork()
     library = _library()
     track = _track()
+    companion_asset = _companion_asset()
     plan = _plan()
     action_late = _plan_action(LATE_ACTION_ID, SORT_ORDER_LATE)
     action_early = _plan_action(ACTION_ID, SORT_ORDER_EARLY)
+    dependency = PlanActionDependency(
+        plan_id=PLAN_ID,
+        action_id=LATE_ACTION_ID,
+        depends_on_action_id=ACTION_ID,
+    )
     run = _run()
     event_late = _file_event(LATE_EVENT_ID, EVENT_SEQUENCE_LATE)
     event_early = _file_event(EVENT_ID, EVENT_SEQUENCE_EARLY)
@@ -147,9 +174,11 @@ def test_in_memory_repositories_store_models_by_usecase_query_shape() -> None:
 
     uow.libraries.save(library)
     uow.tracks.save(track)
+    uow.companion_assets.save(companion_asset)
     uow.plans.save(plan)
     uow.plan_actions.save(action_late)
     uow.plan_actions.save(action_early)
+    uow.plan_action_dependencies.save(dependency)
     uow.runs.save(run)
     uow.file_events.save(event_late)
     uow.file_events.save(event_early)
@@ -160,8 +189,10 @@ def test_in_memory_repositories_store_models_by_usecase_query_shape() -> None:
     assert uow.libraries.get(LIBRARY_ID) == library
     assert uow.libraries.find_by_root_path(LIBRARY_ROOT) == library
     assert uow.tracks.list_by_library(LIBRARY_ID) == (track,)
+    assert uow.companion_assets.list_by_library(LIBRARY_ID) == (companion_asset,)
     assert uow.plans.list_by_library(LIBRARY_ID) == (plan,)
     assert uow.plan_actions.list_by_plan(PLAN_ID) == (action_early, action_late)
+    assert uow.plan_action_dependencies.list_by_action(LATE_ACTION_ID) == (dependency,)
     assert uow.runs.list_by_plan(PLAN_ID) == (run,)
     assert uow.runs.list_by_library(LIBRARY_ID) == (run,)
     assert uow.file_events.list_by_run(RUN_ID) == (event_early, event_late)
@@ -199,14 +230,16 @@ def test_diagnostics_and_recovery_usecases_handle_empty_repository_contracts() -
     with pytest.raises(CheckLibraryError):
         _ = CheckLibraryUseCase(
             CheckLibraryPorts(
-                uow,
-                scanner,
-                snapshot_reader,
-                content_hasher,
-                config_store,
-                path_resolver,
-                clock,
-                id_generator,
+                uow=uow,
+                file_scanner=scanner,
+                file_snapshot_reader=snapshot_reader,
+                file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
+                source_inventory_reader=EmptySourceInventoryReader(),
+                file_content_hasher=content_hasher,
+                config_store=config_store,
+                path_resolver=path_resolver,
+                clock=clock,
+                id_generator=id_generator,
             )
         ).execute(CheckLibraryRequest(trust_stat=False))
     assert ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest()).items == ()
@@ -216,16 +249,29 @@ def test_diagnostics_and_recovery_usecases_handle_empty_repository_contracts() -
 
     with pytest.raises(UndoPlanError):
         _ = CreateUndoPlanUseCase(
-            CreateUndoPlanPorts(uow, snapshot_reader, file_presence, path_resolver, clock, id_generator)
+            CreateUndoPlanPorts(
+                uow,
+                snapshot_reader,
+                UnusedFileContentSnapshotReader(),
+                file_presence,
+                path_resolver,
+                clock,
+                id_generator,
+            )
         ).execute(CreateUndoPlanRequest(RUN_ID))
 
 
 class NoopFileScanner:
     """FileScanner fake that proves skeletons do not scan yet."""
 
-    def scan(self, root: FileSystemPath) -> tuple[FileScanEntry, ...]:
+    def scan(
+        self,
+        root: FileSystemPath,
+        *,
+        excluded_roots: tuple[FileSystemPath, ...] = (),
+    ) -> tuple[FileScanEntry, ...]:
         """Fail if a skeleton unexpectedly reaches filesystem discovery."""
-        del root
+        del root, excluded_roots
         raise AssertionError(UNEXPECTED_IO_MESSAGE)
 
 
@@ -320,6 +366,24 @@ def _track() -> Track:
         mtime=None,
         metadata=TrackMetadata(title=TRACK_TITLE, artist=TRACK_ARTIST),
         status=TrackStatus.ACTIVE,
+        first_seen_at=BASE_TIME,
+        last_seen_at=BASE_TIME,
+        updated_at=BASE_TIME,
+    )
+
+
+def _companion_asset() -> CompanionAsset:
+    return CompanionAsset(
+        companion_asset_id=COMPANION_ASSET_ID,
+        library_id=LIBRARY_ID,
+        kind=CompanionAssetKind.ARTWORK,
+        owner_track_id=TRACK_ID,
+        current_path="Artist/Album/cover.jpg",
+        canonical_path="Artist/Album/cover.jpg",
+        content_hash=CONTENT_HASH,
+        size=None,
+        mtime=None,
+        status=CompanionAssetStatus.ACTIVE,
         first_seen_at=BASE_TIME,
         last_seen_at=BASE_TIME,
         updated_at=BASE_TIME,

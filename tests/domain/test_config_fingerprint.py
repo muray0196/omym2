@@ -9,6 +9,8 @@ import json
 from dataclasses import asdict
 from hashlib import new
 
+import pytest
+
 from omym2.config import (
     ALBUM_YEAR_RESOLUTION_OLDEST,
     CONFIG_FINGERPRINT_ALGORITHM,
@@ -18,11 +20,24 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, ArtistNameConfig, PathPolicyConfig, PathsConfig
+from omym2.domain.models.app_config import (
+    AppConfig,
+    ArtistIdConfig,
+    ArtistNameConfig,
+    CompanionsConfig,
+    FastTextConfig,
+    HashingConfig,
+    LoggingConfig,
+    MusicBrainzConfig,
+    PathPolicyConfig,
+    PathsConfig,
+    UnprocessedConfig,
+)
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 
 LIBRARY_PATH = "/music/library"
 JSON_SEPARATORS = (CONFIG_FINGERPRINT_JSON_ITEM_SEPARATOR, CONFIG_FINGERPRINT_JSON_KEY_SEPARATOR)
+UNPROCESSED_PREVIEW_LIMIT = 250
 
 
 def test_config_fingerprint_is_stable_for_equal_configs() -> None:
@@ -48,6 +63,31 @@ def test_config_fingerprint_changes_when_artist_name_preferences_change() -> Non
     )
 
     assert changed_hash != default_hash
+
+
+@pytest.mark.parametrize(
+    "changed_config",
+    [
+        AppConfig(musicbrainz=MusicBrainzConfig(enabled=True)),
+        AppConfig(fasttext=FastTextConfig(model_path="models/lid.176.ftz")),
+        AppConfig(hashing=HashingConfig(read_chunk_size_bytes=2_048)),
+        AppConfig(logging=LoggingConfig(destination="logs/omym2.log")),
+        AppConfig(companions=CompanionsConfig(enabled=True)),
+        AppConfig(
+            unprocessed=UnprocessedConfig(
+                enabled=True,
+                directory="Review Later",
+                result_preview_limit=UNPROCESSED_PREVIEW_LIMIT,
+            )
+        ),
+    ],
+)
+def test_operational_config_changes_full_hash_without_staling_path_policy(changed_config: AppConfig) -> None:
+    """Runtime-only sections remain auditable without changing Library path identity."""
+    default_config = AppConfig()
+
+    assert calculate_config_fingerprint(changed_config) != calculate_config_fingerprint(default_config)
+    assert _library_path_policy_fingerprint(changed_config) == _library_path_policy_fingerprint(default_config)
 
 
 def test_path_policy_fingerprint_includes_behavior_version() -> None:
@@ -169,3 +209,12 @@ def test_path_policy_fingerprint_changes_when_disc_settings_can_affect_template(
     )
 
     assert changed_hash != default_hash
+
+
+def _library_path_policy_fingerprint(config: AppConfig) -> str:
+    return calculate_path_policy_fingerprint(
+        config.path_policy,
+        config.artist_ids,
+        config.metadata.album_year_resolution,
+        config.artist_names,
+    )

@@ -14,6 +14,8 @@ from omym2.adapters.cli.commands.output import write_line, write_usage, write_va
 from omym2.domain.models.plan_action import ActionStatus, ActionType
 from omym2.features.add.dto import CreateAddPlanRequest
 from omym2.features.add.usecases.create_add_plan import (
+    SUMMARY_MOVE_ACTIONS_KEY,
+    SUMMARY_UNPROCESSED_PREVIEW_LIMIT_KEY,
     AddLibrarySelectionError,
     AddSourceSelectionError,
 )
@@ -130,13 +132,24 @@ def _parse_args(args: Sequence[str]) -> _AddCommandOptions:
 
 def _write_result(stdout: TextIO, plan: Plan) -> None:
     blocked_count = sum(action.status == ActionStatus.BLOCKED for action in plan.actions)
-    move_count = sum(
-        action.action_type == ActionType.MOVE and action.status == ActionStatus.PLANNED for action in plan.actions
-    )
+    move_count = int(plan.summary.get(SUMMARY_MOVE_ACTIONS_KEY, "0"))
     skip_count = sum(action.action_type == ActionType.SKIP for action in plan.actions)
+    unprocessed_actions = tuple(
+        sorted(
+            (action for action in plan.actions if action.action_type is ActionType.MOVE_UNPROCESSED),
+            key=lambda action: (action.sort_order, str(action.action_id)),
+        )
+    )
+    preview_limit = int(plan.summary.get(SUMMARY_UNPROCESSED_PREVIEW_LIMIT_KEY, "0"))
 
     _ = stdout.write(f"Add plan created: {plan.plan_id}\n")
     _ = stdout.write(f"actions: {len(plan.actions)}\n")
     _ = stdout.write(f"move_actions: {move_count}\n")
     _ = stdout.write(f"skip_actions: {skip_count}\n")
     _ = stdout.write(f"blocked_actions: {blocked_count}\n")
+    _ = stdout.write(f"unprocessed_actions: {len(unprocessed_actions)}\n")
+    for action in unprocessed_actions[:preview_limit]:
+        _ = stdout.write(f"unprocessed: {action.source_path} -> {action.target_path}\n")
+    truncated_count = len(unprocessed_actions) - min(len(unprocessed_actions), preview_limit)
+    if truncated_count > 0:
+        _ = stdout.write(f"unprocessed_truncated: {truncated_count}\n")

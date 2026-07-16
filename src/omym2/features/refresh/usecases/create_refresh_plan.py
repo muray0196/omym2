@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 from datetime import timedelta
 from itertools import batched
 from os import fspath
-from pathlib import PurePath
+from pathlib import PurePath, PurePosixPath
 from typing import TYPE_CHECKING
 
 from omym2.config import (
@@ -19,10 +19,17 @@ from omym2.config import (
     PLAN_ACTION_SORT_ORDER_START,
     PLAN_ACTION_SORT_ORDER_STEP,
 )
+from omym2.domain.models.companion_asset import CompanionAsset, CompanionAssetKind, CompanionAssetStatus
 from omym2.domain.models.library import LibraryStatus
 from omym2.domain.models.operation import Operation, OperationKind, OperationStatus, PlanCreatedResult
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
 from omym2.domain.models.track import TrackStatus
 from omym2.domain.services.album_disc import infer_album_disc_totals
 from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
@@ -34,6 +41,14 @@ from omym2.domain.services.artist_name import (
 )
 from omym2.domain.services.artist_name_reconciliation import artist_name_reconciliation_required
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
+from omym2.domain.services.companion_association import (
+    CompanionAssociation,
+    CompanionAssociationResult,
+    CompanionAudioCandidate,
+    CompanionIssue,
+    CompanionIssueCode,
+    associate_companions,
+)
 from omym2.domain.services.config_fingerprint import (
     STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
 )
@@ -44,7 +59,12 @@ from omym2.domain.services.config_fingerprint import (
 )
 from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
 from omym2.domain.services.snapshot_baseline import snapshot_from_trusted_stat
-from omym2.features.common_ports import FileSnapshotCaptureRequest
+from omym2.features.common_ports import (
+    FileObservationChangedError,
+    FileObservationInvalidPathError,
+    FileSnapshotCaptureRequest,
+    SourceInventoryRequest,
+)
 from omym2.features.refresh.dto import RefreshTargetKind
 from omym2.shared.paths import normalize_library_relative_path
 
@@ -54,14 +74,14 @@ if TYPE_CHECKING:
 
     from omym2.domain.models.app_config import AppConfig
     from omym2.domain.models.artist_name_resolution import ArtistNameDiagnostics, ArtistNameResolution
-    from omym2.domain.models.file_snapshot import FileSnapshot
+    from omym2.domain.models.file_snapshot import FileContentSnapshot, FileSnapshot
     from omym2.domain.models.library import Library
     from omym2.domain.models.track import Track
     from omym2.domain.models.track_metadata import TrackMetadata
-    from omym2.features.common_ports import FileSystemPath, UnitOfWork
+    from omym2.features.common_ports import FileSystemPath, SourceInventoryEntry, UnitOfWork
     from omym2.features.refresh.dto import CreateRefreshPlanRequest
     from omym2.features.refresh.ports import CreateRefreshPlanPorts
-    from omym2.shared.ids import OperationId, PlanId
+    from omym2.shared.ids import CompanionAssetId, OperationId, PlanId, TrackId
 
 AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE = (
     "Multiple registered Libraries exist. Library selection is not supported for refresh yet."
@@ -80,6 +100,7 @@ SUMMARY_BLOCKED_ACTIONS_KEY = "blocked_actions"
 SUMMARY_METADATA_ACTIONS_KEY = "metadata_actions"
 SUMMARY_MOVE_ACTIONS_KEY = "move_actions"
 RUNNING_OPERATION_REQUIRED_MESSAGE = "Refresh completion requires its corresponding running Operation."
+CLAIMED_COMPANION_DECISION_MISSING_MESSAGE = "Claimed companion must have an association or issue."
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +129,11 @@ class CreateRefreshPlanUseCase:
             active_tracks = tuple(
                 track for track in uow.tracks.list_by_library(library.library_id) if track.status == TrackStatus.ACTIVE
             )
+            active_companion_assets = tuple(
+                asset
+                for asset in uow.companion_assets.list_by_library(library.library_id)
+                if asset.status is CompanionAssetStatus.ACTIVE
+            )
             selected_tracks = self._selected_tracks(request, library, active_tracks)
 
         trust_eligible_paths = {
@@ -128,7 +154,31 @@ class CreateRefreshPlanUseCase:
             self._candidate(track, snapshot, config) for track, snapshot in zip(selected_tracks, snapshots, strict=True)
         )
         candidates = self._with_target_paths(candidates, active_tracks, config, path_policy)
-        candidates = self._with_target_conflicts(library, candidates, active_tracks)
+        inventory_entries = (
+            tuple(self.ports.source_inventory_reader.scan(SourceInventoryRequest(root=library.root_path)))
+            if config.companions.enabled
+            else ()
+        )
+        companion_candidates = (
+            self._companion_candidates(
+                library,
+                candidates,
+                active_tracks,
+                active_companion_assets,
+                inventory_entries,
+            )
+            if config.companions.enabled
+            else ()
+        )
+        companion_candidates = _with_companion_owner_blocks(candidates, companion_candidates)
+        candidates, companion_candidates = self._with_target_conflicts(
+            library,
+            candidates,
+            active_tracks,
+            active_companion_assets,
+            companion_candidates,
+        )
+        companion_candidates = _with_companion_owner_blocks(candidates, companion_candidates)
         if _artist_name_reconciliation_required(
             active_tracks=active_tracks,
             candidates=candidates,
@@ -137,7 +187,12 @@ class CreateRefreshPlanUseCase:
         ):
             raise RefreshLibraryReconciliationRequiredError(ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE)
         plan_id = self.ports.id_generator.new_plan_id()
-        actions = self._actions(plan_id, library, candidates)
+        actions, dependencies = self._actions(
+            plan_id,
+            library,
+            candidates,
+            companion_candidates,
+        )
         plan = _plan(plan_id, library, actions, config_hash, timestamp)
 
         with self.ports.uow as uow:
@@ -145,6 +200,8 @@ class CreateRefreshPlanUseCase:
             uow.plans.save(plan)
             for action in actions:
                 uow.plan_actions.save(action)
+            for dependency in dependencies:
+                uow.plan_action_dependencies.save(dependency)
             if operation is not None:
                 completed_at = self.ports.clock.now()
                 uow.operations.save(
@@ -329,41 +386,227 @@ class CreateRefreshPlanUseCase:
 
         return tuple(judged_candidates)
 
+    def _companion_candidates(
+        self,
+        library: Library,
+        candidates: Sequence[_RefreshCandidate],
+        active_tracks: Sequence[Track],
+        active_companion_assets: Sequence[CompanionAsset],
+        inventory_entries: Sequence[SourceInventoryEntry],
+    ) -> tuple[_RefreshCompanionCandidate, ...]:
+        selected_relocation_sources = {
+            candidate.track.current_path for candidate in candidates if _is_relocation_candidate(candidate)
+        }
+        if len(selected_relocation_sources) == 0:
+            return ()
+
+        candidate_by_track_id = {candidate.track.track_id: candidate for candidate in candidates}
+        audio_candidates = tuple(
+            CompanionAudioCandidate(
+                source_path=track.current_path,
+                target_path=(
+                    selected_candidate.target_path
+                    if (selected_candidate := candidate_by_track_id.get(track.track_id)) is not None
+                    else track.current_path
+                ),
+            )
+            for track in active_tracks
+        )
+        inventory_paths = {
+            *(entry.relative_path for entry in inventory_entries),
+            *(asset.current_path for asset in active_companion_assets),
+        }
+        association_result = associate_companions(audio_candidates, inventory_paths)
+        claimed = list(
+            self._claimed_refresh_companions(
+                library,
+                active_tracks,
+                active_companion_assets,
+                inventory_entries,
+                association_result,
+                selected_relocation_sources,
+            )
+        )
+        claimed_keys = {(candidate.source_path, candidate.kind) for candidate in claimed}
+        track_by_id = {track.track_id: track for track in active_tracks}
+        for asset in active_companion_assets:
+            owner_track = track_by_id.get(asset.owner_track_id)
+            if (
+                owner_track is None
+                or owner_track.current_path not in selected_relocation_sources
+                or (asset.current_path, asset.kind) in claimed_keys
+            ):
+                continue
+            owner_candidate = candidate_by_track_id.get(owner_track.track_id)
+            target_path = _managed_companion_target(asset, owner_candidate)
+            snapshot, observation_reason = self._capture_companion_snapshot(
+                self.ports.path_resolver.resolve_library_path(
+                    library.root_path,
+                    asset.current_path,
+                ),
+                library.root_path,
+            )
+            reason = observation_reason
+            if reason is None and target_path is None:
+                reason = PlanActionReason.COMPANION_OWNER_BLOCKED
+            if reason is None and target_path == asset.current_path:
+                continue
+            claimed.append(
+                _RefreshCompanionCandidate(
+                    kind=asset.kind,
+                    source_path=asset.current_path,
+                    target_path=target_path,
+                    owner_audio_source_path=owner_track.current_path,
+                    dependency_audio_source_paths=(owner_track.current_path,),
+                    snapshot=snapshot,
+                    reason=reason,
+                    companion_asset_id=asset.companion_asset_id,
+                    owner_track_id=owner_track.track_id,
+                )
+            )
+
+        return tuple(sorted(claimed, key=lambda candidate: (candidate.source_path, candidate.kind)))
+
+    def _claimed_refresh_companions(  # noqa: PLR0913  # Policy output needs exact path, owner, and asset mappings.
+        self,
+        library: Library,
+        active_tracks: Sequence[Track],
+        active_companion_assets: Sequence[CompanionAsset],
+        inventory_entries: Sequence[SourceInventoryEntry],
+        association_result: CompanionAssociationResult,
+        selected_relocation_sources: set[str],
+    ) -> tuple[_RefreshCompanionCandidate, ...]:
+        inventory_by_relative_path = {entry.relative_path: entry for entry in inventory_entries}
+        association_by_source = {
+            association.source_path: association for association in association_result.associations
+        }
+        issue_by_source = {issue.source_path: issue for issue in association_result.issues}
+        track_by_source: dict[str, Track] = {}
+        for track in active_tracks:
+            _ = track_by_source.setdefault(track.current_path, track)
+        claimed: list[_RefreshCompanionCandidate] = []
+        for source_path in sorted(association_result.claimed_source_paths):
+            association = association_by_source.get(source_path)
+            issue = issue_by_source.get(source_path)
+            dependency_sources = _companion_dependency_sources(association, issue)
+            if selected_relocation_sources.isdisjoint(dependency_sources):
+                continue
+            kind = _companion_kind(association, issue)
+            owner_source = None if association is None else association.owner_audio_source_path
+            owner_track = None if owner_source is None else track_by_source.get(owner_source)
+            existing_asset = _existing_companion_asset(
+                active_companion_assets,
+                source_path,
+                kind,
+            )
+            source_filesystem_path = (
+                inventory_by_relative_path[source_path].path
+                if source_path in inventory_by_relative_path
+                else self.ports.path_resolver.resolve_library_path(library.root_path, source_path)
+            )
+            snapshot, observation_reason = self._capture_companion_snapshot(
+                source_filesystem_path,
+                library.root_path,
+            )
+            target_path = None if association is None else association.target_path
+            reason = observation_reason or _companion_issue_reason(issue)
+            if reason is None and target_path == source_path:
+                continue
+            claimed.append(
+                _RefreshCompanionCandidate(
+                    kind=kind,
+                    source_path=source_path,
+                    target_path=target_path,
+                    owner_audio_source_path=owner_source,
+                    dependency_audio_source_paths=dependency_sources,
+                    snapshot=snapshot,
+                    reason=reason,
+                    companion_asset_id=(None if existing_asset is None else existing_asset.companion_asset_id),
+                    owner_track_id=None if owner_track is None else owner_track.track_id,
+                )
+            )
+        return tuple(claimed)
+
+    def _capture_companion_snapshot(
+        self,
+        source_path: FileSystemPath,
+        library_root: str,
+    ) -> tuple[FileContentSnapshot | None, PlanActionReason | None]:
+        try:
+            return self.ports.file_content_snapshot_reader.capture(source_path, root=library_root), None
+        except FileNotFoundError:
+            return None, PlanActionReason.SOURCE_MISSING
+        except FileObservationChangedError, OSError:
+            return None, PlanActionReason.SOURCE_CHANGED
+        except FileObservationInvalidPathError, ValueError:
+            return None, PlanActionReason.INVALID_PATH
+
     def _with_target_conflicts(
         self,
         library: Library,
         candidates: Sequence[_RefreshCandidate],
         active_tracks: Sequence[Track],
-    ) -> tuple[_RefreshCandidate, ...]:
-        occupied_paths = OccupiedPaths.from_paths(track.current_path for track in active_tracks)
-        target_sources = _move_target_sources(candidates)
+        active_companion_assets: Sequence[CompanionAsset],
+        companion_candidates: Sequence[_RefreshCompanionCandidate],
+    ) -> tuple[tuple[_RefreshCandidate, ...], tuple[_RefreshCompanionCandidate, ...]]:
+        occupied_paths = OccupiedPaths.from_paths(
+            (
+                *(track.current_path for track in active_tracks),
+                *(asset.current_path for asset in active_companion_assets),
+            )
+        )
+        target_counts = _batch_target_counts(candidates, companion_candidates)
         judged_candidates: list[_RefreshCandidate] = []
 
         for candidate in candidates:
-            if self._has_target_conflict(library, candidate, occupied_paths, target_sources):
+            if self._has_target_conflict(
+                library,
+                source_path=candidate.track.current_path,
+                target_path=candidate.target_path,
+                occupied_paths=occupied_paths,
+                target_counts=target_counts,
+                eligible=(
+                    candidate.needs_action
+                    and candidate.reason is None
+                    and candidate.target_path != candidate.track.current_path
+                ),
+            ):
                 judged_candidates.append(replace(candidate, reason=PlanActionReason.TARGET_EXISTS))
             else:
                 judged_candidates.append(candidate)
 
-        return tuple(judged_candidates)
+        judged_companions = tuple(
+            replace(companion, reason=PlanActionReason.TARGET_EXISTS)
+            if self._has_target_conflict(
+                library,
+                source_path=companion.source_path,
+                target_path=companion.target_path,
+                occupied_paths=occupied_paths,
+                target_counts=target_counts,
+                eligible=companion.reason is None,
+            )
+            else companion
+            for companion in companion_candidates
+        )
+        return tuple(judged_candidates), judged_companions
 
-    def _has_target_conflict(
+    def _has_target_conflict(  # noqa: PLR0913  # Stored source and target are checked against both collision sources.
         self,
         library: Library,
-        candidate: _RefreshCandidate,
+        *,
+        source_path: str,
+        target_path: str | None,
         occupied_paths: OccupiedPaths,
-        target_sources: dict[str, tuple[str, ...]],
+        target_counts: dict[str, int],
+        eligible: bool,
     ) -> bool:
-        target_path = candidate.target_path
-        if not candidate.needs_action or candidate.reason is not None or target_path is None:
-            return False
-        if target_path == candidate.track.current_path:
+        if not eligible or target_path is None or target_path == source_path:
             return False
 
         decision = CollisionPolicy().decide(
             target_path,
             occupied_paths,
-            batch_target_count=len(target_sources[target_path]),
+            batch_target_count=target_counts[target_path],
         )
         if decision.kind is CollisionDecisionKind.BLOCKED:
             return True
@@ -376,7 +619,8 @@ class CreateRefreshPlanUseCase:
         plan_id: PlanId,
         library: Library,
         candidates: Sequence[_RefreshCandidate],
-    ) -> tuple[PlanAction, ...]:
+        companion_candidates: Sequence[_RefreshCompanionCandidate],
+    ) -> tuple[tuple[PlanAction, ...], tuple[PlanActionDependency, ...]]:
         actions: list[PlanAction] = []
         sort_order = PLAN_ACTION_SORT_ORDER_START
 
@@ -405,7 +649,49 @@ class CreateRefreshPlanUseCase:
             )
             sort_order += PLAN_ACTION_SORT_ORDER_STEP
 
-        return tuple(actions)
+        audio_action_by_source = {action.source_path: action for action in actions if action.source_path is not None}
+        dependencies: list[PlanActionDependency] = []
+        for companion in companion_candidates:
+            action_id = self.ports.id_generator.new_action_id()
+            owner_action = (
+                None
+                if companion.owner_audio_source_path is None
+                else audio_action_by_source.get(companion.owner_audio_source_path)
+            )
+            actions.append(
+                PlanAction(
+                    action_id=action_id,
+                    plan_id=plan_id,
+                    library_id=library.library_id,
+                    track_id=companion.owner_track_id,
+                    action_type=_companion_action_type(companion.kind),
+                    source_path=companion.source_path,
+                    target_path=companion.target_path,
+                    content_hash_at_plan=(None if companion.snapshot is None else companion.snapshot.content_hash),
+                    metadata_hash_at_plan=None,
+                    status=(ActionStatus.PLANNED if companion.reason is None else ActionStatus.BLOCKED),
+                    reason=companion.reason,
+                    sort_order=sort_order,
+                    companion_asset_id=(
+                        companion.companion_asset_id
+                        if companion.companion_asset_id is not None
+                        else self.ports.id_generator.new_companion_asset_id()
+                    ),
+                    owner_action_id=None if owner_action is None else owner_action.action_id,
+                )
+            )
+            dependencies.extend(
+                PlanActionDependency(
+                    plan_id=plan_id,
+                    action_id=action_id,
+                    depends_on_action_id=dependency_action.action_id,
+                )
+                for source_path in companion.dependency_audio_source_paths
+                if (dependency_action := audio_action_by_source.get(source_path)) is not None
+            )
+            sort_order += PLAN_ACTION_SORT_ORDER_STEP
+
+        return tuple(actions), tuple(dependencies)
 
 
 class RefreshLibrarySelectionError(ValueError):
@@ -431,6 +717,21 @@ class _RefreshCandidate:
     needs_action: bool
     artist_name_resolutions: tuple[ArtistNameResolution, ...] = ()
     artist_name_diagnostics: ArtistNameDiagnostics | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _RefreshCompanionCandidate:
+    """One managed or discovered companion associated with selected relocation."""
+
+    kind: CompanionAssetKind
+    source_path: str
+    target_path: str | None
+    owner_audio_source_path: str | None
+    dependency_audio_source_paths: tuple[str, ...]
+    snapshot: FileContentSnapshot | None
+    reason: PlanActionReason | None
+    companion_asset_id: CompanionAssetId | None
+    owner_track_id: TrackId | None
 
 
 def _artist_name_reconciliation_required(
@@ -570,13 +871,113 @@ def _action_type(candidate: _RefreshCandidate) -> ActionType:
     return ActionType.MOVE
 
 
-def _move_target_sources(candidates: Sequence[_RefreshCandidate]) -> dict[str, tuple[str, ...]]:
-    grouped: dict[str, list[str]] = {}
+def _is_relocation_candidate(candidate: _RefreshCandidate) -> bool:
+    return candidate.needs_action and (
+        candidate.reason is not None or candidate.target_path != candidate.track.current_path
+    )
+
+
+def _batch_target_counts(
+    candidates: Sequence[_RefreshCandidate],
+    companion_candidates: Sequence[_RefreshCompanionCandidate],
+) -> dict[str, int]:
+    target_counts: dict[str, int] = {}
     for candidate in candidates:
-        if not candidate.needs_action or candidate.reason is not None or candidate.target_path is None:
+        if not _is_relocation_candidate(candidate) or candidate.reason is not None or candidate.target_path is None:
             continue
-        grouped.setdefault(candidate.target_path, []).append(candidate.track.current_path)
-    return {target_path: tuple(source_paths) for target_path, source_paths in grouped.items()}
+        target_counts[candidate.target_path] = target_counts.get(candidate.target_path, 0) + 1
+    for candidate in companion_candidates:
+        if candidate.reason is not None or candidate.target_path is None:
+            continue
+        target_counts[candidate.target_path] = target_counts.get(candidate.target_path, 0) + 1
+    return target_counts
+
+
+def _with_companion_owner_blocks(
+    candidates: Sequence[_RefreshCandidate],
+    companion_candidates: Sequence[_RefreshCompanionCandidate],
+) -> tuple[_RefreshCompanionCandidate, ...]:
+    selected_by_source = {candidate.track.current_path: candidate for candidate in candidates}
+    judged: list[_RefreshCompanionCandidate] = []
+    for companion in companion_candidates:
+        dependency_candidates = tuple(
+            selected_by_source[source_path]
+            for source_path in companion.dependency_audio_source_paths
+            if source_path in selected_by_source
+        )
+        dependency_blocked = any(candidate.reason is not None for candidate in dependency_candidates)
+        if companion.reason in {None, PlanActionReason.TARGET_EXISTS} and (
+            companion.target_path is None
+            or companion.owner_track_id is None
+            or len(dependency_candidates) == 0
+            or dependency_blocked
+        ):
+            judged.append(replace(companion, reason=PlanActionReason.COMPANION_OWNER_BLOCKED))
+        else:
+            judged.append(companion)
+    return tuple(judged)
+
+
+def _managed_companion_target(
+    asset: CompanionAsset,
+    owner_candidate: _RefreshCandidate | None,
+) -> str | None:
+    if owner_candidate is None or owner_candidate.target_path is None:
+        return None
+    owner_target = PurePosixPath(owner_candidate.target_path)
+    if asset.kind is CompanionAssetKind.LYRICS:
+        return str(owner_target.with_suffix(".lrc"))
+    return str(owner_target.parent / PurePosixPath(asset.current_path).name)
+
+
+def _existing_companion_asset(
+    assets: Sequence[CompanionAsset],
+    source_path: str,
+    kind: CompanionAssetKind,
+) -> CompanionAsset | None:
+    return next(
+        (asset for asset in assets if asset.current_path == source_path and asset.kind is kind),
+        None,
+    )
+
+
+def _companion_kind(
+    association: CompanionAssociation | None,
+    issue: CompanionIssue | None,
+) -> CompanionAssetKind:
+    if association is not None:
+        return association.kind
+    if issue is not None:
+        return issue.kind
+    raise AssertionError(CLAIMED_COMPANION_DECISION_MISSING_MESSAGE)
+
+
+def _companion_dependency_sources(
+    association: CompanionAssociation | None,
+    issue: CompanionIssue | None,
+) -> tuple[str, ...]:
+    if association is not None:
+        return association.dependency_audio_source_paths
+    if issue is not None:
+        return issue.dependency_audio_source_paths
+    return ()
+
+
+def _companion_issue_reason(issue: CompanionIssue | None) -> PlanActionReason | None:
+    if issue is None:
+        return None
+    if issue.code in {
+        CompanionIssueCode.OWNER_AMBIGUOUS,
+        CompanionIssueCode.TARGET_PARENT_MISMATCH,
+    }:
+        return PlanActionReason.COMPANION_ASSOCIATION_AMBIGUOUS
+    return PlanActionReason.COMPANION_OWNER_BLOCKED
+
+
+def _companion_action_type(kind: CompanionAssetKind) -> ActionType:
+    if kind is CompanionAssetKind.LYRICS:
+        return ActionType.MOVE_LYRICS
+    return ActionType.MOVE_ARTWORK
 
 
 def _plan(
@@ -587,7 +988,9 @@ def _plan(
     timestamp: datetime,
 ) -> Plan:
     move_count = sum(
-        action.action_type == ActionType.MOVE and action.status == ActionStatus.PLANNED for action in actions
+        action.action_type in {ActionType.MOVE, ActionType.MOVE_LYRICS, ActionType.MOVE_ARTWORK}
+        and action.status == ActionStatus.PLANNED
+        for action in actions
     )
     metadata_count = sum(
         action.action_type == ActionType.REFRESH_METADATA and action.status == ActionStatus.PLANNED

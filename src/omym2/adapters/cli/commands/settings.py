@@ -29,7 +29,7 @@ type ServerRunner = Callable[["FastAPI", str, int], None]
 def _run_server(app: FastAPI, host: str, port: int) -> None:
     import uvicorn  # noqa: PLC0415  # Intentional settings-only server import.
 
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, log_config=None)
 
 
 @dataclass(frozen=True, slots=True)

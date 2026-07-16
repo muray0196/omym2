@@ -16,6 +16,9 @@
         "description": "Supported planned action types.",
         "enum": [
           "move",
+          "move_lyrics",
+          "move_artwork",
+          "move_unprocessed",
           "skip",
           "refresh_metadata"
         ],
@@ -946,8 +949,23 @@
           "collision": {
             "$ref": "#/components/schemas/CollisionConfigResource"
           },
+          "companions": {
+            "$ref": "#/components/schemas/CompanionsConfigResource"
+          },
+          "fasttext": {
+            "$ref": "#/components/schemas/FastTextConfigResource"
+          },
+          "hashing": {
+            "$ref": "#/components/schemas/HashingConfigResource"
+          },
+          "logging": {
+            "$ref": "#/components/schemas/LoggingConfigResource"
+          },
           "metadata": {
             "$ref": "#/components/schemas/MetadataConfigResource"
+          },
+          "musicbrainz": {
+            "$ref": "#/components/schemas/MusicBrainzConfigResource"
           },
           "organize": {
             "$ref": "#/components/schemas/CommandConfigResource"
@@ -960,6 +978,9 @@
           },
           "refresh": {
             "$ref": "#/components/schemas/CommandConfigResource"
+          },
+          "unprocessed": {
+            "$ref": "#/components/schemas/UnprocessedConfigResource"
           },
           "version": {
             "title": "Version",
@@ -976,7 +997,13 @@
           "artist_ids",
           "artist_names",
           "metadata",
-          "collision"
+          "collision",
+          "musicbrainz",
+          "fasttext",
+          "hashing",
+          "logging",
+          "companions",
+          "unprocessed"
         ],
         "title": "AppConfigResource",
         "type": "object"
@@ -1175,6 +1202,7 @@
           "missing_source",
           "composite_unsupported",
           "non_latin_required",
+          "automatic_lookup_disabled",
           "detector_unavailable",
           "not_japanese",
           "low_language_confidence",
@@ -1425,6 +1453,18 @@
         "additionalProperties": false,
         "description": "One persisted finding from the latest Check for its Library.",
         "properties": {
+          "companion_asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Companion Asset Id"
+          },
           "detail": {
             "anyOf": [
               {
@@ -1486,6 +1526,7 @@
           "path",
           "track_id",
           "plan_id",
+          "companion_asset_id",
           "detail"
         ],
         "title": "CheckIssueResource",
@@ -1499,6 +1540,14 @@
           "content_hash_changed",
           "metadata_hash_changed",
           "current_path_differs_from_canonical_path",
+          "companion_file_missing",
+          "companion_content_hash_changed",
+          "companion_current_path_differs_from_canonical_path",
+          "companion_owner_missing",
+          "unmanaged_companion_exists",
+          "failed_companion_source_exists",
+          "unprocessed_file_missing",
+          "unprocessed_content_hash_changed",
           "duplicate_candidate",
           "plan_source_changed",
           "pending_file_event_exists",
@@ -1607,6 +1656,21 @@
           "auto_apply"
         ],
         "title": "CommandConfigResource",
+        "type": "object"
+      },
+      "CompanionsConfigResource": {
+        "additionalProperties": false,
+        "description": "Persisted opt-in control for companion lyrics and artwork.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "CompanionsConfigResource",
         "type": "object"
       },
       "ConfigValidationResource": {
@@ -1763,6 +1827,33 @@
         "title": "FacetValueResource[TrackStatus]",
         "type": "object"
       },
+      "FastTextConfigResource": {
+        "additionalProperties": false,
+        "description": "Persisted fastText model and confidence controls.",
+        "properties": {
+          "minimum_confidence": {
+            "title": "Minimum Confidence",
+            "type": "number"
+          },
+          "model_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Path"
+          }
+        },
+        "required": [
+          "model_path",
+          "minimum_confidence"
+        ],
+        "title": "FastTextConfigResource",
+        "type": "object"
+      },
       "FileEventFacetSets": {
         "additionalProperties": false,
         "description": "FileEvent status facets.",
@@ -1833,6 +1924,18 @@
         "additionalProperties": false,
         "description": "One durable Library music-file mutation record.",
         "properties": {
+          "companion_asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Companion Asset Id"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -1924,7 +2027,8 @@
           "completed_at",
           "error_code",
           "error_message",
-          "sequence_no"
+          "sequence_no",
+          "companion_asset_id"
         ],
         "title": "FileEventResource",
         "type": "object"
@@ -1942,7 +2046,10 @@
       "FileEventType": {
         "description": "Supported durable operation event types.",
         "enum": [
-          "move_file"
+          "move_file",
+          "move_lyrics_file",
+          "move_artwork_file",
+          "move_unprocessed_file"
         ],
         "title": "FileEventType",
         "type": "string"
@@ -1969,6 +2076,21 @@
           "count"
         ],
         "title": "GroupResource",
+        "type": "object"
+      },
+      "HashingConfigResource": {
+        "additionalProperties": false,
+        "description": "Persisted streaming content-hash controls.",
+        "properties": {
+          "read_chunk_size_bytes": {
+            "title": "Read Chunk Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "read_chunk_size_bytes"
+        ],
+        "title": "HashingConfigResource",
         "type": "object"
       },
       "LibrariesData": {
@@ -2053,6 +2175,43 @@
         "title": "LibraryStatus",
         "type": "string"
       },
+      "LoggingConfigResource": {
+        "additionalProperties": false,
+        "description": "Persisted logging destination, severity, rotation, and retention controls.",
+        "properties": {
+          "destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "retention_files": {
+            "title": "Retention Files",
+            "type": "integer"
+          },
+          "rotation_max_bytes": {
+            "title": "Rotation Max Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "destination",
+          "level",
+          "rotation_max_bytes",
+          "retention_files"
+        ],
+        "title": "LoggingConfigResource",
+        "type": "object"
+      },
       "MetadataConfigResource": {
         "additionalProperties": false,
         "description": "Editable metadata requirements and album-year policy.",
@@ -2086,6 +2245,51 @@
           "album_year_resolution"
         ],
         "title": "MetadataConfigResource",
+        "type": "object"
+      },
+      "MusicBrainzConfigResource": {
+        "additionalProperties": false,
+        "description": "Persisted MusicBrainz enablement, identity, request, and cache controls.",
+        "properties": {
+          "application_name": {
+            "title": "Application Name",
+            "type": "string"
+          },
+          "cache_policy": {
+            "title": "Cache Policy",
+            "type": "string"
+          },
+          "contact": {
+            "title": "Contact",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "rate_limit_seconds": {
+            "title": "Rate Limit Seconds",
+            "type": "number"
+          },
+          "retry_limit": {
+            "title": "Retry Limit",
+            "type": "integer"
+          },
+          "timeout_seconds": {
+            "title": "Timeout Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "enabled",
+          "application_name",
+          "contact",
+          "timeout_seconds",
+          "retry_limit",
+          "rate_limit_seconds",
+          "cache_policy"
+        ],
+        "title": "MusicBrainzConfigResource",
         "type": "object"
       },
       "NonNegativeCount": {
@@ -2818,6 +3022,9 @@
           "source_missing",
           "source_changed",
           "duplicate_hash",
+          "companion_owner_blocked",
+          "companion_association_ambiguous",
+          "companion_dependency_failed",
           "operation_interrupted"
         ],
         "title": "PlanActionReason",
@@ -2845,6 +3052,18 @@
               }
             ]
           },
+          "companion_asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Companion Asset Id"
+          },
           "content_hash_at_plan": {
             "anyOf": [
               {
@@ -2855,6 +3074,14 @@
               }
             ],
             "title": "Content Hash At Plan"
+          },
+          "depends_on_action_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Depends On Action Ids",
+            "type": "array"
           },
           "library_id": {
             "format": "uuid",
@@ -2871,6 +3098,18 @@
               }
             ],
             "title": "Metadata Hash At Plan"
+          },
+          "owner_action_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Action Id"
           },
           "plan_id": {
             "format": "uuid",
@@ -2942,6 +3181,9 @@
           "status",
           "reason",
           "sort_order",
+          "companion_asset_id",
+          "owner_action_id",
+          "depends_on_action_ids",
           "artist_name_diagnostics"
         ],
         "title": "PlanActionResource",
@@ -2993,9 +3235,18 @@
       },
       "PlanActionTypeCounts": {
         "additionalProperties": false,
-        "description": "Counts for the three recorded PlanAction types within one status.",
+        "description": "Counts for every recorded PlanAction type within one status.",
         "properties": {
           "move": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "move_artwork": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "move_lyrics": {
+            "$ref": "#/components/schemas/NonNegativeCount"
+          },
+          "move_unprocessed": {
             "$ref": "#/components/schemas/NonNegativeCount"
           },
           "refresh_metadata": {
@@ -3007,6 +3258,9 @@
         },
         "required": [
           "move",
+          "move_lyrics",
+          "move_artwork",
+          "move_unprocessed",
           "skip",
           "refresh_metadata"
         ],
@@ -3589,6 +3843,9 @@
             "type": "integer"
           },
           {
+            "type": "number"
+          },
+          {
             "type": "boolean"
           },
           {
@@ -3635,11 +3892,25 @@
             "title": "Duplicate Hash Policies",
             "type": "array"
           },
+          "logging_levels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Logging Levels",
+            "type": "array"
+          },
           "missing_metadata_policies": {
             "items": {
               "type": "string"
             },
             "title": "Missing Metadata Policies",
+            "type": "array"
+          },
+          "musicbrainz_cache_policies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Musicbrainz Cache Policies",
             "type": "array"
           },
           "path_placeholders": {
@@ -3655,6 +3926,14 @@
             },
             "title": "Target Exists Policies",
             "type": "array"
+          },
+          "unprocessed_result_preview_limit_max": {
+            "title": "Unprocessed Result Preview Limit Max",
+            "type": "integer"
+          },
+          "unprocessed_result_preview_limit_min": {
+            "title": "Unprocessed Result Preview Limit Min",
+            "type": "integer"
           }
         },
         "required": [
@@ -3665,6 +3944,10 @@
           "target_exists_policies",
           "duplicate_hash_policies",
           "missing_metadata_policies",
+          "musicbrainz_cache_policies",
+          "logging_levels",
+          "unprocessed_result_preview_limit_min",
+          "unprocessed_result_preview_limit_max",
           "path_placeholders"
         ],
         "title": "SettingsChoices",
@@ -4145,6 +4428,31 @@
         ],
         "title": "TrackStatus",
         "type": "string"
+      },
+      "UnprocessedConfigResource": {
+        "additionalProperties": false,
+        "description": "Persisted controls for reviewed unprocessed-file collection.",
+        "properties": {
+          "directory": {
+            "title": "Directory",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "result_preview_limit": {
+            "title": "Result Preview Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "directory",
+          "result_preview_limit"
+        ],
+        "title": "UnprocessedConfigResource",
+        "type": "object"
       }
     }
   },

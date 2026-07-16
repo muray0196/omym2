@@ -5,9 +5,11 @@ Why: Protects recovery, revision conflicts, field errors, and draft-only behavio
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
+import pytest
 from fastapi.testclient import TestClient
 
 from omym2.adapters.web.app import create_web_app
@@ -18,6 +20,8 @@ from omym2.config import (
     HTTP_FORBIDDEN_STATUS,
     HTTP_OK_STATUS,
     HTTP_UNPROCESSABLE_CONTENT_STATUS,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
     WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
     WEB_API_SETTINGS_PREVIEW_ROUTE,
     WEB_API_SETTINGS_ROUTE,
@@ -29,8 +33,14 @@ from omym2.domain.models.app_config import (
     ArtistIdConfig,
     ArtistNameConfig,
     CommandConfig,
+    CompanionsConfig,
+    FastTextConfig,
+    HashingConfig,
+    LoggingConfig,
+    MusicBrainzConfig,
     PathPolicyConfig,
     PathsConfig,
+    UnprocessedConfig,
 )
 from omym2.features.artist_ids.usecases.generate_artist_id_draft import GenerateArtistIdDraftUseCase
 from omym2.features.common_ports import ConfigRevisionMismatchError, ConfigSnapshot, ConfigSnapshotState
@@ -57,6 +67,9 @@ SOURCE_ARTIST_ID = "EXST"
 PREFERRED_ARTIST = "Preferred Artist"
 NEW_ARTIST = "New Artist"
 UNRELATED_BOOTSTRAP_EXECUTION_MESSAGE = "Unrelated Bootstrap handler must not execute."
+WEB_MUSICBRAINZ_TIMEOUT_SECONDS = 2.5
+WEB_HASH_READ_CHUNK_SIZE_BYTES = 8_192
+WEB_UNPROCESSED_PREVIEW_LIMIT = 250
 
 
 def test_get_settings_returns_invalid_recovery_data_choices_and_preview(tmp_path: Path) -> None:
@@ -74,6 +87,10 @@ def test_get_settings_returns_invalid_recovery_data_choices_and_preview(tmp_path
     assert _first_error(validation)["code"] == "config_invalid"
     assert _first_error(validation)["field"] == "config"
     assert _object(data, "choices")["command_modes"] == ["plan_first"]
+    assert _object(data, "choices")["musicbrainz_cache_policies"] == ["sticky_positive"]
+    assert _object(data, "choices")["logging_levels"] == ["CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING"]
+    assert _object(data, "choices")["unprocessed_result_preview_limit_min"] == (UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN)
+    assert _object(data, "choices")["unprocessed_result_preview_limit_max"] == (UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX)
     assert _object(data, "preview")["path"] == "Aimer/2024_Example-Album/1-03_Example-Song.flac"
 
 
@@ -82,11 +99,44 @@ def test_app_config_resource_round_trips_complete_config() -> None:
     config = AppConfig(
         paths=PathsConfig(library=LIBRARY_PATH),
         artist_names=ArtistNameConfig(preferences={SOURCE_ARTIST: PREFERRED_ARTIST}),
+        musicbrainz=MusicBrainzConfig(
+            enabled=True,
+            application_name="OMYM2 Web",
+            contact="web@example.invalid",
+            timeout_seconds=WEB_MUSICBRAINZ_TIMEOUT_SECONDS,
+            retry_limit=2,
+            rate_limit_seconds=1.5,
+        ),
+        fasttext=FastTextConfig(model_path="models/lid.176.ftz", minimum_confidence=0.7),
+        hashing=HashingConfig(read_chunk_size_bytes=WEB_HASH_READ_CHUNK_SIZE_BYTES),
+        logging=LoggingConfig(
+            destination="logs/web.log",
+            level="WARNING",
+            rotation_max_bytes=16_384,
+            retention_files=4,
+        ),
+        companions=CompanionsConfig(enabled=True),
+        unprocessed=UnprocessedConfig(
+            enabled=True,
+            directory="Review Later",
+            result_preview_limit=WEB_UNPROCESSED_PREVIEW_LIMIT,
+        ),
     )
 
     resource = AppConfigResource.from_domain(config)
 
-    assert resource.to_domain() == config
+    serialized = resource.model_dump(mode="json")
+    assert serialized["musicbrainz"]["timeout_seconds"] == WEB_MUSICBRAINZ_TIMEOUT_SECONDS
+    assert serialized["fasttext"]["model_path"] == "models/lid.176.ftz"
+    assert serialized["hashing"]["read_chunk_size_bytes"] == WEB_HASH_READ_CHUNK_SIZE_BYTES
+    assert serialized["logging"]["destination"] == "logs/web.log"
+    assert serialized["companions"] == {"enabled": True}
+    assert serialized["unprocessed"] == {
+        "enabled": True,
+        "directory": "Review Later",
+        "result_preview_limit": WEB_UNPROCESSED_PREVIEW_LIMIT,
+    }
+    assert AppConfigResource.model_validate(serialized).to_domain() == config
 
 
 def test_validate_settings_returns_field_changes_and_typed_invalid_result(tmp_path: Path) -> None:
@@ -224,6 +274,84 @@ def test_save_settings_requires_csrf_before_config_validation(tmp_path: Path) ->
 
     assert response.status_code == HTTP_FORBIDDEN_STATUS
     assert _first_error(_response_object(response))["code"] == "csrf_invalid"
+    assert store.save_count == 0
+
+
+def test_save_settings_rejects_unsafe_logging_destination_without_writing(tmp_path: Path) -> None:
+    """The typed Web boundary preserves the application-root-relative logging path rule."""
+    store = FakeConfigStore()
+    client = _client(tmp_path, store)
+    config_resource = AppConfigResource.from_domain(AppConfig()).model_dump(mode="json")
+    logging_config = cast("dict[str, object]", config_resource["logging"])
+    logging_config["destination"] = "../outside.log"
+
+    response = client.put(
+        WEB_API_SETTINGS_ROUTE,
+        json={"config": config_resource, "expected_config_revision": CONFIG_REVISION},
+        headers={WEB_CSRF_HEADER_NAME: CSRF_TOKEN},
+    )
+
+    assert response.status_code == HTTP_UNPROCESSABLE_CONTENT_STATUS
+    assert _first_error(_response_object(response))["field"] == "config"
+    assert store.save_count == 0
+
+
+@pytest.mark.parametrize("field", ["timeout_seconds", "rate_limit_seconds"])
+def test_save_settings_rejects_nonfinite_musicbrainz_controls_without_writing(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    """The Web boundary rejects non-finite request controls before Config persistence."""
+    store = FakeConfigStore()
+    client = _client(tmp_path, store)
+    config_resource = AppConfigResource.from_domain(AppConfig()).model_dump(mode="json")
+    musicbrainz_config = cast("dict[str, object]", config_resource["musicbrainz"])
+    musicbrainz_config[field] = float("inf")
+
+    response = client.put(
+        WEB_API_SETTINGS_ROUTE,
+        content=json.dumps(
+            {"config": config_resource, "expected_config_revision": CONFIG_REVISION},
+            separators=(",", ":"),
+        ),
+        headers={
+            "Content-Type": "application/json",
+            WEB_CSRF_HEADER_NAME: CSRF_TOKEN,
+        },
+    )
+
+    assert response.status_code == HTTP_UNPROCESSABLE_CONTENT_STATUS
+    assert _first_error(_response_object(response))["field"] == "config"
+    assert store.save_count == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("directory", "CON.txt"),
+        ("result_preview_limit", UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX + 1),
+    ],
+)
+def test_save_settings_rejects_invalid_unprocessed_controls_without_writing(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    """The Web boundary preserves portable directory and centralized preview bounds."""
+    store = FakeConfigStore()
+    client = _client(tmp_path, store)
+    config_resource = AppConfigResource.from_domain(AppConfig()).model_dump(mode="json")
+    unprocessed_config = cast("dict[str, object]", config_resource["unprocessed"])
+    unprocessed_config[field] = value
+
+    response = client.put(
+        WEB_API_SETTINGS_ROUTE,
+        json={"config": config_resource, "expected_config_revision": CONFIG_REVISION},
+        headers={WEB_CSRF_HEADER_NAME: CSRF_TOKEN},
+    )
+
+    assert response.status_code == HTTP_UNPROCESSABLE_CONTENT_STATUS
+    assert _first_error(_response_object(response))["field"] == "config"
     assert store.save_count == 0
 
 

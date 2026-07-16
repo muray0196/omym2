@@ -76,6 +76,11 @@ def build_command_dependencies(
     imports); anything heavier belongs behind one of the factory fields.
     """
     runtime = runtime_context_for(config_path, database_path)
+    return command_dependencies_for_runtime(runtime)
+
+
+def command_dependencies_for_runtime(runtime: RuntimeContext) -> CommandDependencies:
+    """Build the command bundle over one already-resolved process runtime."""
     operations = OperationRuntime(runtime)
     return CommandDependencies(
         add=AddCommandDependencies(

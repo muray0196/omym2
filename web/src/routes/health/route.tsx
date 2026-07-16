@@ -4,6 +4,7 @@
  */
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useDeferredValue } from "react";
+import { Link } from "react-router-dom";
 
 import {
   groupingLabel,
@@ -314,7 +315,19 @@ export function Component() {
                       </span>
                     </span>
                   ) : null}
-                  {issue.track_id || issue.plan_id ? null : <span>—</span>}
+                  {issue.companion_asset_id ? (
+                    <span>
+                      {healthCopy.companionAsset}{" "}
+                      <span className={styles.id} translate="no">
+                        {issue.companion_asset_id}
+                      </span>
+                    </span>
+                  ) : null}
+                  {issue.track_id ||
+                  issue.plan_id ||
+                  issue.companion_asset_id ? null : (
+                    <span>—</span>
+                  )}
                 </div>
                 <span
                   className={`${styles.id} ${styles.healthLibrary}`}
@@ -330,6 +343,14 @@ export function Component() {
                   <div className={`${styles.warning} ${styles.healthWarning}`}>
                     <strong>Manual review required</strong>
                     <p>{healthCopy.pending}</p>
+                  </div>
+                ) : null}
+                {issue.issue_type === "unprocessed_file_missing" ||
+                issue.issue_type === "unprocessed_content_hash_changed" ? (
+                  <div className={`${styles.warning} ${styles.healthWarning}`}>
+                    <strong>History review required</strong>
+                    <p>{healthCopy.unprocessedEvidence}</p>
+                    <Link to="/history">{healthCopy.openHistory}</Link>
                   </div>
                 ) : null}
               </li>

@@ -13,10 +13,12 @@ if TYPE_CHECKING:
         BatchFileSnapshotReader,
         Clock,
         ConfigReader,
+        FileContentSnapshotReader,
         FileScanner,
         FileSystemPath,
         IdGenerator,
         PathResolver,
+        SourceInventoryReader,
         UnitOfWork,
     )
 
@@ -36,6 +38,8 @@ class CheckLibraryPorts:
     uow: UnitOfWork
     file_scanner: FileScanner
     file_snapshot_reader: BatchFileSnapshotReader
+    file_content_snapshot_reader: FileContentSnapshotReader
+    source_inventory_reader: SourceInventoryReader
     file_content_hasher: FileContentHasher
     config_store: ConfigReader
     path_resolver: PathResolver

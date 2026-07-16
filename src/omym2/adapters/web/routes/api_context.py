@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated, cast
 from fastapi import Depends, Request
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
     from uuid import UUID
 
     from fastapi import FastAPI
@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from omym2.features.organize.dto import CreateOrganizePlanRequest
     from omym2.features.plans.dto import (
         CancelPlanRequest,
+        GetPlanActionDependenciesRequest,
         GetPlanActionSummariesRequest,
         GetPlanHeaderRequest,
         GroupPlanActionsRequest,
@@ -81,7 +82,7 @@ if TYPE_CHECKING:
         TrackStatusFacetsResult,
     )
     from omym2.features.undo.dto import CreateUndoPlanRequest
-    from omym2.shared.ids import OperationId, PlanId, RunId
+    from omym2.shared.ids import ActionId, OperationId, PlanId, RunId
     from omym2.shared.pagination import GroupCount, Page
 
 
@@ -94,6 +95,10 @@ class PlansRouteContext:
     get_plan_action_summaries: Callable[[GetPlanActionSummariesRequest], dict[PlanId, PlanActionSummary]]
     get_plan_capabilities: Callable[[GetPlanCapabilitiesRequest], PlanCapabilitiesResult]
     list_plan_actions: Callable[[ListPlanActionsRequest], Page[PlanAction]]
+    get_plan_action_dependencies: Callable[
+        [GetPlanActionDependenciesRequest],
+        Mapping[ActionId, tuple[ActionId, ...]],
+    ]
     get_plan_action_facets: Callable[[PlanActionFacetsRequest], PlanActionFacetsResult]
     group_plan_actions: Callable[[GroupPlanActionsRequest], Page[PlanActionGroup]]
     cancel_plan: Callable[[CancelPlanRequest], Plan]

@@ -24,6 +24,8 @@ DESKTOP_GUI_SCRIPT_NAME = "omym2-desktop"
 EXPECTED_DESKTOP_DEPENDENCY = "pywebview==6.2.1; sys_platform == 'win32'"
 EXPECTED_DESKTOP_BUILD_DEPENDENCY = "pyinstaller==6.21.0"
 EXPECTED_DESKTOP_ENTRY_POINT = "omym2.platform.desktop_entry_point:main"
+FASTTEXT_DEPENDENCY_PREFIX = "fasttext"
+FASTTEXT_MODEL_SUFFIXES = (".bin", ".ftz")
 
 
 def test_web_package_data_includes_generated_static_export_tree() -> None:
@@ -62,6 +64,26 @@ def test_desktop_packaging_tool_is_isolated_in_build_dependency_group() -> None:
 
     assert EXPECTED_DESKTOP_BUILD_DEPENDENCY in desktop_build_dependencies
     assert all(not dependency.startswith("pyinstaller") for dependency in core_dependencies)
+
+
+def test_fasttext_runtime_and_model_are_not_distributed() -> None:
+    """Packaged installs remain local-only until the native runtime and model pass release qualification."""
+    pyproject = _load_pyproject()
+    project = cast("dict[str, object]", pyproject["project"])
+    runtime_dependencies = cast("list[str]", project["dependencies"])
+    optional_dependencies = cast("dict[str, list[str]]", project["optional-dependencies"])
+    tool = cast("dict[str, object]", pyproject["tool"])
+    setuptools = cast("dict[str, object]", tool["setuptools"])
+    package_data = cast("dict[str, list[str]]", setuptools["package-data"])
+
+    distributed_dependencies = [
+        *runtime_dependencies,
+        *(dependency for dependencies in optional_dependencies.values() for dependency in dependencies),
+    ]
+    distributed_patterns = [pattern for patterns in package_data.values() for pattern in patterns]
+
+    assert all(not dependency.lower().startswith(FASTTEXT_DEPENDENCY_PREFIX) for dependency in distributed_dependencies)
+    assert all(not pattern.lower().endswith(FASTTEXT_MODEL_SUFFIXES) for pattern in distributed_patterns)
 
 
 def _load_pyproject() -> dict[str, object]:

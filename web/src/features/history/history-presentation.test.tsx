@@ -76,13 +76,19 @@ describe("History presentation", () => {
     }
   });
 
-  it("maps the closed FileEvent type and preserves an unknown raw code", () => {
-    expect(eventTypePresentation("move_file")).toEqual({
-      icon: "info",
-      label: "Move file",
-      meaning: "Records one attempted Library music file move.",
-      tone: "info",
-    });
+  it("maps every closed FileEvent type and preserves an unknown raw code", () => {
+    for (const [value, label] of [
+      ["move_file", "Move file"],
+      ["move_lyrics_file", "Move lyrics file"],
+      ["move_artwork_file", "Move artwork file"],
+      ["move_unprocessed_file", "Move unprocessed file"],
+    ] as const) {
+      const presentation = eventTypePresentation(value);
+      expect(presentation.icon).toBe("info");
+      expect(presentation.label).toBe(label);
+      expect(presentation.meaning).not.toBe("");
+      expect(presentation.tone).toBe("info");
+    }
     expect(eventTypePresentation("future_event_type")).toMatchObject({
       icon: "info",
       label: "Unknown event type: future_event_type",

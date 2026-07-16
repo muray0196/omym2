@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Windows Desktop Packaging
-description: Defines the native Windows x64 desktop build, renderer prerequisites, audited package, cross-build native UI Automation smoke evidence, data lifecycle, licensing, and signing boundaries.
-tags: [development, desktop, windows, packaging, pyinstaller, smoke-test]
-timestamp: 2026-07-15T01:59:22+09:00
+description: Defines the Windows x64 desktop build, renderer and artist-naming distribution boundaries, native filesystem and package-smoke CI evidence, data lifecycle, licensing, and signing.
+tags: [development, desktop, windows, packaging, pyinstaller, fasttext, smoke-test]
+timestamp: 2026-07-16T06:02:32+09:00
 ---
 
 # Windows Desktop Packaging
@@ -64,6 +64,31 @@ OMYM2-<version>-windows-x86_64.zip
 Users do not install Python or Node.js separately. Node.js remains a frontend
 build dependency and is absent from the ZIP; Chromium is neither a build input
 nor a packaged runtime.
+
+## Artist-Naming Distribution Boundary
+
+The audited wheel and Windows ZIP do not contain a fastText prediction runtime
+or a language-identification model. Neither is a core, desktop-extra, or frozen
+runtime dependency, and no `.bin` or `.ftz` model is package data. The packaged
+default therefore remains `musicbrainz.enabled = false` with no model path and
+supports preferences, accepted positive cache rows, and original metadata
+without model or network work.
+
+This is an explicit local-only distribution decision, not a claim that native
+automatic lookup has passed. No candidate runtime has yet been qualified for
+CPython 3.14 and Windows x64 freezing, and no model candidate has an approved
+redistribution record covering its exact bytes, digest, compressed and
+installed size, license, notices, and source obligations. A local development
+model is not a packaging input. Setting a model path in a package that lacks a
+compatible predictor records detector unavailability, preserves the original
+name, and does not contact MusicBrainz.
+
+Bundled automatic lookup may be proposed only after one exact runtime wheel and
+one exact model artifact pass all of those provenance checks, package audit,
+Windows 11 x64 load/prediction smoke, startup and memory measurements, and the
+repository's complete licensing gate. Until then, packaging metadata and tests
+must continue to exclude both artifacts and automatic lookup must not be
+enabled by default.
 
 ## Build And Audit
 
@@ -180,14 +205,21 @@ Playwright suite or a visual review of unchanged rendering.
 
 ## CI Boundary
 
-The hosted `windows-2025` CI job downloads the short-lived audited wheel, runs
-desktop runtime and Windows lock tests, builds the ZIP with the command above,
-runs the native smoke command, and retains the package-audit JSON, native-smoke
-JSON, and SHA-256 sidecar. The ZIP exists only long enough to build, audit, and
-smoke it; CI does not upload or publish that package. This Windows Server 2025
-x64 run is the native development-build and smoke proxy; it is not evidence that
-the end-user Windows 11 x64 target has passed release validation. Release
-validation requires the same packaged smoke on Windows 11 x64, including its UI
+The hosted `windows-2025` CI job downloads the short-lived audited wheel and
+first runs the native filesystem and runtime boundary suite: rooted file
+observation and mutation, scanner containment, concrete companion and
+unprocessed adapter E2E, real multiprocess lock behavior, and desktop runtime
+tests. The retained-HANDLE mechanics exercised there are authoritative in the
+[Path Identity And Storage Contract](../contracts/path-identity-storage.md#retained-observation-and-mutation-boundary).
+CI then builds the ZIP with the command above, runs the native package smoke,
+and retains the package-audit JSON, native-smoke JSON, and SHA-256 sidecar. The
+ZIP exists only long enough to build, audit, and smoke it; CI does not upload or
+publish that package.
+
+This Windows Server 2025 x64 run is the native development-build and smoke
+proxy; it is not evidence that the end-user Windows 11 x64 target has passed
+release validation. Windows 11 release validation remains a separate run of
+the same packaged smoke on the supported workstation target, including its UI
 Automation flow, with the JSON evidence retained. The smoke record includes the
 observed Windows edition, build, installation type, product type, and machine
 architecture so Server CI cannot be relabeled as Windows 11 workstation
@@ -221,6 +253,7 @@ artifact has passed:
 | --- | --- |
 | Supported target | The candidate ZIP passes the complete packaged HTTP and UI Automation smoke on Windows 11 x64, its smoke JSON is retained, and a native-window visual review confirms unchanged rendering. Hosted Windows Server or HTTP/API-only evidence is insufficient. |
 | Artifact integrity | ZIP, `.zip.sha256`, package-audit JSON, and smoke JSON agree on version, archive identity, and canonical payload identity; frozen provenance binds the archive to the exact audited wheel and all required resources. |
+| Artist naming | The artifact inventory proves no fastText runtime/model is bundled and native smoke preserves the disabled local-only fallback; any future bundled enablement instead requires exact runtime/model provenance, size and license evidence, and a successful Windows 11 x64 load/prediction smoke. |
 | Licensing | The repository contains an owner-approved project license and a complete, verified third-party notice/source-obligation set for every bundled component. |
 | Signing | An authorized Windows identity signs the candidate through an approved secret-handling workflow, and an independent gate verifies its signature and expected publisher. |
 | Extract, upgrade, remove | Clean extract, payload-distinct cross-build replacement, and application-directory removal all leave `%LOCALAPPDATA%\OMYM2` Config, SQLite state, and logs intact; the retained smoke JSON identifies both artifacts, and deleting user data remains a separate explicit action. |

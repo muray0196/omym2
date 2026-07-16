@@ -61,6 +61,7 @@ class Plan:
     created_at: datetime
     config_hash: str
     library_root_at_plan: str
+    source_root_at_plan: str | None = None
     source_run_id: RunId | None = None
     summary: dict[str, str] = field(default_factory=dict)
     actions: tuple[PlanAction, ...] = ()
@@ -108,6 +109,7 @@ class Plan:
             created_at=self.created_at,
             config_hash=self.config_hash,
             library_root_at_plan=self.library_root_at_plan,
+            source_root_at_plan=self.source_root_at_plan,
             source_run_id=self.source_run_id,
             summary=dict(self.summary),
             actions=self.actions,

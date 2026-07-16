@@ -9,16 +9,26 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from omym2.config import DEFAULT_COMMAND_MODE
+from omym2.config import (
+    DEFAULT_COMMAND_MODE,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
+)
 from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
     ArtistNameConfig,
     CollisionConfig,
     CommandConfig,
+    CompanionsConfig,
+    FastTextConfig,
+    HashingConfig,
+    LoggingConfig,
+    MusicBrainzConfig,
     OrganizeConfig,
     PathPolicyConfig,
     PathsConfig,
+    UnprocessedConfig,
 )
 from omym2.features.artist_ids.dto import GenerateArtistIdDraftRequest
 from omym2.features.artist_ids.usecases.generate_artist_id_draft import (
@@ -53,6 +63,7 @@ EXPECTED_NEW_ARTIST_ID = "NEWARTST"
 NO_USABLE_ARTIST = "!!!"
 UNSAFE_FALLBACK_ID = "A-B"
 UNSAFE_MAX_LENGTH = 2
+UNPROCESSED_PREVIEW_LIMIT = 250
 
 
 def test_get_settings_edit_preserves_invalid_recovery_revision_and_backend_choices() -> None:
@@ -66,6 +77,10 @@ def test_get_settings_edit_preserves_invalid_recovery_revision_and_backend_choic
     assert result.config_revision == CONFIG_REVISION
     assert [(issue.field, issue.message) for issue in result.validation_issues] == [("config", PERSISTED_CONFIG_ERROR)]
     assert result.choices.command_modes == (DEFAULT_COMMAND_MODE,)
+    assert result.choices.musicbrainz_cache_policies == ("sticky_positive",)
+    assert result.choices.logging_levels == ("CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING")
+    assert result.choices.unprocessed_result_preview_limit_min == UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN
+    assert result.choices.unprocessed_result_preview_limit_max == UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX
     assert result.choices.path_placeholders[0] == "album_artist"
     assert result.preview.path == EXPECTED_PREVIEW_PATH
 
@@ -74,6 +89,10 @@ def test_validate_settings_candidate_reports_every_unchecked_closed_choice_in_fi
     """Feature validation covers closed values and non-empty strings outside nested domain checks."""
     artist_names = ArtistNameConfig()
     object.__setattr__(artist_names, "preferences", {"": "Display Name"})
+    musicbrainz = MusicBrainzConfig()
+    object.__setattr__(musicbrainz, "cache_policy", UNSUPPORTED_CHOICE)
+    logging = LoggingConfig()
+    object.__setattr__(logging, "level", UNSUPPORTED_CHOICE)
     candidate = AppConfig(
         paths=PathsConfig(library=" "),
         add=CommandConfig(default_mode=UNSUPPORTED_CHOICE),
@@ -87,6 +106,8 @@ def test_validate_settings_candidate_reports_every_unchecked_closed_choice_in_fi
             on_duplicate_hash=UNSUPPORTED_CHOICE,
             on_missing_metadata=UNSUPPORTED_CHOICE,
         ),
+        musicbrainz=musicbrainz,
+        logging=logging,
     )
 
     result = ValidateSettingsCandidateUseCase(SettingsPorts(FakeConfigStore())).execute(
@@ -103,6 +124,8 @@ def test_validate_settings_candidate_reports_every_unchecked_closed_choice_in_fi
         "collision.on_target_exists",
         "collision.on_duplicate_hash",
         "collision.on_missing_metadata",
+        "musicbrainz.cache_policy",
+        "logging.level",
         "artist_ids.entries",
         "artist_names.preferences",
     ]
@@ -131,6 +154,60 @@ def test_settings_field_changes_are_scalar_and_deterministic_for_artist_entries(
         ("artist_names.preferences.Alpha", "Alpha", "Alpha Display"),
         ("artist_names.preferences.Beta", None, "Beta Display"),
         ("artist_names.preferences.Zulu", "Zulu Before", None),
+    ]
+
+
+def test_settings_field_changes_include_every_runtime_control_in_schema_order() -> None:
+    """Operational settings remain reviewable scalar changes, including floating-point values."""
+    before = AppConfig()
+    musicbrainz = MusicBrainzConfig(
+        enabled=True,
+        application_name="OMYM2 Test",
+        contact="test@example.invalid",
+        timeout_seconds=2.5,
+        retry_limit=2,
+        rate_limit_seconds=1.5,
+    )
+    object.__setattr__(musicbrainz, "cache_policy", "future_policy")
+    after = AppConfig(
+        musicbrainz=musicbrainz,
+        fasttext=FastTextConfig(model_path="models/lid.176.ftz", minimum_confidence=0.7),
+        hashing=HashingConfig(read_chunk_size_bytes=2_048),
+        logging=LoggingConfig(
+            destination="logs/test.log",
+            level="DEBUG",
+            rotation_max_bytes=4_096,
+            retention_files=5,
+        ),
+        companions=CompanionsConfig(enabled=True),
+        unprocessed=UnprocessedConfig(
+            enabled=True,
+            directory="Review Later",
+            result_preview_limit=UNPROCESSED_PREVIEW_LIMIT,
+        ),
+    )
+
+    changes = settings_field_changes(before, after)
+
+    assert [(change.field, change.after) for change in changes] == [
+        ("musicbrainz.enabled", True),
+        ("musicbrainz.application_name", "OMYM2 Test"),
+        ("musicbrainz.contact", "test@example.invalid"),
+        ("musicbrainz.timeout_seconds", 2.5),
+        ("musicbrainz.retry_limit", 2),
+        ("musicbrainz.rate_limit_seconds", 1.5),
+        ("musicbrainz.cache_policy", "future_policy"),
+        ("fasttext.model_path", "models/lid.176.ftz"),
+        ("fasttext.minimum_confidence", 0.7),
+        ("hashing.read_chunk_size_bytes", 2_048),
+        ("logging.destination", "logs/test.log"),
+        ("logging.level", "DEBUG"),
+        ("logging.rotation_max_bytes", 4_096),
+        ("logging.retention_files", 5),
+        ("companions.enabled", True),
+        ("unprocessed.enabled", True),
+        ("unprocessed.directory", "Review Later"),
+        ("unprocessed.result_preview_limit", UNPROCESSED_PREVIEW_LIMIT),
     ]
 
 

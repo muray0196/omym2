@@ -17,6 +17,7 @@ import platform
 import re
 import shutil
 import socket
+import sqlite3
 import struct
 import subprocess
 import sys
@@ -548,6 +549,7 @@ def smoke_windows_package(
         source_file = incoming_root / "smoke-track.flac"
         extraction_a = workspace / "application-build-a"
         extraction_b = workspace / "application-build-b"
+        database_file = local_app_data / config.DESKTOP_WINDOWS_DATABASE_RELATIVE_PATH
         local_app_data.mkdir(parents=True)
         library_root.mkdir()
         _write_tagged_smoke_flac(source_file)
@@ -570,6 +572,7 @@ def smoke_windows_package(
                 library_root,
                 incoming_root,
                 source_file,
+                database_file,
             ),
         )
         _require_tree_unchanged(
@@ -577,7 +580,6 @@ def smoke_windows_package(
             launch_working_directory_snapshot,
             context="first native launch working directory",
         )
-        database_file = local_app_data / config.DESKTOP_WINDOWS_DATABASE_RELATIVE_PATH
         if not database_file.is_file():
             msg = f"First native launch did not create SQLite state: {database_file}"
             raise WindowsPackageSmokeError(msg)
@@ -608,6 +610,7 @@ def smoke_windows_package(
                 planning_created,
                 library_root,
                 source_file,
+                database_file,
             ),
         )
         _require_tree_unchanged(
@@ -1287,8 +1290,8 @@ def _write_tagged_smoke_flac(path: Path) -> None:
     _ = path.write_bytes(_minimal_flac_bytes())
     audio = cast("FlacTagWriter", FLAC(path))
     audio["title"] = "Packaged Smoke Track"
-    audio["artist"] = "OMYM2 Smoke Artist"
-    audio["albumartist"] = "OMYM2 Smoke Artist"
+    audio["artist"] = config.DESKTOP_WINDOWS_SMOKE_ARTIST_NAME
+    audio["albumartist"] = config.DESKTOP_WINDOWS_SMOKE_ARTIST_NAME
     audio["album"] = "Packaged Smoke Album"
     audio["date"] = "2026"
     audio["tracknumber"] = "1/1"
@@ -1327,9 +1330,11 @@ def _create_safe_add_plan(
     library_root: Path,
     incoming_root: Path,
     source_file: Path,
+    database_file: Path,
 ) -> dict[str, object]:
     incoming_snapshot = _tree_snapshot(incoming_root)
     library_snapshot = _tree_snapshot(library_root)
+    local_only_settings = _verify_local_only_settings(base_url)
     bootstrap = _bootstrap_data(base_url, require_valid_config=True)
     organize_operation_id, organize = _start_and_poll_operation(
         base_url,
@@ -1359,7 +1364,8 @@ def _create_safe_add_plan(
         msg = f"Tagged-input Add did not create a reviewable Plan: {add_result}"
         raise WindowsPackageSmokeError(msg)
     plan_id = _required_string(add_result, "plan_id", context="Add result")
-    plan_status = _verify_plan_detail(base_url, plan_id, library_id)
+    plan_status, artist_naming = _verify_plan_detail(base_url, plan_id, library_id)
+    local_only = {**local_only_settings, **_verify_no_provider_requests(database_file)}
     if _tree_snapshot(incoming_root) != incoming_snapshot:
         msg = "Packaged API Add planning changed its disposable incoming tree."
         raise WindowsPackageSmokeError(msg)
@@ -1373,34 +1379,38 @@ def _create_safe_add_plan(
         "incoming_tree_manifest_sha256": _tree_snapshot_sha256(incoming_snapshot),
         "library_id": library_id,
         "library_tree_manifest_sha256": _tree_snapshot_sha256(library_snapshot),
+        "local_only": local_only,
         "organize_operation_id": organize_operation_id,
         "organize_result_kind": "registered_without_plan",
         "plan_id": plan_id,
         "plan_status": plan_status,
+        "artist_naming": artist_naming,
         "source_fixture_sha256": _file_sha256(source_file),
         "source_fixture_size_bytes": source_file.stat().st_size,
         "track_count": 0,
     }
 
 
-def _verify_persisted_plan_and_config(base_url: str, plan_id: str, library_id: str) -> dict[str, object]:
+def _verify_persisted_plan_and_config(
+    base_url: str,
+    plan_id: str,
+    library_id: str,
+    database_file: Path,
+) -> dict[str, object]:
     bootstrap = _bootstrap_data(base_url, require_valid_config=True)
     active_library = _required_mapping(bootstrap, "active_library", context="Bootstrap")
     if active_library.get("library_id") != library_id:
         msg = "Second application copy did not restore the registered Library."
         raise WindowsPackageSmokeError(msg)
-    settings_response = _request_loopback(base_url, "GET", _API_SETTINGS_ROUTE)
-    _require_status(settings_response, _SUCCESS_STATUS_CODE, context="Settings read")
-    settings_data = _envelope_data(settings_response, context="Settings read")
-    settings_validation = _required_mapping(settings_data, "validation", context="Settings read")
-    if settings_validation.get("valid") is not True or settings_validation.get("errors") != []:
-        msg = f"Persisted minimal Config loaded with Settings recovery errors: {settings_validation}"
-        raise WindowsPackageSmokeError(msg)
-    plan_status = _verify_plan_detail(base_url, plan_id, library_id)
+    local_only_settings = _verify_local_only_settings(base_url)
+    plan_status, artist_naming = _verify_plan_detail(base_url, plan_id, library_id)
+    local_only = {**local_only_settings, **_verify_no_provider_requests(database_file)}
     return {
+        "artist_naming": artist_naming,
         "bootstrap_config_errors": [],
         "bootstrap_config_valid": True,
         "library_id": library_id,
+        "local_only": local_only,
         "plan_id": plan_id,
         "plan_status": plan_status,
         "settings_errors": [],
@@ -1408,16 +1418,17 @@ def _verify_persisted_plan_and_config(base_url: str, plan_id: str, library_id: s
     }
 
 
-def _verify_persisted_plan_and_create_through_native_ui(
+def _verify_persisted_plan_and_create_through_native_ui(  # noqa: PLR0913 -- correlates UI, Plan, trees, and DB evidence.
     base_url: str,
     window_handle: int,
     created_planning: Mapping[str, object],
     library_root: Path,
     source_file: Path,
+    database_file: Path,
 ) -> dict[str, object]:
     persisted_plan_id = _required_string(created_planning, "plan_id", context="created planning evidence")
     library_id = _required_string(created_planning, "library_id", context="created planning evidence")
-    persisted = _verify_persisted_plan_and_config(base_url, persisted_plan_id, library_id)
+    persisted = _verify_persisted_plan_and_config(base_url, persisted_plan_id, library_id, database_file)
     plan_ids_before = _ready_add_plan_ids(base_url, library_id)
     source_sha256 = _file_sha256(source_file)
     source_size_bytes = source_file.stat().st_size
@@ -1433,7 +1444,7 @@ def _verify_persisted_plan_and_create_through_native_ui(
         )
         raise WindowsPackageSmokeError(msg)
     native_plan_id = created_plan_ids[0]
-    native_plan_status = _verify_plan_detail(base_url, native_plan_id, library_id)
+    native_plan_status, artist_naming = _verify_plan_detail(base_url, native_plan_id, library_id)
     if native_plan_status != "ready":
         msg = f"Native Add interaction created Plan {native_plan_id} with status {native_plan_status!r}."
         raise WindowsPackageSmokeError(msg)
@@ -1445,10 +1456,15 @@ def _verify_persisted_plan_and_create_through_native_ui(
         raise WindowsPackageSmokeError(msg)
     native_ui.update(
         {
+            "artist_naming": artist_naming,
             "filesystem_mutation_performed": False,
             "incoming_tree_manifest_sha256": _tree_snapshot_sha256(incoming_snapshot),
             "library_id": library_id,
             "library_tree_manifest_sha256": _tree_snapshot_sha256(library_snapshot),
+            "local_only": {
+                **_verify_local_only_settings(base_url),
+                **_verify_no_provider_requests(database_file),
+            },
             "plan_id": native_plan_id,
             "plan_status": native_plan_status,
             "source_fixture_sha256": source_sha256,
@@ -1583,7 +1599,53 @@ def _poll_operation(base_url: str, status_url: str, operation_id: str) -> dict[s
     raise WindowsPackageSmokeError(msg)
 
 
-def _verify_plan_detail(base_url: str, plan_id: str, library_id: str) -> str:
+def _verify_local_only_settings(base_url: str) -> dict[str, object]:
+    settings_response = _request_loopback(base_url, "GET", _API_SETTINGS_ROUTE)
+    _require_status(settings_response, _SUCCESS_STATUS_CODE, context="Settings read")
+    settings_data = _envelope_data(settings_response, context="Settings read")
+    settings_validation = _required_mapping(settings_data, "validation", context="Settings read")
+    if settings_validation.get("valid") is not True or settings_validation.get("errors") != []:
+        msg = f"Persisted minimal Config loaded with Settings recovery errors: {settings_validation}"
+        raise WindowsPackageSmokeError(msg)
+    app_config = _required_mapping(settings_data, "config", context="Settings read")
+    musicbrainz = _required_mapping(app_config, "musicbrainz", context="Settings Config")
+    fasttext = _required_mapping(app_config, "fasttext", context="Settings Config")
+    if musicbrainz.get("enabled") is not False:
+        msg = f"Packaged smoke requires disabled MusicBrainz lookup: {musicbrainz}"
+        raise WindowsPackageSmokeError(msg)
+    if fasttext.get("model_path") is not None:
+        msg = f"Packaged smoke requires no configured fastText model: {fasttext}"
+        raise WindowsPackageSmokeError(msg)
+    return {
+        "fasttext_model_path": None,
+        "musicbrainz_enabled": False,
+    }
+
+
+def _verify_no_provider_requests(database_file: Path) -> dict[str, object]:
+    try:
+        with sqlite3.connect(database_file) as connection:
+            row = cast(
+                "tuple[int] | None",
+                connection.execute(
+                    "SELECT COUNT(*) FROM provider_request_cadence WHERE provider = ?",
+                    (config.DESKTOP_WINDOWS_SMOKE_PROVIDER_NAME,),
+                ).fetchone(),
+            )
+    except sqlite3.Error as exc:
+        msg = f"Could not verify provider-request evidence in {database_file}."
+        raise WindowsPackageSmokeError(msg) from exc
+    request_count = None if row is None else row[0]
+    if request_count != 0:
+        msg = f"Local-only smoke unexpectedly reserved {request_count!r} provider requests."
+        raise WindowsPackageSmokeError(msg)
+    return {
+        "provider_request_count": 0,
+        "provider_request_performed": False,
+    }
+
+
+def _verify_plan_detail(base_url: str, plan_id: str, library_id: str) -> tuple[str, dict[str, object]]:
     response = _request_loopback(base_url, "GET", f"/api/plans/{plan_id}")
     _require_status(response, _SUCCESS_STATUS_CODE, context=f"Plan {plan_id}")
     detail = _envelope_data(response, context=f"Plan {plan_id}")
@@ -1591,7 +1653,40 @@ def _verify_plan_detail(base_url: str, plan_id: str, library_id: str) -> str:
     if plan.get("plan_id") != plan_id or plan.get("library_id") != library_id:
         msg = f"Packaged Plan detail differs from the created Plan identity: {plan}"
         raise WindowsPackageSmokeError(msg)
-    return _required_string(plan, "status", context=f"Plan {plan_id}")
+    status = _required_string(plan, "status", context=f"Plan {plan_id}")
+    return status, _verify_local_only_plan_naming(base_url, plan_id)
+
+
+def _verify_local_only_plan_naming(base_url: str, plan_id: str) -> dict[str, object]:
+    response = _request_loopback(base_url, "GET", f"/api/plans/{plan_id}/actions")
+    _require_status(response, _SUCCESS_STATUS_CODE, context=f"Plan {plan_id} actions")
+    data = _envelope_data(response, context=f"Plan {plan_id} actions")
+    raw_items = data.get("items")
+    items = cast("list[object]", raw_items) if isinstance(raw_items, list) else None
+    if items is None or len(items) != 1 or not isinstance(items[0], dict):
+        msg = f"Local-only Plan must contain one reviewable action: {raw_items!r}"
+        raise WindowsPackageSmokeError(msg)
+    action = cast("dict[str, object]", items[0])
+    diagnostics = _required_mapping(action, "artist_name_diagnostics", context=f"Plan {plan_id} action")
+    verified_fields: dict[str, dict[str, object]] = {}
+    for field_name in ("artist", "album_artist"):
+        diagnostic = _required_mapping(diagnostics, field_name, context=f"Plan {plan_id} naming diagnostics")
+        expected: dict[str, object] = {
+            "issue": config.DESKTOP_WINDOWS_SMOKE_ARTIST_FALLBACK_ISSUE,
+            "provenance": config.DESKTOP_WINDOWS_SMOKE_ARTIST_FALLBACK_PROVENANCE,
+            "resolved_name": config.DESKTOP_WINDOWS_SMOKE_ARTIST_NAME,
+            "source_name": config.DESKTOP_WINDOWS_SMOKE_ARTIST_NAME,
+        }
+        if any(diagnostic.get(key) != value for key, value in expected.items()):
+            msg = f"Local-only Plan returned unexpected {field_name} naming evidence: {diagnostic}"
+            raise WindowsPackageSmokeError(msg)
+        verified_fields[field_name] = expected
+    return {
+        **verified_fields,
+        "eligible_non_latin_source": True,
+        "fallback_issue": config.DESKTOP_WINDOWS_SMOKE_ARTIST_FALLBACK_ISSUE,
+        "fallback_provenance": config.DESKTOP_WINDOWS_SMOKE_ARTIST_FALLBACK_PROVENANCE,
+    }
 
 
 def _bootstrap_data(base_url: str, *, require_valid_config: bool) -> dict[str, object]:

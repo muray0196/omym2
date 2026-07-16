@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines OMYM2's SQLite tables, accepted artist-name provenance, PlanAction naming diagnostics, durable Operation schema, atomic Apply reservation, undo provenance, forward-only migrations, indexes, JSON boundaries, and timestamp policy.
-tags: [database, sqlite, schema, migrations, artist-names, provenance]
-timestamp: 2026-07-16T00:44:26+09:00
+description: Defines OMYM2's SQLite tables, provider cadence, CompanionAsset identity, trackless unprocessed action/event provenance, migrations, downgrade safety, indexes, JSON, and timestamps.
+tags: [database, sqlite, schema, migrations, artist-names, musicbrainz, companions, unprocessed, provenance]
+timestamp: 2026-07-16T04:51:16+09:00
 ---
 
 # DB Schema Contract
@@ -56,14 +56,17 @@ Main information to store:
 ```text
 libraries
 tracks
+companion_assets
 plans
 plan_actions
+plan_action_dependencies
 runs
 file_events
 operations
 check_runs
 check_issues
 accepted_artist_names
+provider_request_cadence
 ```
 
 ### libraries
@@ -106,6 +109,29 @@ existing rows without a baseline retain `NULL` in both columns. A non-null
 `size` is constrained to be nonnegative. These values are optimization hints,
 not Track identity or proof that the file still exists or remains unchanged.
 
+### companion_assets
+
+Stores the last confirmed managed state of one lyrics or artwork file. It is
+separate from `tracks`; no metadata JSON or metadata hash is stored.
+
+Minimum representative fields:
+
+* `companion_asset_id`
+* `library_id`
+* `kind`
+* `owner_track_id`
+* `current_path`
+* `canonical_path`
+* `content_hash`
+* `size` and `mtime` nullable
+* `status`
+* `first_seen_at`, `last_seen_at`, and `updated_at`
+
+`library_id` and `owner_track_id` use restricted foreign keys so managed
+companion history is not silently orphaned. Paths remain normalized
+Library-root-relative values. A non-null size is nonnegative. Repository
+listing order is `current_path, companion_asset_id`.
+
 ### accepted_artist_names
 
 Stores positive external-provider artist display names that the naming feature
@@ -138,6 +164,23 @@ because MusicBrainz later returns different data. More than one source key may
 refer to the same provider artist identity, so `provider_artist_id` is not
 unique.
 
+### provider_request_cadence
+
+Stores one durable cross-process request reservation per provider. It is
+operational coordination, not provider-result cache state.
+
+Fields:
+
+* `provider`, the non-empty primary key such as `musicbrainz`
+* `last_request_at`, the UTC timestamp of the most recently reserved request
+  slot
+
+Reservation uses a short `BEGIN IMMEDIATE` transaction. A caller that is too
+early rolls back, closes the connection, sleeps, and retries; no SQLite
+transaction remains open while waiting or performing HTTP I/O. Each retry
+reserves its own slot. Storage failure makes the provider unavailable to the
+resolver instead of allowing an uncoordinated request.
+
 ### plans
 
 Stores scheduled operations before execution.
@@ -152,9 +195,16 @@ Minimum representative fields:
 * `created_at`
 * `config_hash`
 * `library_root_at_plan`
+* `source_root_at_plan` nullable
 * `summary_json`
 
 Storage must retain `config_hash` to preserve the reviewed configuration context and `library_root_at_plan` for the apply-time Library-root precondition.
+
+`source_root_at_plan` records the exact external source root for Add Plans and
+is copied to an Undo Plan that reverses such an import. It is nullable because
+Organize and Refresh sources are Library-relative. Apply, Check, and Undo use
+it to anchor external companion and unprocessed paths rather than inferring a
+root from a stored absolute path.
 
 `source_run_id` is a nullable reference to `runs.run_id`. It records the
 source Run only for an Undo Plan; ordinary Plans store `NULL`. It provides
@@ -182,6 +232,8 @@ Minimum representative fields:
 * `source_path`
 * `target_path`
 * `reverses_event_id` nullable
+* `companion_asset_id` nullable
+* `owner_action_id` nullable
 * `content_hash_at_plan`
 * `metadata_hash_at_plan`
 * `artist_name_diagnostics_json` nullable
@@ -209,6 +261,37 @@ it. A future history-deletion feature would need an explicit safe whole-
 dependency contract; the initial migration must not use `SET NULL` or silently
 cascade away provenance.
 
+`companion_asset_id` is deliberately nullable and has no foreign key:
+planning preallocates a stable asset identity before successful Apply creates
+managed state. `owner_action_id` optionally identifies the semantic audio
+owner when that owner also has an action in the same Plan; otherwise
+`track_id` identifies an already managed owner. The self-reference uses
+`ON DELETE SET NULL`, while insert/update triggers reject cross-Plan
+ownership. Writers therefore persist an owner row before a companion row even
+when reverse Undo execution order processes the companion first.
+
+A `move_unprocessed` row uses the same table without a new managed-state
+table. `track_id`, `companion_asset_id`, `owner_action_id`, metadata hash,
+artist-name diagnostics, and dependency rows are absent; source and target are
+absolute, content-only values validated against `plans.source_root_at_plan`.
+Every candidate is stored regardless of the presentation preview limit.
+
+### plan_action_dependencies
+
+Stores immutable same-Plan execution edges independently from semantic
+ownership and sort order.
+
+Fields:
+
+* `plan_id`
+* `action_id`
+* `depends_on_action_id`
+
+The primary key is `(action_id, depends_on_action_id)`; self-dependency is
+rejected. Composite foreign keys require both actions to belong to
+`plan_id` and cascade only when their owning PlanAction is deleted. Reads
+order by `depends_on_action_id` so inspection surfaces expose a stable list.
+
 ### runs
 
 Stores execution attempts for applying Plans.
@@ -223,15 +306,16 @@ Minimum representative fields:
 * `completed_at`
 * `error_summary`
 
-A Run is created before applying PlanActions and before any Library music file
-mutation. The single-use Plan contract permits at most one Run per Plan.
+A Run is created before applying PlanActions and before any Library-managed
+audio or companion mutation. The single-use Plan contract permits at most one
+Run per Plan.
 
 ### operations
 
 Stores durable state for accepted background requests. An
 Operation is distinct from a FileEvent: it supports acceptance, idempotency,
 polling, progress, retention, and restart reconciliation, while a FileEvent is
-evidence for one attempted Library music file mutation.
+evidence for one attempted Library-managed audio or companion mutation.
 
 Minimum representative fields:
 
@@ -305,7 +389,8 @@ recorded in
 
 ### file_events
 
-Stores durable operation-log entries for attempted Library music file mutations.
+Stores durable operation-log entries for attempted Library-managed audio or
+companion mutations.
 
 Minimum representative fields:
 
@@ -322,8 +407,13 @@ Minimum representative fields:
 * `error_code`
 * `error_message`
 * `sequence_no`
+* `companion_asset_id` nullable
 
-FileEvents are used for run detail display, diagnosing partial failures, crash inspection, and undo plan creation.
+`companion_asset_id` is retained as durable mutation provenance without a
+foreign key because the pending event must exist before a new asset row. A
+`move_unprocessed_file` row keeps it null and retains the trackless action's
+absolute rooted paths. FileEvents are used for run detail display, diagnosing
+partial failures, crash inspection, Check, and undo plan creation.
 
 ### check_runs
 
@@ -351,6 +441,7 @@ Minimum representative fields:
 * `path` nullable
 * `track_id` nullable
 * `plan_id` nullable
+* `companion_asset_id` nullable
 * `detail` nullable
 
 `issue_seq` is an auto-incrementing sequence that preserves the insertion order of one check run's findings and backs keyset pagination for check browsing. Rows are removed when their owning `check_runs` row is replaced or deleted.
@@ -388,6 +479,24 @@ Library, Track, Plan, or execution rows.
 `NULL`; no historical diagnostic is inferred from recorded paths or current
 provider state.
 
+`202607160002_provider_request_cadence.sql` additively creates the global
+provider reservation table without changing Library-managed state.
+
+`202607160003_companion_assets.sql` creates `companion_assets` and
+`plan_action_dependencies`, adds nullable companion/owner columns to
+PlanActions and FileEvents, and installs the same-Plan owner triggers. Existing
+Plans and events remain valid with null companion fields.
+
+`202607160004_plan_source_and_companion_check.sql` adds nullable
+`plans.source_root_at_plan` and `check_issues.companion_asset_id`, plus the
+companion finding lookup index. Existing Plans do not infer an external root.
+
+Stage 5 needs no additional SQLite column or table. It uses the existing
+nullable Plan/action/event provenance columns and introduces new closed text
+values for action, event, and CheckIssue fields. Existing rows are not
+backfilled or reclassified; allowed values and meaning are authoritative in
+[status-reason-catalog.md](status-reason-catalog.md).
+
 Before adding those columns to a database that already contains Undo Plans,
 `202607130002_undo_provenance_and_apply_claim.sql` proves the legacy provenance
 from durable records. A candidate for an Undo move action must be a succeeded
@@ -423,6 +532,41 @@ deduplication with nullable legacy Undo provenance.
   script and the insert in one `BEGIN`/`commit`, rolling back on
   `sqlite3.DatabaseError`), so a migration is never recorded as applied
   unless it fully succeeded; there are no silent partial migrations.
+
+### Stage 4 And 5 Backup And Downgrade
+
+Stage 4 migrations and the Stage 5 closed/config values are forward-only.
+Before installing either stage, and again before attempting to run an older
+binary, stop every OMYM2 process and make a
+restorable backup of both the application-root Config and SQLite database.
+The DB copy must be made through SQLite's backup mechanism or after a clean
+shutdown/checkpoint; copying only the main file while WAL writers are active is
+not a backup.
+
+Before downgrade, inspect Plans and History:
+
+1. Apply or cancel every `ready` Plan containing `move_lyrics`,
+   `move_artwork`, or `move_unprocessed`. Do not leave a ready Plan containing
+   a newer closed value for an older binary.
+2. Reconcile any `applying` Plan with the current binary. If any companion or
+   unprocessed FileEvent remains `pending`, run Check and inspect History plus
+   the filesystem manually.
+3. Never infer that a pending event succeeded, failed, or rolled back. Restore
+   from the pre-upgrade backup or complete manual recovery before changing
+   binaries.
+
+An older binary does not understand the Stage 4/5 closed action, reason, event,
+or CheckIssue values, or the Stage 5 `[unprocessed]` Config section. It must not
+read current state or apply a Plan containing a new value. There is no in-place
+schema, Config, or enum downgrade. Restoring the matched Config/DB backup as one
+unit is the supported rollback boundary; restoring only one side can combine a
+new Plan with an old Config contract or vice versa.
+
+Release validation must exercise this procedure with Apply and Cancel outcomes
+for ready companion and unprocessed Plans, pending events that remain
+manual-review-only, and restoration of the matched Config/DB backup. It must
+also prove that no old-binary run reads or applies a Plan containing newer enum
+values.
 
 ## Indexes
 
@@ -500,6 +644,17 @@ The same migration removes two redundant single-column indexes whose lookup pref
 
 The migration does not backfill existing rows. Both values therefore remain
 `NULL` until a later verified snapshot is persisted for that Track.
+
+`202607160003_companion_assets.sql` adds:
+
+* `idx_companion_assets_library_current_path` for stable Library/path reads
+* `idx_companion_assets_library_content_hash` for Library-scoped hash lookup
+* `uq_plan_actions_action_plan` for composite same-Plan references
+* `idx_plan_action_dependencies_depends_on` for reverse dependency lookup
+
+`202607160004_plan_source_and_companion_check.sql` adds
+`idx_check_issues_companion_asset` on
+`check_issues (companion_asset_id, issue_seq)`.
 
 ## Stored JSON Fields
 

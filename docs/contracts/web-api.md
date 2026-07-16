@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Web API Contract
-description: Defines the bundled local Web API's typed envelopes, errors, artist-name settings and Plan diagnostics, settings concurrency, bootstrap, durable-operation routes, capabilities, and preserved browsing semantics.
-tags: [web-api, openapi, artist-names, operations, concurrency, pagination]
-timestamp: 2026-07-16T00:44:26+09:00
+description: Defines the bundled local Web API's typed envelopes, companion and unprocessed Plan/FileEvent/Check resources, settings, Bootstrap catalog v3, operations, and browsing semantics.
+tags: [web-api, openapi, artist-names, companions, unprocessed, operations, concurrency, pagination]
+timestamp: 2026-07-16T04:51:16+09:00
 ---
 
 # Web API Contract
@@ -335,7 +335,7 @@ Bootstrap is the sole degraded-envelope exception. Invalid Config or
 unavailable persistence may produce non-null recovery data and top-level
 errors simultaneously. CSRF issuance, app version, and catalog version remain
 available so the client can open Settings and display recovery guidance.
-`status_catalog_version` is exactly `1` for this frozen contract.
+`status_catalog_version` is exactly `3` for this bundled contract.
 The polling values are serialized from the constants centralized in
 `src/omym2/config.py`; the SPA and its tests do not repeat policy literals.
 
@@ -392,6 +392,13 @@ calls Settings usecases through ports.
 `AppConfigResource` contains `artist_names.preferences`, an object mapping
 exact source artist strings to full display names. It is distinct from
 `artist_ids.entries`; editing one does not rewrite the other.
+
+It also exposes `companions.enabled` and the typed `unprocessed` object
+(`enabled`, `directory`, and `result_preview_limit`) from the Config contract.
+The companion toggle gates only new unmanaged actions and unmanaged Check
+discovery, not managed or recorded diagnostics. The preview limit controls
+result presentation only; no API list, Plan summary, or generated client may
+treat it as a persisted-action cap.
 
 ### `GET /api/settings`
 
@@ -677,13 +684,15 @@ Plan ordering remains `created_at DESC, plan_id DESC`. Action ordering remains
   `PlanCapabilities`, and `active_operation_id`. It never embeds actions.
 * `GET /api/plans/{plan_id}/actions?query=&status=&action_type=&reason=&group_by=&group_key=&limit=&cursor=`
   returns PlanAction list data. `query` matches `action_id`, `track_id`,
-  `source_path`, `target_path`, `content_hash_at_plan`, or
-  `metadata_hash_at_plan`. `group_by` and `group_key` are provided together or
+  `companion_asset_id`, `owner_action_id`, `source_path`, `target_path`,
+  `content_hash_at_plan`, or `metadata_hash_at_plan`. `group_by` and `group_key` are provided together or
   omitted together and combine with all other filters as AND. Each action also
   returns nullable `artist_name_diagnostics`; when present, its `artist` and
   `album_artist` members expose the recorded source value, resolved value,
   provenance, and nullable resolution issue from target calculation. The route
-  never re-resolves those values.
+  never re-resolves those values. Every action also exposes nullable
+  `companion_asset_id`, nullable `owner_action_id`, and
+  `depends_on_action_ids` in stable dependency-ID order.
 * `GET /api/plans/{plan_id}/facets?query=&status=&action_type=&reason=` returns
   facets for `status`, `action_type`, and non-null `reason`. Each facet applies
   search and the other two filters while omitting its own. `data` additionally
@@ -702,6 +711,9 @@ not from an opaque string map:
 ```ts
 type PlanActionTypeCounts = {
   move: number
+  move_lyrics: number
+  move_artwork: number
+  move_unprocessed: number
   skip: number
   refresh_metadata: number
 }
@@ -789,8 +801,9 @@ does not carry `checked_at`.
 
 * `GET /api/check?query=&issue_type=&group_by=&group_key=&library_id=&limit=&cursor=`
   returns CheckIssue list data plus `checked_at`. `query` matches `library_id`,
-  path, `track_id`, `plan_id`, or detail. `group_by` and `group_key` form an
-  optional pair and combine with issue type as AND.
+  path, `track_id`, `plan_id`, `companion_asset_id`, or detail. Each row
+  exposes nullable `companion_asset_id`. `group_by` and `group_key` form
+  an optional pair and combine with issue type as AND.
 * `GET /api/check/facets?query=&library_id=` returns the `issue_type` facet plus
   `checked_at`. Counts omit a selected list issue type so alternatives remain
   visible.
@@ -799,11 +812,14 @@ does not carry `checked_at`.
   `suggested_command`, and `library_id`. Search and issue type apply before
   group counts.
 
-Check grouping derivations are unchanged:
+Check grouping derivations are:
 
 * `issue_type` uses the recorded catalog value.
-* `severity` is `error` for `db_file_missing` and `content_hash_changed`,
-  `info` for `library_stale`, and `warning` otherwise.
+* `severity` is `error` for `db_file_missing`, `content_hash_changed`,
+  `companion_file_missing`, `companion_content_hash_changed`,
+  `companion_owner_missing`, `failed_companion_source_exists`,
+  `unprocessed_file_missing`, and `unprocessed_content_hash_changed`; `info`
+  for `library_stale`; and `warning` otherwise.
 * `path_root` uses the first relative directory segment with trailing `/`;
   root-level paths use `(root)`, absolute paths `(external)`, and null paths
   `(unknown)`.
@@ -811,12 +827,21 @@ Check grouping derivations are unchanged:
   paths use `Artist / (root)`, root-level paths `(root)`, absolute paths
   `(external)`, and null paths `(unknown)` / `Unknown Artist / Unknown Album`.
 * `suggested_command` maps issue families to `refresh`, `add`, `organize`,
-  `history`, or `check`: `db_file_missing`, `content_hash_changed`, and
-  `metadata_hash_changed` map to `refresh` / `omym2 refresh <file>`;
+  `history`, or `check`: `db_file_missing`, `content_hash_changed`,
+  `metadata_hash_changed`, `companion_file_missing`, and
+  `companion_content_hash_changed` map to `refresh` /
+  `omym2 refresh <file>`;
   `unmanaged_file_exists` maps to `add` / `omym2 add <path>`;
-  `current_path_differs_from_canonical_path`, `duplicate_candidate`, and
-  `plan_source_changed` map to `organize` / `omym2 organize`;
-  `pending_file_event_exists` maps to `history` / `omym2 history`; and
+  `current_path_differs_from_canonical_path`,
+  `companion_current_path_differs_from_canonical_path`,
+  `companion_owner_missing`, `unmanaged_companion_exists`,
+  `duplicate_candidate`, `plan_source_changed`, and a Library-relative
+  `failed_companion_source_exists` whose `detail` is `organize` map to
+  `organize` / `omym2 organize`; a `failed_companion_source_exists` whose
+  `detail` is `add` maps to `add` / `omym2 add <path>`. The recorded detail,
+  rather than platform-specific absolute-path spelling, selects the command;
+  `pending_file_event_exists`, `unprocessed_file_missing`, and
+  `unprocessed_content_hash_changed` map to `history` / `omym2 history`; and
   `library_unregistered`, `library_stale`, and `library_blocked` map to
   `check` / `omym2 check`.
 * `library_id` uses the recorded UUID string.
@@ -837,7 +862,10 @@ Run ordering remains `started_at DESC, run_id DESC`. FileEvent ordering remains
 * `GET /api/history/{run_id}` returns a Run header, `RunCapabilities`, and
   `active_operation_id`. It never embeds FileEvents.
 * `GET /api/history/{run_id}/events?status=&limit=&cursor=` returns FileEvent
-  list data.
+  list data. Each event exposes nullable `companion_asset_id`; lyrics and
+  artwork mutations retain their distinct event type, while a trackless
+  unprocessed mutation uses `move_unprocessed_file` with null companion
+  identity and its recorded absolute paths.
 * `GET /api/history/{run_id}/events/facets` returns the FileEvent `status`
   facet.
 * `GET /api/history/{run_id}/events/groups?group_by=target_directory&limit=&cursor=`

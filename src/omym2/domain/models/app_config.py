@@ -7,16 +7,21 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from math import isfinite
+from pathlib import PurePosixPath, PureWindowsPath
 from string import Formatter
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from omym2.config import (
     ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS,
+    ALLOWED_LOGGING_LEVELS,
+    ALLOWED_MUSICBRAINZ_CACHE_POLICIES,
     ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     ARTIST_ID_ENTRY_VALUE_PATTERN,
     CONFIG_VERSION,
+    CURRENT_DIRECTORY_REFERENCE,
     DEFAULT_ADD_AUTO_APPLY,
     DEFAULT_ALBUM_YEAR_RESOLUTION,
     DEFAULT_ARTIST_ID_FALLBACK,
@@ -25,11 +30,26 @@ from omym2.config import (
     DEFAULT_COLLISION_ON_MISSING_METADATA,
     DEFAULT_COLLISION_ON_TARGET_EXISTS,
     DEFAULT_COMMAND_MODE,
+    DEFAULT_COMPANIONS_ENABLED,
+    DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE,
+    DEFAULT_FASTTEXT_MODEL_PATH,
+    DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES,
+    DEFAULT_LOGGING_DESTINATION,
+    DEFAULT_LOGGING_LEVEL,
+    DEFAULT_LOGGING_RETENTION_FILES,
+    DEFAULT_LOGGING_ROTATION_MAX_BYTES,
     DEFAULT_MAX_FILENAME_LENGTH,
     DEFAULT_METADATA_PREFER_ALBUM_ARTIST,
     DEFAULT_METADATA_REQUIRE_ALBUM,
     DEFAULT_METADATA_REQUIRE_ARTIST,
     DEFAULT_METADATA_REQUIRE_TITLE,
+    DEFAULT_MUSICBRAINZ_APPLICATION_NAME,
+    DEFAULT_MUSICBRAINZ_CACHE_POLICY,
+    DEFAULT_MUSICBRAINZ_CONTACT,
+    DEFAULT_MUSICBRAINZ_ENABLED,
+    DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS,
+    DEFAULT_MUSICBRAINZ_RETRY_LIMIT,
+    DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS,
     DEFAULT_ORGANIZE_AUTO_APPLY,
     DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION,
     DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE,
@@ -38,9 +58,20 @@ from omym2.config import (
     DEFAULT_REFRESH_AUTO_APPLY,
     DEFAULT_UNKNOWN_ALBUM,
     DEFAULT_UNKNOWN_ARTIST,
+    DEFAULT_UNPROCESSED_DIRECTORY,
+    DEFAULT_UNPROCESSED_ENABLED,
+    DEFAULT_UNPROCESSED_RESULT_PREVIEW_LIMIT,
+    FASTTEXT_MINIMUM_CONFIDENCE_MAX,
+    FASTTEXT_MINIMUM_CONFIDENCE_MIN,
     LOGICAL_PATH_SEPARATOR,
+    PARENT_DIRECTORY_REFERENCE,
     PATH_EXTENSION_PREFIX,
     PATH_POLICY_ALLOWED_PLACEHOLDERS,
+    PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES,
+    PORTABLE_PATH_CONTROL_CHARACTER_LIMIT,
+    PORTABLE_PATH_FORBIDDEN_CHARACTERS,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
 )
 
 if TYPE_CHECKING:
@@ -66,6 +97,28 @@ INVALID_PATH_POLICY_TEMPLATE_SYNTAX_MESSAGE = "PathPolicy template contains unsu
 INVALID_PATH_POLICY_UNKNOWN_ALBUM_MESSAGE = "PathPolicy unknown_album must not be empty."
 INVALID_PATH_POLICY_UNKNOWN_ARTIST_MESSAGE = "PathPolicy unknown_artist must not be empty."
 INVALID_METADATA_ALBUM_YEAR_RESOLUTION_MESSAGE = "Metadata album_year_resolution must be a supported method."
+INVALID_MUSICBRAINZ_APPLICATION_NAME_MESSAGE = "MusicBrainzConfig application_name must not be blank."
+INVALID_MUSICBRAINZ_CONTACT_MESSAGE = "MusicBrainzConfig contact must not be blank."
+INVALID_MUSICBRAINZ_TIMEOUT_MESSAGE = "MusicBrainzConfig timeout_seconds must be finite and positive."
+INVALID_MUSICBRAINZ_RETRY_LIMIT_MESSAGE = "MusicBrainzConfig retry_limit must not be negative."
+INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE = "MusicBrainzConfig rate_limit_seconds must be finite and at least 1.0."
+INVALID_MUSICBRAINZ_CACHE_POLICY_MESSAGE = "MusicBrainzConfig cache_policy is not supported."
+INVALID_FASTTEXT_MODEL_PATH_MESSAGE = "FastTextConfig model_path must not be blank when set."
+INVALID_FASTTEXT_MINIMUM_CONFIDENCE_MESSAGE = "FastTextConfig minimum_confidence must be finite and between 0 and 1."
+INVALID_HASHING_READ_CHUNK_SIZE_MESSAGE = "HashingConfig read_chunk_size_bytes must be positive."
+INVALID_LOGGING_DESTINATION_MESSAGE = (
+    "LoggingConfig destination must be a normalized application-root-relative logical path."
+)
+INVALID_LOGGING_LEVEL_MESSAGE = "LoggingConfig level is not supported."
+INVALID_LOGGING_ROTATION_MAX_BYTES_MESSAGE = "LoggingConfig rotation_max_bytes must be positive."
+INVALID_LOGGING_RETENTION_FILES_MESSAGE = "LoggingConfig retention_files must be positive."
+INVALID_UNPROCESSED_DIRECTORY_MESSAGE = (
+    "UnprocessedConfig directory must be exactly one portable relative path component."
+)
+INVALID_UNPROCESSED_RESULT_PREVIEW_LIMIT_MESSAGE = (
+    "UnprocessedConfig result_preview_limit must be an integer between "
+    f"{UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN} and {UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX}."
+)
 
 _ARTIST_ID_ENTRY_VALUE_PATTERN = re.compile(ARTIST_ID_ENTRY_VALUE_PATTERN)
 
@@ -186,12 +239,151 @@ class CollisionConfig:
     on_missing_metadata: str = DEFAULT_COLLISION_ON_MISSING_METADATA
 
 
+@dataclass(frozen=True, slots=True)
+class MusicBrainzConfig:
+    """Persisted operational controls for MusicBrainz artist-name lookup."""
+
+    enabled: bool = DEFAULT_MUSICBRAINZ_ENABLED
+    application_name: str = DEFAULT_MUSICBRAINZ_APPLICATION_NAME
+    contact: str = DEFAULT_MUSICBRAINZ_CONTACT
+    timeout_seconds: float = DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS
+    retry_limit: int = DEFAULT_MUSICBRAINZ_RETRY_LIMIT
+    rate_limit_seconds: float = DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS
+    cache_policy: str = DEFAULT_MUSICBRAINZ_CACHE_POLICY
+
+    def __post_init__(self) -> None:
+        """Validate bounded provider identity, request, and cache controls."""
+        if self.application_name.strip() == "":
+            raise ValueError(INVALID_MUSICBRAINZ_APPLICATION_NAME_MESSAGE)
+        if self.contact.strip() == "":
+            raise ValueError(INVALID_MUSICBRAINZ_CONTACT_MESSAGE)
+        if not isfinite(self.timeout_seconds) or not self.timeout_seconds > 0:
+            raise ValueError(INVALID_MUSICBRAINZ_TIMEOUT_MESSAGE)
+        if self.retry_limit < 0:
+            raise ValueError(INVALID_MUSICBRAINZ_RETRY_LIMIT_MESSAGE)
+        if not isfinite(self.rate_limit_seconds) or not (
+            self.rate_limit_seconds >= DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS
+        ):
+            raise ValueError(INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE)
+        if self.cache_policy not in ALLOWED_MUSICBRAINZ_CACHE_POLICIES:
+            raise ValueError(INVALID_MUSICBRAINZ_CACHE_POLICY_MESSAGE)
+
+
+@dataclass(frozen=True, slots=True)
+class FastTextConfig:
+    """Persisted model selection and confidence controls for fastText."""
+
+    model_path: str | None = DEFAULT_FASTTEXT_MODEL_PATH
+    minimum_confidence: float = DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE
+
+    def __post_init__(self) -> None:
+        """Validate optional model selection and the finite confidence range."""
+        if self.model_path is not None and self.model_path.strip() == "":
+            raise ValueError(INVALID_FASTTEXT_MODEL_PATH_MESSAGE)
+        if not isfinite(self.minimum_confidence) or not (
+            FASTTEXT_MINIMUM_CONFIDENCE_MIN <= self.minimum_confidence <= FASTTEXT_MINIMUM_CONFIDENCE_MAX
+        ):
+            raise ValueError(INVALID_FASTTEXT_MINIMUM_CONFIDENCE_MESSAGE)
+
+
+@dataclass(frozen=True, slots=True)
+class HashingConfig:
+    """Persisted operational controls for streaming content hashes."""
+
+    read_chunk_size_bytes: int = DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES
+
+    def __post_init__(self) -> None:
+        """Reject chunk sizes that cannot advance a streaming hash."""
+        if self.read_chunk_size_bytes <= 0:
+            raise ValueError(INVALID_HASHING_READ_CHUNK_SIZE_MESSAGE)
+
+
+@dataclass(frozen=True, slots=True)
+class LoggingConfig:
+    """Persisted destination, severity, rotation, and retention controls."""
+
+    destination: str | None = DEFAULT_LOGGING_DESTINATION
+    level: str = DEFAULT_LOGGING_LEVEL
+    rotation_max_bytes: int = DEFAULT_LOGGING_ROTATION_MAX_BYTES
+    retention_files: int = DEFAULT_LOGGING_RETENTION_FILES
+
+    def __post_init__(self) -> None:
+        """Validate one safe application-root-relative log policy."""
+        if self.destination is not None and not _is_normalized_application_relative_path(self.destination):
+            raise ValueError(INVALID_LOGGING_DESTINATION_MESSAGE)
+        if self.level not in ALLOWED_LOGGING_LEVELS:
+            raise ValueError(INVALID_LOGGING_LEVEL_MESSAGE)
+        if self.rotation_max_bytes <= 0:
+            raise ValueError(INVALID_LOGGING_ROTATION_MAX_BYTES_MESSAGE)
+        if self.retention_files <= 0:
+            raise ValueError(INVALID_LOGGING_RETENTION_FILES_MESSAGE)
+
+
+@dataclass(frozen=True, slots=True)
+class CompanionsConfig:
+    """Persisted opt-in control for companion lyrics and artwork."""
+
+    enabled: bool = DEFAULT_COMPANIONS_ENABLED
+
+
+@dataclass(frozen=True, slots=True)
+class UnprocessedConfig:
+    """Persisted controls for reviewed unprocessed-file collection."""
+
+    enabled: bool = DEFAULT_UNPROCESSED_ENABLED
+    directory: str = DEFAULT_UNPROCESSED_DIRECTORY
+    result_preview_limit: int = DEFAULT_UNPROCESSED_RESULT_PREVIEW_LIMIT
+
+    def __post_init__(self) -> None:
+        """Validate one portable destination component and bounded preview size."""
+        if not _is_portable_relative_component(self.directory):
+            raise ValueError(INVALID_UNPROCESSED_DIRECTORY_MESSAGE)
+        if not _is_valid_unprocessed_result_preview_limit(self.result_preview_limit):
+            raise ValueError(INVALID_UNPROCESSED_RESULT_PREVIEW_LIMIT_MESSAGE)
+
+
 def _validate_artist_id_entries(entries: dict[str, str]) -> None:
     # Entry keys are free-form source artist text; only saved ID values feed
     # PathPolicy path rendering, so only values must be sanitizer-stable.
     for value in entries.values():
         if _ARTIST_ID_ENTRY_VALUE_PATTERN.fullmatch(value) is None:
             raise ValueError(INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE)
+
+
+def _is_normalized_application_relative_path(value: str) -> bool:
+    if value.strip() == "" or value == "." or "\\" in value:
+        return False
+    logical_path = PurePosixPath(value)
+    windows_path = PureWindowsPath(value)
+    return (
+        not logical_path.is_absolute()
+        and windows_path.drive == ""
+        and ".." not in logical_path.parts
+        and value == logical_path.as_posix()
+    )
+
+
+def _is_portable_relative_component(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    if (
+        value == ""
+        or value in {CURRENT_DIRECTORY_REFERENCE, PARENT_DIRECTORY_REFERENCE}
+        or value.endswith((CURRENT_DIRECTORY_REFERENCE, " "))
+        or any(character in PORTABLE_PATH_FORBIDDEN_CHARACTERS for character in value)
+        or any(ord(character) < PORTABLE_PATH_CONTROL_CHARACTER_LIMIT for character in value)
+    ):
+        return False
+    windows_stem = value.split(CURRENT_DIRECTORY_REFERENCE, maxsplit=1)[0].upper()
+    return windows_stem not in PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES
+
+
+def _is_valid_unprocessed_result_preview_limit(value: object) -> bool:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, int)
+        and UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN <= value <= UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX
+    )
 
 
 def _validate_artist_name_preferences(preferences: dict[str, str]) -> None:
@@ -231,6 +423,12 @@ class AppConfig:
     artist_names: ArtistNameConfig = field(default_factory=ArtistNameConfig)
     metadata: MetadataConfig = MetadataConfig()
     collision: CollisionConfig = CollisionConfig()
+    musicbrainz: MusicBrainzConfig = MusicBrainzConfig()
+    fasttext: FastTextConfig = FastTextConfig()
+    hashing: HashingConfig = HashingConfig()
+    logging: LoggingConfig = LoggingConfig()
+    companions: CompanionsConfig = CompanionsConfig()
+    unprocessed: UnprocessedConfig = UnprocessedConfig()
 
     def __post_init__(self) -> None:
         """Reject config versions that this domain model cannot interpret."""

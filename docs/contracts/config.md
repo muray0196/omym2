@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Config Contract
-description: Defines OMYM2's TOML config schema, raw-storage revision and atomic-save protocol, path policy, artist display-name preferences, artist IDs, and metadata/collision policy.
-tags: [config, toml, concurrency, atomic-save, path-policy, artist-names, artist-ids]
-timestamp: 2026-07-15T20:47:24+09:00
+description: Defines OMYM2's TOML config schema, atomic-save protocol, naming and path policy, runtime controls, companion processing, and unprocessed-file collection.
+tags: [config, toml, concurrency, atomic-save, path-policy, artist-names, musicbrainz, logging, companions, unprocessed]
+timestamp: 2026-07-16T04:51:16+09:00
 ---
 
 # Config Contract
@@ -136,6 +136,24 @@ set.
 | `artist_ids.fallback_id` | value matching the saved artist-ID pattern below | `"NOART"` |
 | `artist_ids.entries` | table mapping non-empty source-artist strings to valid saved artist-ID values | empty mapping |
 | `artist_names.preferences` | table mapping non-empty source-artist strings to non-empty full display names | empty mapping |
+| `musicbrainz.enabled` | boolean | `false` |
+| `musicbrainz.application_name` | non-empty string | `"OMYM2"` |
+| `musicbrainz.contact` | non-empty string | `"https://github.com/muray0196/omym2"` |
+| `musicbrainz.timeout_seconds` | finite number greater than `0` | `5.0` |
+| `musicbrainz.retry_limit` | non-negative integer | `1` |
+| `musicbrainz.rate_limit_seconds` | finite number at least `1.0` | `1.0` |
+| `musicbrainz.cache_policy` | `"sticky_positive"` | `"sticky_positive"` |
+| `fasttext.model_path` | non-empty string path | unset (`null` in `AppConfig`) |
+| `fasttext.minimum_confidence` | finite number from `0.0` through `1.0` | `0.8` |
+| `hashing.read_chunk_size_bytes` | positive integer | `1048576` |
+| `logging.destination` | normalized application-root-relative logical path | unset (the application-data log default) |
+| `logging.level` | `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`, or `"CRITICAL"` | `"INFO"` |
+| `logging.rotation_max_bytes` | positive integer | `5242880` |
+| `logging.retention_files` | positive integer | `3` |
+| `companions.enabled` | boolean | `false` |
+| `unprocessed.enabled` | boolean | `false` |
+| `unprocessed.directory` | one portable relative path component | `"Unprocessed"` |
+| `unprocessed.result_preview_limit` | integer from `1` through `500` | `100` |
 | `metadata.prefer_album_artist` | boolean | `true` |
 | `metadata.require_title` | boolean | `true` |
 | `metadata.require_artist` | boolean | `true` |
@@ -263,6 +281,81 @@ Library path-policy fingerprint only when it is non-empty and the active
 template contains `{artist}` or `{album_artist}`. Empty preferences, and
 preferences used with artist-free or `{artist_id}`-only templates, preserve the
 existing path-policy fingerprint.
+
+## MusicBrainz And fastText Runtime Controls
+
+`musicbrainz.enabled` is the persisted opt-in for new automatic provider work.
+Preferences and accepted positive cache rows remain available when it is
+disabled. An eligible uncached source records `automatic_lookup_disabled`, not
+a detector failure, and no model or network call occurs.
+
+The application identity and contact form the MusicBrainz User-Agent. One
+initial request plus at most `retry_limit` retries uses `timeout_seconds` for
+each attempt. `rate_limit_seconds` cannot be below the provider minimum of one
+second. SQLite coordinates that cadence across processes and restarts without
+holding a transaction while sleeping. The only cache policy is
+`sticky_positive`: accepted results persist insert-if-absent, while misses and
+failures do not become negative cache entries.
+
+`fasttext.model_path` selects a user-supplied language-identification model. A
+relative path is anchored beneath the stable application root; an absolute
+path remains explicit. The predictor loads lazily on the first eligible
+uncached source and remembers load failure for the process. Missing runtime or
+model support preserves the original metadata with `detector_unavailable` and
+does not contact MusicBrainz. `minimum_confidence` is inclusive at both ends.
+
+Changing provider, model, timeout, retry, cadence, or confidence controls
+changes the full Plan audit `config_hash`, but it does not change the Library
+path-policy fingerprint. Apply never reloads these controls or rewrites an
+already-reviewed target.
+
+## Hashing And Logging Controls
+
+`hashing.read_chunk_size_bytes` controls streaming reads for full music
+snapshots, content-only companion and unprocessed snapshots, duplicate checks,
+and standalone inspection. It is an operational throughput control: changing
+it must not change the resulting content hash or Library staleness.
+
+Logging is configured once at process startup. A null destination selects the
+writable application-data log. A configured destination must use normalized
+forward-slash relative syntax, cannot contain `..`, a Windows drive, or a
+backslash, and is anchored beneath the application root. Rotation occurs after
+`rotation_max_bytes`; `retention_files` is the number of rotated backups.
+Configured application paths, model/log destinations, and MusicBrainz contact
+identity are redacted from rendered messages and exception text. A logging
+settings change therefore takes effect after restarting the process and never
+marks a Library stale.
+
+## Companion And Unprocessed Controls
+
+`companions.enabled` allows new Add, Organize, and Refresh Plans to create
+actions for unmanaged same-stem lyrics and directory artwork, and allows Check
+to discover unmanaged companion candidates. Disabling it stops those new
+actions and that unmanaged Check classification; it does not delete managed
+companion state, alter recorded Plan sources or events, suppress Check itself
+or its managed/recorded diagnostics, suppress recovery, History, or Undo, or
+change an existing Plan. When `unprocessed.enabled` alone requests Add
+inventory, companion classification still reserves recognized lyrics/artwork
+from leftovers without creating companion actions, content snapshots, IDs, or
+dependencies.
+
+`unprocessed.enabled` independently allows new Add review to include regular
+files left unclaimed by music and companion classification.
+`unprocessed.directory` is exactly one portable component: it rejects path
+separators, roots, `.`/`..`, trailing dots or spaces, control and Windows-
+invalid characters, and reserved Windows device names. The destination remains
+under the selected source root. `result_preview_limit` bounds presentation
+only; it never truncates the durable candidate/action set.
+
+These controls participate in full Plan audit `config_hash` but not in Library
+path-policy identity. Both default to disabled, and disabling either one never
+rewrites prior durable state.
+
+The unprocessed directory is recorded indirectly in every action's exact
+source/target shape, and the preview limit is copied into the Plan summary for
+deterministic result presentation. Apply, Check, History, and Undo do not
+consult the current unprocessed toggle, directory, or preview limit when
+interpreting already-recorded evidence.
 
 ## ArtistIdConfig
 

@@ -62,6 +62,7 @@ from omym2.domain.models.plan_action import (
 from omym2.features.common_ports import ExclusiveOperationBusyError
 from omym2.features.plans.dto import (
     CancelPlanRequest,
+    GetPlanActionDependenciesRequest,
     GetPlanActionSummariesRequest,
     GetPlanHeaderRequest,
     GroupPlanActionsRequest,
@@ -93,7 +94,7 @@ from omym2.shared.pagination import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from omym2.domain.models.artist_name_resolution import (
         ArtistNameDiagnostics,
@@ -104,6 +105,7 @@ if TYPE_CHECKING:
     from omym2.features.plans.dto import PlanActionFacetsResult, PlanActionGroup
     from omym2.features.plans.dto import PlanActionSummary as PlanActionSummaryDto
     from omym2.features.plans.dto import PlanActionTypeCounts as PlanActionTypeCountsDto
+    from omym2.shared.ids import ActionId
     from omym2.shared.pagination import Page
 
 PLAN_NOT_FOUND_MESSAGE = "Plan was not found."
@@ -127,6 +129,10 @@ class PlanRouteHandlers:
     get_plan_action_summaries: Callable[[GetPlanActionSummariesRequest], dict[PlanId, PlanActionSummaryDto]]
     get_plan_capabilities: Callable[[GetPlanCapabilitiesRequest], PlanCapabilitiesResult]
     list_plan_actions: Callable[[ListPlanActionsRequest], Page[PlanAction]]
+    get_plan_action_dependencies: Callable[
+        [GetPlanActionDependenciesRequest],
+        Mapping[ActionId, tuple[ActionId, ...]],
+    ]
     get_plan_action_facets: Callable[[PlanActionFacetsRequest], PlanActionFacetsResult]
     group_plan_actions: Callable[[GroupPlanActionsRequest], Page[PlanActionGroup]]
     cancel_plan: Callable[[CancelPlanRequest], Plan]
@@ -258,7 +264,10 @@ def create_plans_router() -> APIRouter:  # noqa: C901  # One factory registers t
         except CursorDecodeError, ValueError:
             return _invalid_plan_query("query.cursor" if cursor is not None else "query.group_by")
 
-        items = tuple(_plan_action_resource(action) for action in page.items)
+        dependencies = context.get_plan_action_dependencies(
+            GetPlanActionDependenciesRequest(tuple(action.action_id for action in page.items))
+        )
+        items = tuple(_plan_action_resource(action, dependencies.get(action.action_id, ())) for action in page.items)
         return ApiEnvelope(data=PaginatedData(items=items, page=_page_info(page, page_request)), errors=())
 
     @router.get(
@@ -497,12 +506,18 @@ def _plan_action_summary(summary: PlanActionSummaryDto | None) -> PlanActionSumm
 def _plan_action_type_counts(counts: PlanActionTypeCountsDto) -> PlanActionTypeCounts:
     return PlanActionTypeCounts(
         move=counts.move,
+        move_lyrics=counts.move_lyrics,
+        move_artwork=counts.move_artwork,
+        move_unprocessed=counts.move_unprocessed,
         skip=counts.skip,
         refresh_metadata=counts.refresh_metadata,
     )
 
 
-def _plan_action_resource(action: PlanAction) -> PlanActionResource:
+def _plan_action_resource(
+    action: PlanAction,
+    depends_on_action_ids: tuple[ActionId, ...],
+) -> PlanActionResource:
     return PlanActionResource(
         action_id=action.action_id,
         plan_id=action.plan_id,
@@ -516,6 +531,9 @@ def _plan_action_resource(action: PlanAction) -> PlanActionResource:
         status=action.status,
         reason=action.reason,
         sort_order=action.sort_order,
+        companion_asset_id=action.companion_asset_id,
+        owner_action_id=action.owner_action_id,
+        depends_on_action_ids=depends_on_action_ids,
         artist_name_diagnostics=_artist_name_diagnostics_resource(action.artist_name_diagnostics),
     )
 

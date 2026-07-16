@@ -6,6 +6,7 @@ Why: Lets Web browsing show CheckIssue counts grouped by issue_type with paginat
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import PurePosixPath, PureWindowsPath
 from posixpath import dirname
 from typing import TYPE_CHECKING
 
@@ -50,13 +51,22 @@ def derive_check_issue_group_key(issue: CheckIssue, grouping: CheckIssueGrouping
     if grouping is CheckIssueGrouping.ARTIST_ALBUM:
         return _artist_album_group(issue)
     if grouping is CheckIssueGrouping.SUGGESTED_COMMAND:
-        return _suggested_command_group(issue.issue_type)
+        return _suggested_command_group(issue)
     return CheckIssueGroupKey(key=str(issue.library_id), label=str(issue.library_id))
 
 
 def check_issue_severity(issue_type: CheckIssueType) -> str:
     """Return the triage severity for one issue type."""
-    if issue_type in (CheckIssueType.DB_FILE_MISSING, CheckIssueType.CONTENT_HASH_CHANGED):
+    if issue_type in (
+        CheckIssueType.DB_FILE_MISSING,
+        CheckIssueType.CONTENT_HASH_CHANGED,
+        CheckIssueType.COMPANION_FILE_MISSING,
+        CheckIssueType.COMPANION_CONTENT_HASH_CHANGED,
+        CheckIssueType.COMPANION_OWNER_MISSING,
+        CheckIssueType.FAILED_COMPANION_SOURCE_EXISTS,
+        CheckIssueType.UNPROCESSED_FILE_MISSING,
+        CheckIssueType.UNPROCESSED_CONTENT_HASH_CHANGED,
+    ):
         return "error"
     if issue_type is CheckIssueType.LIBRARY_STALE:
         return "info"
@@ -67,7 +77,7 @@ def common_path_root_for_check_issue(issue: CheckIssue) -> str | None:
     """Return the top-level path concentration label without changing stored path identity."""
     if issue.path is None or issue.path == "":
         return None
-    if issue.path.startswith("/"):
+    if _is_external_absolute_path(issue.path):
         return CHECK_ISSUE_GROUP_EXTERNAL_KEY
     parent = dirname(issue.path)
     if parent == "":
@@ -87,7 +97,7 @@ def _artist_album_group(issue: CheckIssue) -> CheckIssueGroupKey:
             key=CHECK_ISSUE_GROUP_UNKNOWN_KEY,
             label=CHECK_ISSUE_GROUP_UNKNOWN_ARTIST_ALBUM_LABEL,
         )
-    if issue.path.startswith("/"):
+    if _is_external_absolute_path(issue.path):
         return CheckIssueGroupKey(key=CHECK_ISSUE_GROUP_EXTERNAL_KEY, label=CHECK_ISSUE_GROUP_EXTERNAL_KEY)
 
     directories = issue.path.split("/")[:-1]
@@ -102,23 +112,44 @@ def _artist_album_group(issue: CheckIssue) -> CheckIssueGroupKey:
     )
 
 
-def _suggested_command_group(issue_type: CheckIssueType) -> CheckIssueGroupKey:
+def _is_external_absolute_path(path: str) -> bool:
+    """Recognize persisted POSIX, Windows-drive, and UNC absolute paths on every host."""
+    return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
+
+
+def _suggested_command_group(issue: CheckIssue) -> CheckIssueGroupKey:  # noqa: PLR0911  # Stable catalog mapping.
     """Return the normalized command family that is appropriate for an issue type."""
+    issue_type = issue.issue_type
     if issue_type in (
         CheckIssueType.DB_FILE_MISSING,
         CheckIssueType.CONTENT_HASH_CHANGED,
         CheckIssueType.METADATA_HASH_CHANGED,
+        CheckIssueType.COMPANION_FILE_MISSING,
+        CheckIssueType.COMPANION_CONTENT_HASH_CHANGED,
     ):
         return CheckIssueGroupKey(key="refresh", label="omym2 refresh <file>")
     if issue_type is CheckIssueType.UNMANAGED_FILE_EXISTS:
         return CheckIssueGroupKey(key="add", label="omym2 add <path>")
+    if issue_type is CheckIssueType.FAILED_COMPANION_SOURCE_EXISTS:
+        if issue.detail == "add":
+            return CheckIssueGroupKey(key="add", label="omym2 add <path>")
+        if issue.detail == "organize":
+            return CheckIssueGroupKey(key="organize", label="omym2 organize")
+        return CheckIssueGroupKey(key="check", label="omym2 check")
     if issue_type in (
         CheckIssueType.CURRENT_PATH_DIFFERS_FROM_CANONICAL_PATH,
+        CheckIssueType.COMPANION_CURRENT_PATH_DIFFERS_FROM_CANONICAL_PATH,
+        CheckIssueType.COMPANION_OWNER_MISSING,
+        CheckIssueType.UNMANAGED_COMPANION_EXISTS,
         CheckIssueType.DUPLICATE_CANDIDATE,
         CheckIssueType.PLAN_SOURCE_CHANGED,
     ):
         return CheckIssueGroupKey(key="organize", label="omym2 organize")
-    if issue_type is CheckIssueType.PENDING_FILE_EVENT_EXISTS:
+    if issue_type in (
+        CheckIssueType.PENDING_FILE_EVENT_EXISTS,
+        CheckIssueType.UNPROCESSED_FILE_MISSING,
+        CheckIssueType.UNPROCESSED_CONTENT_HASH_CHANGED,
+    ):
         return CheckIssueGroupKey(key="history", label="omym2 history")
     return CheckIssueGroupKey(key="check", label="omym2 check")
 

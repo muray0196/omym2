@@ -28,6 +28,7 @@ import {
   reasonPresentation,
   reasonLabel,
 } from "./plan-catalog";
+import { planCopy } from "./plan-copy";
 
 describe("Plan presentation", () => {
   it("renders known Plan and action statuses as visible text", () => {
@@ -112,6 +113,9 @@ describe("Plan presentation", () => {
     }
     for (const [value, label] of [
       ["move", "Move"],
+      ["move_lyrics", "Move lyrics"],
+      ["move_artwork", "Move artwork"],
+      ["move_unprocessed", "Move unprocessed file"],
       ["skip", "Skip"],
       ["refresh_metadata", "Refresh metadata"],
     ] as const) {
@@ -128,12 +132,18 @@ describe("Plan presentation", () => {
       "source_missing",
       "source_changed",
       "duplicate_hash",
+      "companion_owner_blocked",
+      "companion_association_ambiguous",
+      "companion_dependency_failed",
       "operation_interrupted",
     ]) {
       const presentation = reasonPresentation(value);
       expect(presentation.icon).toBe("warning");
       expect(presentation.meaning).not.toBe("");
     }
+    expect(planCopy.artistNames.issue.automatic_lookup_disabled).toBe(
+      "Automatic lookup disabled",
+    );
   });
 
   it("uses neutral info presentation for unknown Plan catalog values", () => {

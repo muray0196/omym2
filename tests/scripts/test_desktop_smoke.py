@@ -458,12 +458,13 @@ def test_packaged_api_probe_creates_non_destructive_add_plan(tmp_path: Path) -> 
     library_root = tmp_path / "library"
     incoming_root = tmp_path / "incoming"
     source_file = incoming_root / "smoke-track.flac"
+    database_file = tmp_path / "state.sqlite3"
     library_root.mkdir()
     _write_tagged_smoke_flac(source_file)
-    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", tmp_path / "state.sqlite3"))
+    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", database_file))
     base_url = server.start()
     try:
-        evidence = _create_safe_add_plan(base_url, library_root, incoming_root, source_file)
+        evidence = _create_safe_add_plan(base_url, library_root, incoming_root, source_file, database_file)
     finally:
         server.stop()
 
@@ -471,6 +472,20 @@ def test_packaged_api_probe_creates_non_destructive_add_plan(tmp_path: Path) -> 
     assert evidence["organize_result_kind"] == "registered_without_plan"
     assert evidence["plan_status"] == "ready"
     assert evidence["filesystem_mutation_performed"] is False
+    local_only = cast("dict[str, object]", evidence["local_only"])
+    assert local_only == {
+        "fasttext_model_path": None,
+        "musicbrainz_enabled": False,
+        "provider_request_count": 0,
+        "provider_request_performed": False,
+    }
+    artist_naming = cast("dict[str, object]", evidence["artist_naming"])
+    assert artist_naming["eligible_non_latin_source"] is True
+    assert artist_naming["fallback_issue"] == config.DESKTOP_WINDOWS_SMOKE_ARTIST_FALLBACK_ISSUE
+    assert artist_naming["fallback_provenance"] == config.DESKTOP_WINDOWS_SMOKE_ARTIST_FALLBACK_PROVENANCE
+    assert cast("dict[str, object]", artist_naming["artist"])["source_name"] == (
+        config.DESKTOP_WINDOWS_SMOKE_ARTIST_NAME
+    )
     assert isinstance(evidence["incoming_tree_manifest_sha256"], str)
     assert isinstance(evidence["library_tree_manifest_sha256"], str)
     assert source_file.is_file()
@@ -490,9 +505,10 @@ def test_packaged_api_plan_evidence_rejects_disposable_tree_mutation(
     library_root = tmp_path / "library"
     incoming_root = tmp_path / "incoming"
     source_file = incoming_root / "smoke-track.flac"
+    database_file = tmp_path / "state.sqlite3"
     library_root.mkdir()
     _write_tagged_smoke_flac(source_file)
-    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", tmp_path / "state.sqlite3"))
+    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", database_file))
     base_url = server.start()
     original_start = _start_and_poll_operation
 
@@ -511,7 +527,7 @@ def test_packaged_api_plan_evidence_rejects_disposable_tree_mutation(
     monkeypatch.setattr(desktop_smoke, "_start_and_poll_operation", mutating_start)
     try:
         with pytest.raises(WindowsPackageSmokeError, match=expected_message):
-            _ = _create_safe_add_plan(base_url, library_root, incoming_root, source_file)
+            _ = _create_safe_add_plan(base_url, library_root, incoming_root, source_file, database_file)
     finally:
         server.stop()
 
@@ -619,12 +635,13 @@ def test_native_ui_plan_evidence_requires_one_new_ready_plan(
     library_root = tmp_path / "library"
     incoming_root = tmp_path / "incoming"
     source_file = incoming_root / "smoke-track.flac"
+    database_file = tmp_path / "state.sqlite3"
     library_root.mkdir()
     _write_tagged_smoke_flac(source_file)
-    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", tmp_path / "state.sqlite3"))
+    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", database_file))
     base_url = server.start()
     try:
-        persisted = _create_safe_add_plan(base_url, library_root, incoming_root, source_file)
+        persisted = _create_safe_add_plan(base_url, library_root, incoming_root, source_file, database_file)
         library_id = str(persisted["library_id"])
 
         def fake_native_ui(_window_handle: int, source_root: Path) -> dict[str, object]:
@@ -648,6 +665,7 @@ def test_native_ui_plan_evidence_requires_one_new_ready_plan(
             persisted,
             library_root,
             source_file,
+            database_file,
         )
     finally:
         server.stop()
@@ -657,6 +675,10 @@ def test_native_ui_plan_evidence_requires_one_new_ready_plan(
     assert native_ui["plan_id"] != persisted["plan_id"]
     assert native_ui["plan_status"] == "ready"
     assert native_ui["filesystem_mutation_performed"] is False
+    assert cast("dict[str, object]", native_ui["local_only"])["provider_request_performed"] is False
+    assert cast("dict[str, object]", native_ui["artist_naming"])["fallback_issue"] == (
+        config.DESKTOP_WINDOWS_SMOKE_ARTIST_FALLBACK_ISSUE
+    )
     assert isinstance(native_ui["incoming_tree_manifest_sha256"], str)
     assert isinstance(native_ui["library_tree_manifest_sha256"], str)
     assert source_file.is_file()
@@ -676,12 +698,13 @@ def test_native_ui_plan_evidence_rejects_disposable_tree_mutation(
     library_root = tmp_path / "library"
     incoming_root = tmp_path / "incoming"
     source_file = incoming_root / "smoke-track.flac"
+    database_file = tmp_path / "state.sqlite3"
     library_root.mkdir()
     _write_tagged_smoke_flac(source_file)
-    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", tmp_path / "state.sqlite3"))
+    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", database_file))
     base_url = server.start()
     try:
-        persisted = _create_safe_add_plan(base_url, library_root, incoming_root, source_file)
+        persisted = _create_safe_add_plan(base_url, library_root, incoming_root, source_file, database_file)
         library_id = str(persisted["library_id"])
 
         def fake_native_ui(_window_handle: int, source_root: Path) -> dict[str, object]:
@@ -705,6 +728,7 @@ def test_native_ui_plan_evidence_rejects_disposable_tree_mutation(
                 persisted,
                 library_root,
                 source_file,
+                database_file,
             )
     finally:
         server.stop()

@@ -5,6 +5,7 @@ Why: Proves synchronous preflight and Apply/Cancel race responses before dispatc
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Never, cast
 from uuid import UUID
@@ -15,11 +16,11 @@ from fastapi.testclient import TestClient
 from omym2.adapters.artist_ids.musicbrainz_artist_lookup import MusicBrainzArtistLookup
 from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.config.default_config import default_app_config
+from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
 from omym2.adapters.web.app import create_web_app
 from omym2.config import (
-    ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE,
     HTTP_ACCEPTED_STATUS,
     HTTP_CONFLICT_STATUS,
     HTTP_NOT_FOUND_STATUS,
@@ -178,7 +179,11 @@ def test_apply_route_claims_and_completes_one_durable_run(
             )
         )
         uow.commit()
-    _forbid_automatic_artist_name_lookup(monkeypatch, tmp_path / "apply-must-not-load.ftz")
+    _forbid_automatic_artist_name_lookup(
+        monkeypatch,
+        paths.config_file,
+        tmp_path / "apply-must-not-load.ftz",
+    )
     context = build_api_route_context(paths.config_file, paths.database_file)
     client = TestClient(
         create_web_app(context, tmp_path / "missing-static", allowed_hosts=("testserver",)),
@@ -270,7 +275,7 @@ def test_add_route_runtime_opt_in_records_new_musicbrainz_target_and_cache(
         build_predictor,
     )
     monkeypatch.setattr(MusicBrainzArtistLookup, "search_artists", search_artists)
-    monkeypatch.setenv(ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE, str(model_path))
+    _enable_automatic_artist_name_lookup(paths.config_file, model_path)
     context = build_api_route_context(paths.config_file, paths.database_file)
     client = TestClient(
         create_web_app(context, tmp_path / "missing-static", allowed_hosts=("testserver",)),
@@ -447,7 +452,23 @@ class _JapanesePredictor:
         return ArtistLanguagePrediction(label="__label__ja", confidence=0.99, available=True)
 
 
-def _forbid_automatic_artist_name_lookup(monkeypatch: pytest.MonkeyPatch, model_path: Path) -> None:
+def _enable_automatic_artist_name_lookup(config_path: Path, model_path: Path) -> None:
+    """Persist the Stage 3 controls used by composition-level naming tests."""
+    store = TomlConfigStore(config_path)
+    snapshot = store.read_snapshot()
+    configured = replace(
+        snapshot.config,
+        musicbrainz=replace(snapshot.config.musicbrainz, enabled=True),
+        fasttext=replace(snapshot.config.fasttext, model_path=str(model_path)),
+    )
+    _ = store.save(configured, expected_config_revision=snapshot.config_revision)
+
+
+def _forbid_automatic_artist_name_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+    config_path: Path,
+    model_path: Path,
+) -> None:
     """Make any model load or provider request fail the current Apply test."""
 
     def fail_model_load(*, model_path: Path | None = None) -> Never:
@@ -458,7 +479,7 @@ def _forbid_automatic_artist_name_lookup(monkeypatch: pytest.MonkeyPatch, model_
         del source_name
         raise AssertionError(APPLY_PROVIDER_LOOKUP_MESSAGE)
 
-    monkeypatch.setenv(ARTIST_NAME_FASTTEXT_MODEL_PATH_ENVIRONMENT_VARIABLE, str(model_path))
+    _enable_automatic_artist_name_lookup(config_path, model_path)
     monkeypatch.setattr(
         "omym2.adapters.artist_ids.fasttext_language_detector.FastTextLanguageDetector",
         fail_model_load,

@@ -1,7 +1,6 @@
 """
 Summary: Tests the Plan browsing usecases: paged listing, paged actions, facets, and groups.
-Why: Protects the Plan review query pipeline (filters pushed into the query, keyset
-     paging, facet totals, grouped review with drill-down) before CLI and Web render it.
+Why: Protects filter pushdown, paging, facets, and grouped review.
 """
 
 from __future__ import annotations
@@ -63,6 +62,7 @@ ACTION_ID_4 = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234569a"))
 UNKNOWN_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345699"))
 
 THREE_ACTIONS = 3
+FOUR_ACTIONS = 4
 TWO_ACTIONS = 2
 TWO_ITEM_LIMIT = 2
 FIVE_PLAN_TOTAL = 5
@@ -229,6 +229,14 @@ def test_get_plan_action_summaries_returns_the_full_status_type_matrix() -> None
             action_type=ActionType.REFRESH_METADATA,
         )
     )
+    uow.plan_actions.save(
+        _action(
+            ACTION_ID_4,
+            status=ActionStatus.PLANNED,
+            sort_order=3,
+            action_type=ActionType.MOVE_UNPROCESSED,
+        )
+    )
 
     summaries = GetPlanActionSummariesUseCase(PlanQueryPorts(uow)).execute(
         GetPlanActionSummariesRequest((PLAN_ID_1, PLAN_ID_2)),
@@ -236,13 +244,15 @@ def test_get_plan_action_summaries_returns_the_full_status_type_matrix() -> None
 
     first = summaries[PLAN_ID_1]
     second = summaries[PLAN_ID_2]
-    assert first.total == THREE_ACTIONS
+    assert first.total == FOUR_ACTIONS
     assert first.planned.move == 1
+    assert first.planned.move_unprocessed == 1
     assert first.blocked.skip == 1
     assert first.applied.refresh_metadata == 1
     assert first.failed.move == 0
     assert second.total == 0
     assert second.planned.move == 0
+    assert second.planned.move_unprocessed == 0
     assert second.blocked.skip == 0
     assert second.applied.refresh_metadata == 0
     assert second.failed.move == 0

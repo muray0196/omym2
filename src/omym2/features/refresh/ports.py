@@ -14,10 +14,12 @@ if TYPE_CHECKING:
         BatchFileSnapshotReader,
         Clock,
         ConfigReader,
+        FileContentSnapshotReader,
         FilePresence,
         FileStatReader,
         IdGenerator,
         PathResolver,
+        SourceInventoryReader,
         UnitOfWork,
     )
 
@@ -28,6 +30,8 @@ class CreateRefreshPlanPorts:
 
     uow: UnitOfWork
     file_snapshot_reader: BatchFileSnapshotReader
+    file_content_snapshot_reader: FileContentSnapshotReader
+    source_inventory_reader: SourceInventoryReader
     file_stat_reader: FileStatReader
     file_presence: FilePresence
     config_store: ConfigReader

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Self, override
 
 import pytest
 
+from omym2.config import ARTIST_NAME_LANGUAGE_CONFIDENCE_MIN
 from omym2.domain.models.accepted_artist_name import (
     AcceptedArtistName,
     ArtistNameProvider,
@@ -174,6 +175,47 @@ def test_resolver_uses_accepted_cache_before_eligibility() -> None:
     assert predictor.calls == []
     assert provider.calls == []
     assert uow.transaction_entries == 1
+
+
+def test_resolver_uses_accepted_cache_when_automatic_lookup_is_disabled() -> None:
+    """Disabling new network work does not hide sticky accepted provider results."""
+    accepted_name = _accepted_name()
+    uow = _ObservedUnitOfWork()
+    uow.accepted_artist_names.records[SOURCE_NAME] = accepted_name
+    usecase, predictor, provider = _usecase(uow, automatic_lookup_enabled=False)
+
+    resolution = usecase.resolve_many((SOURCE_NAME,))[0]
+
+    assert resolution.accepted_name == accepted_name
+    assert resolution.provenance is ArtistNameResolutionProvenance.ACCEPTED_MUSICBRAINZ
+    assert predictor.calls == []
+    assert provider.calls == []
+
+
+def test_resolver_disables_uncached_automatic_lookup_before_model_work() -> None:
+    """Persisted opt-out preserves original metadata without model or provider I/O."""
+    uow = _ObservedUnitOfWork()
+    usecase, predictor, provider = _usecase(uow, automatic_lookup_enabled=False)
+
+    resolution = usecase.resolve_many((SOURCE_NAME,))[0]
+
+    assert resolution.resolved_name == SOURCE_NAME
+    assert resolution.issue is ArtistNameResolutionIssue.AUTOMATIC_LOOKUP_DISABLED
+    assert predictor.calls == []
+    assert provider.calls == []
+
+
+def test_resolver_uses_configured_minimum_language_confidence() -> None:
+    """A configured confidence threshold controls provider eligibility."""
+    prediction = ArtistLanguagePrediction(label="__label__ja", confidence=0.89, available=True)
+    uow = _ObservedUnitOfWork()
+    usecase, predictor, provider = _usecase(uow, prediction=prediction, minimum_confidence=0.9)
+
+    resolution = usecase.resolve_many((SOURCE_NAME,))[0]
+
+    assert resolution.issue is ArtistNameResolutionIssue.LOW_LANGUAGE_CONFIDENCE
+    assert predictor.calls == [SOURCE_NAME]
+    assert provider.calls == []
 
 
 def test_resolver_preserves_input_cardinality_and_deduplicates_source_key_io() -> None:
@@ -394,6 +436,8 @@ def _usecase(
     *,
     prediction: ArtistLanguagePrediction = JAPANESE_PREDICTION,
     search_result: ArtistNameSearchResult | None = None,
+    automatic_lookup_enabled: bool = True,
+    minimum_confidence: float = ARTIST_NAME_LANGUAGE_CONFIDENCE_MIN,
 ) -> tuple[ResolveArtistNamesUseCase, _Predictor, _Provider]:
     predictor = _Predictor(prediction, uow, [])
     provider = _Provider(
@@ -407,6 +451,8 @@ def _usecase(
             language_predictor=predictor,
             artist_name_provider=provider,
             clock=FixedClock(BASE_TIME),
+            automatic_lookup_enabled=automatic_lookup_enabled,
+            minimum_confidence=minimum_confidence,
         )
     )
     return usecase, predictor, provider

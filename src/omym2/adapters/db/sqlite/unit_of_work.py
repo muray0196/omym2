@@ -15,9 +15,11 @@ from omym2.adapters.db.sqlite.repositories import (
     SQLiteAcceptedArtistNameRepository,
     SQLiteCheckIssueRepository,
     SQLiteCheckRunRepository,
+    SQLiteCompanionAssetRepository,
     SQLiteFileEventRepository,
     SQLiteLibraryRepository,
     SQLiteOperationRepository,
+    SQLitePlanActionDependencyRepository,
     SQLitePlanActionRepository,
     SQLitePlanRepository,
     SQLiteRunRepository,
@@ -50,8 +52,10 @@ class SQLiteUnitOfWork:
     _check_runs: SQLiteCheckRunRepository | None = field(default=None, init=False)
     _check_issues: SQLiteCheckIssueRepository | None = field(default=None, init=False)
     _tracks: SQLiteTrackRepository | None = field(default=None, init=False)
+    _companion_assets: SQLiteCompanionAssetRepository | None = field(default=None, init=False)
     _plans: SQLitePlanRepository | None = field(default=None, init=False)
     _plan_actions: SQLitePlanActionRepository | None = field(default=None, init=False)
+    _plan_action_dependencies: SQLitePlanActionDependencyRepository | None = field(default=None, init=False)
     _runs: SQLiteRunRepository | None = field(default=None, init=False)
     _file_events: SQLiteFileEventRepository | None = field(default=None, init=False)
     _operations: SQLiteOperationRepository | None = field(default=None, init=False)
@@ -108,6 +112,13 @@ class SQLiteUnitOfWork:
         return self._tracks
 
     @property
+    def companion_assets(self) -> SQLiteCompanionAssetRepository:
+        """Repository for managed companion asset state."""
+        if self._companion_assets is None:
+            raise RuntimeError(UNIT_OF_WORK_NOT_OPEN_MESSAGE)
+        return self._companion_assets
+
+    @property
     def plans(self) -> SQLitePlanRepository:
         """Repository for reviewed Plans."""
         if self._plans is None:
@@ -120,6 +131,13 @@ class SQLiteUnitOfWork:
         if self._plan_actions is None:
             raise RuntimeError(UNIT_OF_WORK_NOT_OPEN_MESSAGE)
         return self._plan_actions
+
+    @property
+    def plan_action_dependencies(self) -> SQLitePlanActionDependencyRepository:
+        """Repository for recorded PlanAction dependencies."""
+        if self._plan_action_dependencies is None:
+            raise RuntimeError(UNIT_OF_WORK_NOT_OPEN_MESSAGE)
+        return self._plan_action_dependencies
 
     @property
     def runs(self) -> SQLiteRunRepository:
@@ -163,8 +181,10 @@ class SQLiteUnitOfWork:
         self._check_runs = SQLiteCheckRunRepository(connection)
         self._check_issues = SQLiteCheckIssueRepository(connection)
         self._tracks = SQLiteTrackRepository(connection)
+        self._companion_assets = SQLiteCompanionAssetRepository(connection)
         self._plans = SQLitePlanRepository(connection)
         self._plan_actions = SQLitePlanActionRepository(connection)
+        self._plan_action_dependencies = SQLitePlanActionDependencyRepository(connection)
         self._runs = SQLiteRunRepository(connection)
         self._file_events = SQLiteFileEventRepository(connection)
         self._operations = SQLiteOperationRepository(connection)
@@ -229,8 +249,10 @@ class SQLiteUnitOfWork:
         self._check_runs = None
         self._check_issues = None
         self._tracks = None
+        self._companion_assets = None
         self._plans = None
         self._plan_actions = None
+        self._plan_action_dependencies = None
         self._runs = None
         self._file_events = None
         self._operations = None

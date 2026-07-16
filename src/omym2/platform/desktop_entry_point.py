@@ -8,24 +8,24 @@ from __future__ import annotations
 import logging
 import platform as system_platform
 from dataclasses import dataclass, field
-from logging.handlers import RotatingFileHandler
 from typing import TYPE_CHECKING, Protocol
 
 from omym2 import __version__
 from omym2.adapters.config.application_paths import desktop_application_paths
+from omym2.adapters.config.toml_config_store import TomlConfigStore
 from omym2.adapters.desktop.server import UvicornDesktopServer
 from omym2.adapters.desktop.window import PyWebViewWindow, WindowsErrorDialog
 from omym2.config import (
     DESKTOP_FAILURE_EXIT_CODE,
-    DESKTOP_LOG_BACKUP_COUNT,
-    DESKTOP_LOG_ENCODING,
-    DESKTOP_LOG_FORMAT,
-    DESKTOP_LOG_LEVEL,
-    DESKTOP_LOG_MAX_BYTES,
     DESKTOP_SUCCESS_EXIT_CODE,
     DESKTOP_WINDOW_TITLE,
 )
 from omym2.platform.desktop_runtime import DesktopRuntime
+from omym2.platform.logging_composition import (
+    configure_application_logging,
+    resolve_log_file,
+    sensitive_log_values,
+)
 from omym2.platform.web_composition import build_web_app
 
 if TYPE_CHECKING:
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from omym2.adapters.config.application_paths import ApplicationPaths
+    from omym2.domain.models.app_config import LoggingConfig
     from omym2.platform.desktop_runtime import DesktopServer, DesktopWindow
 
 LOGGER = logging.getLogger(__name__)
@@ -59,21 +60,13 @@ def _build_desktop_window() -> DesktopWindow:
     return PyWebViewWindow()
 
 
-def configure_desktop_logging(log_file: Path) -> None:
-    """Route application and Uvicorn records into a bounded writable desktop log."""
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(
-        log_file,
-        maxBytes=DESKTOP_LOG_MAX_BYTES,
-        backupCount=DESKTOP_LOG_BACKUP_COUNT,
-        encoding=DESKTOP_LOG_ENCODING,
-    )
-    logging.basicConfig(
-        level=DESKTOP_LOG_LEVEL,
-        format=DESKTOP_LOG_FORMAT,
-        handlers=(handler,),
-        force=True,
-    )
+def configure_desktop_logging(
+    log_file: Path,
+    config: LoggingConfig,
+    sensitive_values: tuple[str, ...],
+) -> None:
+    """Route application and Uvicorn records through shared bounded logging."""
+    configure_application_logging(log_file, config, sensitive_values=sensitive_values)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +77,7 @@ class DesktopEntryDependencies:
     web_app_builder: Callable[[Path, Path], FastAPI] = _build_desktop_web_app
     server_factory: Callable[[FastAPI], DesktopServer] = _build_desktop_server
     window_factory: Callable[[], DesktopWindow] = _build_desktop_window
-    logging_configurator: Callable[[Path], None] = configure_desktop_logging
+    logging_configurator: Callable[[Path, LoggingConfig, tuple[str, ...]], None] = configure_desktop_logging
     error_reporter: DesktopErrorReporter = field(default_factory=WindowsErrorDialog)
 
 
@@ -94,8 +87,14 @@ def run_desktop(dependencies: DesktopEntryDependencies | None = None) -> int:
     diagnostic_log_file: Path | None = None
     try:
         paths = runtime_dependencies.paths_resolver()
-        runtime_dependencies.logging_configurator(paths.desktop_log_file)
-        diagnostic_log_file = paths.desktop_log_file
+        config = TomlConfigStore(paths.config_file).load()
+        resolved_log_file = resolve_log_file(paths.app_root, paths.desktop_log_file, config.logging)
+        runtime_dependencies.logging_configurator(
+            resolved_log_file,
+            config.logging,
+            sensitive_log_values(paths, config),
+        )
+        diagnostic_log_file = resolved_log_file
         LOGGER.info(
             "Desktop starting version=%s os=%s application_root=%s",
             __version__,

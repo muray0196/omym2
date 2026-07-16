@@ -15,10 +15,17 @@ import pytest
 
 from omym2.adapters.config.default_config import default_app_config
 from omym2.config import OPERATION_RESULT_RETENTION_HOURS, OPERATION_TOMBSTONE_RETENTION_DAYS
-from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
+from omym2.domain.models.app_config import CompanionsConfig
+from omym2.domain.models.check_issue import (
+    CHECK_ISSUE_GROUP_EXTERNAL_KEY,
+    CheckIssue,
+    CheckIssueGrouping,
+    CheckIssueType,
+)
+from omym2.domain.models.companion_asset import CompanionAsset, CompanionAssetKind, CompanionAssetStatus
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.file_scan_entry import FileScanEntry
-from omym2.domain.models.file_snapshot import FileSnapshot, FilesystemIdentity
+from omym2.domain.models.file_snapshot import FileContentSnapshot, FileSnapshot, FilesystemIdentity
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.operation import (
     CheckCompletedResult,
@@ -28,7 +35,13 @@ from omym2.domain.models.operation import (
     PlanCreatedResult,
 )
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
@@ -45,8 +58,18 @@ from omym2.features.check.dto import (
 from omym2.features.check.ports import CheckLibraryPorts, CheckQueryPorts
 from omym2.features.check.usecases.check_library import CheckLibraryUseCase
 from omym2.features.check.usecases.get_check_issue_facets import GetCheckIssueFacetsUseCase
-from omym2.features.check.usecases.group_check_issues import GroupCheckIssuesUseCase
+from omym2.features.check.usecases.group_check_issues import (
+    GroupCheckIssuesUseCase,
+    check_issue_severity,
+    common_path_root_for_check_issue,
+    derive_check_issue_group_key,
+)
 from omym2.features.check.usecases.list_check_issues import ListCheckIssuesUseCase
+from omym2.features.common_ports import (
+    FileObservationChangedError,
+    FileObservationInvalidPathError,
+    SourceInventoryEntry,
+)
 from omym2.features.history.dto import GetRunHeaderRequest, ListRunEventsRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
 from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase
@@ -56,6 +79,7 @@ from omym2.features.undo.dto import CreateUndoPlanRequest
 from omym2.features.undo.ports import CreateUndoPlanPorts
 from omym2.features.undo.usecases.create_undo_plan import (
     ALREADY_UNDONE_OR_IN_PROGRESS_MESSAGE,
+    INVALID_COMPANION_PROVENANCE_MESSAGE,
     NOTHING_TO_UNDO_MESSAGE,
     PENDING_FILE_EVENT_REQUIRES_REVIEW_MESSAGE,
     RUN_NOT_TERMINAL_MESSAGE,
@@ -63,20 +87,43 @@ from omym2.features.undo.usecases.create_undo_plan import (
     CreateUndoPlanUseCase,
     UndoPlanError,
 )
-from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
+from omym2.shared.ids import (
+    ActionId,
+    CheckRunId,
+    CompanionAssetId,
+    EventId,
+    LibraryId,
+    OperationId,
+    PlanId,
+    RunId,
+    TrackId,
+)
+from tests.fakes.file_observation import MappingFileContentSnapshotReader
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
-from tests.fakes.runtime import FixedClock, SequenceIdGenerator
+from tests.fakes.runtime import (
+    EmptySourceInventoryReader,
+    FixedClock,
+    SequenceIdGenerator,
+    UnusedFileContentSnapshotReader,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from omym2.domain.models.app_config import AppConfig
-    from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath
+    from omym2.features.common_ports import (
+        FileContentSnapshotReader,
+        FileSnapshotCaptureRequest,
+        FileSystemPath,
+        SourceInventoryRequest,
+    )
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 AFTER_PLAN_TIME = datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC)
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 CHECK_RUN_ID = CheckRunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568b"))
+COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568c"))
+SECOND_COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568d"))
 SECOND_CHECK_RUN_ID = CheckRunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234568c"))
 CHANGED_CONTENT_HASH = "changed-content"
 CHANGED_METADATA_HASH = "changed-metadata"
@@ -85,6 +132,8 @@ CONTENT_HASH = "content"
 DUPLICATE_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
 EXTERNAL_SOURCE_PATH = "/incoming/Imported.flac"
+EXTERNAL_COMPANION_SOURCE_PATH = "/incoming/Imported.lrc"
+EXTERNAL_SOURCE_ROOT = "/incoming"
 FILE_EXTENSION = ".flac"
 FILE_SIZE = 5
 FILESYSTEM_IDENTITY = FilesystemIdentity(device_id=1, inode=2, size=FILE_SIZE, mtime_ns=3, ctime_ns=4)
@@ -113,9 +162,19 @@ TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 UNDO_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345685"))
 UNDO_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345686"))
 UNDO_SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345687"))
+UNDO_THIRD_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345690"))
 UNDO_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345688"))
 UNDO_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345689"))
+UNDO_SECOND_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345691"))
 UNMANAGED_PATH = "Loose/Copy.flac"
+COMPANION_PATH = "Artist/2026_Album/1-02_Title.lrc"
+COMPANION_CANONICAL_PATH = "Artist/2026_Album/Title.lrc"
+MISSING_COMPANION_PATH = "Artist/2026_Album/Missing.lrc"
+UNMANAGED_COMPANION_PATH = "Artist/2026_Album/cover.jpg"
+UNPROCESSED_SOURCE_PATH = "/incoming/notes/readme.txt"
+UNPROCESSED_TARGET_PATH = "/incoming/Unprocessed/notes/readme.txt"
+UNPROCESSED_CONTENT_HASH = "unprocessed-content"
+UNPROCESSED_CURRENT_HASH = "unprocessed-current-content"
 
 METADATA = TrackMetadata(title="Title", artist="Artist", album="Album", year=2026, track_number=2, disc_number=1)
 
@@ -222,6 +281,219 @@ def test_check_reuses_managed_snapshot_for_ready_plan_source_without_reordering_
         CheckIssueType.PLAN_SOURCE_CHANGED,
     )
     assert snapshots.captured_paths == [managed_path]
+
+
+def test_check_reports_managed_and_unmanaged_companion_drift_without_metadata_reads() -> None:
+    """Check verifies durable companions with content-only observations and complete inventory."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.companion_assets.save(_companion_asset(current_path=COMPANION_PATH, canonical_path=COMPANION_CANONICAL_PATH))
+    uow.companion_assets.save(
+        _companion_asset(
+            companion_asset_id=SECOND_COMPANION_ASSET_ID,
+            owner_track_id=SECOND_TRACK_ID,
+            current_path=MISSING_COMPANION_PATH,
+            canonical_path=MISSING_COMPANION_PATH,
+        )
+    )
+    managed_audio_path = _absolute(TARGET_PATH)
+    full_snapshots = MappingSnapshotReader({managed_audio_path: _snapshot(managed_audio_path)})
+    content_snapshots = MappingContentSnapshotReader(
+        {
+            _absolute(COMPANION_PATH): _content_snapshot(
+                _absolute(COMPANION_PATH),
+                content_hash=CHANGED_CONTENT_HASH,
+            )
+        },
+        missing_paths={_absolute(MISSING_COMPANION_PATH)},
+    )
+    inventory = StaticSourceInventoryReader(
+        (
+            _inventory_entry(TARGET_PATH),
+            _inventory_entry(COMPANION_PATH),
+            _inventory_entry(UNMANAGED_COMPANION_PATH),
+        )
+    )
+
+    result = CheckLibraryUseCase(
+        _check_ports(
+            uow,
+            StaticScanner((_scan_entry(managed_audio_path),)),
+            full_snapshots,
+            content_snapshot_reader=content_snapshots,
+            source_inventory_reader=inventory,
+            config=replace(default_app_config(), companions=CompanionsConfig(enabled=True)),
+        )
+    ).execute(CheckLibraryRequest(trust_stat=False))
+
+    assert tuple(issue.issue_type for issue in result.issues) == (
+        CheckIssueType.COMPANION_CURRENT_PATH_DIFFERS_FROM_CANONICAL_PATH,
+        CheckIssueType.COMPANION_CONTENT_HASH_CHANGED,
+        CheckIssueType.COMPANION_OWNER_MISSING,
+        CheckIssueType.COMPANION_FILE_MISSING,
+        CheckIssueType.UNMANAGED_COMPANION_EXISTS,
+    )
+    assert {issue.companion_asset_id for issue in result.issues[:-1]} == {
+        COMPANION_ASSET_ID,
+        SECOND_COMPANION_ASSET_ID,
+    }
+    assert result.issues[-1].path == UNMANAGED_COMPANION_PATH
+    assert full_snapshots.captured_paths == [managed_audio_path]
+    assert content_snapshots.captures == [
+        (_absolute(COMPANION_PATH), LIBRARY_ROOT),
+        (_absolute(MISSING_COMPANION_PATH), LIBRARY_ROOT),
+    ]
+    assert len(inventory.requests) == 1
+
+
+def test_check_disabled_companions_skip_unmanaged_inventory_but_keep_managed_checks() -> None:
+    """Disabling discovery does not suppress durable CompanionAsset diagnostics."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.companion_assets.save(
+        _companion_asset(current_path=MISSING_COMPANION_PATH, canonical_path=MISSING_COMPANION_PATH)
+    )
+    managed_audio_path = _absolute(TARGET_PATH)
+    inventory = StaticSourceInventoryReader((_inventory_entry(UNMANAGED_COMPANION_PATH),))
+
+    result = CheckLibraryUseCase(
+        _check_ports(
+            uow,
+            StaticScanner((_scan_entry(managed_audio_path),)),
+            MappingSnapshotReader({managed_audio_path: _snapshot(managed_audio_path)}),
+            content_snapshot_reader=MappingContentSnapshotReader(
+                {},
+                missing_paths={_absolute(MISSING_COMPANION_PATH)},
+            ),
+            source_inventory_reader=inventory,
+        )
+    ).execute(CheckLibraryRequest(trust_stat=False))
+
+    assert tuple(issue.issue_type for issue in result.issues) == (CheckIssueType.COMPANION_FILE_MISSING,)
+    assert result.issues[0].companion_asset_id == COMPANION_ASSET_ID
+    assert inventory.requests == []
+
+
+def test_check_ready_companion_source_uses_retained_external_source_root() -> None:
+    """READY Add companion sources are revalidated below the exact retained source root."""
+    external_companion_path = "/incoming/Title.lrc"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan(source_root_at_plan="/incoming"))
+    uow.plan_actions.save(
+        PlanAction(
+            action_id=ACTION_ID,
+            plan_id=PLAN_ID,
+            library_id=LIBRARY_ID,
+            track_id=TRACK_ID,
+            action_type=ActionType.MOVE_LYRICS,
+            source_path=external_companion_path,
+            target_path=COMPANION_PATH,
+            content_hash_at_plan=CONTENT_HASH,
+            metadata_hash_at_plan=None,
+            status=ActionStatus.PLANNED,
+            reason=None,
+            sort_order=1,
+            companion_asset_id=COMPANION_ASSET_ID,
+        )
+    )
+    content_snapshots = MappingContentSnapshotReader(
+        {
+            external_companion_path: _content_snapshot(
+                external_companion_path,
+                content_hash=CHANGED_CONTENT_HASH,
+            )
+        }
+    )
+
+    result = CheckLibraryUseCase(
+        _check_ports(
+            uow,
+            StaticScanner(()),
+            MappingSnapshotReader({}),
+            content_snapshot_reader=content_snapshots,
+        )
+    ).execute(CheckLibraryRequest(trust_stat=False))
+
+    assert len(result.issues) == 1
+    issue = result.issues[0]
+    assert issue.issue_type is CheckIssueType.PLAN_SOURCE_CHANGED
+    assert issue.companion_asset_id == COMPANION_ASSET_ID
+    assert issue.detail == "source_changed"
+    assert content_snapshots.captures == [(external_companion_path, "/incoming")]
+
+
+def test_check_reports_recoverable_failed_add_companion_source() -> None:
+    """A retained source with definitive partial-failure provenance gets one Add recovery issue."""
+    uow = _uow_with_companion_source_run()
+    plan = uow.plans.get(PLAN_ID)
+    companion_action = uow.plan_actions.get(SECOND_ACTION_ID)
+    run = uow.runs.get(RUN_ID)
+    companion_event = uow.file_events.get(SECOND_EVENT_ID)
+    assert plan is not None
+    assert companion_action is not None
+    assert run is not None
+    assert companion_event is not None
+    uow.plans.save(replace(plan, status=PlanStatus.PARTIAL_FAILED))
+    uow.plan_actions.save(
+        replace(
+            companion_action,
+            status=ActionStatus.FAILED,
+            reason=PlanActionReason.TARGET_EXISTS,
+        )
+    )
+    uow.runs.save(
+        replace(
+            run,
+            status=RunStatus.PARTIAL_FAILED,
+            completed_at=BASE_TIME,
+            error_summary="target exists",
+        )
+    )
+    uow.file_events.save(
+        replace(
+            companion_event,
+            status=FileEventStatus.FAILED,
+            completed_at=BASE_TIME,
+            error_code=PlanActionReason.TARGET_EXISTS.value,
+            error_message="target exists",
+        )
+    )
+    _ = uow.companion_assets.records.pop(COMPANION_ASSET_ID)
+    content_snapshots = MappingContentSnapshotReader(
+        {
+            EXTERNAL_COMPANION_SOURCE_PATH: _content_snapshot(
+                EXTERNAL_COMPANION_SOURCE_PATH,
+                content_hash=CONTENT_HASH,
+            )
+        }
+    )
+
+    result = CheckLibraryUseCase(
+        _check_ports(
+            uow,
+            StaticScanner(()),
+            MappingSnapshotReader({_absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH))}),
+            content_snapshot_reader=content_snapshots,
+        )
+    ).execute(CheckLibraryRequest(trust_stat=False))
+
+    recovery_issues = tuple(
+        issue for issue in result.issues if issue.issue_type is CheckIssueType.FAILED_COMPANION_SOURCE_EXISTS
+    )
+    assert recovery_issues == (
+        CheckIssue(
+            issue_type=CheckIssueType.FAILED_COMPANION_SOURCE_EXISTS,
+            library_id=LIBRARY_ID,
+            path=EXTERNAL_COMPANION_SOURCE_PATH,
+            plan_id=PLAN_ID,
+            companion_asset_id=COMPANION_ASSET_ID,
+            detail="add",
+        ),
+    )
+    assert content_snapshots.captures == [(EXTERNAL_COMPANION_SOURCE_PATH, EXTERNAL_SOURCE_ROOT)]
 
 
 def test_check_trust_stat_skips_full_capture_and_reuses_ready_plan_snapshot() -> None:
@@ -337,7 +609,12 @@ def test_check_orders_pending_event_issues_by_run_start_then_sequence() -> None:
     uow.runs.save(_run(run_id=SECOND_RUN_ID, plan_id=SECOND_PLAN_ID, started_at=BASE_TIME + timedelta(minutes=1)))
     uow.file_events.save(_pending_event(event_id=SECOND_EVENT_ID, target_path=RESTORE_PATH, sequence_no=2))
     uow.file_events.save(_pending_event(event_id=THIRD_EVENT_ID, run_id=SECOND_RUN_ID, target_path=SECOND_SOURCE_PATH))
-    uow.file_events.save(_pending_event())
+    uow.file_events.save(
+        _pending_event(
+            companion_asset_id=COMPANION_ASSET_ID,
+            event_type=FileEventType.MOVE_LYRICS_FILE,
+        )
+    )
 
     result = CheckLibraryUseCase(_check_ports(uow, StaticScanner(()), MappingSnapshotReader({}))).execute(
         CheckLibraryRequest(trust_stat=False)
@@ -350,6 +627,11 @@ def test_check_orders_pending_event_issues_by_run_start_then_sequence() -> None:
         (PLAN_ID, TARGET_PATH),
         (PLAN_ID, RESTORE_PATH),
         (SECOND_PLAN_ID, SECOND_SOURCE_PATH),
+    )
+    assert tuple(issue.companion_asset_id for issue in pending_issues) == (
+        COMPANION_ASSET_ID,
+        None,
+        None,
     )
 
 
@@ -400,6 +682,8 @@ def test_check_query_usecases_read_persisted_findings_and_resolve_checked_at() -
             uow=uow,
             file_scanner=StaticScanner(()),
             file_snapshot_reader=dirty_snapshots,
+            file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
+            source_inventory_reader=EmptySourceInventoryReader(),
             file_content_hasher=MappingContentHasher({}),
             config_store=StaticConfigStore(),
             path_resolver=SimplePathResolver(),
@@ -412,6 +696,8 @@ def test_check_query_usecases_read_persisted_findings_and_resolve_checked_at() -
             uow=uow,
             file_scanner=StaticScanner(()),
             file_snapshot_reader=MappingSnapshotReader({}),
+            file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
+            source_inventory_reader=EmptySourceInventoryReader(),
             file_content_hasher=MappingContentHasher({}),
             config_store=StaticConfigStore(),
             path_resolver=SimplePathResolver(),
@@ -500,6 +786,248 @@ def test_check_query_usecases_group_and_drill_down_without_loading_all_issues() 
     ]
 
 
+@pytest.mark.parametrize(
+    ("issue_type", "severity", "command"),
+    [
+        (CheckIssueType.COMPANION_FILE_MISSING, "error", "refresh"),
+        (CheckIssueType.COMPANION_CONTENT_HASH_CHANGED, "error", "refresh"),
+        (CheckIssueType.COMPANION_OWNER_MISSING, "error", "organize"),
+        (CheckIssueType.COMPANION_CURRENT_PATH_DIFFERS_FROM_CANONICAL_PATH, "warning", "organize"),
+        (CheckIssueType.UNMANAGED_COMPANION_EXISTS, "warning", "organize"),
+    ],
+)
+def test_companion_check_issue_triage_matches_recovery_workflow(
+    issue_type: CheckIssueType,
+    severity: str,
+    command: str,
+) -> None:
+    """Companion findings group into explicit severity and recovery command families."""
+    issue = CheckIssue(issue_type=issue_type, library_id=LIBRARY_ID, path=COMPANION_PATH)
+
+    assert check_issue_severity(issue_type) == severity
+    assert derive_check_issue_group_key(issue, CheckIssueGrouping.SUGGESTED_COMMAND).key == command
+
+
+@pytest.mark.parametrize(
+    ("path", "detail", "command"),
+    [
+        (r"C:\incoming\Song.lrc", "add", "add"),
+        ("Old/Album/Song.lrc", "organize", "organize"),
+        (r"C:\incoming\Song.lrc", None, "check"),
+    ],
+)
+def test_failed_companion_source_command_uses_persisted_scope(
+    path: str,
+    detail: str | None,
+    command: str,
+) -> None:
+    """Recovery grouping is platform-neutral and corrupt scope falls back to check."""
+    issue = CheckIssue(
+        issue_type=CheckIssueType.FAILED_COMPANION_SOURCE_EXISTS,
+        library_id=LIBRARY_ID,
+        path=path,
+        detail=detail,
+    )
+
+    assert check_issue_severity(issue.issue_type) == "error"
+    assert derive_check_issue_group_key(issue, CheckIssueGrouping.SUGGESTED_COMMAND).key == command
+
+
+@pytest.mark.parametrize(
+    "issue_type",
+    [
+        CheckIssueType.UNPROCESSED_FILE_MISSING,
+        CheckIssueType.UNPROCESSED_CONTENT_HASH_CHANGED,
+    ],
+)
+def test_unprocessed_issue_triage_uses_error_history_family(issue_type: CheckIssueType) -> None:
+    """Collected-file drift has durable history evidence but no automatic repair command."""
+    issue = CheckIssue(issue_type=issue_type, library_id=LIBRARY_ID, path=UNPROCESSED_TARGET_PATH)
+
+    assert check_issue_severity(issue_type) == "error"
+    assert derive_check_issue_group_key(issue, CheckIssueGrouping.SUGGESTED_COMMAND).key == "history"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        r"C:\incoming\Unprocessed\notes\readme.txt",
+        "C:/incoming/Unprocessed/notes/readme.txt",
+        r"\\server\share\Unprocessed\notes\readme.txt",
+        "//server/share/Unprocessed/notes/readme.txt",
+    ],
+)
+def test_external_unprocessed_paths_group_platform_neutrally(path: str) -> None:
+    """Windows drive and UNC paths remain external on every runtime host."""
+    issue = CheckIssue(
+        issue_type=CheckIssueType.UNPROCESSED_FILE_MISSING,
+        library_id=LIBRARY_ID,
+        path=path,
+    )
+
+    assert common_path_root_for_check_issue(issue) == CHECK_ISSUE_GROUP_EXTERNAL_KEY
+    artist_album = derive_check_issue_group_key(issue, CheckIssueGrouping.ARTIST_ALBUM)
+    assert artist_album.key == CHECK_ISSUE_GROUP_EXTERNAL_KEY
+    assert artist_album.label == CHECK_ISSUE_GROUP_EXTERNAL_KEY
+
+
+def test_check_ready_unprocessed_source_uses_content_only_recorded_root() -> None:
+    """READY collection actions never invoke the music metadata snapshot boundary."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan(source_root_at_plan=EXTERNAL_SOURCE_ROOT))
+    uow.plan_actions.save(_unprocessed_action())
+    content_reader = MappingContentSnapshotReader(
+        {
+            UNPROCESSED_SOURCE_PATH: _content_snapshot(
+                UNPROCESSED_SOURCE_PATH,
+                content_hash=CHANGED_CONTENT_HASH,
+            )
+        }
+    )
+
+    result = CheckLibraryUseCase(
+        _check_ports(
+            uow,
+            StaticScanner(()),
+            MappingSnapshotReader({}),
+            content_snapshot_reader=content_reader,
+        )
+    ).execute(CheckLibraryRequest(trust_stat=False))
+
+    assert (
+        CheckIssue(
+            issue_type=CheckIssueType.PLAN_SOURCE_CHANGED,
+            library_id=LIBRARY_ID,
+            path=UNPROCESSED_SOURCE_PATH,
+            plan_id=PLAN_ID,
+            detail="source_changed",
+        )
+        in result.issues
+    )
+    assert content_reader.captures == [(UNPROCESSED_SOURCE_PATH, EXTERNAL_SOURCE_ROOT)]
+
+
+@pytest.mark.parametrize(
+    ("missing_path", "content_hash", "issue_type"),
+    [
+        (UNPROCESSED_TARGET_PATH, UNPROCESSED_CONTENT_HASH, CheckIssueType.UNPROCESSED_FILE_MISSING),
+        (None, CHANGED_CONTENT_HASH, CheckIssueType.UNPROCESSED_CONTENT_HASH_CHANGED),
+    ],
+)
+def test_check_reports_unreversed_unprocessed_event_drift(
+    missing_path: str | None,
+    content_hash: str,
+    issue_type: CheckIssueType,
+) -> None:
+    """Durable collected-file history detects missing and changed target bytes."""
+    uow = _uow_with_unprocessed_source_run()
+    content_reader = MappingContentSnapshotReader(
+        {UNPROCESSED_TARGET_PATH: _content_snapshot(UNPROCESSED_TARGET_PATH, content_hash=content_hash)},
+        missing_paths=None if missing_path is None else {missing_path},
+    )
+
+    result = CheckLibraryUseCase(
+        _check_ports(
+            uow,
+            StaticScanner(()),
+            MappingSnapshotReader({}),
+            content_snapshot_reader=content_reader,
+        )
+    ).execute(CheckLibraryRequest(trust_stat=False))
+
+    assert (
+        CheckIssue(
+            issue_type=issue_type,
+            library_id=LIBRARY_ID,
+            path=UNPROCESSED_TARGET_PATH,
+            plan_id=PLAN_ID,
+        )
+        in result.issues
+    )
+    assert content_reader.captures == [(UNPROCESSED_TARGET_PATH, EXTERNAL_SOURCE_ROOT)]
+
+
+def test_check_excludes_strongly_reversed_unprocessed_event() -> None:
+    """A confirmed exact inverse stops checking the former collected target."""
+    uow = _uow_with_unprocessed_source_run()
+    _save_unprocessed_reversal(uow)
+    content_reader = MappingContentSnapshotReader({})
+
+    result = CheckLibraryUseCase(
+        _check_ports(
+            uow,
+            StaticScanner(()),
+            MappingSnapshotReader({}),
+            content_snapshot_reader=content_reader,
+        )
+    ).execute(CheckLibraryRequest(trust_stat=False))
+
+    assert not any(
+        issue.issue_type
+        in {
+            CheckIssueType.UNPROCESSED_FILE_MISSING,
+            CheckIssueType.UNPROCESSED_CONTENT_HASH_CHANGED,
+        }
+        for issue in result.issues
+    )
+    assert content_reader.captures == []
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ["hash", "nonterminal", "duplicate", "cross_library_duplicate", "relabelled", "timestamp"],
+)
+def test_check_corrupt_unprocessed_inverse_does_not_suppress_drift(corruption: str) -> None:
+    """Only one exact terminal inverse can retire collected-file diagnostics."""
+    uow = _uow_with_unprocessed_source_run()
+    _save_unprocessed_reversal(
+        uow,
+        content_hash="tampered" if corruption == "hash" else UNPROCESSED_CONTENT_HASH,
+        plan_status=PlanStatus.READY if corruption == "nonterminal" else PlanStatus.APPLIED,
+        target_path="/outside/readme.txt" if corruption == "relabelled" else UNPROCESSED_SOURCE_PATH,
+        duplicate_event=corruption == "duplicate",
+    )
+    if corruption == "timestamp":
+        source_run = uow.runs.get(RUN_ID)
+        assert source_run is not None
+        uow.runs.save(replace(source_run, completed_at=AFTER_PLAN_TIME))
+    if corruption == "cross_library_duplicate":
+        reversal = uow.file_events.get(UNDO_EVENT_ID)
+        assert reversal is not None
+        uow.file_events.save(
+            replace(
+                reversal,
+                event_id=UNDO_SECOND_EVENT_ID,
+                library_id=SECOND_LIBRARY_ID,
+                sequence_no=2,
+            )
+        )
+    content_reader = MappingContentSnapshotReader(
+        {},
+        missing_paths={UNPROCESSED_TARGET_PATH},
+    )
+
+    result = CheckLibraryUseCase(
+        _check_ports(
+            uow,
+            StaticScanner(()),
+            MappingSnapshotReader({}),
+            content_snapshot_reader=content_reader,
+        )
+    ).execute(CheckLibraryRequest(trust_stat=False))
+
+    assert (
+        CheckIssue(
+            issue_type=CheckIssueType.UNPROCESSED_FILE_MISSING,
+            library_id=LIBRARY_ID,
+            path=UNPROCESSED_TARGET_PATH,
+            plan_id=PLAN_ID,
+        )
+        in result.issues
+    )
+
+
 def test_history_lists_runs_newest_first_and_loads_detail() -> None:
     """history usecases query Runs and FileEvents through repositories."""
     uow = InMemoryUnitOfWork()
@@ -516,6 +1044,273 @@ def test_history_lists_runs_newest_first_and_loads_detail() -> None:
     assert tuple(run.run_id for run in runs.items) == (SECOND_RUN_ID, RUN_ID)
     assert header.run_id == RUN_ID
     assert tuple(event.event_id for event in events.items) == (EVENT_ID,)
+
+
+def test_undo_plans_and_applies_exact_unprocessed_restore_without_managed_state() -> None:
+    """A verified collection event reverses under the same retained external root."""
+    uow = _uow_with_unprocessed_source_run()
+    planning_reader = MappingContentSnapshotReader(
+        {
+            UNPROCESSED_TARGET_PATH: _content_snapshot(
+                UNPROCESSED_TARGET_PATH,
+                content_hash=UNPROCESSED_CONTENT_HASH,
+            )
+        }
+    )
+    plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((UNDO_PLAN_ID,)),
+                action_ids=deque((UNDO_ACTION_ID,)),
+            ),
+            content_snapshot_reader=planning_reader,
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    inverse = plan.actions[0]
+    assert plan.source_root_at_plan == EXTERNAL_SOURCE_ROOT
+    assert inverse.action_type is ActionType.MOVE_UNPROCESSED
+    assert inverse.track_id is None
+    assert inverse.source_path == UNPROCESSED_TARGET_PATH
+    assert inverse.target_path == UNPROCESSED_SOURCE_PATH
+    assert inverse.content_hash_at_plan == UNPROCESSED_CONTENT_HASH
+    assert inverse.metadata_hash_at_plan is None
+    assert inverse.reverses_event_id == EVENT_ID
+    assert planning_reader.captures == [(UNPROCESSED_TARGET_PATH, EXTERNAL_SOURCE_ROOT)]
+
+    request = _stage_claimed_apply(uow, UNDO_PLAN_ID, UNDO_RUN_ID)
+    mover = RecordingFileMover()
+    run = ApplyPlanUseCase(
+        ApplyPlanPorts(
+            uow=uow,
+            file_mover=mover,
+            file_snapshot_reader=MappingSnapshotReader({}),
+            file_content_snapshot_reader=MappingContentSnapshotReader(
+                {
+                    UNPROCESSED_TARGET_PATH: _content_snapshot(
+                        UNPROCESSED_TARGET_PATH,
+                        content_hash=UNPROCESSED_CONTENT_HASH,
+                    )
+                }
+            ),
+            path_resolver=SimplePathResolver(),
+            clock=FixedClock(BASE_TIME),
+            id_generator=SequenceIdGenerator(event_ids=deque((UNDO_EVENT_ID,))),
+        )
+    ).execute(request)
+
+    assert run.status is RunStatus.SUCCEEDED
+    assert mover.moves == [(UNPROCESSED_TARGET_PATH, UNPROCESSED_SOURCE_PATH)]
+    assert mover.source_roots == [EXTERNAL_SOURCE_ROOT]
+    assert mover.target_roots == [EXTERNAL_SOURCE_ROOT]
+    assert uow.tracks.records == {}
+    assert uow.companion_assets.records == {}
+
+
+def test_unprocessed_move_cannot_be_undone_twice() -> None:
+    """An applied unprocessed reversal permanently consumes its source Run."""
+    uow = _uow_with_unprocessed_source_run()
+    plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((UNDO_PLAN_ID,)),
+                action_ids=deque((UNDO_ACTION_ID,)),
+            ),
+            content_snapshot_reader=MappingContentSnapshotReader(
+                {
+                    UNPROCESSED_TARGET_PATH: _content_snapshot(
+                        UNPROCESSED_TARGET_PATH,
+                        content_hash=UNPROCESSED_CONTENT_HASH,
+                    )
+                }
+            ),
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+    uow.plans.save(plan.mark_applied())
+
+    with pytest.raises(UndoPlanError, match=ALREADY_UNDONE_OR_IN_PROGRESS_MESSAGE):
+        _ = CreateUndoPlanUseCase(_undo_ports(uow, id_generator=SequenceIdGenerator())).execute(
+            CreateUndoPlanRequest(RUN_ID)
+        )
+
+
+def test_undo_blocks_changed_unprocessed_target_content() -> None:
+    """Undo never moves collected bytes that changed after the forward event."""
+    uow = _uow_with_unprocessed_source_run()
+    plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((UNDO_PLAN_ID,)),
+                action_ids=deque((UNDO_ACTION_ID,)),
+            ),
+            content_snapshot_reader=MappingContentSnapshotReader(
+                {
+                    UNPROCESSED_TARGET_PATH: _content_snapshot(
+                        UNPROCESSED_TARGET_PATH,
+                        content_hash=UNPROCESSED_CURRENT_HASH,
+                    )
+                }
+            ),
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert plan.actions[0].status is ActionStatus.BLOCKED
+    assert plan.actions[0].reason is PlanActionReason.SOURCE_CHANGED
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_reason"),
+    [
+        (FileObservationInvalidPathError("symlink"), PlanActionReason.INVALID_PATH),
+        (ValueError("invalid path"), PlanActionReason.INVALID_PATH),
+        (FileObservationChangedError("changed"), PlanActionReason.SOURCE_CHANGED),
+        (OSError("unreadable"), PlanActionReason.SOURCE_CHANGED),
+    ],
+)
+def test_undo_blocks_unprocessed_observation_failure_with_typed_reason(
+    error: BaseException,
+    expected_reason: PlanActionReason,
+) -> None:
+    """Rooted path rejection stays distinct from content observation failure."""
+    uow = _uow_with_unprocessed_source_run()
+    plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((UNDO_PLAN_ID,)),
+                action_ids=deque((UNDO_ACTION_ID,)),
+            ),
+            content_snapshot_reader=MappingFileContentSnapshotReader({UNPROCESSED_TARGET_PATH: error}),
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert plan.actions[0].status is ActionStatus.BLOCKED
+    assert plan.actions[0].reason is expected_reason
+
+
+def test_undo_blocks_occupied_unprocessed_original_path() -> None:
+    """The exact original path is never overwritten during reversal."""
+    uow = _uow_with_unprocessed_source_run()
+    plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((UNDO_PLAN_ID,)),
+                action_ids=deque((UNDO_ACTION_ID,)),
+            ),
+            file_presence=StaticFilePresence({UNPROCESSED_SOURCE_PATH}),
+            content_snapshot_reader=MappingContentSnapshotReader(
+                {
+                    UNPROCESSED_TARGET_PATH: _content_snapshot(
+                        UNPROCESSED_TARGET_PATH,
+                        content_hash=UNPROCESSED_CONTENT_HASH,
+                    )
+                }
+            ),
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert plan.actions[0].status is ActionStatus.BLOCKED
+    assert plan.actions[0].reason is PlanActionReason.TARGET_EXISTS
+
+
+@pytest.mark.parametrize(
+    ("source_path", "target_path"),
+    [
+        ("notes/readme.txt", UNPROCESSED_TARGET_PATH),
+        (UNPROCESSED_SOURCE_PATH, "/outside/Unprocessed/notes/readme.txt"),
+        (UNPROCESSED_SOURCE_PATH, "/incoming/Unprocessed/renamed/readme.txt"),
+        (UNPROCESSED_SOURCE_PATH, "/incoming/bad:name/notes/readme.txt"),
+    ],
+)
+def test_undo_rejects_malformed_unprocessed_history_before_observation(
+    source_path: str,
+    target_path: str,
+) -> None:
+    """Relative, cross-root, relabelled, and nonportable history fails closed."""
+    uow = _uow_with_unprocessed_source_run(source_path=source_path, target_path=target_path)
+    content_reader = MappingContentSnapshotReader({})
+
+    with pytest.raises(UndoPlanError):
+        _ = CreateUndoPlanUseCase(
+            _undo_ports(
+                uow,
+                id_generator=SequenceIdGenerator(),
+                content_snapshot_reader=content_reader,
+            )
+        ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert content_reader.captures == []
+
+
+def test_undo_rejects_unprocessed_history_overlapping_recorded_library_root() -> None:
+    """An inverse cannot legitimize a forward collection target inside managed storage."""
+    uow = _uow_with_unprocessed_source_run(
+        library_root_at_plan="/incoming/Unprocessed",
+    )
+    content_reader = MappingContentSnapshotReader({})
+
+    with pytest.raises(UndoPlanError):
+        _ = CreateUndoPlanUseCase(
+            _undo_ports(
+                uow,
+                id_generator=SequenceIdGenerator(),
+                content_snapshot_reader=content_reader,
+            )
+        ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert content_reader.captures == []
+
+
+def test_apply_rejects_tampered_unprocessed_inverse_hash_before_observation() -> None:
+    """Apply repeats source-event hash provenance instead of trusting a modified Undo Plan."""
+    uow = _uow_with_unprocessed_source_run()
+    plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((UNDO_PLAN_ID,)),
+                action_ids=deque((UNDO_ACTION_ID,)),
+            ),
+            content_snapshot_reader=MappingContentSnapshotReader(
+                {
+                    UNPROCESSED_TARGET_PATH: _content_snapshot(
+                        UNPROCESSED_TARGET_PATH,
+                        content_hash=UNPROCESSED_CONTENT_HASH,
+                    )
+                }
+            ),
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+    inverse = replace(plan.actions[0], content_hash_at_plan="tampered")
+    uow.plan_actions.save(inverse)
+    request = _stage_claimed_apply(uow, UNDO_PLAN_ID, UNDO_RUN_ID)
+    content_reader = MappingContentSnapshotReader(
+        {UNPROCESSED_TARGET_PATH: _content_snapshot(UNPROCESSED_TARGET_PATH, content_hash="tampered")}
+    )
+    mover = RecordingFileMover()
+
+    run = ApplyPlanUseCase(
+        ApplyPlanPorts(
+            uow=uow,
+            file_mover=mover,
+            file_snapshot_reader=MappingSnapshotReader({}),
+            file_content_snapshot_reader=content_reader,
+            path_resolver=SimplePathResolver(),
+            clock=FixedClock(BASE_TIME),
+            id_generator=SequenceIdGenerator(),
+        )
+    ).execute(request)
+
+    assert run.status is RunStatus.FAILED
+    stored_inverse = uow.plan_actions.get(UNDO_ACTION_ID)
+    assert stored_inverse is not None
+    assert stored_inverse.reason is PlanActionReason.INVALID_PATH
+    assert content_reader.captures == []
+    assert mover.moves == []
 
 
 def test_undo_creates_plan_from_succeeded_events_in_reverse_order() -> None:
@@ -541,6 +1336,255 @@ def test_undo_creates_plan_from_succeeded_events_in_reverse_order() -> None:
     assert uow.plans.get(UNDO_PLAN_ID) == plan
 
 
+def test_undo_plans_and_applies_external_lyrics_before_its_audio_owner() -> None:
+    """External Add Undo restores lyrics first and removes managed state only after movement."""
+    uow = _uow_with_companion_source_run()
+    planning_content_reader = MappingContentSnapshotReader(
+        {_absolute(COMPANION_PATH): _content_snapshot(_absolute(COMPANION_PATH))}
+    )
+    plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((UNDO_PLAN_ID,)),
+                action_ids=deque((UNDO_ACTION_ID, UNDO_SECOND_ACTION_ID)),
+            ),
+            content_snapshot_reader=planning_content_reader,
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert plan.source_root_at_plan == EXTERNAL_SOURCE_ROOT
+    assert tuple(action.action_type for action in plan.actions) == (ActionType.MOVE_LYRICS, ActionType.MOVE)
+    assert tuple(action.reverses_event_id for action in plan.actions) == (SECOND_EVENT_ID, EVENT_ID)
+    companion_inverse, audio_inverse = plan.actions
+    assert companion_inverse.companion_asset_id == COMPANION_ASSET_ID
+    assert companion_inverse.owner_action_id == audio_inverse.action_id == UNDO_SECOND_ACTION_ID
+    assert companion_inverse.track_id == audio_inverse.track_id == TRACK_ID
+    assert companion_inverse.metadata_hash_at_plan is None
+    assert planning_content_reader.captures == [(_absolute(COMPANION_PATH), LIBRARY_ROOT)]
+    assert uow.plan_action_dependencies.list_by_action(audio_inverse.action_id) == (
+        PlanActionDependency(
+            plan_id=UNDO_PLAN_ID,
+            action_id=audio_inverse.action_id,
+            depends_on_action_id=companion_inverse.action_id,
+        ),
+    )
+
+    request = _stage_claimed_apply(uow, UNDO_PLAN_ID, UNDO_RUN_ID)
+    mover = RecordingFileMover()
+    apply_content_reader = MappingContentSnapshotReader(
+        {_absolute(COMPANION_PATH): _content_snapshot(_absolute(COMPANION_PATH))}
+    )
+    run = ApplyPlanUseCase(
+        ApplyPlanPorts(
+            uow=uow,
+            file_mover=mover,
+            file_snapshot_reader=MappingSnapshotReader({_absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH))}),
+            file_content_snapshot_reader=apply_content_reader,
+            path_resolver=SimplePathResolver(),
+            clock=FixedClock(BASE_TIME),
+            id_generator=SequenceIdGenerator(
+                event_ids=deque((UNDO_EVENT_ID, UNDO_SECOND_EVENT_ID)),
+            ),
+        )
+    ).execute(request)
+
+    assert run.status is RunStatus.SUCCEEDED
+    assert mover.moves == [
+        (_absolute(COMPANION_PATH), EXTERNAL_COMPANION_SOURCE_PATH),
+        (_absolute(TARGET_PATH), EXTERNAL_SOURCE_PATH),
+    ]
+    assert mover.target_roots == [EXTERNAL_SOURCE_ROOT, EXTERNAL_SOURCE_ROOT]
+    assert tuple(event.event_type for event in uow.file_events.list_by_run(UNDO_RUN_ID)) == (
+        FileEventType.MOVE_LYRICS_FILE,
+        FileEventType.MOVE_FILE,
+    )
+    asset = uow.companion_assets.get(COMPANION_ASSET_ID)
+    assert asset is not None
+    assert asset.status is CompanionAssetStatus.REMOVED
+    assert asset.current_path == COMPANION_PATH
+    assert asset.canonical_path == COMPANION_PATH
+    assert asset.content_hash == CONTENT_HASH
+
+
+def test_cross_run_companion_undo_accepts_proven_removal_of_original_audio_owner() -> None:
+    """A companion-only recovery Run remains reversible after the owning audio Run was undone."""
+    uow = _uow_with_companion_source_run()
+    companion_action = uow.plan_actions.get(SECOND_ACTION_ID)
+    track = uow.tracks.get(TRACK_ID)
+    assert companion_action is not None
+    assert track is not None
+    _ = uow.plan_actions.records.pop(ACTION_ID)
+    _ = uow.file_events.records.pop(EVENT_ID)
+    uow.plan_action_dependencies.records.clear()
+    uow.plan_actions.save(replace(companion_action, owner_action_id=None, sort_order=1))
+    uow.tracks.save(replace(track, status=TrackStatus.REMOVED))
+    planning_content_reader = MappingContentSnapshotReader(
+        {_absolute(COMPANION_PATH): _content_snapshot(_absolute(COMPANION_PATH))}
+    )
+    plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((UNDO_PLAN_ID,)),
+                action_ids=deque((UNDO_ACTION_ID,)),
+            ),
+            content_snapshot_reader=planning_content_reader,
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert len(plan.actions) == 1
+    inverse = plan.actions[0]
+    assert inverse.action_type is ActionType.MOVE_LYRICS
+    assert inverse.owner_action_id is None
+    assert inverse.track_id == TRACK_ID
+    assert uow.plan_action_dependencies.list_by_action(inverse.action_id) == ()
+
+    request = _stage_claimed_apply(uow, UNDO_PLAN_ID, UNDO_RUN_ID)
+    mover = RecordingFileMover()
+    run = ApplyPlanUseCase(
+        ApplyPlanPorts(
+            uow=uow,
+            file_mover=mover,
+            file_snapshot_reader=MappingSnapshotReader({}),
+            file_content_snapshot_reader=MappingContentSnapshotReader(
+                {_absolute(COMPANION_PATH): _content_snapshot(_absolute(COMPANION_PATH))}
+            ),
+            path_resolver=SimplePathResolver(),
+            clock=FixedClock(BASE_TIME),
+            id_generator=SequenceIdGenerator(event_ids=deque((UNDO_EVENT_ID,))),
+        )
+    ).execute(request)
+
+    assert run.status is RunStatus.SUCCEEDED
+    assert mover.moves == [(_absolute(COMPANION_PATH), EXTERNAL_COMPANION_SOURCE_PATH)]
+    asset = uow.companion_assets.get(COMPANION_ASSET_ID)
+    assert asset is not None
+    assert asset.status is CompanionAssetStatus.REMOVED
+    owner = uow.tracks.get(TRACK_ID)
+    assert owner is not None
+    assert owner.status is TrackStatus.REMOVED
+
+
+def test_undo_plans_shared_artwork_once_and_reverses_every_audio_dependency() -> None:
+    """One shared artwork inverse precedes and gates both of its audio inverses."""
+    uow = _uow_with_companion_source_run(shared_artwork=True)
+    content_reader = MappingContentSnapshotReader(
+        {_absolute(UNMANAGED_COMPANION_PATH): _content_snapshot(_absolute(UNMANAGED_COMPANION_PATH))}
+    )
+
+    plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((UNDO_PLAN_ID,)),
+                action_ids=deque((UNDO_ACTION_ID, UNDO_SECOND_ACTION_ID, UNDO_THIRD_ACTION_ID)),
+            ),
+            content_snapshot_reader=content_reader,
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    artwork_inverse, second_audio_inverse, first_audio_inverse = plan.actions
+    assert tuple(action.action_type for action in plan.actions) == (
+        ActionType.MOVE_ARTWORK,
+        ActionType.MOVE,
+        ActionType.MOVE,
+    )
+    assert artwork_inverse.companion_asset_id == SECOND_COMPANION_ASSET_ID
+    assert artwork_inverse.owner_action_id == first_audio_inverse.action_id
+    assert content_reader.captures == [(_absolute(UNMANAGED_COMPANION_PATH), LIBRARY_ROOT)]
+    assert uow.plan_action_dependencies.list_by_action(second_audio_inverse.action_id)[0].depends_on_action_id == (
+        artwork_inverse.action_id
+    )
+    assert uow.plan_action_dependencies.list_by_action(first_audio_inverse.action_id)[0].depends_on_action_id == (
+        artwork_inverse.action_id
+    )
+
+
+def test_undo_apply_partial_failure_blocks_owner_before_observation() -> None:
+    """A changed companion fails its owner dependency while independent reverse work can succeed."""
+    uow = _uow_with_companion_source_run(independent_audio=True)
+    plan = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((UNDO_PLAN_ID,)),
+                action_ids=deque((UNDO_ACTION_ID, UNDO_SECOND_ACTION_ID, UNDO_THIRD_ACTION_ID)),
+            ),
+            content_snapshot_reader=MappingContentSnapshotReader(
+                {_absolute(COMPANION_PATH): _content_snapshot(_absolute(COMPANION_PATH))}
+            ),
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+    request = _stage_claimed_apply(uow, plan.plan_id, UNDO_RUN_ID)
+    snapshot_reader = MappingSnapshotReader(
+        {
+            _absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH)),
+            _absolute(RESTORE_PATH): _snapshot(_absolute(RESTORE_PATH)),
+        }
+    )
+    mover = RecordingFileMover()
+
+    run = ApplyPlanUseCase(
+        ApplyPlanPorts(
+            uow=uow,
+            file_mover=mover,
+            file_snapshot_reader=snapshot_reader,
+            file_content_snapshot_reader=MappingContentSnapshotReader(
+                {
+                    _absolute(COMPANION_PATH): _content_snapshot(
+                        _absolute(COMPANION_PATH),
+                        content_hash=CHANGED_CONTENT_HASH,
+                    )
+                }
+            ),
+            path_resolver=SimplePathResolver(),
+            clock=FixedClock(BASE_TIME),
+            id_generator=SequenceIdGenerator(event_ids=deque((UNDO_EVENT_ID,))),
+        )
+    ).execute(request)
+
+    companion_inverse, owner_inverse, independent_inverse = plan.actions
+    assert run.status is RunStatus.PARTIAL_FAILED
+    stored_companion_inverse = uow.plan_actions.get(companion_inverse.action_id)
+    stored_owner_inverse = uow.plan_actions.get(owner_inverse.action_id)
+    stored_independent_inverse = uow.plan_actions.get(independent_inverse.action_id)
+    assert stored_companion_inverse is not None
+    assert stored_owner_inverse is not None
+    assert stored_independent_inverse is not None
+    assert stored_companion_inverse.reason is PlanActionReason.SOURCE_CHANGED
+    assert stored_owner_inverse.reason is PlanActionReason.COMPANION_DEPENDENCY_FAILED
+    assert stored_independent_inverse.status is ActionStatus.APPLIED
+    assert snapshot_reader.captured_paths == [_absolute(RESTORE_PATH)]
+    assert mover.moves == [(_absolute(RESTORE_PATH), SECOND_EXTERNAL_SOURCE_PATH)]
+    asset = uow.companion_assets.get(COMPANION_ASSET_ID)
+    assert asset is not None
+    assert asset.status is CompanionAssetStatus.ACTIVE
+
+
+def test_undo_rejects_corrupt_companion_provenance_before_observation() -> None:
+    """Mismatched event/asset identity cannot produce an executable inverse Plan."""
+    uow = _uow_with_companion_source_run()
+    companion_event = uow.file_events.get(SECOND_EVENT_ID)
+    assert companion_event is not None
+    uow.file_events.save(replace(companion_event, companion_asset_id=SECOND_COMPANION_ASSET_ID))
+    content_reader = MappingContentSnapshotReader(
+        {_absolute(COMPANION_PATH): _content_snapshot(_absolute(COMPANION_PATH))}
+    )
+
+    with pytest.raises(UndoPlanError, match=INVALID_COMPANION_PROVENANCE_MESSAGE):
+        _ = CreateUndoPlanUseCase(
+            _undo_ports(
+                uow,
+                id_generator=SequenceIdGenerator(),
+                content_snapshot_reader=content_reader,
+            )
+        ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert content_reader.captures == []
+    assert tuple(uow.plans.list_by_source_run(RUN_ID)) == ()
+
+
 def test_undo_validate_is_read_only_and_performs_no_filesystem_observation() -> None:
     """Synchronous preflight checks durable eligibility without planning side effects."""
     uow = _uow_with_applied_run(second_event=False)
@@ -548,6 +1592,7 @@ def test_undo_validate_is_read_only_and_performs_no_filesystem_observation() -> 
         CreateUndoPlanPorts(
             uow=uow,
             file_snapshot_reader=MappingSnapshotReader({}),
+            file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
             file_presence=StaticFilePresence(),
             path_resolver=SimplePathResolver(),
             clock=FixedClock(BASE_TIME),
@@ -727,6 +1772,88 @@ def test_undo_retry_excludes_durably_reversed_source_events(status: PlanStatus) 
     assert tuple(action.reverses_event_id for action in retry.actions) == (EVENT_ID,)
 
 
+def test_undo_retry_uses_prior_companion_success_as_durable_dependency_evidence() -> None:
+    """A successful prior companion inverse stays consumed while its failed audio owner is retried."""
+    uow = _uow_with_companion_source_run()
+    uow.plans.save(
+        _plan(
+            plan_id=UNDO_PLAN_ID,
+            plan_type=PlanType.UNDO,
+            status=PlanStatus.PARTIAL_FAILED,
+            source_run_id=RUN_ID,
+            source_root_at_plan=EXTERNAL_SOURCE_ROOT,
+        )
+    )
+    prior_audio_inverse = replace(
+        _source_action(
+            action_id=UNDO_SECOND_ACTION_ID,
+            plan_id=UNDO_PLAN_ID,
+            source_path=TARGET_PATH,
+            target_path=EXTERNAL_SOURCE_PATH,
+            track_id=TRACK_ID,
+        ),
+        status=ActionStatus.FAILED,
+        reverses_event_id=EVENT_ID,
+    )
+    prior_companion_inverse = replace(
+        _companion_source_action(
+            action_id=UNDO_ACTION_ID,
+            action_type=ActionType.MOVE_LYRICS,
+            companion_asset_id=COMPANION_ASSET_ID,
+            owner_action_id=UNDO_SECOND_ACTION_ID,
+            track_id=TRACK_ID,
+            source_path=COMPANION_PATH,
+            target_path=EXTERNAL_COMPANION_SOURCE_PATH,
+        ),
+        plan_id=UNDO_PLAN_ID,
+        reverses_event_id=SECOND_EVENT_ID,
+    )
+    uow.plan_actions.save(prior_audio_inverse)
+    uow.plan_actions.save(prior_companion_inverse)
+    uow.plan_action_dependencies.save(
+        PlanActionDependency(
+            plan_id=UNDO_PLAN_ID,
+            action_id=UNDO_SECOND_ACTION_ID,
+            depends_on_action_id=UNDO_ACTION_ID,
+        )
+    )
+    uow.runs.save(
+        replace(
+            _run(run_id=UNDO_RUN_ID, plan_id=UNDO_PLAN_ID, status=RunStatus.PARTIAL_FAILED),
+            completed_at=BASE_TIME,
+        )
+    )
+    uow.file_events.save(
+        replace(
+            _event(
+                event_id=UNDO_EVENT_ID,
+                source_path=COMPANION_PATH,
+                target_path=EXTERNAL_COMPANION_SOURCE_PATH,
+                plan_action_id=UNDO_ACTION_ID,
+            ),
+            run_id=UNDO_RUN_ID,
+            event_type=FileEventType.MOVE_LYRICS_FILE,
+            companion_asset_id=COMPANION_ASSET_ID,
+        )
+    )
+    existing_asset = uow.companion_assets.get(COMPANION_ASSET_ID)
+    assert existing_asset is not None
+    uow.companion_assets.save(replace(existing_asset, status=CompanionAssetStatus.REMOVED))
+
+    retry = CreateUndoPlanUseCase(
+        _undo_ports(
+            uow,
+            id_generator=SequenceIdGenerator(
+                plan_ids=deque((SECOND_PLAN_ID,)),
+                action_ids=deque((UNDO_THIRD_ACTION_ID,)),
+            ),
+        )
+    ).execute(CreateUndoPlanRequest(RUN_ID))
+
+    assert tuple(action.reverses_event_id for action in retry.actions) == (EVENT_ID,)
+    assert uow.plan_action_dependencies.list_by_action(UNDO_THIRD_ACTION_ID) == ()
+
+
 def test_undo_rejects_pending_event_in_source_or_prior_undo_scope() -> None:
     """An unknown source or reversal outcome blocks all Undo regeneration."""
     source_pending_uow = _uow_with_applied_run(second_event=False)
@@ -866,6 +1993,7 @@ def test_apply_persists_generated_track_id_on_add_action_for_later_undo() -> Non
         uow=uow,
         file_mover=RecordingFileMover(),
         file_snapshot_reader=MappingSnapshotReader({EXTERNAL_SOURCE_PATH: _snapshot(EXTERNAL_SOURCE_PATH)}),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(
@@ -888,7 +2016,7 @@ def test_undo_uses_current_track_path_for_import_after_track_moved() -> None:
     uow.libraries.save(_library())
     uow.tracks.save(_track(current_path=RESTORE_PATH))
     uow.tracks.save(_track(track_id=SECOND_TRACK_ID, current_path=TARGET_PATH))
-    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plans.save(_plan(status=PlanStatus.APPLIED, source_root_at_plan=EXTERNAL_SOURCE_ROOT))
     uow.plan_actions.save(
         _source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=TRACK_ID).mark_applied()
     )
@@ -921,6 +2049,7 @@ def test_undo_does_not_reverse_replacement_track_at_reused_event_path() -> None:
     ports = CreateUndoPlanPorts(
         uow=uow,
         file_snapshot_reader=snapshot_reader,
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         file_presence=StaticFilePresence(),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
@@ -963,6 +2092,7 @@ def test_undo_blocks_rejected_source_path_and_succeeds_operation() -> None:
     ports = CreateUndoPlanPorts(
         uow=uow,
         file_snapshot_reader=snapshots,
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         file_presence=StaticFilePresence(),
         path_resolver=SelectiveRejectingPathResolver(RESTORE_PATH),
         clock=FixedClock(BASE_TIME),
@@ -996,6 +2126,7 @@ def test_undo_blocks_unstable_source_observation_and_succeeds_operation(
     ports = CreateUndoPlanPorts(
         uow=uow,
         file_snapshot_reader=RaisingSnapshotReader(observation_error),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         file_presence=StaticFilePresence(),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
@@ -1017,7 +2148,7 @@ def test_apply_external_undo_restore_marks_track_removed() -> None:
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library())
     uow.tracks.save(_track())
-    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plans.save(_plan(status=PlanStatus.APPLIED, source_root_at_plan=EXTERNAL_SOURCE_ROOT))
     uow.plan_actions.save(
         _source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=TRACK_ID).mark_applied()
     )
@@ -1029,6 +2160,7 @@ def test_apply_external_undo_restore_marks_track_removed() -> None:
             plan_type=PlanType.UNDO,
             status=PlanStatus.READY,
             source_run_id=RUN_ID,
+            source_root_at_plan=EXTERNAL_SOURCE_ROOT,
         )
     )
     uow.plan_actions.save(
@@ -1049,6 +2181,7 @@ def test_apply_external_undo_restore_marks_track_removed() -> None:
         uow=uow,
         file_mover=mover,
         file_snapshot_reader=MappingSnapshotReader({_absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH))}),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(run_ids=deque((UNDO_RUN_ID,)), event_ids=deque((UNDO_EVENT_ID,))),
@@ -1060,6 +2193,7 @@ def test_apply_external_undo_restore_marks_track_removed() -> None:
     assert run.status == RunStatus.SUCCEEDED
     assert mover.moves == [(_absolute(TARGET_PATH), EXTERNAL_SOURCE_PATH)]
     assert mover.source_roots == [LIBRARY_ROOT]
+    assert mover.target_roots == [EXTERNAL_SOURCE_ROOT]
     track = uow.tracks.get(TRACK_ID)
     assert track is not None
     assert track.status == TrackStatus.REMOVED
@@ -1079,6 +2213,7 @@ def test_apply_rejects_absolute_target_on_non_undo_plan() -> None:
         uow=uow,
         file_mover=mover,
         file_snapshot_reader=MappingSnapshotReader({_absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH))}),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(run_ids=deque((RUN_ID,))),
@@ -1115,7 +2250,7 @@ def test_apply_external_undo_restore_succeeds_after_in_library_relocation() -> N
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library())
     uow.tracks.save(_track(current_path=RELOCATED_PATH))
-    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plans.save(_plan(status=PlanStatus.APPLIED, source_root_at_plan=EXTERNAL_SOURCE_ROOT))
     uow.plan_actions.save(
         _source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=TRACK_ID).mark_applied()
     )
@@ -1137,6 +2272,7 @@ def test_apply_external_undo_restore_succeeds_after_in_library_relocation() -> N
         uow=uow,
         file_mover=mover,
         file_snapshot_reader=MappingSnapshotReader({_absolute(RELOCATED_PATH): _snapshot(_absolute(RELOCATED_PATH))}),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(run_ids=deque((UNDO_RUN_ID,)), event_ids=deque((UNDO_EVENT_ID,))),
@@ -1148,6 +2284,7 @@ def test_apply_external_undo_restore_succeeds_after_in_library_relocation() -> N
     assert run.status == RunStatus.SUCCEEDED
     assert mover.moves == [(_absolute(RELOCATED_PATH), EXTERNAL_SOURCE_PATH)]
     assert mover.source_roots == [LIBRARY_ROOT]
+    assert mover.target_roots == [EXTERNAL_SOURCE_ROOT]
     track = uow.tracks.get(TRACK_ID)
     assert track is not None
     assert track.status == TrackStatus.REMOVED
@@ -1159,7 +2296,7 @@ def test_apply_rejects_external_restore_not_matching_track_current_path() -> Non
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library())
     uow.tracks.save(_track())
-    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plans.save(_plan(status=PlanStatus.APPLIED, source_root_at_plan=EXTERNAL_SOURCE_ROOT))
     uow.plan_actions.save(
         _source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=TRACK_ID).mark_applied()
     )
@@ -1171,6 +2308,7 @@ def test_apply_rejects_external_restore_not_matching_track_current_path() -> Non
             plan_type=PlanType.UNDO,
             status=PlanStatus.READY,
             source_run_id=RUN_ID,
+            source_root_at_plan=EXTERNAL_SOURCE_ROOT,
         )
     )
     uow.plan_actions.save(
@@ -1191,6 +2329,7 @@ def test_apply_rejects_external_restore_not_matching_track_current_path() -> Non
         uow=uow,
         file_mover=mover,
         file_snapshot_reader=MappingSnapshotReader({_absolute(RESTORE_PATH): _snapshot(_absolute(RESTORE_PATH))}),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(run_ids=deque((UNDO_RUN_ID,))),
@@ -1252,6 +2391,30 @@ def test_apply_rejects_external_restore_with_cross_record_identity_mismatch(corr
             uow.runs.save(replace(source_run, plan_id=SECOND_PLAN_ID))
         case _:
             pytest.fail(f"Unhandled provenance corruption: {corruption}")
+
+    _assert_external_restore_rejected(uow)
+
+
+@pytest.mark.parametrize(
+    ("undo_source_root", "source_plan_source_root"),
+    [
+        (SECOND_LIBRARY_ROOT, EXTERNAL_SOURCE_ROOT),
+        (EXTERNAL_SOURCE_ROOT, SECOND_LIBRARY_ROOT),
+        (SECOND_LIBRARY_ROOT, SECOND_LIBRARY_ROOT),
+    ],
+)
+def test_apply_rejects_external_restore_without_matching_containing_source_roots(
+    undo_source_root: str,
+    source_plan_source_root: str,
+) -> None:
+    """External restore requires one durable root shared by both Plans and containing the target."""
+    uow = _uow_with_external_restore_plan()
+    undo_plan = uow.plans.get(UNDO_PLAN_ID)
+    source_plan = uow.plans.get(PLAN_ID)
+    assert undo_plan is not None
+    assert source_plan is not None
+    uow.plans.save(replace(undo_plan, source_root_at_plan=undo_source_root))
+    uow.plans.save(replace(source_plan, source_root_at_plan=source_plan_source_root))
 
     _assert_external_restore_rejected(uow)
 
@@ -1367,9 +2530,14 @@ class StaticScanner:
         """Store scan entries."""
         self._entries: tuple[FileScanEntry, ...] = entries
 
-    def scan(self, root: FileSystemPath) -> tuple[FileScanEntry, ...]:
+    def scan(
+        self,
+        root: FileSystemPath,
+        *,
+        excluded_roots: tuple[FileSystemPath, ...] = (),
+    ) -> tuple[FileScanEntry, ...]:
         """Return fixed entries without touching the filesystem."""
-        del root
+        del root, excluded_roots
         return self._entries
 
 
@@ -1402,6 +2570,43 @@ class MappingSnapshotReader:
             except FileNotFoundError:
                 snapshots.append(None)
         return tuple(snapshots)
+
+
+class MappingContentSnapshotReader:
+    """Content-snapshot fake keyed by filesystem path text."""
+
+    def __init__(
+        self,
+        snapshots: dict[str, FileContentSnapshot],
+        *,
+        missing_paths: set[str] | None = None,
+    ) -> None:
+        """Store snapshots and paths that should appear missing."""
+        self._snapshots: dict[str, FileContentSnapshot] = snapshots
+        self._missing_paths: set[str] = set() if missing_paths is None else set(missing_paths)
+        self.captures: list[tuple[str, str]] = []
+
+    def capture(self, path: FileSystemPath, *, root: FileSystemPath) -> FileContentSnapshot:
+        """Return one configured root-anchored content snapshot."""
+        path_text = str(path)
+        self.captures.append((path_text, str(root)))
+        if path_text in self._missing_paths:
+            raise FileNotFoundError(path_text)
+        return self._snapshots[path_text]
+
+
+class StaticSourceInventoryReader:
+    """Source-inventory fake returning fixed regular-file entries."""
+
+    def __init__(self, entries: tuple[SourceInventoryEntry, ...]) -> None:
+        """Store the deterministic entries returned by scan."""
+        self._entries: tuple[SourceInventoryEntry, ...] = entries
+        self.requests: list[SourceInventoryRequest] = []
+
+    def scan(self, request: SourceInventoryRequest) -> tuple[SourceInventoryEntry, ...]:
+        """Return fixed entries without touching the filesystem."""
+        self.requests.append(request)
+        return self._entries
 
 
 class RaisingSnapshotReader:
@@ -1481,6 +2686,7 @@ class RecordingFileMover:
         """Initialize recorded moves."""
         self.moves: list[tuple[str, str]] = []
         self.source_roots: list[str | None] = []
+        self.target_roots: list[str | None] = []
 
     def move(  # noqa: PLR0913  # Fake mirrors the stable FileMover safety port.
         self,
@@ -1493,25 +2699,35 @@ class RecordingFileMover:
         expected_source_content_hash: str | None = None,
     ) -> None:
         """Record one move."""
-        del target_root, expected_source_identity, expected_source_content_hash
+        del expected_source_identity, expected_source_content_hash
         self.moves.append((str(source), str(target)))
         self.source_roots.append(None if source_root is None else str(source_root))
+        self.target_roots.append(None if target_root is None else str(target_root))
 
 
-def _check_ports(
+def _check_ports(  # noqa: PLR0913  # Test builder mirrors Check's filesystem observation ports.
     uow: InMemoryUnitOfWork,
     scanner: StaticScanner,
     snapshot_reader: MappingSnapshotReader,
     *,
     content_hasher: MappingContentHasher | None = None,
+    content_snapshot_reader: MappingContentSnapshotReader | None = None,
+    source_inventory_reader: StaticSourceInventoryReader | None = None,
     id_generator: SequenceIdGenerator | None = None,
+    config: AppConfig | None = None,
 ) -> CheckLibraryPorts:
     return CheckLibraryPorts(
         uow=uow,
         file_scanner=scanner,
         file_snapshot_reader=snapshot_reader,
+        file_content_snapshot_reader=(
+            UnusedFileContentSnapshotReader() if content_snapshot_reader is None else content_snapshot_reader
+        ),
+        source_inventory_reader=(
+            EmptySourceInventoryReader() if source_inventory_reader is None else source_inventory_reader
+        ),
         file_content_hasher=MappingContentHasher({}) if content_hasher is None else content_hasher,
-        config_store=StaticConfigStore(),
+        config_store=StaticConfigStore(config),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(check_run_ids=deque((CHECK_RUN_ID,)))
@@ -1593,6 +2809,7 @@ def _undo_ports(
     *,
     id_generator: SequenceIdGenerator,
     file_presence: StaticFilePresence | None = None,
+    content_snapshot_reader: FileContentSnapshotReader | None = None,
 ) -> CreateUndoPlanPorts:
     snapshots = {
         _absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH)),
@@ -1602,6 +2819,9 @@ def _undo_ports(
     return CreateUndoPlanPorts(
         uow=uow,
         file_snapshot_reader=MappingSnapshotReader(snapshots),
+        file_content_snapshot_reader=(
+            UnusedFileContentSnapshotReader() if content_snapshot_reader is None else content_snapshot_reader
+        ),
         file_presence=StaticFilePresence() if file_presence is None else file_presence,
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
@@ -1613,7 +2833,7 @@ def _uow_with_external_restore_plan() -> InMemoryUnitOfWork:
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library())
     uow.tracks.save(_track())
-    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plans.save(_plan(status=PlanStatus.APPLIED, source_root_at_plan=EXTERNAL_SOURCE_ROOT))
     uow.plan_actions.save(
         _source_action(source_path=EXTERNAL_SOURCE_PATH, target_path=TARGET_PATH, track_id=TRACK_ID).mark_applied()
     )
@@ -1625,6 +2845,7 @@ def _uow_with_external_restore_plan() -> InMemoryUnitOfWork:
             plan_type=PlanType.UNDO,
             status=PlanStatus.READY,
             source_run_id=RUN_ID,
+            source_root_at_plan=EXTERNAL_SOURCE_ROOT,
         )
     )
     uow.plan_actions.save(
@@ -1642,6 +2863,99 @@ def _uow_with_external_restore_plan() -> InMemoryUnitOfWork:
     return uow
 
 
+def _uow_with_unprocessed_source_run(
+    *,
+    source_path: str = UNPROCESSED_SOURCE_PATH,
+    target_path: str = UNPROCESSED_TARGET_PATH,
+    library_root_at_plan: str = LIBRARY_ROOT,
+) -> InMemoryUnitOfWork:
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(
+        _plan(
+            status=PlanStatus.APPLIED,
+            source_root_at_plan=EXTERNAL_SOURCE_ROOT,
+            library_root_at_plan=library_root_at_plan,
+        )
+    )
+    uow.plan_actions.save(_unprocessed_action(source_path=source_path, target_path=target_path).mark_applied())
+    uow.runs.save(replace(_run(status=RunStatus.SUCCEEDED), completed_at=BASE_TIME))
+    uow.file_events.save(
+        FileEvent(
+            event_id=EVENT_ID,
+            library_id=LIBRARY_ID,
+            run_id=RUN_ID,
+            plan_action_id=ACTION_ID,
+            event_type=FileEventType.MOVE_UNPROCESSED_FILE,
+            source_path=source_path,
+            target_path=target_path,
+            status=FileEventStatus.SUCCEEDED,
+            started_at=BASE_TIME,
+            completed_at=BASE_TIME,
+            error_code=None,
+            error_message=None,
+            sequence_no=1,
+        )
+    )
+    return uow
+
+
+def _save_unprocessed_reversal(
+    uow: InMemoryUnitOfWork,
+    *,
+    content_hash: str = UNPROCESSED_CONTENT_HASH,
+    plan_status: PlanStatus = PlanStatus.APPLIED,
+    target_path: str = UNPROCESSED_SOURCE_PATH,
+    duplicate_event: bool = False,
+) -> None:
+    uow.plans.save(
+        _plan(
+            plan_id=UNDO_PLAN_ID,
+            plan_type=PlanType.UNDO,
+            status=plan_status,
+            source_run_id=RUN_ID,
+            source_root_at_plan=EXTERNAL_SOURCE_ROOT,
+        )
+    )
+    uow.plan_actions.save(
+        replace(
+            _unprocessed_action(
+                action_id=UNDO_ACTION_ID,
+                plan_id=UNDO_PLAN_ID,
+                source_path=UNPROCESSED_TARGET_PATH,
+                target_path=target_path,
+                content_hash=content_hash,
+            ),
+            status=ActionStatus.APPLIED,
+            reverses_event_id=EVENT_ID,
+        )
+    )
+    uow.runs.save(
+        replace(
+            _run(run_id=UNDO_RUN_ID, plan_id=UNDO_PLAN_ID, status=RunStatus.SUCCEEDED),
+            completed_at=BASE_TIME,
+        )
+    )
+    reversal = FileEvent(
+        event_id=UNDO_EVENT_ID,
+        library_id=LIBRARY_ID,
+        run_id=UNDO_RUN_ID,
+        plan_action_id=UNDO_ACTION_ID,
+        event_type=FileEventType.MOVE_UNPROCESSED_FILE,
+        source_path=UNPROCESSED_TARGET_PATH,
+        target_path=target_path,
+        status=FileEventStatus.SUCCEEDED,
+        started_at=BASE_TIME,
+        completed_at=BASE_TIME,
+        error_code=None,
+        error_message=None,
+        sequence_no=1,
+    )
+    uow.file_events.save(reversal)
+    if duplicate_event:
+        uow.file_events.save(replace(reversal, event_id=UNDO_SECOND_EVENT_ID, sequence_no=2))
+
+
 def _assert_external_restore_rejected(uow: InMemoryUnitOfWork) -> None:
     request = _stage_claimed_apply(uow, UNDO_PLAN_ID, UNDO_RUN_ID)
     mover = RecordingFileMover()
@@ -1649,6 +2963,7 @@ def _assert_external_restore_rejected(uow: InMemoryUnitOfWork) -> None:
         uow=uow,
         file_mover=mover,
         file_snapshot_reader=MappingSnapshotReader({_absolute(TARGET_PATH): _snapshot(_absolute(TARGET_PATH))}),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(event_ids=deque((UNDO_EVENT_ID,))),
@@ -1670,7 +2985,7 @@ def _uow_with_applied_run(*, second_event: bool = True) -> InMemoryUnitOfWork:
     uow.libraries.save(_library())
     uow.tracks.save(_track())
     uow.tracks.save(_track(track_id=SECOND_TRACK_ID, current_path=RESTORE_PATH))
-    uow.plans.save(_plan(status=PlanStatus.APPLIED))
+    uow.plans.save(_plan(status=PlanStatus.APPLIED, source_root_at_plan=EXTERNAL_SOURCE_ROOT))
     uow.plan_actions.save(_source_action(track_id=SECOND_TRACK_ID))
     uow.plan_actions.save(
         _source_action(
@@ -1693,6 +3008,213 @@ def _uow_with_applied_run(*, second_event: bool = True) -> InMemoryUnitOfWork:
             )
         )
     return uow
+
+
+def _uow_with_companion_source_run(
+    *,
+    shared_artwork: bool = False,
+    independent_audio: bool = False,
+) -> InMemoryUnitOfWork:
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    if shared_artwork or independent_audio:
+        uow.tracks.save(_track(track_id=SECOND_TRACK_ID, current_path=RESTORE_PATH))
+    uow.plans.save(
+        _plan(
+            status=PlanStatus.APPLIED,
+            source_root_at_plan=EXTERNAL_SOURCE_ROOT,
+        )
+    )
+
+    if shared_artwork:
+        first_audio_action = _source_action(
+            action_id=ACTION_ID,
+            source_path=EXTERNAL_SOURCE_PATH,
+            target_path=TARGET_PATH,
+            track_id=TRACK_ID,
+        ).mark_applied()
+        second_audio_action = _source_action(
+            action_id=SECOND_ACTION_ID,
+            source_path=SECOND_EXTERNAL_SOURCE_PATH,
+            target_path=RESTORE_PATH,
+            track_id=SECOND_TRACK_ID,
+        ).mark_applied()
+        companion_action = _companion_source_action(
+            action_id=DUPLICATE_ACTION_ID,
+            action_type=ActionType.MOVE_ARTWORK,
+            companion_asset_id=SECOND_COMPANION_ASSET_ID,
+            owner_action_id=ACTION_ID,
+            track_id=TRACK_ID,
+            source_path="/incoming/cover.jpg",
+            target_path=UNMANAGED_COMPANION_PATH,
+        )
+        uow.companion_assets.save(
+            _companion_asset(
+                companion_asset_id=SECOND_COMPANION_ASSET_ID,
+                current_path=UNMANAGED_COMPANION_PATH,
+                canonical_path=UNMANAGED_COMPANION_PATH,
+                kind=CompanionAssetKind.ARTWORK,
+            )
+        )
+        audio_actions = (first_audio_action, second_audio_action)
+        companion_dependencies = (ACTION_ID, SECOND_ACTION_ID)
+        audio_events = (
+            _event(
+                event_id=EVENT_ID,
+                source_path=EXTERNAL_SOURCE_PATH,
+                target_path=TARGET_PATH,
+                plan_action_id=ACTION_ID,
+                sequence_no=1,
+            ),
+            _event(
+                event_id=SECOND_EVENT_ID,
+                source_path=SECOND_EXTERNAL_SOURCE_PATH,
+                target_path=RESTORE_PATH,
+                plan_action_id=SECOND_ACTION_ID,
+                sequence_no=2,
+            ),
+        )
+        companion_event_id = THIRD_EVENT_ID
+        companion_source_path = "/incoming/cover.jpg"
+        companion_target_path = UNMANAGED_COMPANION_PATH
+    elif independent_audio:
+        independent_action = _source_action(
+            action_id=ACTION_ID,
+            source_path=SECOND_EXTERNAL_SOURCE_PATH,
+            target_path=RESTORE_PATH,
+            track_id=SECOND_TRACK_ID,
+        ).mark_applied()
+        owner_action = _source_action(
+            action_id=SECOND_ACTION_ID,
+            source_path=EXTERNAL_SOURCE_PATH,
+            target_path=TARGET_PATH,
+            track_id=TRACK_ID,
+        ).mark_applied()
+        companion_action = _companion_source_action(
+            action_id=DUPLICATE_ACTION_ID,
+            action_type=ActionType.MOVE_LYRICS,
+            companion_asset_id=COMPANION_ASSET_ID,
+            owner_action_id=SECOND_ACTION_ID,
+            track_id=TRACK_ID,
+            source_path=EXTERNAL_COMPANION_SOURCE_PATH,
+            target_path=COMPANION_PATH,
+        )
+        uow.companion_assets.save(_companion_asset())
+        audio_actions = (independent_action, owner_action)
+        companion_dependencies = (SECOND_ACTION_ID,)
+        audio_events = (
+            _event(
+                event_id=EVENT_ID,
+                source_path=SECOND_EXTERNAL_SOURCE_PATH,
+                target_path=RESTORE_PATH,
+                plan_action_id=ACTION_ID,
+                sequence_no=1,
+            ),
+            _event(
+                event_id=SECOND_EVENT_ID,
+                source_path=EXTERNAL_SOURCE_PATH,
+                target_path=TARGET_PATH,
+                plan_action_id=SECOND_ACTION_ID,
+                sequence_no=2,
+            ),
+        )
+        companion_event_id = THIRD_EVENT_ID
+        companion_source_path = EXTERNAL_COMPANION_SOURCE_PATH
+        companion_target_path = COMPANION_PATH
+    else:
+        owner_action = _source_action(
+            action_id=ACTION_ID,
+            source_path=EXTERNAL_SOURCE_PATH,
+            target_path=TARGET_PATH,
+            track_id=TRACK_ID,
+        ).mark_applied()
+        companion_action = _companion_source_action(
+            action_id=SECOND_ACTION_ID,
+            action_type=ActionType.MOVE_LYRICS,
+            companion_asset_id=COMPANION_ASSET_ID,
+            owner_action_id=ACTION_ID,
+            track_id=TRACK_ID,
+            source_path=EXTERNAL_COMPANION_SOURCE_PATH,
+            target_path=COMPANION_PATH,
+        )
+        uow.companion_assets.save(_companion_asset())
+        audio_actions = (owner_action,)
+        companion_dependencies = (ACTION_ID,)
+        audio_events = (
+            _event(
+                event_id=EVENT_ID,
+                source_path=EXTERNAL_SOURCE_PATH,
+                target_path=TARGET_PATH,
+                plan_action_id=ACTION_ID,
+                sequence_no=1,
+            ),
+        )
+        companion_event_id = SECOND_EVENT_ID
+        companion_source_path = EXTERNAL_COMPANION_SOURCE_PATH
+        companion_target_path = COMPANION_PATH
+
+    for audio_action in audio_actions:
+        uow.plan_actions.save(audio_action)
+    uow.plan_actions.save(companion_action)
+    for dependency_action_id in companion_dependencies:
+        uow.plan_action_dependencies.save(
+            PlanActionDependency(
+                plan_id=PLAN_ID,
+                action_id=companion_action.action_id,
+                depends_on_action_id=dependency_action_id,
+            )
+        )
+    uow.runs.save(replace(_run(status=RunStatus.SUCCEEDED), completed_at=BASE_TIME))
+    for audio_event in audio_events:
+        uow.file_events.save(audio_event)
+    uow.file_events.save(
+        replace(
+            _event(
+                event_id=companion_event_id,
+                source_path=companion_source_path,
+                target_path=companion_target_path,
+                plan_action_id=companion_action.action_id,
+                sequence_no=len(audio_events) + 1,
+            ),
+            event_type=_companion_event_type(companion_action.action_type),
+            companion_asset_id=companion_action.companion_asset_id,
+        )
+    )
+    return uow
+
+
+def _companion_source_action(  # noqa: PLR0913  # Fixture exposes every persisted provenance link.
+    *,
+    action_id: ActionId,
+    action_type: ActionType,
+    companion_asset_id: CompanionAssetId,
+    owner_action_id: ActionId,
+    track_id: TrackId,
+    source_path: str,
+    target_path: str,
+) -> PlanAction:
+    return replace(
+        _source_action(
+            action_id=action_id,
+            source_path=source_path,
+            target_path=target_path,
+            track_id=track_id,
+        ),
+        action_type=action_type,
+        metadata_hash_at_plan=None,
+        status=ActionStatus.APPLIED,
+        companion_asset_id=companion_asset_id,
+        owner_action_id=owner_action_id,
+    )
+
+
+def _companion_event_type(action_type: ActionType) -> FileEventType:
+    if action_type is ActionType.MOVE_LYRICS:
+        return FileEventType.MOVE_LYRICS_FILE
+    if action_type is ActionType.MOVE_ARTWORK:
+        return FileEventType.MOVE_ARTWORK_FILE
+    raise AssertionError(action_type)
 
 
 def _library(
@@ -1742,12 +3264,14 @@ def _track(
     )
 
 
-def _plan(
+def _plan(  # noqa: PLR0913  # Fixture exposes independent persisted Plan provenance fields.
     *,
     plan_id: PlanId = PLAN_ID,
     plan_type: PlanType = PlanType.ADD,
     status: PlanStatus = PlanStatus.READY,
     source_run_id: RunId | None = None,
+    source_root_at_plan: str | None = None,
+    library_root_at_plan: str = LIBRARY_ROOT,
 ) -> Plan:
     return Plan(
         plan_id=plan_id,
@@ -1756,7 +3280,8 @@ def _plan(
         status=status,
         created_at=BASE_TIME,
         config_hash=CONFIG_HASH,
-        library_root_at_plan=LIBRARY_ROOT,
+        library_root_at_plan=library_root_at_plan,
+        source_root_at_plan=source_root_at_plan,
         source_run_id=source_run_id,
         summary={"action_count": "1"},
     )
@@ -1783,6 +3308,55 @@ def _source_action(
         status=ActionStatus.PLANNED,
         reason=None,
         sort_order=1,
+    )
+
+
+def _unprocessed_action(
+    *,
+    action_id: ActionId = ACTION_ID,
+    plan_id: PlanId = PLAN_ID,
+    source_path: str = UNPROCESSED_SOURCE_PATH,
+    target_path: str = UNPROCESSED_TARGET_PATH,
+    content_hash: str = UNPROCESSED_CONTENT_HASH,
+) -> PlanAction:
+    return PlanAction(
+        action_id=action_id,
+        plan_id=plan_id,
+        library_id=LIBRARY_ID,
+        track_id=None,
+        action_type=ActionType.MOVE_UNPROCESSED,
+        source_path=source_path,
+        target_path=target_path,
+        content_hash_at_plan=content_hash,
+        metadata_hash_at_plan=None,
+        status=ActionStatus.PLANNED,
+        reason=None,
+        sort_order=1,
+    )
+
+
+def _companion_asset(
+    *,
+    companion_asset_id: CompanionAssetId = COMPANION_ASSET_ID,
+    owner_track_id: TrackId = TRACK_ID,
+    current_path: str = COMPANION_PATH,
+    canonical_path: str = COMPANION_PATH,
+    kind: CompanionAssetKind = CompanionAssetKind.LYRICS,
+) -> CompanionAsset:
+    return CompanionAsset(
+        companion_asset_id=companion_asset_id,
+        library_id=LIBRARY_ID,
+        kind=kind,
+        owner_track_id=owner_track_id,
+        current_path=current_path,
+        canonical_path=canonical_path,
+        content_hash=CONTENT_HASH,
+        size=FILE_SIZE,
+        mtime=BASE_TIME,
+        status=CompanionAssetStatus.ACTIVE,
+        first_seen_at=BASE_TIME,
+        last_seen_at=BASE_TIME,
+        updated_at=BASE_TIME,
     )
 
 
@@ -1827,19 +3401,21 @@ def _event(
     )
 
 
-def _pending_event(
+def _pending_event(  # noqa: PLR0913  # Event fixture exposes the persisted identity fields under test.
     *,
     event_id: EventId = EVENT_ID,
     run_id: RunId = RUN_ID,
     target_path: str = TARGET_PATH,
     sequence_no: int = 1,
+    companion_asset_id: CompanionAssetId | None = None,
+    event_type: FileEventType = FileEventType.MOVE_FILE,
 ) -> FileEvent:
     return FileEvent(
         event_id=event_id,
         library_id=LIBRARY_ID,
         run_id=run_id,
         plan_action_id=ACTION_ID,
-        event_type=FileEventType.MOVE_FILE,
+        event_type=event_type,
         source_path=SOURCE_PATH,
         target_path=target_path,
         status=FileEventStatus.PENDING,
@@ -1848,6 +3424,7 @@ def _pending_event(
         error_code=None,
         error_message=None,
         sequence_no=sequence_no,
+        companion_asset_id=companion_asset_id,
     )
 
 
@@ -1871,6 +3448,21 @@ def _snapshot(
         filesystem_identity=FILESYSTEM_IDENTITY,
         captured_at=BASE_TIME,
     )
+
+
+def _content_snapshot(path: str, *, content_hash: str = CONTENT_HASH) -> FileContentSnapshot:
+    return FileContentSnapshot(
+        path=path,
+        size=FILE_SIZE,
+        mtime=BASE_TIME,
+        content_hash=content_hash,
+        filesystem_identity=FILESYSTEM_IDENTITY,
+        captured_at=BASE_TIME,
+    )
+
+
+def _inventory_entry(relative_path: str) -> SourceInventoryEntry:
+    return SourceInventoryEntry(path=_absolute(relative_path), relative_path=relative_path)
 
 
 def _absolute(relative_path: str) -> str:

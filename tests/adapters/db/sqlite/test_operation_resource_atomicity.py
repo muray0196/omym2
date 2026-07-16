@@ -34,7 +34,13 @@ from omym2.features.organize.dto import CreateOrganizePlanRequest
 from omym2.features.organize.ports import CreateOrganizePlanPorts
 from omym2.features.organize.usecases.create_organize_plan import CreateOrganizePlanUseCase
 from omym2.shared.ids import ActionId, CheckRunId, LibraryId, OperationId, PlanId
-from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
+from tests.fakes.runtime import (
+    EmptySourceInventoryReader,
+    FixedClock,
+    MappingArtistNameResolver,
+    SequenceIdGenerator,
+    UnusedFileContentSnapshotReader,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -85,12 +91,16 @@ def test_add_plan_and_operation_success_roll_back_together(
         uow=SQLiteUnitOfWork(database_path),
         file_scanner=_StaticScanner(),
         file_snapshot_reader=_StaticSnapshotReader(),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
+        source_inventory_reader=EmptySourceInventoryReader(),
         file_presence=_MissingFilePresence(),
         config_store=_StaticConfigReader(),
         artist_name_resolver=MappingArtistNameResolver(),
         path_resolver=_SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        internal_excluded_paths=(),
+        rotating_log_files=(),
     )
 
     with pytest.raises(RuntimeError, match=TERMINAL_SAVE_FAILURE_MESSAGE):
@@ -120,6 +130,9 @@ def test_clean_organize_registration_and_operation_success_roll_back_together(
         uow=SQLiteUnitOfWork(database_path),
         file_scanner=_EmptyScanner(),
         file_snapshot_reader=_UnexpectedSnapshotReader(),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
+        source_inventory_reader=EmptySourceInventoryReader(),
+        file_presence=_MissingFilePresence(),
         config_store=_StaticConfigReader(),
         artist_name_resolver=MappingArtistNameResolver(),
         path_resolver=_SimplePathResolver(),
@@ -158,6 +171,8 @@ def test_check_run_and_operation_success_roll_back_together(
         uow=SQLiteUnitOfWork(database_path),
         file_scanner=_EmptyScanner(),
         file_snapshot_reader=_UnexpectedSnapshotReader(),
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
+        source_inventory_reader=EmptySourceInventoryReader(),
         file_content_hasher=_UnexpectedContentHasher(),
         config_store=_StaticConfigReader(),
         path_resolver=_SimplePathResolver(),
@@ -222,15 +237,26 @@ class _StaticConfigReader:
 
 @dataclass(frozen=True, slots=True)
 class _StaticScanner:
-    def scan(self, root: FileSystemPath) -> tuple[FileScanEntry, ...]:
+    def scan(
+        self,
+        root: FileSystemPath,
+        *,
+        excluded_roots: tuple[FileSystemPath, ...] = (),
+    ) -> tuple[FileScanEntry, ...]:
+        del excluded_roots
         assert root == INCOMING_ROOT
         return (FileScanEntry(INCOMING_FILE, FILE_SIZE, BASE_TIME, ".flac"),)
 
 
 @dataclass(frozen=True, slots=True)
 class _EmptyScanner:
-    def scan(self, root: FileSystemPath) -> tuple[FileScanEntry, ...]:
-        del root
+    def scan(
+        self,
+        root: FileSystemPath,
+        *,
+        excluded_roots: tuple[FileSystemPath, ...] = (),
+    ) -> tuple[FileScanEntry, ...]:
+        del root, excluded_roots
         return ()
 
 

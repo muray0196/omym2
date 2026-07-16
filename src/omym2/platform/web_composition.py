@@ -54,6 +54,7 @@ from omym2.features.plans.usecases.cancel_plan import (
     CancelPlanUseCase,
     PlanCannotBeCancelledError,
 )
+from omym2.features.plans.usecases.get_plan_action_dependencies import GetPlanActionDependenciesUseCase
 from omym2.features.plans.usecases.get_plan_action_facets import GetPlanActionFacetsUseCase
 from omym2.features.plans.usecases.get_plan_action_summaries import GetPlanActionSummariesUseCase
 from omym2.features.plans.usecases.get_plan_capabilities import GetPlanCapabilitiesUseCase
@@ -135,6 +136,9 @@ def build_api_route_context(config_path: Path | None = None, database_path: Path
                 request
             ),
             list_plan_actions=lambda request: ListPlanActionsUseCase(build_plan_query_ports(runtime)).execute(request),
+            get_plan_action_dependencies=lambda request: GetPlanActionDependenciesUseCase(
+                build_plan_query_ports(runtime)
+            ).execute(request),
             get_plan_action_facets=lambda request: GetPlanActionFacetsUseCase(build_plan_query_ports(runtime)).execute(
                 request
             ),

@@ -29,9 +29,15 @@ from omym2.config import (
 )
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
 from omym2.platform.web_composition import build_web_app
-from omym2.shared.ids import ActionId, LibraryId, PlanId
+from omym2.shared.ids import ActionId, CompanionAssetId, LibraryId, PlanId
 from omym2.shared.pagination import MAX_PAGE_LIMIT
 
 if TYPE_CHECKING:
@@ -47,8 +53,11 @@ MISSING_PLAN_ID = "018f6a4f-3c2d-7b8a-9abc-def012345679"
 ACTION_ID_1 = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345673"))
 ACTION_ID_2 = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345674"))
 ACTION_ID_3 = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345675"))
+ACTION_ID_4 = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
+LYRICS_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345676"))
+ARTWORK_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345677"))
 ONE_ITEM_LIMIT = 1
-PLAN_ACTION_TOTAL = 3
+PLAN_ACTION_TOTAL = 4
 GROUPED_ACTION_TOTAL = 2
 
 
@@ -68,10 +77,38 @@ def test_list_plans_uses_current_typed_action_summaries_and_blocked_actions(tmp_
     assert summary == {
         "total": PLAN_ACTION_TOTAL,
         "counts": {
-            "planned": {"move": 1, "skip": 0, "refresh_metadata": 0},
-            "blocked": {"move": 0, "skip": 1, "refresh_metadata": 0},
-            "applied": {"move": 0, "skip": 0, "refresh_metadata": 1},
-            "failed": {"move": 0, "skip": 0, "refresh_metadata": 0},
+            "planned": {
+                "move": 1,
+                "move_lyrics": 0,
+                "move_artwork": 0,
+                "move_unprocessed": 1,
+                "skip": 0,
+                "refresh_metadata": 0,
+            },
+            "blocked": {
+                "move": 0,
+                "move_lyrics": 1,
+                "move_artwork": 0,
+                "move_unprocessed": 0,
+                "skip": 0,
+                "refresh_metadata": 0,
+            },
+            "applied": {
+                "move": 0,
+                "move_lyrics": 0,
+                "move_artwork": 1,
+                "move_unprocessed": 0,
+                "skip": 0,
+                "refresh_metadata": 0,
+            },
+            "failed": {
+                "move": 0,
+                "move_lyrics": 0,
+                "move_artwork": 0,
+                "move_unprocessed": 0,
+                "skip": 0,
+                "refresh_metadata": 0,
+            },
         },
     }
 
@@ -106,28 +143,39 @@ def test_plan_actions_facets_and_groups_apply_filters_without_storage_access_in_
         params={"group_by": "target_directory", "group_key": "Artist/Album"},
     )
     facets = client.get(WEB_API_PLAN_FACETS_ROUTE.format(plan_id=PLAN_ID))
+    unprocessed = client.get(
+        WEB_API_PLAN_ACTIONS_ROUTE.format(plan_id=PLAN_ID),
+        params={"action_type": "move_unprocessed"},
+    )
     groups = client.get(
         WEB_API_PLAN_GROUPS_ROUTE.format(plan_id=PLAN_ID),
         params={"group_by": "target_directory"},
     )
 
     assert actions.status_code == HTTP_OK_STATUS
-    assert [item["action_id"] for item in _items(_data(actions))] == [str(ACTION_ID_1), str(ACTION_ID_2)]
+    action_items = _items(_data(actions))
+    assert [item["action_id"] for item in action_items] == [str(ACTION_ID_1), str(ACTION_ID_2)]
+    assert action_items[1]["companion_asset_id"] == str(LYRICS_ASSET_ID)
+    assert action_items[1]["owner_action_id"] == str(ACTION_ID_1)
+    assert action_items[1]["depends_on_action_ids"] == [str(ACTION_ID_1)]
     assert _object(_data(actions), "page")["total"] == GROUPED_ACTION_TOTAL
+    assert unprocessed.status_code == HTTP_OK_STATUS
+    assert [item["action_id"] for item in _items(_data(unprocessed))] == [str(ACTION_ID_4)]
     assert facets.status_code == HTTP_OK_STATUS
     facet_data = _data(facets)
     assert _object(facet_data, "facets") == {
         "status": [
+            {"value": "planned", "count": 2},
             {"value": "applied", "count": 1},
             {"value": "blocked", "count": 1},
-            {"value": "planned", "count": 1},
         ],
         "action_type": [
             {"value": "move", "count": 1},
-            {"value": "refresh_metadata", "count": 1},
-            {"value": "skip", "count": 1},
+            {"value": "move_artwork", "count": 1},
+            {"value": "move_lyrics", "count": 1},
+            {"value": "move_unprocessed", "count": 1},
         ],
-        "reason": [{"value": "target_exists", "count": 1}],
+        "reason": [{"value": "companion_owner_blocked", "count": 1}],
     }
     assert facet_data["target_collisions"] == 1
     assert groups.status_code == HTTP_OK_STATUS
@@ -137,7 +185,7 @@ def test_plan_actions_facets_and_groups_apply_filters_without_storage_access_in_
         "label": "Artist/Album",
         "count": 2,
         "blocked_count": 1,
-        "top_reason": "target_exists",
+        "top_reason": "companion_owner_blocked",
     }
 
 
@@ -244,23 +292,43 @@ def _seeded_client(tmp_path: Path) -> TestClient:
         uow.plan_actions.save(
             _action(
                 ACTION_ID_2,
-                action_type=ActionType.SKIP,
+                action_type=ActionType.MOVE_LYRICS,
                 status=ActionStatus.BLOCKED,
                 source_path="Artist/Album/two.flac",
                 target_path="Artist/Album/Same.flac",
-                reason=PlanActionReason.TARGET_EXISTS,
+                reason=PlanActionReason.COMPANION_OWNER_BLOCKED,
                 sort_order=2,
+                companion_asset_id=LYRICS_ASSET_ID,
+                owner_action_id=ACTION_ID_1,
             )
         )
         uow.plan_actions.save(
             _action(
                 ACTION_ID_3,
-                action_type=ActionType.REFRESH_METADATA,
+                action_type=ActionType.MOVE_ARTWORK,
                 status=ActionStatus.APPLIED,
                 source_path="Other/Album/three.flac",
                 target_path="Other/Album/three.flac",
                 sort_order=3,
+                companion_asset_id=ARTWORK_ASSET_ID,
+                owner_action_id=ACTION_ID_1,
             )
+        )
+        uow.plan_actions.save(
+            _action(
+                ACTION_ID_4,
+                action_type=ActionType.MOVE_UNPROCESSED,
+                status=ActionStatus.PLANNED,
+                source_path="/incoming/notes.txt",
+                target_path="/incoming/unprocessed/notes.txt",
+                sort_order=4,
+            )
+        )
+        uow.plan_action_dependencies.save(
+            PlanActionDependency(plan_id=PLAN_ID, action_id=ACTION_ID_2, depends_on_action_id=ACTION_ID_1)
+        )
+        uow.plan_action_dependencies.save(
+            PlanActionDependency(plan_id=PLAN_ID, action_id=ACTION_ID_3, depends_on_action_id=ACTION_ID_1)
         )
         uow.commit()
     return TestClient(build_web_app(tmp_path / "config.toml", database_path), base_url="http://localhost")
@@ -275,6 +343,8 @@ def _action(  # noqa: PLR0913  # The fixture names every stored PlanAction field
     target_path: str,
     sort_order: int,
     reason: PlanActionReason | None = None,
+    companion_asset_id: CompanionAssetId | None = None,
+    owner_action_id: ActionId | None = None,
 ) -> PlanAction:
     """Build one stored action for the seeded Plan."""
     return PlanAction(
@@ -290,6 +360,8 @@ def _action(  # noqa: PLR0913  # The fixture names every stored PlanAction field
         status=status,
         reason=reason,
         sort_order=sort_order,
+        companion_asset_id=companion_asset_id,
+        owner_action_id=owner_action_id,
     )
 
 

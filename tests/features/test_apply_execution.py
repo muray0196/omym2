@@ -13,12 +13,19 @@ from uuid import UUID
 
 import pytest
 
-from omym2.domain.models.file_event import FileEvent, FileEventStatus
-from omym2.domain.models.file_snapshot import FileSnapshot, FilesystemIdentity
+from omym2.domain.models.companion_asset import CompanionAsset, CompanionAssetKind, CompanionAssetStatus
+from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
+from omym2.domain.models.file_snapshot import FileContentSnapshot, FileSnapshot, FilesystemIdentity
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.operation import Operation, OperationKind, OperationStatus, RunCompletedResult
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
@@ -32,7 +39,18 @@ from omym2.features.apply.usecases.apply_plan import (
     ApplyPlanError,
     ApplyPlanUseCase,
 )
-from omym2.shared.ids import ActionId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
+from omym2.features.common_ports import FileObservationChangedError, FileObservationInvalidPathError
+from omym2.shared.ids import (
+    ActionId,
+    CompanionAssetId,
+    EventId,
+    LibraryId,
+    OperationId,
+    PlanId,
+    RunId,
+    TrackId,
+)
+from tests.fakes.file_observation import MappingFileContentSnapshotReader
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, SequenceIdGenerator
 
@@ -42,26 +60,42 @@ if TYPE_CHECKING:
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 CONFIG_HASH = "config-hash"
+COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345683"))
+COMPANION_CONTENT_HASH = "companion-content-hash"
+COMPANION_FILE_SIZE = 23
+COMPANION_SOURCE_PATH = "/music/incoming/Title.lrc"
+COMPANION_SOURCE_ROOT = "/music/incoming"
+COMPANION_TARGET_PATH = "Artist/2026_Album/1-02_Title.lrc"
 CONTENT_HASH = "content-hash"
 EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
 FILE_EXTENSION = ".flac"
 FILE_SIZE = 5
 FILESYSTEM_IDENTITY = FilesystemIdentity(device_id=1, inode=2, size=FILE_SIZE, mtime_ns=3, ctime_ns=4)
+COMPANION_FILESYSTEM_IDENTITY = FilesystemIdentity(
+    device_id=5,
+    inode=6,
+    size=COMPANION_FILE_SIZE,
+    mtime_ns=7,
+    ctime_ns=8,
+)
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 LIBRARY_ROOT = "/music/library"
 METADATA_HASH = "metadata-hash"
 OPERATION_ID = OperationId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
 OPERATION_IDEMPOTENCY_KEY = UUID("018f6a4f-3c2d-7b8a-9abc-def012345682")
 OPERATION_REQUEST_FINGERPRINT = "apply-plan-fingerprint"
+OTHER_PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345684"))
 SUCCESSFUL_MOVE_COMMIT_COUNT = 5
 OTHER_LIBRARY_ROOT = "/music/moved-library"
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
+SOURCE_RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345685"))
 SECOND_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
 SECOND_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567f"))
 SECOND_SOURCE_PATH = "/music/incoming/Second.flac"
 SECOND_TARGET_PATH = "Artist/2026_Album/1-03_Second.flac"
 SENSITIVE_MOVE_FAILURE_DETAIL = "Permission denied while moving /home/alice/private-library/Secret.flac"
+SIMULATED_CRASH_MESSAGE = "simulated crash"
 SOURCE_PATH = "/music/incoming/Title.flac"
 TARGET_PATH = "Artist/2026_Album/1-02_Title.flac"
 TRACK_ARTIST = "Artist"
@@ -71,6 +105,12 @@ USECASE_SCOPE_CALL_COUNT = 1
 
 LIBRARY_SOURCE_PATH = "Unsorted/Title.flac"
 LIBRARY_SOURCE_FILESYSTEM_PATH = f"{LIBRARY_ROOT}/{LIBRARY_SOURCE_PATH}"
+MANAGED_COMPANION_SOURCE_PATH = "Artist/2026_Album/Old_Title.lrc"
+MANAGED_COMPANION_SOURCE_FILESYSTEM_PATH = f"{LIBRARY_ROOT}/{MANAGED_COMPANION_SOURCE_PATH}"
+UNPROCESSED_SOURCE_ROOT = "/music/incoming"
+UNPROCESSED_SOURCE_PATH = "/music/incoming/misc/readme.txt"
+UNPROCESSED_TARGET_PATH = "/music/incoming/Unprocessed/misc/readme.txt"
+UNPROCESSED_CONTENT_HASH = "unprocessed-content-hash"
 
 
 def test_apply_creates_run_and_pending_file_event_before_file_move() -> None:
@@ -114,6 +154,537 @@ def test_apply_creates_run_and_pending_file_event_before_file_move() -> None:
     assert track.canonical_path == TARGET_PATH
     assert track.size == FILE_SIZE
     assert track.mtime == BASE_TIME
+
+
+def test_apply_recorded_unprocessed_move_is_anchored_pending_first_and_trackless() -> None:
+    """Recorded collection applies without config reads or managed Track/asset mutation."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan(source_root_at_plan=UNPROCESSED_SOURCE_ROOT))
+    uow.plan_actions.save(_unprocessed_action())
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(event_ids=deque((EVENT_ID,))),
+        content_snapshots={
+            UNPROCESSED_SOURCE_PATH: _content_snapshot(
+                UNPROCESSED_SOURCE_PATH,
+                content_hash=UNPROCESSED_CONTENT_HASH,
+            )
+        },
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.SUCCEEDED
+    assert mover.moves == [(UNPROCESSED_SOURCE_PATH, UNPROCESSED_TARGET_PATH)]
+    assert mover.source_roots == [UNPROCESSED_SOURCE_ROOT]
+    assert mover.target_roots == [UNPROCESSED_SOURCE_ROOT]
+    assert mover.states_at_move == [("running", "applying", "pending")]
+    assert mover.expected_source_content_hashes == [UNPROCESSED_CONTENT_HASH]
+    event = _stored_event(uow)
+    assert event.event_type is FileEventType.MOVE_UNPROCESSED_FILE
+    assert event.status is FileEventStatus.SUCCEEDED
+    assert event.source_path == UNPROCESSED_SOURCE_PATH
+    assert event.target_path == UNPROCESSED_TARGET_PATH
+    assert _stored_action(uow).status is ActionStatus.APPLIED
+    assert uow.tracks.records == {}
+    assert uow.companion_assets.records == {}
+
+
+@pytest.mark.parametrize(
+    ("source_path", "target_path"),
+    [
+        ("misc/readme.txt", UNPROCESSED_TARGET_PATH),
+        (UNPROCESSED_SOURCE_PATH, "Unprocessed/misc/readme.txt"),
+        (UNPROCESSED_SOURCE_PATH, "/outside/Unprocessed/misc/readme.txt"),
+        (UNPROCESSED_SOURCE_PATH, "/music/incoming/Unprocessed/other/readme.txt"),
+        (UNPROCESSED_SOURCE_PATH, "/music/incoming/bad:name/misc/readme.txt"),
+    ],
+)
+def test_apply_rejects_malformed_unprocessed_layout_before_observation(
+    source_path: str,
+    target_path: str,
+) -> None:
+    """Relative, cross-root, relabelled, and nonportable paths cannot authorize a mutation."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan(source_root_at_plan=UNPROCESSED_SOURCE_ROOT))
+    uow.plan_actions.save(_unprocessed_action(source_path=source_path, target_path=target_path))
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(),
+        content_snapshots={source_path: _content_snapshot(source_path, content_hash=UNPROCESSED_CONTENT_HASH)},
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.FAILED
+    assert _stored_action(uow).reason is PlanActionReason.INVALID_PATH
+    assert uow.file_events.records == {}
+    assert mover.moves == []
+    assert isinstance(ports.file_content_snapshot_reader, MappingContentSnapshotReader)
+    assert ports.file_content_snapshot_reader.captured == []
+
+
+def test_apply_rejects_unprocessed_target_overlapping_recorded_library_root() -> None:
+    """A corrupted Add action cannot collect an external file into managed Library storage."""
+    source_root = "/music"
+    source_path = "/music/notes/readme.txt"
+    target_path = "/music/library/notes/readme.txt"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(
+        _plan(
+            source_root_at_plan=source_root,
+            library_root_at_plan=LIBRARY_ROOT,
+        )
+    )
+    uow.plan_actions.save(_unprocessed_action(source_path=source_path, target_path=target_path))
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(),
+        content_snapshots={source_path: _content_snapshot(source_path, content_hash=UNPROCESSED_CONTENT_HASH)},
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.FAILED
+    assert _stored_action(uow).reason is PlanActionReason.INVALID_PATH
+    assert mover.moves == []
+    assert uow.file_events.records == {}
+
+
+def test_apply_unprocessed_source_change_fails_before_event() -> None:
+    """Collected content is revalidated before durable mutation intent is recorded."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan(source_root_at_plan=UNPROCESSED_SOURCE_ROOT))
+    uow.plan_actions.save(_unprocessed_action())
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(),
+        content_snapshots={UNPROCESSED_SOURCE_PATH: _content_snapshot(UNPROCESSED_SOURCE_PATH, content_hash="changed")},
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.FAILED
+    assert _stored_action(uow).reason is PlanActionReason.SOURCE_CHANGED
+    assert uow.file_events.records == {}
+    assert mover.moves == []
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_reason"),
+    [
+        (FileObservationInvalidPathError("symlink"), PlanActionReason.INVALID_PATH),
+        (ValueError("invalid path"), PlanActionReason.INVALID_PATH),
+        (FileObservationChangedError("changed"), PlanActionReason.SOURCE_CHANGED),
+        (OSError("unreadable"), PlanActionReason.SOURCE_CHANGED),
+    ],
+)
+def test_apply_unprocessed_observation_failure_uses_typed_reason(
+    error: BaseException,
+    expected_reason: PlanActionReason,
+) -> None:
+    """Rooted path rejection stays distinct from content observation failure."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan(source_root_at_plan=UNPROCESSED_SOURCE_ROOT))
+    uow.plan_actions.save(_unprocessed_action())
+    ports, mover = _ports(uow, {}, SequenceIdGenerator())
+    ports = replace(
+        ports,
+        file_content_snapshot_reader=MappingFileContentSnapshotReader({UNPROCESSED_SOURCE_PATH: error}),
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.FAILED
+    assert _stored_action(uow).reason is expected_reason
+    assert uow.file_events.records == {}
+    assert mover.moves == []
+
+
+@pytest.mark.parametrize("corruption", ["source_run_id", "duplicate_event"])
+def test_apply_rejects_unprocessed_inverse_history_tampered_after_planning(corruption: str) -> None:
+    """Inverse Apply re-proves ordinary Add origin and one source event per action."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    source_plan = replace(
+        _plan(status=PlanStatus.APPLIED, source_root_at_plan=UNPROCESSED_SOURCE_ROOT),
+        plan_id=OTHER_PLAN_ID,
+        source_run_id=SOURCE_RUN_ID if corruption == "source_run_id" else None,
+    )
+    source_action = replace(
+        _unprocessed_action().mark_applied(),
+        action_id=SECOND_ACTION_ID,
+        plan_id=OTHER_PLAN_ID,
+    )
+    source_run = Run(
+        run_id=SOURCE_RUN_ID,
+        plan_id=OTHER_PLAN_ID,
+        library_id=LIBRARY_ID,
+        status=RunStatus.SUCCEEDED,
+        started_at=BASE_TIME,
+        completed_at=BASE_TIME,
+    )
+    source_event = FileEvent(
+        event_id=SECOND_EVENT_ID,
+        library_id=LIBRARY_ID,
+        run_id=SOURCE_RUN_ID,
+        plan_action_id=SECOND_ACTION_ID,
+        event_type=FileEventType.MOVE_UNPROCESSED_FILE,
+        source_path=UNPROCESSED_SOURCE_PATH,
+        target_path=UNPROCESSED_TARGET_PATH,
+        status=FileEventStatus.SUCCEEDED,
+        started_at=BASE_TIME,
+        completed_at=BASE_TIME,
+        error_code=None,
+        error_message=None,
+        sequence_no=1,
+    )
+    uow.plans.save(source_plan)
+    uow.plan_actions.save(source_action)
+    uow.runs.save(source_run)
+    uow.file_events.save(source_event)
+    if corruption == "duplicate_event":
+        uow.file_events.save(replace(source_event, event_id=EVENT_ID, sequence_no=2))
+
+    uow.plans.save(
+        replace(
+            _plan(plan_type=PlanType.UNDO, source_root_at_plan=UNPROCESSED_SOURCE_ROOT),
+            source_run_id=SOURCE_RUN_ID,
+        )
+    )
+    uow.plan_actions.save(
+        replace(
+            _unprocessed_action(
+                source_path=UNPROCESSED_TARGET_PATH,
+                target_path=UNPROCESSED_SOURCE_PATH,
+            ),
+            reverses_event_id=SECOND_EVENT_ID,
+        )
+    )
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(),
+        content_snapshots={
+            UNPROCESSED_TARGET_PATH: _content_snapshot(
+                UNPROCESSED_TARGET_PATH,
+                content_hash=UNPROCESSED_CONTENT_HASH,
+            )
+        },
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.FAILED
+    assert _stored_action(uow).reason is PlanActionReason.INVALID_PATH
+    assert isinstance(ports.file_content_snapshot_reader, MappingContentSnapshotReader)
+    assert ports.file_content_snapshot_reader.captured == []
+    assert mover.moves == []
+
+
+def test_apply_unprocessed_collision_records_failed_typed_event_without_overwrite() -> None:
+    """A target appearing after review fails through the no-overwrite mutation boundary."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan(source_root_at_plan=UNPROCESSED_SOURCE_ROOT))
+    uow.plan_actions.save(_unprocessed_action())
+    mover = RecordingFileMover(uow, existing_targets={UNPROCESSED_TARGET_PATH})
+    ports, _ = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(event_ids=deque((EVENT_ID,))),
+        mover=mover,
+        content_snapshots={
+            UNPROCESSED_SOURCE_PATH: _content_snapshot(UNPROCESSED_SOURCE_PATH, content_hash=UNPROCESSED_CONTENT_HASH)
+        },
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.FAILED
+    assert _stored_action(uow).reason is PlanActionReason.TARGET_EXISTS
+    event = _stored_event(uow)
+    assert event.event_type is FileEventType.MOVE_UNPROCESSED_FILE
+    assert event.status is FileEventStatus.FAILED
+    assert uow.tracks.records == {}
+    assert uow.companion_assets.records == {}
+
+
+def test_apply_unprocessed_crash_leaves_pending_event_and_planned_action() -> None:
+    """An unobserved mover outcome remains pending for reconciliation and Check."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.plans.save(_plan(source_root_at_plan=UNPROCESSED_SOURCE_ROOT))
+    uow.plan_actions.save(_unprocessed_action())
+    mover = RecordingFileMover(uow, crashing_targets={UNPROCESSED_TARGET_PATH})
+    ports, _ = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(event_ids=deque((EVENT_ID,))),
+        mover=mover,
+        content_snapshots={
+            UNPROCESSED_SOURCE_PATH: _content_snapshot(UNPROCESSED_SOURCE_PATH, content_hash=UNPROCESSED_CONTENT_HASH)
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        _ = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert _stored_event(uow).status is FileEventStatus.PENDING
+    assert _stored_action(uow).status is ActionStatus.PLANNED
+    assert _stored_plan(uow).status is PlanStatus.APPLYING
+
+
+@pytest.mark.parametrize(
+    ("action_type", "event_type", "asset_kind"),
+    [
+        (ActionType.MOVE_LYRICS, FileEventType.MOVE_LYRICS_FILE, CompanionAssetKind.LYRICS),
+        (ActionType.MOVE_ARTWORK, FileEventType.MOVE_ARTWORK_FILE, CompanionAssetKind.ARTWORK),
+    ],
+)
+def test_apply_moves_external_companion_after_dependency_and_pending_event(
+    action_type: ActionType,
+    event_type: FileEventType,
+    asset_kind: CompanionAssetKind,
+) -> None:
+    """A successful owner action authorizes an anchored companion move and durable managed state."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan(source_root_at_plan=COMPANION_SOURCE_ROOT))
+    uow.plan_actions.save(_move_action(track_id=TRACK_ID).mark_applied())
+    uow.plan_actions.save(_companion_action(action_type=action_type))
+    uow.plan_action_dependencies.save(
+        PlanActionDependency(
+            plan_id=PLAN_ID,
+            action_id=SECOND_ACTION_ID,
+            depends_on_action_id=ACTION_ID,
+        )
+    )
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(event_ids=deque((EVENT_ID,))),
+        content_snapshots={COMPANION_SOURCE_PATH: _content_snapshot(COMPANION_SOURCE_PATH)},
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.SUCCEEDED
+    assert mover.moves == [(COMPANION_SOURCE_PATH, f"{LIBRARY_ROOT}/{COMPANION_TARGET_PATH}")]
+    assert mover.source_roots == [COMPANION_SOURCE_ROOT]
+    assert mover.target_roots == [LIBRARY_ROOT]
+    assert mover.expected_source_identities == [COMPANION_FILESYSTEM_IDENTITY]
+    assert mover.expected_source_content_hashes == [COMPANION_CONTENT_HASH]
+    assert mover.states_at_move == [("running", "applying", "pending")]
+    assert mover.companion_asset_ids_at_move == [()]
+    event = _stored_event(uow)
+    assert event.status is FileEventStatus.SUCCEEDED
+    assert event.event_type is event_type
+    assert event.companion_asset_id == COMPANION_ASSET_ID
+    action = _stored_action(uow, SECOND_ACTION_ID)
+    assert action.status is ActionStatus.APPLIED
+    assert action.track_id == TRACK_ID
+    asset = uow.companion_assets.get(COMPANION_ASSET_ID)
+    assert asset is not None
+    assert asset.kind is asset_kind
+    assert asset.owner_track_id == TRACK_ID
+    assert asset.current_path == COMPANION_TARGET_PATH
+    assert asset.canonical_path == COMPANION_TARGET_PATH
+    assert asset.content_hash == COMPANION_CONTENT_HASH
+    assert asset.size == COMPANION_FILE_SIZE
+    assert asset.mtime == BASE_TIME
+    assert isinstance(ports.file_content_snapshot_reader, MappingContentSnapshotReader)
+    assert ports.file_content_snapshot_reader.captured == [(COMPANION_SOURCE_PATH, COMPANION_SOURCE_ROOT)]
+
+
+def test_apply_fails_companion_dependency_before_event_or_file_observation() -> None:
+    """A failed recorded owner dependency forbids companion observation, events, and mutation."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan(source_root_at_plan=COMPANION_SOURCE_ROOT))
+    uow.plan_actions.save(_move_action(track_id=TRACK_ID).mark_failed())
+    uow.plan_actions.save(_companion_action())
+    uow.plan_action_dependencies.save(
+        PlanActionDependency(
+            plan_id=PLAN_ID,
+            action_id=SECOND_ACTION_ID,
+            depends_on_action_id=ACTION_ID,
+        )
+    )
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(),
+        content_snapshots={COMPANION_SOURCE_PATH: _content_snapshot(COMPANION_SOURCE_PATH)},
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.FAILED
+    action = _stored_action(uow, SECOND_ACTION_ID)
+    assert action.status is ActionStatus.FAILED
+    assert action.reason is PlanActionReason.COMPANION_DEPENDENCY_FAILED
+    assert uow.file_events.records == {}
+    assert uow.companion_assets.records == {}
+    assert mover.moves == []
+    assert isinstance(ports.file_content_snapshot_reader, MappingContentSnapshotReader)
+    assert ports.file_content_snapshot_reader.captured == []
+
+
+def test_apply_rejects_external_companion_without_recorded_source_root() -> None:
+    """Apply never infers a root for an external companion source after review."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan())
+    uow.plan_actions.save(_move_action(track_id=TRACK_ID).mark_applied())
+    uow.plan_actions.save(_companion_action())
+    uow.plan_action_dependencies.save(
+        PlanActionDependency(
+            plan_id=PLAN_ID,
+            action_id=SECOND_ACTION_ID,
+            depends_on_action_id=ACTION_ID,
+        )
+    )
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(),
+        content_snapshots={COMPANION_SOURCE_PATH: _content_snapshot(COMPANION_SOURCE_PATH)},
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.FAILED
+    action = _stored_action(uow, SECOND_ACTION_ID)
+    assert action.status is ActionStatus.FAILED
+    assert action.reason is PlanActionReason.INVALID_PATH
+    assert uow.file_events.records == {}
+    assert mover.moves == []
+    assert isinstance(ports.file_content_snapshot_reader, MappingContentSnapshotReader)
+    assert ports.file_content_snapshot_reader.captured == []
+
+
+def test_apply_rejects_cross_plan_companion_owner_before_observation() -> None:
+    """In-memory or corrupted ownership evidence cannot authorize work across Plan boundaries."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan(source_root_at_plan=COMPANION_SOURCE_ROOT))
+    uow.plans.save(replace(_plan(source_root_at_plan=COMPANION_SOURCE_ROOT), plan_id=OTHER_PLAN_ID))
+    uow.plan_actions.save(replace(_move_action(track_id=TRACK_ID).mark_applied(), plan_id=OTHER_PLAN_ID))
+    uow.plan_actions.save(_companion_action())
+    uow.plan_action_dependencies.save(
+        PlanActionDependency(
+            plan_id=PLAN_ID,
+            action_id=SECOND_ACTION_ID,
+            depends_on_action_id=ACTION_ID,
+        )
+    )
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(),
+        content_snapshots={COMPANION_SOURCE_PATH: _content_snapshot(COMPANION_SOURCE_PATH)},
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.FAILED
+    action = _stored_action(uow, SECOND_ACTION_ID)
+    assert action.status is ActionStatus.FAILED
+    assert action.reason is PlanActionReason.COMPANION_DEPENDENCY_FAILED
+    assert uow.file_events.records == {}
+    assert mover.moves == []
+    assert isinstance(ports.file_content_snapshot_reader, MappingContentSnapshotReader)
+    assert ports.file_content_snapshot_reader.captured == []
+
+
+def test_apply_updates_existing_managed_companion_after_anchored_move() -> None:
+    """A managed companion keeps its identity and first-seen time while its verified state advances."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan(plan_type=PlanType.ORGANIZE))
+    existing_asset = _companion_asset(current_path=MANAGED_COMPANION_SOURCE_PATH)
+    uow.companion_assets.save(existing_asset)
+    uow.plan_actions.save(
+        _companion_action(
+            source_path=MANAGED_COMPANION_SOURCE_PATH,
+            track_id=TRACK_ID,
+            owner_action_id=None,
+        )
+    )
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(event_ids=deque((EVENT_ID,))),
+        content_snapshots={
+            MANAGED_COMPANION_SOURCE_FILESYSTEM_PATH: _content_snapshot(MANAGED_COMPANION_SOURCE_FILESYSTEM_PATH)
+        },
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.SUCCEEDED
+    assert mover.source_roots == [LIBRARY_ROOT]
+    assert mover.target_roots == [LIBRARY_ROOT]
+    updated_asset = uow.companion_assets.get(COMPANION_ASSET_ID)
+    assert updated_asset is not None
+    assert updated_asset.companion_asset_id == existing_asset.companion_asset_id
+    assert updated_asset.first_seen_at == existing_asset.first_seen_at
+    assert updated_asset.current_path == COMPANION_TARGET_PATH
+    assert updated_asset.canonical_path == COMPANION_TARGET_PATH
+    assert updated_asset.content_hash == COMPANION_CONTENT_HASH
+    assert updated_asset.size == COMPANION_FILE_SIZE
+
+
+def test_apply_companion_target_collision_fails_without_creating_asset() -> None:
+    """The no-overwrite mover contract records a companion target collision without managed-state creation."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library())
+    uow.tracks.save(_track())
+    uow.plans.save(_plan(source_root_at_plan=COMPANION_SOURCE_ROOT))
+    uow.plan_actions.save(_move_action(track_id=TRACK_ID).mark_applied())
+    uow.plan_actions.save(_companion_action())
+    uow.plan_action_dependencies.save(
+        PlanActionDependency(
+            plan_id=PLAN_ID,
+            action_id=SECOND_ACTION_ID,
+            depends_on_action_id=ACTION_ID,
+        )
+    )
+    target_path = f"{LIBRARY_ROOT}/{COMPANION_TARGET_PATH}"
+    ports, mover = _ports(
+        uow,
+        {},
+        SequenceIdGenerator(event_ids=deque((EVENT_ID,))),
+        mover=RecordingFileMover(uow, existing_targets={target_path}),
+        content_snapshots={COMPANION_SOURCE_PATH: _content_snapshot(COMPANION_SOURCE_PATH)},
+    )
+
+    run = ApplyPlanUseCase(ports).execute(_apply_request(uow))
+
+    assert run.status is RunStatus.FAILED
+    action = _stored_action(uow, SECOND_ACTION_ID)
+    assert action.status is ActionStatus.FAILED
+    assert action.reason is PlanActionReason.TARGET_EXISTS
+    event = _stored_event(uow)
+    assert event.status is FileEventStatus.FAILED
+    assert event.error_code == PlanActionReason.TARGET_EXISTS.value
+    assert uow.companion_assets.records == {}
+    assert mover.moves == [(COMPANION_SOURCE_PATH, target_path)]
 
 
 def test_apply_marks_skip_action_applied_without_file_event() -> None:
@@ -472,6 +1043,21 @@ class MappingSnapshotReader:
         return self._snapshots[path_text]
 
 
+class MappingContentSnapshotReader:
+    """Metadata-free snapshot fake keyed by filesystem path text."""
+
+    def __init__(self, snapshots: dict[str, FileContentSnapshot]) -> None:
+        """Store snapshots and captured path/root pairs."""
+        self._snapshots: dict[str, FileContentSnapshot] = snapshots
+        self.captured: list[tuple[str, str]] = []
+
+    def capture(self, path: FileSystemPath, *, root: FileSystemPath) -> FileContentSnapshot:
+        """Return the configured content snapshot for one anchored path."""
+        path_text = str(path)
+        self.captured.append((path_text, str(root)))
+        return self._snapshots[path_text]
+
+
 class SimplePathResolver:
     """PathResolver fake joining Library roots and logical paths."""
 
@@ -487,18 +1073,22 @@ class SimplePathResolver:
 class RecordingFileMover:
     """FileMover fake that records durable state at mutation time."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913  # Failure controls independently exercise mover outcomes.
         self,
         uow: InMemoryUnitOfWork,
         *,
         failing_targets: set[str] | None = None,
+        existing_targets: set[str] | None = None,
         invalid_targets: set[str] | None = None,
+        crashing_targets: set[str] | None = None,
         root_after_first_move: str | None = None,
     ) -> None:
         """Store failure and root-change behavior for assertions."""
         self._uow: InMemoryUnitOfWork = uow
         self._failing_targets: set[str] = set() if failing_targets is None else set(failing_targets)
+        self._existing_targets: set[str] = set() if existing_targets is None else set(existing_targets)
         self._invalid_targets: set[str] = set() if invalid_targets is None else set(invalid_targets)
+        self._crashing_targets: set[str] = set() if crashing_targets is None else set(crashing_targets)
         self._root_after_first_move: str | None = root_after_first_move
         self.moves: list[tuple[str, str]] = []
         self.source_roots: list[str | None] = []
@@ -506,6 +1096,7 @@ class RecordingFileMover:
         self.expected_source_identities: list[FilesystemIdentity | None] = []
         self.expected_source_content_hashes: list[str | None] = []
         self.states_at_move: list[tuple[str, str, str]] = []
+        self.companion_asset_ids_at_move: list[tuple[CompanionAssetId, ...]] = []
 
     def move(  # noqa: PLR0913  # Fake mirrors the stable FileMover safety port.
         self,
@@ -530,12 +1121,19 @@ class RecordingFileMover:
         assert plan is not None
         assert len(events) > 0
         self.states_at_move.append((run.status.value, plan.status.value, events[-1].status.value))
+        self.companion_asset_ids_at_move.append(tuple(self._uow.companion_assets.records))
+
+        if str(target) in self._existing_targets:
+            raise FileExistsError(SENSITIVE_MOVE_FAILURE_DETAIL)
 
         if str(target) in self._failing_targets:
             raise OSError(SENSITIVE_MOVE_FAILURE_DETAIL)
 
         if str(target) in self._invalid_targets:
             raise ValueError(SENSITIVE_MOVE_FAILURE_DETAIL)
+
+        if str(target) in self._crashing_targets:
+            raise RuntimeError(SIMULATED_CRASH_MESSAGE)
 
         if self._root_after_first_move is not None and len(self.moves) == 1:
             library = self._uow.libraries.get(LIBRARY_ID)
@@ -549,6 +1147,7 @@ def _ports(
     id_generator: SequenceIdGenerator,
     *,
     mover: RecordingFileMover | None = None,
+    content_snapshots: dict[str, FileContentSnapshot] | None = None,
 ) -> tuple[ApplyPlanPorts, RecordingFileMover]:
     file_mover = RecordingFileMover(uow) if mover is None else mover
     return (
@@ -556,6 +1155,9 @@ def _ports(
             uow=uow,
             file_mover=file_mover,
             file_snapshot_reader=MappingSnapshotReader(snapshots),
+            file_content_snapshot_reader=MappingContentSnapshotReader(
+                {} if content_snapshots is None else content_snapshots
+            ),
             path_resolver=SimplePathResolver(),
             clock=FixedClock(BASE_TIME),
             id_generator=id_generator,
@@ -584,6 +1186,8 @@ def _plan(
     *,
     plan_type: PlanType = PlanType.ADD,
     status: PlanStatus = PlanStatus.READY,
+    source_root_at_plan: str | None = None,
+    library_root_at_plan: str = LIBRARY_ROOT,
 ) -> Plan:
     return Plan(
         plan_id=PLAN_ID,
@@ -592,7 +1196,8 @@ def _plan(
         status=status,
         created_at=BASE_TIME,
         config_hash=CONFIG_HASH,
-        library_root_at_plan=LIBRARY_ROOT,
+        library_root_at_plan=library_root_at_plan,
+        source_root_at_plan=source_root_at_plan,
         summary={"action_count": "1"},
     )
 
@@ -655,6 +1260,53 @@ def _blocked_action() -> PlanAction:
     )
 
 
+def _companion_action(
+    *,
+    source_path: str = COMPANION_SOURCE_PATH,
+    target_path: str = COMPANION_TARGET_PATH,
+    track_id: TrackId | None = None,
+    owner_action_id: ActionId | None = ACTION_ID,
+    action_type: ActionType = ActionType.MOVE_LYRICS,
+) -> PlanAction:
+    return PlanAction(
+        action_id=SECOND_ACTION_ID,
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        track_id=track_id,
+        companion_asset_id=COMPANION_ASSET_ID,
+        owner_action_id=owner_action_id,
+        action_type=action_type,
+        source_path=source_path,
+        target_path=target_path,
+        content_hash_at_plan=COMPANION_CONTENT_HASH,
+        metadata_hash_at_plan=None,
+        status=ActionStatus.PLANNED,
+        reason=None,
+        sort_order=2,
+    )
+
+
+def _unprocessed_action(
+    *,
+    source_path: str = UNPROCESSED_SOURCE_PATH,
+    target_path: str = UNPROCESSED_TARGET_PATH,
+) -> PlanAction:
+    return PlanAction(
+        action_id=ACTION_ID,
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        track_id=None,
+        action_type=ActionType.MOVE_UNPROCESSED,
+        source_path=source_path,
+        target_path=target_path,
+        content_hash_at_plan=UNPROCESSED_CONTENT_HASH,
+        metadata_hash_at_plan=None,
+        status=ActionStatus.PLANNED,
+        reason=None,
+        sort_order=1,
+    )
+
+
 def _track(
     *,
     size: int | None = None,
@@ -694,6 +1346,39 @@ def _snapshot(
         metadata=_metadata(),
         filesystem_identity=filesystem_identity,
         captured_at=BASE_TIME,
+    )
+
+
+def _content_snapshot(path: str, *, content_hash: str = COMPANION_CONTENT_HASH) -> FileContentSnapshot:
+    return FileContentSnapshot(
+        path=path,
+        size=COMPANION_FILE_SIZE,
+        mtime=BASE_TIME,
+        content_hash=content_hash,
+        filesystem_identity=COMPANION_FILESYSTEM_IDENTITY,
+        captured_at=BASE_TIME,
+    )
+
+
+def _companion_asset(
+    *,
+    current_path: str,
+    first_seen_at: datetime = BASE_TIME,
+) -> CompanionAsset:
+    return CompanionAsset(
+        companion_asset_id=COMPANION_ASSET_ID,
+        library_id=LIBRARY_ID,
+        kind=CompanionAssetKind.LYRICS,
+        owner_track_id=TRACK_ID,
+        current_path=current_path,
+        canonical_path=current_path,
+        content_hash="old-companion-hash",
+        size=1,
+        mtime=first_seen_at,
+        status=CompanionAssetStatus.ACTIVE,
+        first_seen_at=first_seen_at,
+        last_seen_at=first_seen_at,
+        updated_at=first_seen_at,
     )
 
 

@@ -25,8 +25,12 @@ export const healthCopy = {
   facets: "Issue type counts",
   groups: "Finding groups",
   findings: "Persisted findings",
+  companionAsset: "Companion asset",
   pending:
     "Mutation outcome is unknown. Review History and the filesystem manually; no automatic repair is available.",
+  unprocessedEvidence:
+    "This finding represents broken durable unprocessed-file evidence. Review History and the filesystem manually; no automatic refresh or Add repair is safe.",
+  openHistory: "Open History",
   run: {
     title: "Run Check",
     description:

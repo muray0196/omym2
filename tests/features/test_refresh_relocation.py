@@ -20,18 +20,25 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
+from omym2.domain.models.app_config import AppConfig, CompanionsConfig, PathPolicyConfig
+from omym2.domain.models.companion_asset import CompanionAsset, CompanionAssetKind, CompanionAssetStatus
 from omym2.domain.models.file_scan_entry import FileScanEntry
-from omym2.domain.models.file_snapshot import FileSnapshot
+from omym2.domain.models.file_snapshot import FileContentSnapshot, FileSnapshot, FilesystemIdentity
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.operation import Operation, OperationKind, OperationStatus, PlanCreatedResult
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanActionReason
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanActionDependency,
+    PlanActionReason,
+)
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
+from omym2.features.common_ports import SourceInventoryEntry
 from omym2.features.refresh.dto import CreateRefreshPlanRequest
 from omym2.features.refresh.ports import CreateRefreshPlanPorts
 from omym2.features.refresh.usecases.create_refresh_plan import (
@@ -45,7 +52,8 @@ from omym2.features.refresh.usecases.create_refresh_plan import (
     RefreshLibrarySelectionError,
     RefreshTargetSelectionError,
 )
-from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
+from omym2.shared.ids import ActionId, CompanionAssetId, LibraryId, OperationId, PlanId, TrackId
+from tests.fakes.file_observation import MappingFileContentSnapshotReader, StaticSourceInventoryReader
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
 
@@ -55,6 +63,7 @@ if TYPE_CHECKING:
     from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
+COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345689"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 CONTENT_HASH = calculate_content_fingerprint(b"audio")
 DUPLICATE_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567c"))
@@ -679,6 +688,56 @@ def test_refresh_blocks_filesystem_target_conflict() -> None:
     assert action.target_path == NEW_PATH
 
 
+@pytest.mark.parametrize("mode", ["discovered", "managed"])
+def test_refresh_relocates_discovered_and_managed_lyrics_with_audio_dependency(
+    mode: str,
+) -> None:
+    """Selected audio relocation carries either discovered or already-managed lyrics."""
+    source_path = _absolute(OLD_PATH)
+    lyrics_relative = OLD_PATH.removesuffix(".flac") + ".lrc"
+    lyrics_path = _absolute(lyrics_relative)
+    target_lyrics = NEW_PATH.removesuffix(".flac") + ".lrc"
+    uow = _uow_with_library_and_tracks(_track())
+    if mode == "managed":
+        uow.companion_assets.save(_companion_asset(lyrics_relative))
+    ports, _ = _ports(
+        uow,
+        {source_path: _snapshot(source_path, NEW_METADATA)},
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, DUPLICATE_ACTION_ID)),
+            companion_asset_ids=(deque() if mode == "managed" else deque((COMPANION_ASSET_ID,))),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            inventory_entries=(SourceInventoryEntry(path=lyrics_path, relative_path=lyrics_relative),),
+            content_results={lyrics_path: _content_snapshot(lyrics_path)},
+        ),
+    )
+
+    plan = CreateRefreshPlanUseCase(ports).execute(CreateRefreshPlanRequest(trust_stat=False, track_id=TRACK_ID))
+
+    assert [action.action_type for action in plan.actions] == [ActionType.MOVE, ActionType.MOVE_LYRICS]
+    owner, lyrics = plan.actions
+    assert plan.source_root_at_plan is None
+    assert lyrics.source_path == lyrics_relative
+    assert lyrics.target_path == target_lyrics
+    assert lyrics.track_id == TRACK_ID
+    assert lyrics.owner_action_id == owner.action_id
+    assert lyrics.companion_asset_id == COMPANION_ASSET_ID
+    assert uow.plan_action_dependencies.list_by_action(lyrics.action_id) == (
+        PlanActionDependency(
+            plan_id=PLAN_ID,
+            action_id=lyrics.action_id,
+            depends_on_action_id=owner.action_id,
+        ),
+    )
+    if mode == "managed":
+        assert uow.companion_assets.get(COMPANION_ASSET_ID) == _companion_asset(lyrics_relative)
+    else:
+        assert uow.companion_assets.records == {}
+
+
 class StaticConfigStore:
     """ConfigStore fake returning one AppConfig."""
 
@@ -780,6 +839,8 @@ class PortOptions:
     missing_paths: set[str] | None = None
     stat_entries: dict[str, FileScanEntry] | None = None
     resolved_names: dict[str, str] | None = None
+    inventory_entries: tuple[SourceInventoryEntry, ...] | None = None
+    content_results: dict[str, FileContentSnapshot | BaseException] | None = None
 
 
 def _ports(
@@ -794,6 +855,8 @@ def _ports(
     ports = CreateRefreshPlanPorts(
         uow=uow,
         file_snapshot_reader=snapshot_reader,
+        file_content_snapshot_reader=MappingFileContentSnapshotReader(port_options.content_results or {}),
+        source_inventory_reader=StaticSourceInventoryReader(port_options.inventory_entries or ()),
         file_stat_reader=StaticFileStatReader(port_options.stat_entries),
         file_presence=StaticFilePresence(port_options.existing_files),
         config_store=StaticConfigStore(port_options.config),
@@ -803,6 +866,39 @@ def _ports(
         id_generator=id_generator,
     )
     return ports, snapshot_reader
+
+
+def _companion_enabled_config() -> AppConfig:
+    return replace(default_app_config(), companions=CompanionsConfig(enabled=True))
+
+
+def _content_snapshot(path: str) -> FileContentSnapshot:
+    return FileContentSnapshot(
+        path=path,
+        size=FILE_SIZE,
+        mtime=BASE_TIME,
+        content_hash="companion-hash",
+        filesystem_identity=FilesystemIdentity(1, 2, FILE_SIZE, 3, 4),
+        captured_at=BASE_TIME,
+    )
+
+
+def _companion_asset(current_path: str) -> CompanionAsset:
+    return CompanionAsset(
+        companion_asset_id=COMPANION_ASSET_ID,
+        library_id=LIBRARY_ID,
+        kind=CompanionAssetKind.LYRICS,
+        owner_track_id=TRACK_ID,
+        current_path=current_path,
+        canonical_path=current_path,
+        content_hash="companion-hash",
+        size=FILE_SIZE,
+        mtime=BASE_TIME,
+        status=CompanionAssetStatus.ACTIVE,
+        first_seen_at=BASE_TIME,
+        last_seen_at=BASE_TIME,
+        updated_at=BASE_TIME,
+    )
 
 
 def _single_action_plan(

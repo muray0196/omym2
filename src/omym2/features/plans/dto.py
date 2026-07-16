@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
     from omym2.domain.models.plan_action import PlanAction, PlanActionReason
-    from omym2.shared.ids import LibraryId, PlanId
+    from omym2.shared.ids import ActionId, LibraryId, PlanId
     from omym2.shared.pagination import FacetValue
 
 
@@ -55,6 +55,9 @@ class PlanActionTypeCounts:
     """Counts of each action type within one recorded action status."""
 
     move: int
+    move_lyrics: int
+    move_artwork: int
+    move_unprocessed: int
     skip: int
     refresh_metadata: int
 
@@ -87,6 +90,13 @@ class GetPlanActionSummariesRequest:
     """Request current action summaries for a bounded set of listed Plans."""
 
     plan_ids: tuple[PlanId, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GetPlanActionDependenciesRequest:
+    """Request durable dependency IDs for a bounded set of PlanActions."""
+
+    action_ids: tuple[ActionId, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,14 +185,18 @@ class PlanDetail:
     `docs/contracts/web-api.md`, so callers that still want a bundled
     plan+actions+total view (the CLI's `plans <PLAN_ID>` command) assemble
     one from `GetPlanHeaderUseCase`, `ListPlanActionsUseCase`, and
-    `GetPlanActionFacetsUseCase` themselves. `total_action_count` is the
-    unfiltered action count, independent of any status filtering applied to
-    `actions`.
+    `GetPlanActionFacetsUseCase`, plus `GetPlanActionDependenciesUseCase` for
+    full action detail. `total_action_count` is the unfiltered action count,
+    independent of any status filtering applied to `actions`.
+    `action_dependencies` contains the durable dependency IDs for those
+    displayed actions; callers must not derive dependency order from
+    `sort_order` or `owner_action_id`.
     """
 
     plan: Plan
     actions: tuple[PlanAction, ...]
     total_action_count: int
+    action_dependencies: Mapping[ActionId, tuple[ActionId, ...]]
 
 
 def plan_action_summary_from_counts(
@@ -209,6 +223,9 @@ def _action_type_counts_for_status(
     """Return the fixed action-type counts for one status row."""
     return PlanActionTypeCounts(
         move=counts.get((status, ActionType.MOVE), 0),
+        move_lyrics=counts.get((status, ActionType.MOVE_LYRICS), 0),
+        move_artwork=counts.get((status, ActionType.MOVE_ARTWORK), 0),
+        move_unprocessed=counts.get((status, ActionType.MOVE_UNPROCESSED), 0),
         skip=counts.get((status, ActionType.SKIP), 0),
         refresh_metadata=counts.get((status, ActionType.REFRESH_METADATA), 0),
     )

@@ -250,7 +250,14 @@ function EmptyState({ hasActiveFilters }: { hasActiveFilters: boolean }) {
 function sumActionTypeCounts(
   counts: PlanSummary["summary"]["counts"]["blocked"],
 ) {
-  return counts.move + counts.skip + counts.refresh_metadata;
+  return (
+    counts.move +
+    counts.move_lyrics +
+    counts.move_artwork +
+    counts.move_unprocessed +
+    counts.skip +
+    counts.refresh_metadata
+  );
 }
 
 function formatTimestamp(value: string) {

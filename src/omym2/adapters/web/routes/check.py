@@ -226,6 +226,7 @@ def _check_issue_resource(issue: CheckIssue) -> CheckIssueResource:
         path=issue.path,
         track_id=issue.track_id,
         plan_id=issue.plan_id,
+        companion_asset_id=issue.companion_asset_id,
         detail=issue.detail,
     )
 

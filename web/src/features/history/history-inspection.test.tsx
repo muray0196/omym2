@@ -34,6 +34,7 @@ import { bootstrapQuery } from "../bootstrap/bootstrap-query";
 import { eventStatusLabel, runStatusLabel } from "./history-catalog";
 
 const RUN_ID = "018f6a4f-3c2d-7b8a-9abc-def012345701";
+const COMPANION_ASSET_ID = "018f6a4f-3c2d-7b8a-9abc-def012345706";
 
 describe("Run detail inspection", () => {
   it("shows pending mutation evidence and a disabled Undo control with recovery", async () => {
@@ -66,6 +67,8 @@ describe("Run detail inspection", () => {
     );
     expect(backLink).toHaveFocus();
     expect(screen.getAllByText("Pending — outcome unknown")).toHaveLength(3);
+    expect(screen.getByText(COMPANION_ASSET_ID)).toBeVisible();
+    expect(screen.getByText("Move unprocessed file")).toBeVisible();
     expect(
       screen.getByText(/pending FileEvent requires manual review/i),
     ).toBeVisible();
@@ -427,6 +430,7 @@ const runEvents = {
   data: {
     items: [
       {
+        companion_asset_id: COMPANION_ASSET_ID,
         event_id: "018f6a4f-3c2d-7b8a-9abc-def012345704",
         library_id: runDetail.data.run.library_id,
         run_id: RUN_ID,
@@ -441,21 +445,52 @@ const runEvents = {
         error_message: null,
         sequence_no: 1,
       },
+      {
+        companion_asset_id: null,
+        event_id: "018f6a4f-3c2d-7b8a-9abc-def012345707",
+        library_id: runDetail.data.run.library_id,
+        run_id: RUN_ID,
+        plan_action_id: "018f6a4f-3c2d-7b8a-9abc-def012345708",
+        event_type: "move_unprocessed_file",
+        source_path: "/incoming/notes.txt",
+        target_path: "/incoming/unprocessed/notes.txt",
+        status: "succeeded",
+        started_at: "2026-07-13T00:00:11Z",
+        completed_at: "2026-07-13T00:00:12Z",
+        error_code: null,
+        error_message: null,
+        sequence_no: 2,
+      },
     ],
-    page: { limit: 100, next_cursor: null, total: 1 },
+    page: { limit: 100, next_cursor: null, total: 2 },
   },
   errors: [],
 } satisfies ApiEnvelopePaginatedDataFileEventResource;
 
 const eventFacets = {
-  data: { facets: { status: [{ value: "pending", count: 1 }] }, total: 1 },
+  data: {
+    facets: {
+      status: [
+        { value: "pending", count: 1 },
+        { value: "succeeded", count: 1 },
+      ],
+    },
+    total: 2,
+  },
   errors: [],
 } satisfies ApiEnvelopeFileEventFacetsData;
 const eventGroups = {
   data: {
     group_by: "target_directory",
-    items: [{ key: "New", label: "New", count: 1 }],
-    page: { limit: 100, next_cursor: null, total: 1 },
+    items: [
+      { key: "New", label: "New", count: 1 },
+      {
+        key: "/incoming/unprocessed",
+        label: "/incoming/unprocessed",
+        count: 1,
+      },
+    ],
+    page: { limit: 100, next_cursor: null, total: 2 },
   },
   errors: [],
 } satisfies ApiEnvelopeFileEventGroupsData;

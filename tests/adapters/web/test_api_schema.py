@@ -135,8 +135,23 @@ def test_settings_operations_have_stable_ids_and_declared_typed_errors() -> None
     assert "ArtistIdDraftData" in schemas
     assert "ArtistNameConfigResource" in schemas
     app_config_properties = _mapping(_mapping(schemas, "AppConfigResource"), "properties")
+    settings_choices_properties = _mapping(_mapping(schemas, "SettingsChoices"), "properties")
     preview_properties = _mapping(_mapping(schemas, "PathPreviewRequest"), "properties")
-    assert "artist_names" in app_config_properties
+    assert {
+        "artist_names",
+        "musicbrainz",
+        "fasttext",
+        "hashing",
+        "logging",
+        "companions",
+        "unprocessed",
+    } <= set(app_config_properties)
+    assert {
+        "musicbrainz_cache_policies",
+        "logging_levels",
+        "unprocessed_result_preview_limit_min",
+        "unprocessed_result_preview_limit_max",
+    } <= set(settings_choices_properties)
     assert "artist_names" in preview_properties
 
 
@@ -168,6 +183,43 @@ def test_plan_read_operations_have_stable_ids_and_declared_typed_errors() -> Non
         failure_schema = _response_schema(_mapping(_operation(paths, path), "responses"), "422")
         assert failure_schema != {"$ref": "#/components/schemas/HTTPValidationError"}
     assert "ApiFailureEnvelope" in schemas
+
+
+def test_extended_file_catalogs_and_resource_identity_fields_are_explicit() -> None:
+    """Generated schemas expose companion identity and every extended file catalog value."""
+    schema = cast("dict[str, object]", create_api_schema_app().openapi())
+    schemas = _mapping(_mapping(schema, "components"), "schemas")
+
+    plan_action_properties = _mapping(_mapping(schemas, "PlanActionResource"), "properties")
+    file_event_properties = _mapping(_mapping(schemas, "FileEventResource"), "properties")
+    check_issue_properties = _mapping(_mapping(schemas, "CheckIssueResource"), "properties")
+    count_properties = _mapping(_mapping(schemas, "PlanActionTypeCounts"), "properties")
+
+    assert {"companion_asset_id", "owner_action_id", "depends_on_action_ids"} <= set(plan_action_properties)
+    assert "companion_asset_id" in file_event_properties
+    assert "companion_asset_id" in check_issue_properties
+    assert {"move_lyrics", "move_artwork", "move_unprocessed"} <= set(count_properties)
+    assert {"move_lyrics", "move_artwork", "move_unprocessed"} <= set(
+        cast("list[str]", _mapping(schemas, "ActionType")["enum"])
+    )
+    assert {
+        "companion_owner_blocked",
+        "companion_association_ambiguous",
+        "companion_dependency_failed",
+    } <= set(cast("list[str]", _mapping(schemas, "PlanActionReason")["enum"]))
+    assert {"move_lyrics_file", "move_artwork_file", "move_unprocessed_file"} <= set(
+        cast("list[str]", _mapping(schemas, "FileEventType")["enum"])
+    )
+    assert {
+        "companion_file_missing",
+        "companion_content_hash_changed",
+        "companion_current_path_differs_from_canonical_path",
+        "companion_owner_missing",
+        "unmanaged_companion_exists",
+        "failed_companion_source_exists",
+        "unprocessed_file_missing",
+        "unprocessed_content_hash_changed",
+    } <= set(cast("list[str]", _mapping(schemas, "CheckIssueType")["enum"]))
 
 
 def test_m4_execution_operations_have_stable_ids_and_typed_errors() -> None:

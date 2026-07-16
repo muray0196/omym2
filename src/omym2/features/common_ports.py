@@ -25,17 +25,34 @@ if TYPE_CHECKING:
     from omym2.domain.models.artist_name_resolution import ArtistNameResolution
     from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
     from omym2.domain.models.check_run import CheckRun
+    from omym2.domain.models.companion_asset import CompanionAsset
     from omym2.domain.models.file_event import FileEvent, FileEventStatus
     from omym2.domain.models.file_scan_entry import FileScanEntry
-    from omym2.domain.models.file_snapshot import FileSnapshot, FilesystemIdentity
+    from omym2.domain.models.file_snapshot import FileContentSnapshot, FileSnapshot, FilesystemIdentity
     from omym2.domain.models.library import Library
     from omym2.domain.models.operation import Operation, OperationLookup
     from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-    from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction, PlanActionReason
+    from omym2.domain.models.plan_action import (
+        ActionStatus,
+        ActionType,
+        PlanAction,
+        PlanActionDependency,
+        PlanActionReason,
+    )
     from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackGrouping, TrackStatus
     from omym2.domain.models.track_metadata import TrackMetadata
-    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
+    from omym2.shared.ids import (
+        ActionId,
+        CheckRunId,
+        CompanionAssetId,
+        EventId,
+        LibraryId,
+        OperationId,
+        PlanId,
+        RunId,
+        TrackId,
+    )
     from omym2.shared.pagination import FacetValue, GroupCount, Page, PageRequest
 
 type FileSystemPath = str | PathLike[str]
@@ -125,6 +142,14 @@ class ConfigStoreIoError(OSError):
 
 class MetadataReadError(ValueError):
     """Raised when a metadata adapter cannot read a supported tag mapping."""
+
+
+class FileObservationInvalidPathError(ValueError):
+    """Raised when a content-only source is not a safe regular path."""
+
+
+class FileObservationChangedError(ValueError):
+    """Raised when a content-only source changes during anchored capture."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -301,6 +326,22 @@ class TrackRepository(Protocol):
         ...
 
 
+class CompanionAssetRepository(Protocol):
+    """Persistence contract for managed companion asset state."""
+
+    def get(self, companion_asset_id: CompanionAssetId) -> CompanionAsset | None:
+        """Return one companion asset by stable ID."""
+        ...
+
+    def list_by_library(self, library_id: LibraryId) -> Sequence[CompanionAsset]:
+        """Return companion assets owned by one Library."""
+        ...
+
+    def save(self, companion_asset: CompanionAsset) -> None:
+        """Persist a companion asset without recalculating identity or paths."""
+        ...
+
+
 class PlanRepository(Protocol):
     """Persistence contract for reviewed Plans."""
 
@@ -465,6 +506,18 @@ class PlanActionRepository(Protocol):
         ...
 
 
+class PlanActionDependencyRepository(Protocol):
+    """Persistence contract for recorded PlanAction dependencies."""
+
+    def list_by_action(self, action_id: ActionId) -> Sequence[PlanActionDependency]:
+        """Return the actions that one PlanAction depends on."""
+        ...
+
+    def save(self, dependency: PlanActionDependency) -> None:
+        """Persist one dependency without deriving execution policy."""
+        ...
+
+
 class RunRepository(Protocol):
     """Persistence contract for apply execution attempts."""
 
@@ -616,6 +669,11 @@ class UnitOfWork(Protocol):
         ...
 
     @property
+    def companion_assets(self) -> CompanionAssetRepository:
+        """Repository for managed companion asset state."""
+        ...
+
+    @property
     def plans(self) -> PlanRepository:
         """Repository for reviewed Plans."""
         ...
@@ -623,6 +681,11 @@ class UnitOfWork(Protocol):
     @property
     def plan_actions(self) -> PlanActionRepository:
         """Repository for recorded PlanActions."""
+        ...
+
+    @property
+    def plan_action_dependencies(self) -> PlanActionDependencyRepository:
+        """Repository for recorded PlanAction dependencies."""
         ...
 
     @property
@@ -669,8 +732,13 @@ class UnitOfWork(Protocol):
 class FileScanner(Protocol):
     """Filesystem discovery contract for cheap candidate file scans."""
 
-    def scan(self, root: FileSystemPath) -> Sequence[FileScanEntry]:
-        """Return file discovery entries without tags or hashes."""
+    def scan(
+        self,
+        root: FileSystemPath,
+        *,
+        excluded_roots: tuple[FileSystemPath, ...] = (),
+    ) -> Sequence[FileScanEntry]:
+        """Return file discovery entries without entering excluded roots."""
         ...
 
 
@@ -702,6 +770,38 @@ class BatchFileSnapshotReader(Protocol):
 
     def capture_many(self, requests: Sequence[FileSnapshotCaptureRequest]) -> Sequence[FileSnapshot | None]:
         """Return results in request order, using None only for files that disappeared."""
+        ...
+
+
+class FileContentSnapshotReader(Protocol):
+    """Metadata-free, root-anchored regular-file observation contract."""
+
+    def capture(self, path: FileSystemPath, *, root: FileSystemPath) -> FileContentSnapshot:
+        """Capture content and filesystem identity without following symlinks."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class SourceInventoryRequest:
+    """One all-regular-file inventory rooted below caller-supplied exclusions."""
+
+    root: FileSystemPath
+    excluded_roots: tuple[FileSystemPath, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SourceInventoryEntry:
+    """One regular file located by absolute and source-root-relative path."""
+
+    path: str
+    relative_path: str
+
+
+class SourceInventoryReader(Protocol):
+    """Filesystem discovery contract for all regular files under one source root."""
+
+    def scan(self, request: SourceInventoryRequest) -> Sequence[SourceInventoryEntry]:
+        """Return deterministic entries while pruning caller-supplied roots."""
         ...
 
 
@@ -805,6 +905,10 @@ class IdGenerator(Protocol):
         """Create a Track ID."""
         ...
 
+    def new_companion_asset_id(self) -> CompanionAssetId:
+        """Create a companion-asset ID."""
+        ...
+
     def new_plan_id(self) -> PlanId:
         """Create a Plan ID."""
         ...
@@ -850,6 +954,10 @@ class Uuid7IdGenerator:
     def new_track_id(self) -> TrackId:
         """Create a UUIDv7-backed Track ID."""
         return shared_ids.new_track_id()
+
+    def new_companion_asset_id(self) -> CompanionAssetId:
+        """Create a UUIDv7-backed companion-asset ID."""
+        return shared_ids.new_companion_asset_id()
 
     def new_plan_id(self) -> PlanId:
         """Create a UUIDv7-backed Plan ID."""

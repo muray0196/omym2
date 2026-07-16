@@ -1,6 +1,6 @@
 """
 Summary: Checks filesystem path presence without reading file contents.
-Why: Lets planning block occupied targets without metadata or hash I/O.
+Why: Lets planning block every occupied target, including broken symlinks, without content I/O.
 """
 
 from __future__ import annotations
@@ -18,5 +18,11 @@ class FilesystemFilePresence:
     """Check whether a filesystem path currently exists."""
 
     def exists(self, path: FileSystemPath) -> bool:
-        """Return whether a file or directory exists at path."""
-        return Path(path).exists()
+        """Return whether a filesystem directory entry exists at path."""
+        try:
+            _ = Path(path).lstat()
+        except FileNotFoundError:
+            return False
+        except OSError:
+            return True
+        return True

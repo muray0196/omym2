@@ -1,6 +1,6 @@
 """
-Summary: Defines complete observed file state.
-Why: Captures metadata and hashes without making them track identity.
+Summary: Defines metadata-rich and content-only observed file state.
+Why: Captures safe hash and identity evidence without making it Track identity.
 """
 
 from __future__ import annotations
@@ -27,6 +27,25 @@ class FilesystemIdentity:
     size: int
     mtime_ns: int
     ctime_ns: int
+
+
+@dataclass(frozen=True, slots=True)
+class FileContentSnapshot:
+    """Metadata-free observed state for one regular file."""
+
+    path: str
+    size: int
+    mtime: datetime
+    content_hash: str
+    filesystem_identity: FilesystemIdentity
+    captured_at: datetime
+
+    def __post_init__(self) -> None:
+        """Validate the file size and normalize observation timestamps."""
+        if self.size < 0:
+            raise ValueError(NEGATIVE_FILE_SIZE_MESSAGE)
+        object.__setattr__(self, "mtime", as_utc(self.mtime))
+        object.__setattr__(self, "captured_at", as_utc(self.captured_at))
 
 
 @dataclass(frozen=True, slots=True)

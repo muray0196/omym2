@@ -1,9 +1,9 @@
 ---
 type: Codebase Reference
 title: Ports And UnitOfWork
-description: Defines OMYM2's ports and UnitOfWork contract, including artist-name resolution and cache transactions, durable Operations, Config revision CAS, atomic Apply claims, filesystem mutation preconditions, and FileEvent transaction ordering.
-tags: [ports, unit-of-work, transactions, architecture, artist-names]
-timestamp: 2026-07-16T01:53:29+09:00
+description: Defines OMYM2's ports and UnitOfWork contract, including configured artist-name resolution, cache and cadence transactions, durable Operations, Config revision CAS, atomic Apply claims, cross-platform retained-object mutation preconditions, and FileEvent ordering.
+tags: [ports, unit-of-work, transactions, architecture, artist-names, musicbrainz]
+timestamp: 2026-07-16T06:02:32+09:00
 ---
 
 # Ports And UnitOfWork
@@ -78,14 +78,15 @@ The resolution and acceptance rules are authoritative in
 
 `add`, `organize`, `refresh`, and `artist-ids generate` all consume this same
 port. Normal Plan composition shares one lazy language predictor and one
-rate-limited provider for the process. The development-only
-`OMYM2_ARTIST_NAME_FASTTEXT_MODEL_PATH` runtime opt-in selects the predictor's
-model; without it, the no-op predictor still permits exact preferences and
-accepted cache entries. Optional runtime or model-load failure becomes a
-detector-unavailable observation and cannot trigger a provider request. The
-environment boundary and its packaged-build limits are authoritative in
-[Development Harness](../development/harness.md#automatic-artist-name-lookup-development-opt-in).
-An enabled predictor/provider changes only new cache-miss resolution, not the
+provider for the process. Persisted `musicbrainz` and `fasttext` settings select
+the provider bounds, model path, and confidence threshold. Exact preferences
+and accepted cache entries remain available while automatic lookup is disabled.
+Optional runtime or model-load failure becomes a detector-unavailable
+observation and cannot trigger a provider request; explicit disablement is a
+distinct automatic-lookup-disabled observation. Runtime selection and its
+packaged-build limits are authoritative in
+[Development Harness](../development/harness.md#runtime-configuration).
+Enabling the predictor/provider changes only new cache-miss resolution, not the
 Plan usecase contract.
 
 Add and partial Refresh reject an executable resolved-name move when other
@@ -165,15 +166,18 @@ filesystem mutation.
 
 Apply independently supplies the verified open Library root as `source_root`
 and `target_root` whenever the corresponding path is Library-relative. The
-adapter opens descendant directories without following symlinks, retains the
-source file and parent descriptors, rechecks source identity and containment,
-creates the target exclusively, and rechecks the complete source state before
-unlinking it through the retained parent descriptor. Copy claims also verify
-the target and retained source bytes against the expected content hash before
-unlinking. External add sources use `source_root=None` but are still copied
-from a retained descriptor; absolute Undo restore targets use `target_root=None` only for the separately verified
-external-restore exception. Omitting one root must not weaken the other
-anchored boundary.
+adapter traverses descendants without following link-like entries, retains the
+opened root, parent, source, and claimed-target objects, rechecks source
+identity and containment, creates the target exclusively, and deletes only the
+exact revalidated source object. Copy claims also verify the target and
+retained source bytes against the expected content hash before deletion.
+External Add sources use `source_root=None` but are still copied from a retained
+source object; absolute Undo restore targets use `target_root=None` only for
+the separately verified external-restore exception. Omitting one root must not
+weaken the other anchored boundary. POSIX realizes this port with `dir_fd` and
+`O_NOFOLLOW`; native Windows uses retained `CreateFileW` handles. The exact
+platform mechanics are authoritative in the
+[Path Identity And Storage Contract](../contracts/path-identity-storage.md#retained-observation-and-mutation-boundary).
 
 ```python
 class ConfigStore(Protocol):

@@ -20,9 +20,15 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
+from omym2.domain.models.app_config import AppConfig, CompanionsConfig, PathPolicyConfig
+from omym2.domain.models.companion_asset import (
+    CompanionAsset,
+    CompanionAssetKind,
+    CompanionAssetStatus,
+)
+from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.file_scan_entry import FileScanEntry
-from omym2.domain.models.file_snapshot import FileSnapshot
+from omym2.domain.models.file_snapshot import FileContentSnapshot, FileSnapshot, FilesystemIdentity
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.operation import (
     Operation,
@@ -31,13 +37,21 @@ from omym2.domain.models.operation import (
     PlanCreatedResult,
     RegisteredWithoutPlanResult,
 )
-from omym2.domain.models.plan import PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, PlanActionReason
+from omym2.domain.models.plan import Plan, PlanStatus, PlanType
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
+from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
 from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
+from omym2.features.common_ports import SourceInventoryEntry
 from omym2.features.organize.dto import CreateOrganizePlanRequest
 from omym2.features.organize.ports import CreateOrganizePlanPorts
 from omym2.features.organize.usecases.create_organize_plan import (
@@ -47,7 +61,21 @@ from omym2.features.organize.usecases.create_organize_plan import (
     CreateOrganizePlanUseCase,
     OrganizeLibrarySelectionError,
 )
-from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
+from omym2.shared.ids import (
+    ActionId,
+    CompanionAssetId,
+    EventId,
+    LibraryId,
+    OperationId,
+    PlanId,
+    RunId,
+    TrackId,
+)
+from tests.fakes.file_observation import (
+    MappingFileContentSnapshotReader,
+    StaticFilePresence,
+    StaticSourceInventoryReader,
+)
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
 
@@ -57,6 +85,7 @@ if TYPE_CHECKING:
     from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
+COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345689"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 CONTENT = b"audio"
 CONTENT_HASH = calculate_content_fingerprint(CONTENT)
@@ -590,6 +619,291 @@ def test_organize_refuses_unregistered_path_when_library_exists() -> None:
         )
 
 
+def test_organize_registers_noop_companion_only_after_owner_track_exists() -> None:
+    """A canonical lyric becomes managed state without creating a mutation Plan."""
+    audio_path = f"{LIBRARY_ROOT}/{EXPECTED_CANONICAL_PATH}"
+    lyrics_relative = EXPECTED_CANONICAL_PATH.removesuffix(".flac") + ".lrc"
+    lyrics_path = f"{LIBRARY_ROOT}/{lyrics_relative}"
+    uow = InMemoryUnitOfWork()
+    ports, _, _ = _ports(
+        uow,
+        (_entry(audio_path),),
+        {audio_path: _snapshot(audio_path, METADATA)},
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            track_ids=deque((TRACK_ID,)),
+            companion_asset_ids=deque((COMPANION_ASSET_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            inventory_entries=(
+                SourceInventoryEntry(path=audio_path, relative_path=EXPECTED_CANONICAL_PATH),
+                SourceInventoryEntry(path=lyrics_path, relative_path=lyrics_relative),
+            ),
+            content_results={lyrics_path: _content_snapshot(lyrics_path)},
+        ),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(library_root=LIBRARY_ROOT, trust_stat=False)
+    )
+
+    assert result.plan is None
+    assert result.library.status is LibraryStatus.REGISTERED
+    companion_asset = uow.companion_assets.get(COMPANION_ASSET_ID)
+    assert companion_asset is not None
+    assert companion_asset.kind is CompanionAssetKind.LYRICS
+    assert companion_asset.status is CompanionAssetStatus.ACTIVE
+    assert companion_asset.owner_track_id == TRACK_ID
+    assert companion_asset.current_path == lyrics_relative
+    assert companion_asset.content_hash == "companion-hash"
+
+
+def test_organize_plans_companion_move_after_audio_and_persists_dependency() -> None:
+    """A misplaced lyric follows its newly recorded owner through the same reviewed Plan."""
+    audio_path = f"{LIBRARY_ROOT}/{MISPLACED_PATH}"
+    lyrics_relative = "Unsorted/Title.lrc"
+    lyrics_path = f"{LIBRARY_ROOT}/{lyrics_relative}"
+    uow = InMemoryUnitOfWork()
+    ports, _, _ = _ports(
+        uow,
+        (_entry(audio_path),),
+        {audio_path: _snapshot(audio_path, METADATA)},
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            track_ids=deque((TRACK_ID,)),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID)),
+            companion_asset_ids=deque((COMPANION_ASSET_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            inventory_entries=(
+                SourceInventoryEntry(path=audio_path, relative_path=MISPLACED_PATH),
+                SourceInventoryEntry(path=lyrics_path, relative_path=lyrics_relative),
+            ),
+            content_results={lyrics_path: _content_snapshot(lyrics_path)},
+        ),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(library_root=LIBRARY_ROOT, trust_stat=False)
+    )
+
+    assert result.plan is not None
+    assert [action.action_type for action in result.actions] == [ActionType.MOVE, ActionType.MOVE_LYRICS]
+    owner, lyrics = result.actions
+    assert lyrics.owner_action_id == owner.action_id
+    assert lyrics.track_id == TRACK_ID
+    assert lyrics.target_path == EXPECTED_CANONICAL_PATH.removesuffix(".flac") + ".lrc"
+    assert uow.plan_action_dependencies.list_by_action(lyrics.action_id) == (
+        PlanActionDependency(
+            plan_id=PLAN_ID,
+            action_id=lyrics.action_id,
+            depends_on_action_id=owner.action_id,
+        ),
+    )
+    assert uow.companion_assets.records == {}
+    assert result.library.status is LibraryStatus.UNREGISTERED
+
+
+def test_organize_replans_refresh_failed_lyrics_against_stable_owner() -> None:
+    """Organize consumes Library-relative Refresh failure evidence without a new owner action."""
+    failed_run_id = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345691"))
+    audio_event_id = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345692"))
+    companion_event_id = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345693"))
+    recovery_plan_id = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345694"))
+    current_audio_path = f"{LIBRARY_ROOT}/{EXPECTED_CANONICAL_PATH}"
+    failed_audio_source = "Old/Title.flac"
+    failed_lyrics_source = "Old/Title.lrc"
+    lyrics_target = EXPECTED_CANONICAL_PATH.removesuffix(".flac") + ".lrc"
+    lyrics_path = f"{LIBRARY_ROOT}/{failed_lyrics_source}"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track())
+    uow.companion_assets.save(
+        CompanionAsset(
+            companion_asset_id=COMPANION_ASSET_ID,
+            library_id=LIBRARY_ID,
+            kind=CompanionAssetKind.LYRICS,
+            owner_track_id=TRACK_ID,
+            current_path=failed_lyrics_source,
+            canonical_path=lyrics_target,
+            content_hash="companion-hash",
+            size=FILE_SIZE,
+            mtime=BASE_TIME,
+            status=CompanionAssetStatus.ACTIVE,
+            first_seen_at=BASE_TIME,
+            last_seen_at=BASE_TIME,
+            updated_at=BASE_TIME,
+        )
+    )
+    failed_plan = Plan(
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        plan_type=PlanType.REFRESH,
+        status=PlanStatus.PARTIAL_FAILED,
+        created_at=BASE_TIME,
+        config_hash="failed-config",
+        library_root_at_plan=LIBRARY_ROOT,
+    )
+    audio_action = PlanAction(
+        action_id=ACTION_ID,
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        track_id=TRACK_ID,
+        action_type=ActionType.MOVE,
+        source_path=failed_audio_source,
+        target_path=EXPECTED_CANONICAL_PATH,
+        content_hash_at_plan=CONTENT_HASH,
+        metadata_hash_at_plan=calculate_metadata_fingerprint(METADATA),
+        status=ActionStatus.APPLIED,
+        reason=None,
+        sort_order=1,
+    )
+    failed_lyrics = PlanAction(
+        action_id=SECOND_ACTION_ID,
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        track_id=TRACK_ID,
+        action_type=ActionType.MOVE_LYRICS,
+        source_path=failed_lyrics_source,
+        target_path=lyrics_target,
+        content_hash_at_plan="companion-hash",
+        metadata_hash_at_plan=None,
+        status=ActionStatus.FAILED,
+        reason=PlanActionReason.TARGET_EXISTS,
+        sort_order=2,
+        companion_asset_id=COMPANION_ASSET_ID,
+        owner_action_id=ACTION_ID,
+    )
+    uow.plans.save(failed_plan)
+    uow.plan_actions.save(audio_action)
+    uow.plan_actions.save(failed_lyrics)
+    uow.plan_action_dependencies.save(
+        PlanActionDependency(
+            plan_id=PLAN_ID,
+            action_id=SECOND_ACTION_ID,
+            depends_on_action_id=ACTION_ID,
+        )
+    )
+    uow.runs.save(
+        Run(
+            run_id=failed_run_id,
+            plan_id=PLAN_ID,
+            library_id=LIBRARY_ID,
+            status=RunStatus.PARTIAL_FAILED,
+            started_at=BASE_TIME,
+            completed_at=BASE_TIME + timedelta(minutes=1),
+            error_summary="target exists",
+        )
+    )
+    uow.file_events.save(
+        FileEvent(
+            event_id=audio_event_id,
+            library_id=LIBRARY_ID,
+            run_id=failed_run_id,
+            plan_action_id=ACTION_ID,
+            event_type=FileEventType.MOVE_FILE,
+            source_path=failed_audio_source,
+            target_path=EXPECTED_CANONICAL_PATH,
+            status=FileEventStatus.SUCCEEDED,
+            started_at=BASE_TIME,
+            completed_at=BASE_TIME + timedelta(seconds=10),
+            error_code=None,
+            error_message=None,
+            sequence_no=1,
+        )
+    )
+    uow.file_events.save(
+        FileEvent(
+            event_id=companion_event_id,
+            library_id=LIBRARY_ID,
+            run_id=failed_run_id,
+            plan_action_id=SECOND_ACTION_ID,
+            event_type=FileEventType.MOVE_LYRICS_FILE,
+            source_path=failed_lyrics_source,
+            target_path=lyrics_target,
+            status=FileEventStatus.FAILED,
+            started_at=BASE_TIME + timedelta(seconds=20),
+            completed_at=BASE_TIME + timedelta(seconds=30),
+            error_code=PlanActionReason.TARGET_EXISTS.value,
+            error_message="target exists",
+            sequence_no=2,
+            companion_asset_id=COMPANION_ASSET_ID,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (_entry(current_audio_path),),
+        {current_audio_path: _snapshot(current_audio_path, METADATA)},
+        SequenceIdGenerator(
+            plan_ids=deque((recovery_plan_id,)),
+            action_ids=deque((THIRD_ACTION_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            inventory_entries=(
+                SourceInventoryEntry(
+                    path=current_audio_path,
+                    relative_path=EXPECTED_CANONICAL_PATH,
+                ),
+                SourceInventoryEntry(path=lyrics_path, relative_path=failed_lyrics_source),
+            ),
+            content_results={lyrics_path: _content_snapshot(lyrics_path)},
+        ),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(library_root=LIBRARY_ROOT, trust_stat=False)
+    )
+
+    assert result.plan is not None
+    assert result.plan.plan_id == recovery_plan_id
+    assert len(result.actions) == 1
+    recovery = result.actions[0]
+    assert recovery.action_type is ActionType.MOVE_LYRICS
+    assert recovery.track_id == TRACK_ID
+    assert recovery.companion_asset_id == COMPANION_ASSET_ID
+    assert recovery.owner_action_id is None
+    assert recovery.source_path == failed_lyrics_source
+    assert recovery.target_path == lyrics_target
+    assert uow.plan_action_dependencies.list_by_action(recovery.action_id) == ()
+
+
+def test_organize_companion_block_marks_library_blocked() -> None:
+    """A disappeared claimed lyric blocks registration even when its owner move is valid."""
+    audio_path = f"{LIBRARY_ROOT}/{MISPLACED_PATH}"
+    lyrics_relative = "Unsorted/Title.lrc"
+    lyrics_path = f"{LIBRARY_ROOT}/{lyrics_relative}"
+    uow = InMemoryUnitOfWork()
+    ports, _, _ = _ports(
+        uow,
+        (_entry(audio_path),),
+        {audio_path: _snapshot(audio_path, METADATA)},
+        SequenceIdGenerator(
+            library_ids=deque((LIBRARY_ID,)),
+            track_ids=deque((TRACK_ID,)),
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID)),
+            companion_asset_ids=deque((COMPANION_ASSET_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            inventory_entries=(SourceInventoryEntry(path=lyrics_path, relative_path=lyrics_relative),),
+            content_results={lyrics_path: FileNotFoundError(lyrics_path)},
+        ),
+    )
+
+    result = CreateOrganizePlanUseCase(ports).execute(
+        CreateOrganizePlanRequest(library_root=LIBRARY_ROOT, trust_stat=False)
+    )
+
+    assert result.actions[-1].reason is PlanActionReason.SOURCE_MISSING
+    assert result.actions[-1].status is ActionStatus.BLOCKED
+    assert result.library.status is LibraryStatus.BLOCKED
+
+
 class StaticConfigStore:
     """ConfigStore fake returning one AppConfig."""
 
@@ -614,8 +928,14 @@ class StaticFileScanner:
         self._entries: tuple[FileScanEntry, ...] = entries
         self.scanned_roots: list[FileSystemPath] = []
 
-    def scan(self, root: FileSystemPath) -> tuple[FileScanEntry, ...]:
+    def scan(
+        self,
+        root: FileSystemPath,
+        *,
+        excluded_roots: tuple[FileSystemPath, ...] = (),
+    ) -> tuple[FileScanEntry, ...]:
         """Return configured scan entries."""
+        del excluded_roots
         self.scanned_roots.append(root)
         return self._entries
 
@@ -681,6 +1001,9 @@ class PortOptions:
     config: AppConfig | None = None
     missing_paths: set[str] | None = None
     resolved_names: dict[str, str] | None = None
+    existing_files: set[str] | None = None
+    inventory_entries: tuple[SourceInventoryEntry, ...] | None = None
+    content_results: dict[str, FileContentSnapshot | BaseException] | None = None
 
 
 def _ports(
@@ -698,6 +1021,9 @@ def _ports(
         uow=uow,
         file_scanner=scanner,
         file_snapshot_reader=snapshot_reader,
+        file_content_snapshot_reader=MappingFileContentSnapshotReader(port_options.content_results or {}),
+        source_inventory_reader=StaticSourceInventoryReader(port_options.inventory_entries or ()),
+        file_presence=StaticFilePresence(port_options.existing_files or set()),
         config_store=StaticConfigStore(port_options.config),
         artist_name_resolver=MappingArtistNameResolver(port_options.resolved_names or {}),
         path_resolver=SimplePathResolver(),
@@ -705,6 +1031,21 @@ def _ports(
         id_generator=id_generator,
     )
     return ports, scanner, snapshot_reader
+
+
+def _companion_enabled_config() -> AppConfig:
+    return replace(default_app_config(), companions=CompanionsConfig(enabled=True))
+
+
+def _content_snapshot(path: str) -> FileContentSnapshot:
+    return FileContentSnapshot(
+        path=path,
+        size=FILE_SIZE,
+        mtime=BASE_TIME,
+        content_hash="companion-hash",
+        filesystem_identity=FilesystemIdentity(1, 2, FILE_SIZE, 3, 4),
+        captured_at=BASE_TIME,
+    )
 
 
 def _entry(path: str) -> FileScanEntry:

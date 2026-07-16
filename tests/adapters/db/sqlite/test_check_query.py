@@ -1,8 +1,6 @@
 """
-Summary: Tests SQLiteCheckRunRepository/SQLiteCheckIssueRepository migration, persistence, and queries.
-Why: Protects the check-results persistence contract: migration upgrade safety, round-trip fidelity,
-the replace-on-write invariant, FK cascade cleanup, and the browsing SQL contract (issue_seq keyset
-math, filter pushdown, facets, and groups).
+Summary: Tests SQLite check-result migrations, persistence, and queries.
+Why: Protects replacement, cleanup, paging, filtering, facets, and groups.
 """
 
 from __future__ import annotations
@@ -16,7 +14,12 @@ from omym2.adapters.config.application_paths import default_application_paths
 from omym2.adapters.db.sqlite import migration_runner
 from omym2.adapters.db.sqlite.migration_runner import migrate_database
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
-from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
+from omym2.domain.models.check_issue import (
+    CHECK_ISSUE_GROUP_EXTERNAL_KEY,
+    CheckIssue,
+    CheckIssueGrouping,
+    CheckIssueType,
+)
 from omym2.domain.models.check_run import CheckRun
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
@@ -51,6 +54,7 @@ TWO_ISSUE_TYPE_GROUP_TOTAL = 2
 CHECK_TRIAGE_ISSUE_TOTAL = 5
 CHECK_TRIAGE_ISSUE_TYPE_GROUP_TOTAL = 4
 THREE_AIMER_ISSUE_TOTAL = 3
+EXTERNAL_UNPROCESSED_ISSUE_TOTAL = 4
 
 
 def test_check_results_migration_creates_tables_and_index_on_fresh_database(tmp_path: Path) -> None:
@@ -390,6 +394,163 @@ def test_check_issue_group_page_derives_triage_groupings_and_common_path_roots(t
     ]
 
 
+def test_companion_issue_sql_triage_matches_feature_grouping(tmp_path: Path) -> None:
+    """SQLite groups companion findings into the same error and recovery families as the usecase."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.check_runs.save(_check_run())
+        uow.check_issues.save_many(
+            CHECK_RUN_ID,
+            tuple(
+                _check_issue(issue_type=issue_type, path=f"Artist/Album/{issue_type.value}")
+                for issue_type in (
+                    CheckIssueType.COMPANION_FILE_MISSING,
+                    CheckIssueType.COMPANION_CONTENT_HASH_CHANGED,
+                    CheckIssueType.COMPANION_OWNER_MISSING,
+                    CheckIssueType.COMPANION_CURRENT_PATH_DIFFERS_FROM_CANONICAL_PATH,
+                    CheckIssueType.UNMANAGED_COMPANION_EXISTS,
+                )
+            ),
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        severity_groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.SEVERITY,
+            PageRequest(),
+        )
+        command_groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.SUGGESTED_COMMAND,
+            PageRequest(),
+        )
+
+    assert [(group.key, group.count) for group in severity_groups.items] == [
+        ("error", 3),
+        ("warning", 2),
+    ]
+    assert [(group.key, group.count) for group in command_groups.items] == [
+        ("organize", 3),
+        ("refresh", 2),
+    ]
+
+
+def test_failed_companion_scope_sql_matches_platform_neutral_feature_grouping(
+    tmp_path: Path,
+) -> None:
+    """SQLite uses persisted recovery scope rather than host-specific absolute-path syntax."""
+    database_file = default_application_paths(tmp_path).database_file
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.check_runs.save(_check_run())
+        uow.check_issues.save_many(
+            CHECK_RUN_ID,
+            (
+                _check_issue(
+                    issue_type=CheckIssueType.FAILED_COMPANION_SOURCE_EXISTS,
+                    path=r"C:\incoming\Song.lrc",
+                    detail="add",
+                ),
+                _check_issue(
+                    issue_type=CheckIssueType.FAILED_COMPANION_SOURCE_EXISTS,
+                    path="Old/Album/Song.lrc",
+                    detail="organize",
+                ),
+                _check_issue(
+                    issue_type=CheckIssueType.FAILED_COMPANION_SOURCE_EXISTS,
+                    path=r"C:\incoming\Corrupt.lrc",
+                    detail=None,
+                ),
+            ),
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        severity_groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.SEVERITY,
+            PageRequest(),
+        )
+        command_groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.SUGGESTED_COMMAND,
+            PageRequest(),
+        )
+
+    assert [(group.key, group.count) for group in severity_groups.items] == [("error", 3)]
+    assert [(group.key, group.count) for group in command_groups.items] == [
+        ("add", 1),
+        ("check", 1),
+        ("organize", 1),
+    ]
+
+
+def test_unprocessed_windows_and_unc_sql_grouping_matches_feature_parity(tmp_path: Path) -> None:
+    """SQLite recognizes drive and UNC absolute targets as external on every host."""
+    database_file = default_application_paths(tmp_path).database_file
+    paths = (
+        r"C:\incoming\Unprocessed\notes\one.txt",
+        "C:/incoming/Unprocessed/notes/two.txt",
+        r"\\server\share\Unprocessed\notes\three.txt",
+        "//server/share/Unprocessed/notes/four.txt",
+    )
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.libraries.save(_library())
+        uow.check_runs.save(_check_run(total_count=EXTERNAL_UNPROCESSED_ISSUE_TOTAL))
+        uow.check_issues.save_many(
+            CHECK_RUN_ID,
+            tuple(
+                _check_issue(
+                    issue_type=(
+                        CheckIssueType.UNPROCESSED_FILE_MISSING
+                        if index % 2 == 0
+                        else CheckIssueType.UNPROCESSED_CONTENT_HASH_CHANGED
+                    ),
+                    path=path,
+                )
+                for index, path in enumerate(paths)
+            ),
+        )
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        severity_groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.SEVERITY,
+            PageRequest(),
+        )
+        command_groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.SUGGESTED_COMMAND,
+            PageRequest(),
+        )
+        root_groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.PATH_ROOT,
+            PageRequest(),
+        )
+        artist_groups = uow.check_issues.group_page(
+            LIBRARY_ID,
+            CheckIssueGrouping.ARTIST_ALBUM,
+            PageRequest(),
+        )
+
+    assert [(group.key, group.count) for group in severity_groups.items] == [
+        ("error", EXTERNAL_UNPROCESSED_ISSUE_TOTAL)
+    ]
+    assert [(group.key, group.count) for group in command_groups.items] == [
+        ("history", EXTERNAL_UNPROCESSED_ISSUE_TOTAL)
+    ]
+    assert [(group.key, group.count) for group in root_groups.items] == [
+        (CHECK_ISSUE_GROUP_EXTERNAL_KEY, EXTERNAL_UNPROCESSED_ISSUE_TOTAL)
+    ]
+    assert [(group.key, group.count) for group in artist_groups.items] == [
+        (CHECK_ISSUE_GROUP_EXTERNAL_KEY, EXTERNAL_UNPROCESSED_ISSUE_TOTAL)
+    ]
+
+
 def test_check_issue_query_page_drills_into_one_group_with_keyset_pagination(tmp_path: Path) -> None:
     """A group key filters issue rows in SQL before its keyset cursor and limit are applied."""
     database_file = default_application_paths(tmp_path).database_file
@@ -582,5 +743,6 @@ def _check_issue(
     library_id: LibraryId = LIBRARY_ID,
     issue_type: CheckIssueType = CheckIssueType.UNMANAGED_FILE_EXISTS,
     path: str | None = TARGET_PATH,
+    detail: str | None = None,
 ) -> CheckIssue:
-    return CheckIssue(issue_type=issue_type, library_id=library_id, path=path)
+    return CheckIssue(issue_type=issue_type, library_id=library_id, path=path, detail=detail)

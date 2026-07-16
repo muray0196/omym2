@@ -17,12 +17,14 @@ from omym2.adapters.cli.commands.plans_serializers import (
 from omym2.domain.models.plan import PlanStatus, PlanType
 from omym2.domain.models.plan_action import ActionStatus, ActionType
 from omym2.features.plans.dto import (
+    GetPlanActionDependenciesRequest,
     GetPlanHeaderRequest,
     ListPlanActionsRequest,
     ListPlansRequest,
     PlanActionFacetsRequest,
     PlanDetail,
 )
+from omym2.features.plans.usecases.get_plan_action_dependencies import GetPlanActionDependenciesUseCase
 from omym2.features.plans.usecases.get_plan_action_facets import GetPlanActionFacetsUseCase
 from omym2.features.plans.usecases.get_plan_header import GetPlanHeaderUseCase, PlanNotFoundError
 from omym2.features.plans.usecases.list_plan_actions import ListPlanActionsUseCase
@@ -31,7 +33,7 @@ from omym2.shared.ids import PlanId, parse_uuid
 from omym2.shared.pagination import MAX_PAGE_LIMIT, PageRequest
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
     from typing import TextIO
 
     from omym2.domain.models.artist_name_resolution import (
@@ -41,6 +43,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
     from omym2.features.plans.ports import PlanQueryPorts
+    from omym2.shared.ids import ActionId
 
 ACTIONS_OPTION = "--actions"
 BLOCKED_ONLY_FLAG = "--blocked-only"
@@ -297,7 +300,17 @@ def _run_plan_detail(
 
     total_action_count = GetPlanActionFacetsUseCase(ports).execute(PlanActionFacetsRequest(plan_id)).total
     actions = _fetch_plan_actions(ports, plan_id, status=options.action_status)
-    detail = PlanDetail(plan=plan, actions=actions, total_action_count=total_action_count)
+    action_dependencies: Mapping[ActionId, tuple[ActionId, ...]] = {}
+    if not options.summary and not options.diff:
+        action_dependencies = GetPlanActionDependenciesUseCase(ports).execute(
+            GetPlanActionDependenciesRequest(tuple(action.action_id for action in actions))
+        )
+    detail = PlanDetail(
+        plan=plan,
+        actions=actions,
+        total_action_count=total_action_count,
+        action_dependencies=action_dependencies,
+    )
 
     if options.as_json:
         write_json(stdout, serialize_plan_detail_response(detail))
@@ -328,7 +341,7 @@ def _write_plan_detail(stdout: TextIO, detail: PlanDetail, *, filtered: bool) ->
     if filtered and len(detail.actions) == 0:
         write_line(stdout, NO_MATCHING_ACTIONS_MESSAGE)
         return
-    _write_actions(stdout, detail.actions)
+    _write_actions(stdout, detail.actions, detail.action_dependencies)
 
 
 def _write_plan_summary(stdout: TextIO, detail: PlanDetail) -> None:
@@ -380,7 +393,11 @@ def _write_summary(stdout: TextIO, plan: Plan) -> None:
         _ = stdout.write(f"  {key}: {value}\n")
 
 
-def _write_actions(stdout: TextIO, actions: tuple[PlanAction, ...]) -> None:
+def _write_actions(
+    stdout: TextIO,
+    actions: tuple[PlanAction, ...],
+    action_dependencies: Mapping[ActionId, tuple[ActionId, ...]],
+) -> None:
     _ = stdout.write("actions:\n")
     for action in actions:
         _ = stdout.write(f"  - action_id: {action.action_id}\n")
@@ -391,8 +408,20 @@ def _write_actions(stdout: TextIO, actions: tuple[PlanAction, ...]) -> None:
         )
         _ = stdout.write(f"    source_path: {_format_optional(action.source_path)}\n")
         _ = stdout.write(f"    target_path: {_format_optional(action.target_path)}\n")
+        companion_asset_id = None if action.companion_asset_id is None else str(action.companion_asset_id)
+        owner_action_id = None if action.owner_action_id is None else str(action.owner_action_id)
+        _ = stdout.write(f"    companion_asset_id: {_format_optional(companion_asset_id)}\n")
+        _ = stdout.write(f"    owner_action_id: {_format_optional(owner_action_id)}\n")
+        _ = stdout.write(
+            f"    depends_on_action_ids: {_format_action_ids(action_dependencies.get(action.action_id, ()))}\n"
+        )
         if action.artist_name_diagnostics is not None:
             _write_artist_name_diagnostics(stdout, action.artist_name_diagnostics)
+
+
+def _format_action_ids(action_ids: tuple[ActionId, ...]) -> str:
+    """Render durable dependency IDs as one deterministic list."""
+    return f"[{', '.join(str(action_id) for action_id in action_ids)}]"
 
 
 def _write_artist_name_diagnostics(stdout: TextIO, diagnostics: ArtistNameDiagnostics) -> None:

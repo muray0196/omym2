@@ -2,6 +2,8 @@
  * Summary: Centralizes product-default-language copy for Plan review and execution.
  * Why: Keeps recorded evidence, capability, and recovery wording consistent.
  */
+import type { ArtistNameResolutionIssue } from "../../api/generated";
+
 export const planCopy = {
   list: {
     eyebrow: "Inspection",
@@ -102,10 +104,16 @@ export const planCopy = {
     applied: "Applied",
     failed: "Failed",
     move: "Move",
+    moveLyrics: "Move lyrics",
+    moveArtwork: "Move artwork",
+    moveUnprocessed: "Move unprocessed",
     skip: "Skip",
     refreshMetadata: "Refresh metadata",
     actionId: "Action ID",
     trackId: "Track ID",
+    companionAssetId: "Companion asset ID",
+    ownerActionId: "Owner action ID",
+    dependencyActionIds: "Depends on action IDs",
     sourcePath: "Source path",
     targetPath: "Target path",
     actionType: "Action type",
@@ -132,12 +140,13 @@ export const planCopy = {
       composite_unsupported: "Composite name unsupported",
       non_latin_required: "Source contains Latin text",
       detector_unavailable: "Language detector unavailable",
+      automatic_lookup_disabled: "Automatic lookup disabled",
       not_japanese: "Not detected as Japanese",
       low_language_confidence: "Low language confidence",
       provider_unavailable: "MusicBrainz unavailable",
       no_confident_match: "No confident match",
       ambiguous_match: "Ambiguous match",
-    },
+    } satisfies Record<ArtistNameResolutionIssue, string>,
   },
   unknown: {
     status: "Unknown status",

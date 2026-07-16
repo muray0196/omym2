@@ -6,27 +6,48 @@ Why: Protects reviewed incoming imports before file mutation exists.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 import pytest
 
 from omym2.adapters.config.default_config import default_app_config
+from omym2.adapters.fs.file_presence import FilesystemFilePresence
+from omym2.adapters.fs.source_inventory_reader import FilesystemSourceInventoryReader
 from omym2.config import (
+    DEFAULT_UNPROCESSED_DIRECTORY,
+    DEFAULT_UNPROCESSED_RESULT_PREVIEW_LIMIT,
     OPERATION_RESULT_RETENTION_HOURS,
     OPERATION_TOMBSTONE_RETENTION_DAYS,
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, ArtistNameConfig, PathPolicyConfig, PathsConfig
+from omym2.domain.models.app_config import (
+    AppConfig,
+    ArtistIdConfig,
+    ArtistNameConfig,
+    CompanionsConfig,
+    PathPolicyConfig,
+    PathsConfig,
+    UnprocessedConfig,
+)
+from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.file_scan_entry import FileScanEntry
-from omym2.domain.models.file_snapshot import FileSnapshot
+from omym2.domain.models.file_snapshot import FileContentSnapshot, FileSnapshot, FilesystemIdentity
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.operation import Operation, OperationKind, OperationStatus, PlanCreatedResult
-from omym2.domain.models.plan import PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanActionReason
+from omym2.domain.models.plan import Plan, PlanStatus, PlanType
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
+from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
@@ -39,27 +60,45 @@ from omym2.features.add.usecases.create_add_plan import (
     ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE,
     NO_REGISTERED_LIBRARY_MESSAGE,
     SELECTED_LIBRARY_NOT_FOUND_MESSAGE,
+    SOURCE_INSIDE_LIBRARY_MESSAGE,
     STALE_LIBRARY_MESSAGE,
     AddLibraryReconciliationRequiredError,
     AddLibrarySelectionError,
+    AddSourceSelectionError,
     CreateAddPlanUseCase,
+)
+from omym2.features.common_ports import (
+    FileObservationChangedError,
+    FileObservationInvalidPathError,
+    SourceInventoryEntry,
+    SourceInventoryRequest,
 )
 from omym2.features.plans.dto import GetPlanHeaderRequest, ListPlanActionsRequest, ListPlansRequest
 from omym2.features.plans.ports import PlanQueryPorts
 from omym2.features.plans.usecases.get_plan_header import GetPlanHeaderUseCase
 from omym2.features.plans.usecases.list_plan_actions import ListPlanActionsUseCase
 from omym2.features.plans.usecases.list_plans import ListPlansUseCase
-from omym2.shared.ids import ActionId, LibraryId, OperationId, PlanId, TrackId
+from omym2.shared.ids import (
+    ActionId,
+    CompanionAssetId,
+    EventId,
+    LibraryId,
+    OperationId,
+    PlanId,
+    RunId,
+    TrackId,
+)
+from tests.fakes.file_observation import MappingFileContentSnapshotReader, StaticSourceInventoryReader
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath
 
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
+COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345689"))
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 CASE_INSENSITIVE_DUPLICATE_TARGET_PATH = "artist/2026_Album/1-02_Title.flac"
 CONTENT = b"audio"
@@ -115,6 +154,7 @@ SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 SECOND_LIBRARY_ROOT = "/music/second"
 SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
 THIRD_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
+FOURTH_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
 THIRD_INCOMING_FILE = "/music/incoming/Title3.flac"
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 YEAR_1998 = 1998
@@ -1082,6 +1122,769 @@ def test_plans_list_and_detail_usecases_return_recorded_actions() -> None:
     assert actions_page.items == plan.actions
 
 
+def test_add_plans_unique_lyrics_after_audio_with_durable_owner_dependency() -> None:
+    """An enabled unique lyric is reviewed after its owner and creates no premature asset row."""
+    lyrics_path = f"{INCOMING_ROOT}/Title.lrc"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID)),
+            companion_asset_ids=deque((COMPANION_ASSET_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            inventory_entries=(
+                SourceInventoryEntry(path=INCOMING_FILE, relative_path="Title.flac"),
+                SourceInventoryEntry(path=lyrics_path, relative_path="Title.lrc"),
+            ),
+            content_results={lyrics_path: _content_snapshot(lyrics_path)},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    assert [action.action_type for action in plan.actions] == [ActionType.MOVE, ActionType.MOVE_LYRICS]
+    owner, lyrics = plan.actions
+    assert plan.source_root_at_plan == INCOMING_ROOT
+    assert lyrics.owner_action_id == owner.action_id
+    assert lyrics.companion_asset_id == COMPANION_ASSET_ID
+    assert lyrics.source_path == lyrics_path
+    assert lyrics.target_path == EXPECTED_CANONICAL_PATH.removesuffix(".flac") + ".lrc"
+    assert lyrics.content_hash_at_plan == "companion-hash"
+    assert uow.plan_action_dependencies.list_by_action(lyrics.action_id) == (
+        PlanActionDependency(
+            plan_id=PLAN_ID,
+            action_id=lyrics.action_id,
+            depends_on_action_id=owner.action_id,
+        ),
+    )
+    assert uow.companion_assets.records == {}
+
+
+def test_add_replans_failed_lyrics_without_rescanning_moved_audio() -> None:
+    """Exact retained Add history creates one companion-only retry with stable identity."""
+    failed_run_id = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345691"))
+    audio_event_id = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345692"))
+    companion_event_id = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345693"))
+    recovery_plan_id = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345694"))
+    lyrics_path = f"{INCOMING_ROOT}/Title.lrc"
+    lyrics_target = EXPECTED_CANONICAL_PATH.removesuffix(".flac") + ".lrc"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track(CONTENT_HASH, EXPECTED_CANONICAL_PATH))
+    failed_plan = Plan(
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        plan_type=PlanType.ADD,
+        status=PlanStatus.PARTIAL_FAILED,
+        created_at=BASE_TIME,
+        config_hash="failed-config",
+        library_root_at_plan=LIBRARY_ROOT,
+        source_root_at_plan=INCOMING_ROOT,
+    )
+    audio_action = PlanAction(
+        action_id=ACTION_ID,
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        track_id=TRACK_ID,
+        action_type=ActionType.MOVE,
+        source_path=INCOMING_FILE,
+        target_path=EXPECTED_CANONICAL_PATH,
+        content_hash_at_plan=CONTENT_HASH,
+        metadata_hash_at_plan=calculate_metadata_fingerprint(METADATA),
+        status=ActionStatus.APPLIED,
+        reason=None,
+        sort_order=1,
+    )
+    failed_lyrics = PlanAction(
+        action_id=SECOND_ACTION_ID,
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        track_id=None,
+        action_type=ActionType.MOVE_LYRICS,
+        source_path=lyrics_path,
+        target_path=lyrics_target,
+        content_hash_at_plan="companion-hash",
+        metadata_hash_at_plan=None,
+        status=ActionStatus.FAILED,
+        reason=PlanActionReason.TARGET_EXISTS,
+        sort_order=2,
+        companion_asset_id=COMPANION_ASSET_ID,
+        owner_action_id=ACTION_ID,
+    )
+    failed_run = Run(
+        run_id=failed_run_id,
+        plan_id=PLAN_ID,
+        library_id=LIBRARY_ID,
+        status=RunStatus.PARTIAL_FAILED,
+        started_at=BASE_TIME,
+        completed_at=BASE_TIME + timedelta(minutes=1),
+        error_summary="target exists",
+    )
+    uow.plans.save(failed_plan)
+    uow.plan_actions.save(audio_action)
+    uow.plan_actions.save(failed_lyrics)
+    uow.plan_action_dependencies.save(
+        PlanActionDependency(
+            plan_id=PLAN_ID,
+            action_id=SECOND_ACTION_ID,
+            depends_on_action_id=ACTION_ID,
+        )
+    )
+    uow.runs.save(failed_run)
+    uow.file_events.save(
+        FileEvent(
+            event_id=audio_event_id,
+            library_id=LIBRARY_ID,
+            run_id=failed_run_id,
+            plan_action_id=ACTION_ID,
+            event_type=FileEventType.MOVE_FILE,
+            source_path=INCOMING_FILE,
+            target_path=EXPECTED_CANONICAL_PATH,
+            status=FileEventStatus.SUCCEEDED,
+            started_at=BASE_TIME,
+            completed_at=BASE_TIME + timedelta(seconds=10),
+            error_code=None,
+            error_message=None,
+            sequence_no=1,
+        )
+    )
+    uow.file_events.save(
+        FileEvent(
+            event_id=companion_event_id,
+            library_id=LIBRARY_ID,
+            run_id=failed_run_id,
+            plan_action_id=SECOND_ACTION_ID,
+            event_type=FileEventType.MOVE_LYRICS_FILE,
+            source_path=lyrics_path,
+            target_path=lyrics_target,
+            status=FileEventStatus.FAILED,
+            started_at=BASE_TIME + timedelta(seconds=20),
+            completed_at=BASE_TIME + timedelta(seconds=30),
+            error_code=PlanActionReason.TARGET_EXISTS.value,
+            error_message="target exists",
+            sequence_no=2,
+            companion_asset_id=COMPANION_ASSET_ID,
+        )
+    )
+    ports, _, _ = _ports(
+        uow,
+        (),
+        {},
+        SequenceIdGenerator(
+            plan_ids=deque((recovery_plan_id,)),
+            action_ids=deque((THIRD_ACTION_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            inventory_entries=(SourceInventoryEntry(path=lyrics_path, relative_path="Title.lrc"),),
+            content_results={lyrics_path: _content_snapshot(lyrics_path)},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    assert plan.plan_id == recovery_plan_id
+    assert len(plan.actions) == 1
+    recovery = plan.actions[0]
+    assert recovery.action_type is ActionType.MOVE_LYRICS
+    assert recovery.track_id == TRACK_ID
+    assert recovery.companion_asset_id == COMPANION_ASSET_ID
+    assert recovery.owner_action_id is None
+    assert recovery.source_path == lyrics_path
+    assert recovery.target_path == lyrics_target
+    assert uow.plan_action_dependencies.list_by_action(recovery.action_id) == ()
+
+
+def test_add_blocks_ambiguous_lyrics_and_records_every_candidate_dependency() -> None:
+    """Same-stem audio ambiguity remains reviewable and retains both durable dependencies."""
+    second_audio = f"{INCOMING_ROOT}/Title.mp3"
+    lyrics_path = f"{INCOMING_ROOT}/Title.lrc"
+    second_snapshot = replace(
+        _snapshot(second_audio, METADATA, OTHER_CONTENT_HASH),
+        file_extension=".mp3",
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE), replace(_entry(second_audio), file_extension=".mp3")),
+        {
+            INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH),
+            second_audio: second_snapshot,
+        },
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID, THIRD_ACTION_ID)),
+            companion_asset_ids=deque((COMPANION_ASSET_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            inventory_entries=(SourceInventoryEntry(path=lyrics_path, relative_path="Title.lrc"),),
+            content_results={lyrics_path: _content_snapshot(lyrics_path)},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    ambiguous = plan.actions[-1]
+    assert ambiguous.action_type is ActionType.MOVE_LYRICS
+    assert ambiguous.status is ActionStatus.BLOCKED
+    assert ambiguous.reason is PlanActionReason.COMPANION_ASSOCIATION_AMBIGUOUS
+    assert ambiguous.owner_action_id is None
+    assert {
+        dependency.depends_on_action_id
+        for dependency in uow.plan_action_dependencies.list_by_action(ambiguous.action_id)
+    } == {ACTION_ID, SECOND_ACTION_ID}
+
+
+def test_add_plans_shared_artwork_once_with_all_audio_dependencies() -> None:
+    """One sibling artwork source becomes one action after every audio action."""
+    artwork_path = f"{INCOMING_ROOT}/cover.jpg"
+    second_metadata = replace(METADATA, title="Title2", track_number=3)
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE), _entry(SECOND_INCOMING_FILE)),
+        {
+            INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH),
+            SECOND_INCOMING_FILE: _snapshot(SECOND_INCOMING_FILE, second_metadata, OTHER_CONTENT_HASH),
+        },
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID, THIRD_ACTION_ID)),
+            companion_asset_ids=deque((COMPANION_ASSET_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            inventory_entries=(SourceInventoryEntry(path=artwork_path, relative_path="cover.jpg"),),
+            content_results={artwork_path: _content_snapshot(artwork_path)},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    artwork_actions = [action for action in plan.actions if action.action_type is ActionType.MOVE_ARTWORK]
+    assert len(artwork_actions) == 1
+    artwork = artwork_actions[0]
+    assert artwork.target_path == "Artist/2026_Album/cover.jpg"
+    assert {
+        dependency.depends_on_action_id for dependency in uow.plan_action_dependencies.list_by_action(artwork.action_id)
+    } == {ACTION_ID, SECOND_ACTION_ID}
+
+
+def test_add_blocks_shared_artwork_when_audio_targets_split_across_parents() -> None:
+    """Shared artwork never guesses a target when sibling audio resolves to mixed parents."""
+    artwork_path = f"{INCOMING_ROOT}/cover.png"
+    second_metadata = replace(METADATA, title="Title2", artist="Other", track_number=3)
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE), _entry(SECOND_INCOMING_FILE)),
+        {
+            INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH),
+            SECOND_INCOMING_FILE: _snapshot(SECOND_INCOMING_FILE, second_metadata, OTHER_CONTENT_HASH),
+        },
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID, THIRD_ACTION_ID)),
+            companion_asset_ids=deque((COMPANION_ASSET_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            inventory_entries=(SourceInventoryEntry(path=artwork_path, relative_path="cover.png"),),
+            content_results={artwork_path: _content_snapshot(artwork_path)},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    artwork = plan.actions[-1]
+    assert artwork.status is ActionStatus.BLOCKED
+    assert artwork.reason is PlanActionReason.COMPANION_ASSOCIATION_AMBIGUOUS
+    assert artwork.target_path is None
+
+
+def test_add_both_collection_features_disabled_skip_source_inventory() -> None:
+    """Default Add avoids optional inventory capabilities and companion observations."""
+    lyrics_path = f"{INCOMING_ROOT}/Title.lrc"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(
+            inventory_entries=(SourceInventoryEntry(path=lyrics_path, relative_path="Title.lrc"),),
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    assert [action.action_type for action in plan.actions] == [ActionType.MOVE]
+    assert isinstance(ports.source_inventory_reader, StaticSourceInventoryReader)
+    assert ports.source_inventory_reader.requests == []
+    assert isinstance(ports.file_content_snapshot_reader, MappingFileContentSnapshotReader)
+    assert ports.file_content_snapshot_reader.captures == []
+
+
+def test_add_unprocessed_disabled_leaves_an_eligible_leftover_unplanned() -> None:
+    """Turning collection off stops new leftover actions and content observations."""
+    leftover = f"{INCOMING_ROOT}/notes.txt"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (),
+        {},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,))),
+        options=PortOptions(
+            inventory_entries=(SourceInventoryEntry(path=leftover, relative_path="notes.txt"),),
+            content_results={leftover: _content_snapshot(leftover)},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    assert plan.actions == ()
+    assert plan.summary["unprocessed_actions"] == "0"
+    assert isinstance(ports.file_content_snapshot_reader, MappingFileContentSnapshotReader)
+    assert ports.file_content_snapshot_reader.captures == []
+
+
+@pytest.mark.parametrize(
+    ("content_result", "existing_files", "expected_reason"),
+    [
+        (FileNotFoundError("gone"), None, PlanActionReason.SOURCE_MISSING),
+        (FileObservationInvalidPathError("symlink"), None, PlanActionReason.INVALID_PATH),
+        (FileObservationChangedError("changed"), None, PlanActionReason.SOURCE_CHANGED),
+        (None, {f"{LIBRARY_ROOT}/Artist/2026_Album/1-02_Title.lrc"}, PlanActionReason.TARGET_EXISTS),
+    ],
+)
+def test_add_companion_observation_and_live_collision_fail_closed(
+    content_result: BaseException | None,
+    existing_files: set[str] | None,
+    expected_reason: PlanActionReason,
+) -> None:
+    """Disappearance, symlink replacement, change, and live collision each block safely."""
+    lyrics_path = f"{INCOMING_ROOT}/Title.lrc"
+    result = _content_snapshot(lyrics_path) if content_result is None else content_result
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID)),
+            companion_asset_ids=deque((COMPANION_ASSET_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            existing_files=existing_files,
+            inventory_entries=(SourceInventoryEntry(path=lyrics_path, relative_path="Title.lrc"),),
+            content_results={lyrics_path: result},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    companion = plan.actions[-1]
+    assert companion.status is ActionStatus.BLOCKED
+    assert companion.reason is expected_reason
+
+
+def test_add_blocks_companion_when_owner_audio_is_blocked() -> None:
+    """A companion cannot execute when its owning audio move is already blocked."""
+    lyrics_path = f"{INCOMING_ROOT}/Title.lrc"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(INCOMING_FILE),),
+        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID)),
+            companion_asset_ids=deque((COMPANION_ASSET_ID,)),
+        ),
+        options=PortOptions(
+            config=_companion_enabled_config(),
+            existing_files={f"{LIBRARY_ROOT}/{EXPECTED_CANONICAL_PATH}"},
+            inventory_entries=(SourceInventoryEntry(path=lyrics_path, relative_path="Title.lrc"),),
+            content_results={lyrics_path: _content_snapshot(lyrics_path)},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    owner, companion = plan.actions
+    assert owner.reason is PlanActionReason.TARGET_EXISTS
+    assert companion.status is ActionStatus.BLOCKED
+    assert companion.reason is PlanActionReason.COMPANION_OWNER_BLOCKED
+
+
+def test_add_rejects_a_source_inside_the_library_before_scanning() -> None:
+    """Add never inventories or plans files from inside the managed Library."""
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, scanner, _ = _ports(uow, (), {}, SequenceIdGenerator())
+
+    with pytest.raises(AddSourceSelectionError, match=SOURCE_INSIDE_LIBRARY_MESSAGE):
+        _ = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(f"{LIBRARY_ROOT}/incoming"))
+
+    assert scanner.scanned_roots == []
+    assert uow.plans.records == {}
+
+
+def test_add_treats_every_scanner_entry_as_claimed_and_collects_only_true_leftovers() -> None:
+    """A scanner-emitted odd extension remains audio while an un-emitted extension is reviewed."""
+    scanner_claimed = f"{INCOMING_ROOT}/scanner-claimed.odd"
+    unsupported_leftover = f"{INCOMING_ROOT}/unsupported.leftover"
+    scan_entry = replace(_entry(scanner_claimed), file_extension=".odd")
+    scan_snapshot = replace(
+        _snapshot(scanner_claimed, METADATA, CONTENT_HASH),
+        file_extension=".odd",
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (scan_entry,),
+        {scanner_claimed: scan_snapshot},
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID)),
+        ),
+        options=PortOptions(
+            config=_unprocessed_enabled_config(),
+            inventory_entries=(
+                SourceInventoryEntry(path=scanner_claimed, relative_path="scanner-claimed.odd"),
+                SourceInventoryEntry(path=unsupported_leftover, relative_path="unsupported.leftover"),
+            ),
+            content_results={unsupported_leftover: _content_snapshot(unsupported_leftover)},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    assert [action.action_type for action in plan.actions] == [
+        ActionType.MOVE,
+        ActionType.MOVE_UNPROCESSED,
+    ]
+    assert plan.actions[0].source_path == scanner_claimed
+    assert plan.actions[1].source_path == unsupported_leftover
+    assert plan.actions[1].target_path == f"{INCOMING_ROOT}/Unprocessed/unsupported.leftover"
+
+
+def test_add_excludes_blocked_duplicate_and_disabled_companion_claims_from_leftovers() -> None:
+    """All audio and companion claims stay excluded regardless of their resulting action status."""
+    missing_audio = f"{INCOMING_ROOT}/missing.flac"
+    duplicate_audio = f"{INCOMING_ROOT}/duplicate.flac"
+    lyrics = f"{INCOMING_ROOT}/missing.lrc"
+    leftover = f"{INCOMING_ROOT}/notes.txt"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    uow.tracks.save(_track(CONTENT_HASH, EXPECTED_CANONICAL_PATH))
+    ports, _, _ = _ports(
+        uow,
+        (_entry(missing_audio), _entry(duplicate_audio)),
+        {
+            missing_audio: replace(
+                _snapshot(missing_audio, METADATA, OTHER_CONTENT_HASH),
+                size=FILE_SIZE + 1,
+            ),
+            duplicate_audio: _snapshot(duplicate_audio, METADATA, CONTENT_HASH),
+        },
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID, THIRD_ACTION_ID)),
+        ),
+        options=PortOptions(
+            config=_unprocessed_enabled_config(),
+            inventory_entries=(
+                SourceInventoryEntry(path=missing_audio, relative_path="missing.flac"),
+                SourceInventoryEntry(path=lyrics, relative_path="missing.lrc"),
+                SourceInventoryEntry(path=duplicate_audio, relative_path="duplicate.flac"),
+                SourceInventoryEntry(path=leftover, relative_path="notes.txt"),
+            ),
+            content_results={leftover: _content_snapshot(leftover)},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    assert [action.action_type for action in plan.actions] == [
+        ActionType.MOVE,
+        ActionType.SKIP,
+        ActionType.MOVE_UNPROCESSED,
+    ]
+    assert plan.actions[0].reason is PlanActionReason.SOURCE_CHANGED
+    assert plan.actions[1].reason is PlanActionReason.DUPLICATE_HASH
+    assert plan.actions[2].source_path == leftover
+    assert isinstance(ports.file_content_snapshot_reader, MappingFileContentSnapshotReader)
+    assert ports.file_content_snapshot_reader.captures == [(leftover, INCOMING_ROOT)]
+
+
+def test_add_excludes_nested_library_destination_and_only_specific_internal_paths() -> None:
+    """An app-root source keeps ordinary siblings while pruning every owned subtree or log."""
+    source_root = "/application"
+    library_root = f"{source_root}/library"
+    log_file = f"{source_root}/logs/omym2.log"
+    ordinary = f"{source_root}/ordinary.txt"
+    log_notes = f"{source_root}/logs/omym2.log.notes"
+    retained_paths = (ordinary, log_notes)
+    excluded_paths = (
+        f"{source_root}/config",
+        f"{source_root}/data",
+        f"{source_root}/custom-config.toml",
+        f"{source_root}/custom.sqlite3",
+        log_file,
+    )
+    inventory_paths = (
+        *retained_paths,
+        f"{library_root}/managed.txt",
+        f"{source_root}/Unprocessed/already.txt",
+        f"{source_root}/config/config.toml",
+        f"{source_root}/data/omym2.sqlite3",
+        f"{source_root}/custom-config.toml",
+        f"{source_root}/custom.sqlite3",
+        log_file,
+        f"{log_file}.12",
+    )
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, library_root))
+    ports, scanner, _ = _ports(
+        uow,
+        (),
+        {},
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID)),
+        ),
+        options=PortOptions(
+            config=_unprocessed_enabled_config(),
+            inventory_entries=tuple(
+                SourceInventoryEntry(
+                    path=path,
+                    relative_path=Path(path).relative_to(source_root).as_posix(),
+                )
+                for path in inventory_paths
+            ),
+            content_results={path: _content_snapshot(path) for path in retained_paths},
+            internal_excluded_paths=excluded_paths,
+            rotating_log_files=(log_file,),
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_root))
+
+    assert {action.source_path for action in plan.actions} == set(retained_paths)
+    assert all(action.action_type is ActionType.MOVE_UNPROCESSED for action in plan.actions)
+    assert isinstance(ports.source_inventory_reader, StaticSourceInventoryReader)
+    assert ports.source_inventory_reader.requests == [
+        SourceInventoryRequest(
+            root=source_root,
+            excluded_roots=(library_root, f"{source_root}/Unprocessed", *excluded_paths),
+        )
+    ]
+    assert scanner.scanned_excluded_roots == [(library_root, f"{source_root}/Unprocessed", *excluded_paths)]
+
+
+@pytest.mark.parametrize(
+    ("directory", "relative_path", "library_root", "internal_paths", "rotating_log_files"),
+    [
+        ("Review", "docs/file.txt", "/collection/Review/docs", (), ()),
+        ("data", "docs/file.txt", LIBRARY_ROOT, ("/collection/data",), ()),
+        (
+            "logs",
+            "omym2.log.7",
+            LIBRARY_ROOT,
+            ("/collection/logs/omym2.log",),
+            ("/collection/logs/omym2.log",),
+        ),
+    ],
+)
+def test_add_blocks_unprocessed_targets_overlapping_protected_paths(
+    directory: str,
+    relative_path: str,
+    library_root: str,
+    internal_paths: tuple[str, ...],
+    rotating_log_files: tuple[str, ...],
+) -> None:
+    """A reviewed target cannot enter the Library, internal data, or a rotated log path."""
+    source_root = "/collection"
+    source_path = f"{source_root}/{relative_path}"
+    target_path = f"{source_root}/{directory}/{relative_path}"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, library_root))
+    ports, _, _ = _ports(
+        uow,
+        (),
+        {},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(
+            config=_unprocessed_enabled_config(directory=directory),
+            inventory_entries=(SourceInventoryEntry(path=source_path, relative_path=relative_path),),
+            content_results={source_path: _content_snapshot(source_path)},
+            internal_excluded_paths=internal_paths,
+            rotating_log_files=rotating_log_files,
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_root))
+
+    action = plan.actions[0]
+    assert action.target_path == target_path
+    assert action.content_hash_at_plan == "companion-hash"
+    assert action.status is ActionStatus.BLOCKED
+    assert action.reason is PlanActionReason.INVALID_PATH
+    assert isinstance(ports.file_presence, StaticFilePresence)
+    assert ports.file_presence.checked_paths == []
+
+
+def test_add_inventory_does_not_turn_a_symlink_into_an_unprocessed_action(tmp_path: Path) -> None:
+    """The production inventory's no-symlink contract reaches Add classification unchanged."""
+    source_root = tmp_path / "incoming"
+    library_root = tmp_path / "library"
+    outside = tmp_path / "outside.txt"
+    retained = source_root / "retained.txt"
+    source_root.mkdir()
+    library_root.mkdir()
+    _ = outside.write_text("outside", encoding="utf-8")
+    _ = retained.write_text("retained", encoding="utf-8")
+    (source_root / "linked.txt").symlink_to(outside)
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, str(library_root)))
+    ports, _, _ = _ports(
+        uow,
+        (),
+        {},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(
+            config=_unprocessed_enabled_config(),
+            content_results={str(retained): _content_snapshot(str(retained))},
+        ),
+    )
+    ports = replace(ports, source_inventory_reader=FilesystemSourceInventoryReader())
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(str(source_root)))
+
+    assert [action.source_path for action in plan.actions] == [str(retained)]
+
+
+def test_add_blocks_an_unprocessed_target_occupied_by_a_broken_symlink(tmp_path: Path) -> None:
+    """Target presence uses lstat semantics so a dangling link is never overwritten."""
+    source_root = tmp_path / "incoming"
+    library_root = tmp_path / "library"
+    source_path = source_root / "notes.txt"
+    target_path = source_root / "Unprocessed" / "notes.txt"
+    source_root.mkdir()
+    library_root.mkdir()
+    target_path.parent.mkdir()
+    _ = source_path.write_text("notes", encoding="utf-8")
+    target_path.symlink_to(tmp_path / "missing-target")
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, str(library_root)))
+    ports, _, _ = _ports(
+        uow,
+        (),
+        {},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(
+            config=_unprocessed_enabled_config(),
+            inventory_entries=(SourceInventoryEntry(path=str(source_path), relative_path="notes.txt"),),
+            content_results={str(source_path): _content_snapshot(str(source_path))},
+        ),
+    )
+    ports = replace(ports, file_presence=FilesystemFilePresence())
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(str(source_root)))
+
+    action = plan.actions[0]
+    assert action.status is ActionStatus.BLOCKED
+    assert action.reason is PlanActionReason.TARGET_EXISTS
+    assert action.target_path == str(target_path)
+
+
+@pytest.mark.parametrize(
+    ("content_result", "expected_reason"),
+    [
+        (FileNotFoundError("gone"), PlanActionReason.SOURCE_MISSING),
+        (FileObservationInvalidPathError("replaced"), PlanActionReason.INVALID_PATH),
+        (FileObservationChangedError("changed"), PlanActionReason.SOURCE_CHANGED),
+        (OSError("unreadable"), PlanActionReason.SOURCE_CHANGED),
+    ],
+)
+def test_add_blocks_unprocessed_content_snapshot_failures(
+    content_result: BaseException,
+    expected_reason: PlanActionReason,
+) -> None:
+    """Missing, invalid, changed, and unreadable leftovers remain visible but blocked."""
+    source_path = f"{INCOMING_ROOT}/review.txt"
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (),
+        {},
+        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
+        options=PortOptions(
+            config=_unprocessed_enabled_config(),
+            inventory_entries=(SourceInventoryEntry(path=source_path, relative_path="review.txt"),),
+            content_results={source_path: content_result},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    action = plan.actions[0]
+    assert action.action_type is ActionType.MOVE_UNPROCESSED
+    assert action.status is ActionStatus.BLOCKED
+    assert action.reason is expected_reason
+    assert action.content_hash_at_plan is None
+
+
+def test_add_retains_every_unprocessed_action_beyond_the_preview_limit() -> None:
+    """Preview tuning never truncates durable Plan actions or their deterministic order."""
+    source_paths = tuple(f"{INCOMING_ROOT}/{name}.txt" for name in ("c", "a", "b"))
+    uow = InMemoryUnitOfWork()
+    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT))
+    ports, _, _ = _ports(
+        uow,
+        (),
+        {},
+        SequenceIdGenerator(
+            plan_ids=deque((PLAN_ID,)),
+            action_ids=deque((ACTION_ID, SECOND_ACTION_ID, THIRD_ACTION_ID)),
+        ),
+        options=PortOptions(
+            config=_unprocessed_enabled_config(preview_limit=2),
+            inventory_entries=tuple(
+                SourceInventoryEntry(path=path, relative_path=Path(path).name) for path in source_paths
+            ),
+            content_results={path: _content_snapshot(path) for path in source_paths},
+        ),
+    )
+
+    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(INCOMING_ROOT))
+
+    assert [Path(action.source_path or "").name for action in plan.actions] == ["a.txt", "b.txt", "c.txt"]
+    assert plan.summary["action_count"] == "3"
+    assert plan.summary["move_actions"] == "3"
+    assert plan.summary["unprocessed_actions"] == "3"
+    assert plan.summary["unprocessed_preview_limit"] == "2"
+
+
 class StaticConfigStore:
     """ConfigStore fake returning one AppConfig."""
 
@@ -1105,10 +1908,17 @@ class StaticFileScanner:
         """Store scan entries and expose scan calls for assertions."""
         self._entries: tuple[FileScanEntry, ...] = entries
         self.scanned_roots: list[FileSystemPath] = []
+        self.scanned_excluded_roots: list[tuple[FileSystemPath, ...]] = []
 
-    def scan(self, root: FileSystemPath) -> tuple[FileScanEntry, ...]:
+    def scan(
+        self,
+        root: FileSystemPath,
+        *,
+        excluded_roots: tuple[FileSystemPath, ...] = (),
+    ) -> tuple[FileScanEntry, ...]:
         """Return configured scan entries."""
         self.scanned_roots.append(root)
+        self.scanned_excluded_roots.append(excluded_roots)
         return self._entries
 
 
@@ -1173,6 +1983,10 @@ class PortOptions:
     config: AppConfig | None = None
     existing_files: set[str] | None = None
     resolved_names: dict[str, str] | None = None
+    inventory_entries: tuple[SourceInventoryEntry, ...] | None = None
+    content_results: dict[str, FileContentSnapshot | BaseException] | None = None
+    internal_excluded_paths: tuple[FileSystemPath, ...] = ()
+    rotating_log_files: tuple[FileSystemPath, ...] = ()
 
 
 def _ports(
@@ -1190,14 +2004,48 @@ def _ports(
         uow=uow,
         file_scanner=scanner,
         file_snapshot_reader=snapshot_reader,
+        file_content_snapshot_reader=MappingFileContentSnapshotReader(port_options.content_results or {}),
+        source_inventory_reader=StaticSourceInventoryReader(port_options.inventory_entries or ()),
         file_presence=StaticFilePresence(port_options.existing_files),
         config_store=StaticConfigStore(port_options.config),
         artist_name_resolver=MappingArtistNameResolver(port_options.resolved_names or {}),
         path_resolver=SimplePathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=id_generator,
+        internal_excluded_paths=port_options.internal_excluded_paths,
+        rotating_log_files=port_options.rotating_log_files,
     )
     return ports, scanner, snapshot_reader
+
+
+def _companion_enabled_config() -> AppConfig:
+    return replace(default_app_config(), companions=CompanionsConfig(enabled=True))
+
+
+def _unprocessed_enabled_config(
+    *,
+    directory: str = DEFAULT_UNPROCESSED_DIRECTORY,
+    preview_limit: int = DEFAULT_UNPROCESSED_RESULT_PREVIEW_LIMIT,
+) -> AppConfig:
+    return replace(
+        default_app_config(),
+        unprocessed=UnprocessedConfig(
+            enabled=True,
+            directory=directory,
+            result_preview_limit=preview_limit,
+        ),
+    )
+
+
+def _content_snapshot(path: str) -> FileContentSnapshot:
+    return FileContentSnapshot(
+        path=path,
+        size=FILE_SIZE,
+        mtime=BASE_TIME,
+        content_hash="companion-hash",
+        filesystem_identity=FilesystemIdentity(1, 2, FILE_SIZE, 3, 4),
+        captured_at=BASE_TIME,
+    )
 
 
 def _entry(path: str) -> FileScanEntry:

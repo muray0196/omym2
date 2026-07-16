@@ -13,6 +13,8 @@ from omym2.config import (
     ALLOWED_COLLISION_MISSING_METADATA_POLICIES,
     ALLOWED_COLLISION_TARGET_EXISTS_POLICIES,
     ALLOWED_COMMAND_MODES,
+    ALLOWED_LOGGING_LEVELS,
+    ALLOWED_MUSICBRAINZ_CACHE_POLICIES,
     ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     PATH_POLICY_ALLOWED_PLACEHOLDERS,
@@ -25,6 +27,8 @@ from omym2.config import (
     PATH_POLICY_PREVIEW_TITLE,
     PATH_POLICY_PREVIEW_TRACK_NUMBER,
     PATH_POLICY_PREVIEW_YEAR,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
+    UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
 )
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.features.settings.dto import (
@@ -53,6 +57,10 @@ def settings_choices() -> SettingsChoicesResult:
         target_exists_policies=tuple(sorted(ALLOWED_COLLISION_TARGET_EXISTS_POLICIES)),
         duplicate_hash_policies=tuple(sorted(ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES)),
         missing_metadata_policies=tuple(sorted(ALLOWED_COLLISION_MISSING_METADATA_POLICIES)),
+        musicbrainz_cache_policies=tuple(sorted(ALLOWED_MUSICBRAINZ_CACHE_POLICIES)),
+        logging_levels=tuple(sorted(ALLOWED_LOGGING_LEVELS)),
+        unprocessed_result_preview_limit_min=UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
+        unprocessed_result_preview_limit_max=UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
         path_placeholders=PATH_POLICY_ALLOWED_PLACEHOLDERS,
     )
 
@@ -108,6 +116,13 @@ def validate_settings_config(config: AppConfig) -> tuple[SettingsValidationIssue
         "collision.on_missing_metadata",
         issues,
     )
+    _validate_choice(
+        config.musicbrainz.cache_policy,
+        ALLOWED_MUSICBRAINZ_CACHE_POLICIES,
+        "musicbrainz.cache_policy",
+        issues,
+    )
+    _validate_choice(config.logging.level, ALLOWED_LOGGING_LEVELS, "logging.level", issues)
     issues.extend(
         SettingsValidationIssue(field="artist_ids.entries", message=EMPTY_ARTIST_NAME_MESSAGE)
         for source_artist in sorted(config.artist_ids.entries or {})
@@ -181,6 +196,52 @@ def settings_field_changes(before: AppConfig, after: AppConfig) -> tuple[Setting
             "collision.on_missing_metadata",
             before.collision.on_missing_metadata,
             after.collision.on_missing_metadata,
+        ),
+        ("musicbrainz.enabled", before.musicbrainz.enabled, after.musicbrainz.enabled),
+        (
+            "musicbrainz.application_name",
+            before.musicbrainz.application_name,
+            after.musicbrainz.application_name,
+        ),
+        ("musicbrainz.contact", before.musicbrainz.contact, after.musicbrainz.contact),
+        (
+            "musicbrainz.timeout_seconds",
+            before.musicbrainz.timeout_seconds,
+            after.musicbrainz.timeout_seconds,
+        ),
+        ("musicbrainz.retry_limit", before.musicbrainz.retry_limit, after.musicbrainz.retry_limit),
+        (
+            "musicbrainz.rate_limit_seconds",
+            before.musicbrainz.rate_limit_seconds,
+            after.musicbrainz.rate_limit_seconds,
+        ),
+        ("musicbrainz.cache_policy", before.musicbrainz.cache_policy, after.musicbrainz.cache_policy),
+        ("fasttext.model_path", before.fasttext.model_path, after.fasttext.model_path),
+        (
+            "fasttext.minimum_confidence",
+            before.fasttext.minimum_confidence,
+            after.fasttext.minimum_confidence,
+        ),
+        (
+            "hashing.read_chunk_size_bytes",
+            before.hashing.read_chunk_size_bytes,
+            after.hashing.read_chunk_size_bytes,
+        ),
+        ("logging.destination", before.logging.destination, after.logging.destination),
+        ("logging.level", before.logging.level, after.logging.level),
+        (
+            "logging.rotation_max_bytes",
+            before.logging.rotation_max_bytes,
+            after.logging.rotation_max_bytes,
+        ),
+        ("logging.retention_files", before.logging.retention_files, after.logging.retention_files),
+        ("companions.enabled", before.companions.enabled, after.companions.enabled),
+        ("unprocessed.enabled", before.unprocessed.enabled, after.unprocessed.enabled),
+        ("unprocessed.directory", before.unprocessed.directory, after.unprocessed.directory),
+        (
+            "unprocessed.result_preview_limit",
+            before.unprocessed.result_preview_limit,
+            after.unprocessed.result_preview_limit,
         ),
     )
     changes = [

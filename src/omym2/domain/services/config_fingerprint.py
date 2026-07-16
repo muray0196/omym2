@@ -106,6 +106,12 @@ def _app_config_payload(config: AppConfig) -> dict[str, object]:
         "artist_names": _artist_name_payload(config.artist_names),
         "metadata": asdict(config.metadata),
         "collision": asdict(config.collision),
+        "musicbrainz": asdict(config.musicbrainz),
+        "fasttext": asdict(config.fasttext),
+        "hashing": asdict(config.hashing),
+        "logging": asdict(config.logging),
+        "companions": asdict(config.companions),
+        "unprocessed": asdict(config.unprocessed),
     }
 
 

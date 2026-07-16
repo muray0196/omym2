@@ -31,6 +31,8 @@ const PLAN_ID = "018f6a4f-3c2d-7b8a-9abc-def012345671";
 const SECOND_PLAN_ID = "018f6a4f-3c2d-7b8a-9abc-def012345672";
 const ACTION_ID = "018f6a4f-3c2d-7b8a-9abc-def012345673";
 const SECOND_ACTION_ID = "018f6a4f-3c2d-7b8a-9abc-def012345674";
+const COMPANION_ASSET_ID = "018f6a4f-3c2d-7b8a-9abc-def012345675";
+const OWNER_ACTION_ID = "018f6a4f-3c2d-7b8a-9abc-def012345676";
 const LIBRARY_ID = "018f6a4f-3c2d-7b8a-9abc-def012345670";
 const OPAQUE_PLAN_CURSOR = "opaque-plan-cursor";
 const OPAQUE_ACTION_CURSOR = "opaque-action-cursor";
@@ -164,6 +166,8 @@ describe("Plan inspection", () => {
       screen.getByRole("heading", { name: "Recorded action summary" }),
     ).toBeVisible();
     expect(await screen.findByText(ACTION_ID)).toBeVisible();
+    expect(screen.getByText(new RegExp(COMPANION_ASSET_ID))).toBeVisible();
+    expect(screen.getAllByText(new RegExp(OWNER_ACTION_ID))).toHaveLength(2);
     expect(screen.getByText(/Recorded target collisions/)).toBeVisible();
     const groupButton = within(
       await screen.findByRole("list", { name: "Action groups" }),
@@ -292,6 +296,9 @@ function auxiliaryDetailHandlers() {
 
 const emptyTypeCounts = {
   move: 0,
+  move_artwork: 0,
+  move_lyrics: 0,
+  move_unprocessed: 0,
   refresh_metadata: 0,
   skip: 0,
 } as const;
@@ -301,9 +308,16 @@ const mixedSummary = {
     applied: emptyTypeCounts,
     blocked: { ...emptyTypeCounts, move: 1 },
     failed: emptyTypeCounts,
-    planned: { move: 1, refresh_metadata: 1, skip: 1 },
+    planned: {
+      move: 1,
+      move_artwork: 0,
+      move_lyrics: 0,
+      move_unprocessed: 1,
+      refresh_metadata: 1,
+      skip: 1,
+    },
   },
-  total: 4,
+  total: 5,
 } satisfies PlanActionSummary;
 
 const readyPlan = {
@@ -348,9 +362,12 @@ const blockedAction = {
   action_id: ACTION_ID,
   action_type: "move",
   artist_name_diagnostics: null,
+  companion_asset_id: COMPANION_ASSET_ID,
   content_hash_at_plan: "content",
+  depends_on_action_ids: [OWNER_ACTION_ID],
   library_id: LIBRARY_ID,
   metadata_hash_at_plan: "metadata",
+  owner_action_id: OWNER_ACTION_ID,
   plan_id: PLAN_ID,
   reason: "target_exists",
   sort_order: 1,
@@ -364,6 +381,9 @@ const secondAction = {
   ...blockedAction,
   action_id: SECOND_ACTION_ID,
   action_type: "refresh_metadata",
+  companion_asset_id: null,
+  depends_on_action_ids: [],
+  owner_action_id: null,
   reason: null,
   sort_order: 2,
   status: "planned",

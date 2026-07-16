@@ -14,10 +14,13 @@ if TYPE_CHECKING:
         BatchFileSnapshotReader,
         Clock,
         ConfigReader,
+        FileContentSnapshotReader,
         FilePresence,
         FileScanner,
+        FileSystemPath,
         IdGenerator,
         PathResolver,
+        SourceInventoryReader,
         UnitOfWork,
     )
 
@@ -29,9 +32,13 @@ class CreateAddPlanPorts:
     uow: UnitOfWork
     file_scanner: FileScanner
     file_snapshot_reader: BatchFileSnapshotReader
+    file_content_snapshot_reader: FileContentSnapshotReader
+    source_inventory_reader: SourceInventoryReader
     file_presence: FilePresence
     config_store: ConfigReader
     artist_name_resolver: ArtistNameResolutionReader
     path_resolver: PathResolver
     clock: Clock
     id_generator: IdGenerator
+    internal_excluded_paths: tuple[FileSystemPath, ...]
+    rotating_log_files: tuple[FileSystemPath, ...]

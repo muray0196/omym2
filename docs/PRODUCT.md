@@ -1,9 +1,9 @@
 ---
 type: Product Overview
 title: Product
-description: Defines OMYM2 as a Plan-centered local music application with configurable artist display names across CLI, browser-hosted Web, and supported Windows desktop surfaces, including their execution boundary and non-goals.
-tags: [product, overview, cli, web-ui, artist-names, desktop, windows, operations-console]
-timestamp: 2026-07-15T20:47:24+09:00
+description: Defines OMYM2 as a Plan-centered local music application with persisted controls and reviewed audio, companion, and opt-in unprocessed-file workflows across CLI, Web, and Windows desktop surfaces.
+tags: [product, overview, cli, web-ui, artist-names, musicbrainz, companions, unprocessed, desktop, windows, operations-console]
+timestamp: 2026-07-16T04:51:16+09:00
 ---
 
 # Product
@@ -37,12 +37,29 @@ This is a product-level summary. Execution rules are authoritative in [execution
   data-access boundary.
 * The Web UI covers Settings, Plan creation and review, Check, Apply, ready-Plan
   Cancel, History, and Undo-through-Plan.
-* No Web control moves a Library music file directly. Apply is the only Web
-  execution path, and it executes recorded PlanActions through Run and
-  FileEvent contracts.
+* No Web control moves a Library-managed audio or companion file directly.
+  Apply is the only Web execution path, and it executes recorded PlanActions
+  through Run and FileEvent contracts.
 * Daily use imports new files with `add` after one Library has been registered.
 * Unregistered or unorganized Libraries are accepted through `organize --library PATH` before `add`.
 * Tag editing is outside OMYM2; relocation after external tag correction is handled by `refresh`.
+* Automatic MusicBrainz naming is a persisted opt-in. Without enablement and a
+  usable user-supplied fastText model, Plan creation stays local and preserves
+  original names except for explicit preferences and accepted cached results.
+* When companion processing is enabled, Add, Organize, and Refresh create
+  actions for newly discovered unmanaged `.lrc`, `.jpg`, and `.png` files, and
+  Check reports unmanaged companion candidates. Disabling it stops those new
+  actions and Check discovery without deleting managed state, changing
+  recorded Plan sources or events, or suppressing managed/recorded Check,
+  recovery, History, or Undo diagnostics. Unprocessed-only Add inventory still
+  classifies companion claims so recognized companions are not collected as
+  leftovers, but it creates no companion action or snapshot.
+* Unprocessed-file collection is a separate disabled-by-default Add-planning
+  opt-in. When enabled, regular source files left unclaimed by audio and
+  companion classification become explicit reviewed actions into a configured
+  directory below that source root. The files do not become Tracks or
+  CompanionAssets, and disabling the option later does not alter a recorded
+  Plan, Apply, History, Check, or Undo.
 * The initial Web release presents one unambiguous Library. All APIs and
   internal references retain `library_id`; switching and relinking are separate
   future features.
@@ -66,6 +83,19 @@ Library
 ```
 
 The daily entry point is `omym2 add`, but only after exactly one Library is registered and selectable.
+
+With companion processing enabled, associated lyrics and directory artwork
+follow the reviewed audio workflow. They remain distinct managed assets with
+their own actions, history, Check findings, and reversible mutations; no
+companion file is moved as a hidden side effect of an audio action.
+
+With unprocessed-file collection enabled, Add first settles every audio and
+companion classification claim, including reservation-only claims when
+companion actions are disabled, then presents the remaining eligible regular
+files as `move_unprocessed` actions. Apply records each attempted collection as
+`move_unprocessed_file` history. This is reviewed file handling, not automatic
+classification: it creates no Track or CompanionAsset and never overwrites an
+occupied destination.
 
 OMYM2 is not a tool that reorganizes the entire existing library every time. Daily use treats it as a tool for safely importing newly added tracks.
 
@@ -96,6 +126,13 @@ The roles of the Web UI are:
 * Setting the Incoming path
 * Editing the path policy
 * Editing exact full artist display-name preferences used for planned paths
+* Configuring optional MusicBrainz naming, the fastText model and confidence,
+  request bounds, and accepted-result cache policy
+* Configuring hashing throughput and bounded application logging; logging
+  changes clearly require a restart
+* Enabling companion lyrics and artwork in newly created Plans
+* Enabling unprocessed-file collection for newly created Add Plans, choosing
+  its one-component destination directory, and setting the result preview cap
 * Generating and editing artist ID path values
 * Setting required metadata fields
 * Setting behavior for duplicates
@@ -144,7 +181,8 @@ decision is recorded in
 
 The Web UI does not add:
 
-* music playback, tag editing, cover-art management, or streaming integrations
+* music playback, tag editing, lyrics/artwork editing or downloading, or
+  streaming integrations
 * arbitrary browser-directed file moves or overwrites
 * cloud sync, accounts, remote binding, analytics, telemetry, or a service worker
 * phone or tablet support, touch-first interaction, or mobile-specific
@@ -190,6 +228,11 @@ Metadata extractor: mutagen
 The SPA is bundled in the Python wheel and sdist and runs without Node.js in
 production. It is served on loopback by `omym2 settings`. Presentation is
 dark-only.
+
+Automatic MusicBrainz naming is disabled by default. The fastText runtime and
+language model are not bundled; users who opt in supply a compatible model.
+Provider or model unavailability falls back to local naming and never prevents
+reviewing or applying recorded local work.
 
 The Windows desktop ZIP is a PyInstaller 6.21.0 `onedir` application built from
 the audited wheel. It carries its frozen Python runtime and the same audited SPA

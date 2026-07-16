@@ -48,6 +48,9 @@ const ACTION_STATUSES = [
 
 const ACTION_TYPES = [
   "move",
+  "move_lyrics",
+  "move_artwork",
+  "move_unprocessed",
   "skip",
   "refresh_metadata",
 ] as const satisfies readonly ActionType[];
@@ -59,6 +62,9 @@ const ACTION_REASONS = [
   "source_missing",
   "source_changed",
   "duplicate_hash",
+  "companion_owner_blocked",
+  "companion_association_ambiguous",
+  "companion_dependency_failed",
   "operation_interrupted",
 ] as const satisfies readonly PlanActionReason[];
 

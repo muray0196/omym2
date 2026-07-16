@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
     from omym2.features.plans.dto import PlanDetail
+    from omym2.shared.ids import ActionId
 
 
 def serialize_plan_row(plan: Plan) -> dict[str, object]:
@@ -38,7 +39,10 @@ def serialize_plan_header(plan: Plan) -> dict[str, object]:
     }
 
 
-def serialize_plan_action(action: PlanAction) -> dict[str, object]:
+def serialize_plan_action(
+    action: PlanAction,
+    depends_on_action_ids: tuple[ActionId, ...],
+) -> dict[str, object]:
     """Return a JSON-safe PlanAction payload."""
     return {
         "action_id": str(action.action_id),
@@ -53,6 +57,9 @@ def serialize_plan_action(action: PlanAction) -> dict[str, object]:
         "status": action.status.value,
         "reason": None if action.reason is None else action.reason.value,
         "sort_order": action.sort_order,
+        "companion_asset_id": None if action.companion_asset_id is None else str(action.companion_asset_id),
+        "owner_action_id": None if action.owner_action_id is None else str(action.owner_action_id),
+        "depends_on_action_ids": [str(action_id) for action_id in depends_on_action_ids],
         "artist_name_diagnostics": _serialize_artist_name_diagnostics(action.artist_name_diagnostics),
     }
 
@@ -90,6 +97,9 @@ def serialize_plan_detail_response(detail: PlanDetail) -> dict[str, object]:
     """
     return {
         "plan": serialize_plan_header(detail.plan),
-        "actions": [serialize_plan_action(action) for action in detail.actions],
+        "actions": [
+            serialize_plan_action(action, detail.action_dependencies.get(action.action_id, ()))
+            for action in detail.actions
+        ],
         "total_action_count": detail.total_action_count,
     }

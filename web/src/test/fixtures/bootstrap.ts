@@ -38,7 +38,7 @@ export const normalBootstrap = {
       can_start_operations: true,
       disabled_reasons: [],
     },
-    status_catalog_version: 1,
+    status_catalog_version: 3,
   },
   errors: [],
 } satisfies ApiEnvelopeBootstrapData;
@@ -132,7 +132,7 @@ export const degradedBootstrap = {
         configInvalidOrganizeCapabilityError,
       ],
     },
-    status_catalog_version: 1,
+    status_catalog_version: 3,
   },
   errors: [configInvalidError],
 } satisfies ApiEnvelopeBootstrapData;

@@ -19,7 +19,7 @@ export type ActionStatus = 'planned' | 'blocked' | 'applied' | 'failed';
  *
  * Supported planned action types.
  */
-export type ActionType = 'move' | 'skip' | 'refresh_metadata';
+export type ActionType = 'move' | 'move_lyrics' | 'move_artwork' | 'move_unprocessed' | 'skip' | 'refresh_metadata';
 
 /**
  * AddPlanRequest
@@ -412,11 +412,17 @@ export type AppConfigResource = {
     artist_ids: ArtistIdConfigResource;
     artist_names: ArtistNameConfigResource;
     collision: CollisionConfigResource;
+    companions: CompanionsConfigResource;
+    fasttext: FastTextConfigResource;
+    hashing: HashingConfigResource;
+    logging: LoggingConfigResource;
     metadata: MetadataConfigResource;
+    musicbrainz: MusicBrainzConfigResource;
     organize: CommandConfigResource;
     path_policy: PathPolicyConfigResource;
     paths: PathsConfigResource;
     refresh: CommandConfigResource;
+    unprocessed: UnprocessedConfigResource;
     /**
      * Version
      */
@@ -545,7 +551,7 @@ export type ArtistNameResolutionDiagnosticResource = {
  *
  * Reason automatic artist-name resolution preserved the original value.
  */
-export type ArtistNameResolutionIssue = 'missing_source' | 'composite_unsupported' | 'non_latin_required' | 'detector_unavailable' | 'not_japanese' | 'low_language_confidence' | 'provider_unavailable' | 'no_confident_match' | 'ambiguous_match';
+export type ArtistNameResolutionIssue = 'missing_source' | 'composite_unsupported' | 'non_latin_required' | 'automatic_lookup_disabled' | 'detector_unavailable' | 'not_japanese' | 'low_language_confidence' | 'provider_unavailable' | 'no_confident_match' | 'ambiguous_match';
 
 /**
  * ArtistNameResolutionProvenance
@@ -681,6 +687,10 @@ export type CheckIssueGroupsData = {
  */
 export type CheckIssueResource = {
     /**
+     * Companion Asset Id
+     */
+    companion_asset_id: string | null;
+    /**
      * Detail
      */
     detail: string | null;
@@ -708,7 +718,7 @@ export type CheckIssueResource = {
  *
  * Supported check issue types.
  */
-export type CheckIssueType = 'db_file_missing' | 'unmanaged_file_exists' | 'content_hash_changed' | 'metadata_hash_changed' | 'current_path_differs_from_canonical_path' | 'duplicate_candidate' | 'plan_source_changed' | 'pending_file_event_exists' | 'library_unregistered' | 'library_stale' | 'library_blocked';
+export type CheckIssueType = 'db_file_missing' | 'unmanaged_file_exists' | 'content_hash_changed' | 'metadata_hash_changed' | 'current_path_differs_from_canonical_path' | 'companion_file_missing' | 'companion_content_hash_changed' | 'companion_current_path_differs_from_canonical_path' | 'companion_owner_missing' | 'unmanaged_companion_exists' | 'failed_companion_source_exists' | 'unprocessed_file_missing' | 'unprocessed_content_hash_changed' | 'duplicate_candidate' | 'plan_source_changed' | 'pending_file_event_exists' | 'library_unregistered' | 'library_stale' | 'library_blocked';
 
 /**
  * CheckIssuesData
@@ -773,6 +783,18 @@ export type CommandConfigResource = {
      * Default Mode
      */
     default_mode: string;
+};
+
+/**
+ * CompanionsConfigResource
+ *
+ * Persisted opt-in control for companion lyrics and artwork.
+ */
+export type CompanionsConfigResource = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
 };
 
 /**
@@ -852,6 +874,22 @@ export type FacetValueResourceTrackStatus = {
 };
 
 /**
+ * FastTextConfigResource
+ *
+ * Persisted fastText model and confidence controls.
+ */
+export type FastTextConfigResource = {
+    /**
+     * Minimum Confidence
+     */
+    minimum_confidence: number;
+    /**
+     * Model Path
+     */
+    model_path: string | null;
+};
+
+/**
  * FileEventFacetSets
  *
  * FileEvent status facets.
@@ -895,6 +933,10 @@ export type FileEventGroupsData = {
  * One durable Library music-file mutation record.
  */
 export type FileEventResource = {
+    /**
+     * Companion Asset Id
+     */
+    companion_asset_id: string | null;
     /**
      * Completed At
      */
@@ -955,7 +997,7 @@ export type FileEventStatus = 'pending' | 'succeeded' | 'failed';
  *
  * Supported durable operation event types.
  */
-export type FileEventType = 'move_file';
+export type FileEventType = 'move_file' | 'move_lyrics_file' | 'move_artwork_file' | 'move_unprocessed_file';
 
 /**
  * GroupResource
@@ -972,6 +1014,18 @@ export type GroupResource = {
      * Label
      */
     label: string;
+};
+
+/**
+ * HashingConfigResource
+ *
+ * Persisted streaming content-hash controls.
+ */
+export type HashingConfigResource = {
+    /**
+     * Read Chunk Size Bytes
+     */
+    read_chunk_size_bytes: number;
 };
 
 /**
@@ -1027,6 +1081,30 @@ export type LibraryResource = {
 export type LibraryStatus = 'registered' | 'unregistered' | 'stale' | 'blocked';
 
 /**
+ * LoggingConfigResource
+ *
+ * Persisted logging destination, severity, rotation, and retention controls.
+ */
+export type LoggingConfigResource = {
+    /**
+     * Destination
+     */
+    destination: string | null;
+    /**
+     * Level
+     */
+    level: string;
+    /**
+     * Retention Files
+     */
+    retention_files: number;
+    /**
+     * Rotation Max Bytes
+     */
+    rotation_max_bytes: number;
+};
+
+/**
  * MetadataConfigResource
  *
  * Editable metadata requirements and album-year policy.
@@ -1052,6 +1130,42 @@ export type MetadataConfigResource = {
      * Require Title
      */
     require_title: boolean;
+};
+
+/**
+ * MusicBrainzConfigResource
+ *
+ * Persisted MusicBrainz enablement, identity, request, and cache controls.
+ */
+export type MusicBrainzConfigResource = {
+    /**
+     * Application Name
+     */
+    application_name: string;
+    /**
+     * Cache Policy
+     */
+    cache_policy: string;
+    /**
+     * Contact
+     */
+    contact: string;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Rate Limit Seconds
+     */
+    rate_limit_seconds: number;
+    /**
+     * Retry Limit
+     */
+    retry_limit: number;
+    /**
+     * Timeout Seconds
+     */
+    timeout_seconds: number;
 };
 
 export type NonNegativeCount = number;
@@ -1431,7 +1545,7 @@ export type PlanActionGroupsData = {
  *
  * Documented reasons for blocked, skipped, or failed actions.
  */
-export type PlanActionReason = 'target_exists' | 'missing_required_metadata' | 'invalid_path' | 'source_missing' | 'source_changed' | 'duplicate_hash' | 'operation_interrupted';
+export type PlanActionReason = 'target_exists' | 'missing_required_metadata' | 'invalid_path' | 'source_missing' | 'source_changed' | 'duplicate_hash' | 'companion_owner_blocked' | 'companion_association_ambiguous' | 'companion_dependency_failed' | 'operation_interrupted';
 
 /**
  * PlanActionResource
@@ -1446,9 +1560,17 @@ export type PlanActionResource = {
     action_type: ActionType;
     artist_name_diagnostics: ArtistNameDiagnosticsResource | null;
     /**
+     * Companion Asset Id
+     */
+    companion_asset_id: string | null;
+    /**
      * Content Hash At Plan
      */
     content_hash_at_plan: string | null;
+    /**
+     * Depends On Action Ids
+     */
+    depends_on_action_ids: Array<string>;
     /**
      * Library Id
      */
@@ -1457,6 +1579,10 @@ export type PlanActionResource = {
      * Metadata Hash At Plan
      */
     metadata_hash_at_plan: string | null;
+    /**
+     * Owner Action Id
+     */
+    owner_action_id: string | null;
     /**
      * Plan Id
      */
@@ -1506,10 +1632,13 @@ export type PlanActionSummaryCounts = {
 /**
  * PlanActionTypeCounts
  *
- * Counts for the three recorded PlanAction types within one status.
+ * Counts for every recorded PlanAction type within one status.
  */
 export type PlanActionTypeCounts = {
     move: NonNegativeCount;
+    move_artwork: NonNegativeCount;
+    move_lyrics: NonNegativeCount;
+    move_unprocessed: NonNegativeCount;
     refresh_metadata: NonNegativeCount;
     skip: NonNegativeCount;
 };
@@ -1858,7 +1987,7 @@ export type SettingsChange = {
     field: string;
 };
 
-export type SettingsChangeValue = string | number | boolean | null;
+export type SettingsChangeValue = string | number | number | boolean | null;
 
 /**
  * SettingsChoices
@@ -1887,9 +2016,17 @@ export type SettingsChoices = {
      */
     duplicate_hash_policies: Array<string>;
     /**
+     * Logging Levels
+     */
+    logging_levels: Array<string>;
+    /**
      * Missing Metadata Policies
      */
     missing_metadata_policies: Array<string>;
+    /**
+     * Musicbrainz Cache Policies
+     */
+    musicbrainz_cache_policies: Array<string>;
     /**
      * Path Placeholders
      */
@@ -1898,6 +2035,14 @@ export type SettingsChoices = {
      * Target Exists Policies
      */
     target_exists_policies: Array<string>;
+    /**
+     * Unprocessed Result Preview Limit Max
+     */
+    unprocessed_result_preview_limit_max: number;
+    /**
+     * Unprocessed Result Preview Limit Min
+     */
+    unprocessed_result_preview_limit_min: number;
 };
 
 /**
@@ -2128,6 +2273,26 @@ export type TrackResource = {
  * Known managed Track states.
  */
 export type TrackStatus = 'active' | 'removed';
+
+/**
+ * UnprocessedConfigResource
+ *
+ * Persisted controls for reviewed unprocessed-file collection.
+ */
+export type UnprocessedConfigResource = {
+    /**
+     * Directory
+     */
+    directory: string;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Result Preview Limit
+     */
+    result_preview_limit: number;
+};
 
 export type GetBootstrapData = {
     body?: never;

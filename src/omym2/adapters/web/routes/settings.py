@@ -270,6 +270,10 @@ def _settings_choices(choices: SettingsChoicesResult) -> SettingsChoices:
         target_exists_policies=choices.target_exists_policies,
         duplicate_hash_policies=choices.duplicate_hash_policies,
         missing_metadata_policies=choices.missing_metadata_policies,
+        musicbrainz_cache_policies=choices.musicbrainz_cache_policies,
+        logging_levels=choices.logging_levels,
+        unprocessed_result_preview_limit_min=choices.unprocessed_result_preview_limit_min,
+        unprocessed_result_preview_limit_max=choices.unprocessed_result_preview_limit_max,
         path_placeholders=choices.path_placeholders,
     )
 

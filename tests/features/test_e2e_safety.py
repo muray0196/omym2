@@ -6,6 +6,7 @@ Why: Protects reviewed actions, storage paths, and history evidence together.
 from __future__ import annotations
 
 import os
+import stat
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -13,14 +14,17 @@ from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+import pytest
+
 from omym2.adapters.config.default_config import default_app_config
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
-from omym2.adapters.fs import file_mover as file_mover_module
+from omym2.adapters.fs.file_content_snapshot_reader import FilesystemFileContentSnapshotReader
 from omym2.adapters.fs.file_mover import FilesystemFileMover
 from omym2.adapters.fs.file_presence import FilesystemFilePresence
 from omym2.adapters.fs.file_scanner import FilesystemFileScanner
 from omym2.adapters.fs.file_snapshot_reader import FilesystemFileSnapshotReader
 from omym2.adapters.fs.path_resolver import FilesystemPathResolver
+from omym2.adapters.fs.source_inventory_reader import FilesystemSourceInventoryReader
 from omym2.config import PLAN_ACTION_SORT_ORDER_START
 from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
 from omym2.domain.models.file_event import FileEvent, FileEventStatus
@@ -51,12 +55,15 @@ from omym2.features.inspect.dto import InspectFileRequest
 from omym2.features.inspect.ports import InspectFilePorts
 from omym2.features.inspect.usecases.inspect_file import InspectFileUseCase
 from omym2.shared.ids import ActionId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
-from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
+from tests.fakes.runtime import (
+    FixedClock,
+    MappingArtistNameResolver,
+    SequenceIdGenerator,
+    UnusedFileContentSnapshotReader,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-    import pytest
 
     from omym2.domain.models.file_snapshot import FilesystemIdentity
     from omym2.features.common_ports import FileMover, FileSystemPath
@@ -285,17 +292,16 @@ def test_apply_rejects_managed_target_parent_symlink_as_invalid_path(tmp_path: P
     _assert_invalid_path_apply_evidence(database_file)
 
 
-def test_apply_fails_closed_when_descriptor_operations_are_unsupported(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Unsupported anchored operations become durable invalid_path evidence."""
+@pytest.mark.skipif(os.name != "nt", reason="requires native Win32 retained handles")
+def test_apply_uses_win32_handles_when_directory_descriptors_are_unavailable(tmp_path: Path) -> None:
+    """Native Windows Apply retains mutation safety without Unix directory descriptors."""
     database_file = tmp_path / "omym2.sqlite3"
     library_root = tmp_path / "library"
     source_path = library_root / "source" / "song.flac"
     target_path = library_root / "safe" / "Moved.flac"
     source_path.parent.mkdir(parents=True)
     _ = source_path.write_bytes(SUCCESS_CONTENT)
+    source_path.chmod(stat.S_IREAD)
     snapshot_reader = _managed_snapshot_reader(source_path)
     _register_library(database_file, str(library_root))
     _save_managed_move_plan(
@@ -303,17 +309,23 @@ def test_apply_fails_closed_when_descriptor_operations_are_unsupported(
         library_root,
         source_path="source/song.flac",
     )
-    monkeypatch.setattr(file_mover_module, "_OPEN_SUPPORTS_DIR_FD", False)
-
     run = _execute_claimed_apply(
         _apply_ports(database_file, snapshot_reader, FilesystemFileMover()),
         PLAN_ID,
     )
 
-    assert run.status == RunStatus.FAILED
-    assert source_path.read_bytes() == SUCCESS_CONTENT
-    assert not target_path.exists()
-    _assert_invalid_path_apply_evidence(database_file)
+    assert run.status == RunStatus.SUCCEEDED
+    assert not source_path.exists()
+    assert target_path.read_bytes() == SUCCESS_CONTENT
+    assert not target_path.stat().st_mode & stat.S_IWRITE
+    with SQLiteUnitOfWork(database_file) as uow:
+        plan = uow.plans.get(PLAN_ID)
+        actions = tuple(uow.plan_actions.list_by_plan(PLAN_ID))
+        events = tuple(uow.file_events.list_by_run(run.run_id))
+    assert plan is not None
+    assert plan.status == PlanStatus.APPLIED
+    assert actions[0].status == ActionStatus.APPLIED
+    assert events[0].status == FileEventStatus.SUCCEEDED
 
 
 def test_apply_records_source_missing_when_leaf_disappears_after_pending_event(tmp_path: Path) -> None:
@@ -617,6 +629,8 @@ def _create_mixed_plan(setup: MixedIncomingSetup):
         uow=SQLiteUnitOfWork(setup.database_file),
         file_scanner=FilesystemFileScanner(),
         file_snapshot_reader=setup.snapshot_reader,
+        file_content_snapshot_reader=FilesystemFileContentSnapshotReader(clock=FixedClock(BASE_TIME)),
+        source_inventory_reader=FilesystemSourceInventoryReader(),
         file_presence=FilesystemFilePresence(),
         config_store=setup.config_store,
         artist_name_resolver=MappingArtistNameResolver(),
@@ -626,6 +640,8 @@ def _create_mixed_plan(setup: MixedIncomingSetup):
             plan_ids=deque((PLAN_ID,)),
             action_ids=deque((MOVE_ACTION_ID, DUPLICATE_ACTION_ID, BLOCKED_ACTION_ID)),
         ),
+        internal_excluded_paths=(),
+        rotating_log_files=(),
     )
     return CreateAddPlanUseCase(add_ports).execute(CreateAddPlanRequest(str(setup.incoming_root)))
 
@@ -635,6 +651,7 @@ def _apply_plan_with_asserting_mover(setup: MixedIncomingSetup, plan_id: PlanId)
         uow=SQLiteUnitOfWork(setup.database_file),
         file_mover=AssertingFileMover(setup.database_file),
         file_snapshot_reader=setup.snapshot_reader,
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         path_resolver=FilesystemPathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(
@@ -681,6 +698,8 @@ def _add_ports(
         uow=SQLiteUnitOfWork(database_file),
         file_scanner=FilesystemFileScanner(),
         file_snapshot_reader=snapshot_reader,
+        file_content_snapshot_reader=FilesystemFileContentSnapshotReader(clock=FixedClock(BASE_TIME)),
+        source_inventory_reader=FilesystemSourceInventoryReader(),
         file_presence=FilesystemFilePresence(),
         config_store=config_store,
         artist_name_resolver=MappingArtistNameResolver(),
@@ -690,6 +709,8 @@ def _add_ports(
             plan_ids=deque((PLAN_ID,)),
             action_ids=deque((MOVE_ACTION_ID,)),
         ),
+        internal_excluded_paths=(),
+        rotating_log_files=(),
     )
 
 
@@ -702,6 +723,7 @@ def _apply_ports(
         uow=SQLiteUnitOfWork(database_file),
         file_mover=file_mover,
         file_snapshot_reader=snapshot_reader,
+        file_content_snapshot_reader=UnusedFileContentSnapshotReader(),
         path_resolver=FilesystemPathResolver(),
         clock=FixedClock(BASE_TIME),
         id_generator=SequenceIdGenerator(

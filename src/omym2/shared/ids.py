@@ -12,6 +12,7 @@ from omym2.config import UUID_VERSION
 
 ActionId = NewType("ActionId", UUID)
 CheckRunId = NewType("CheckRunId", UUID)
+CompanionAssetId = NewType("CompanionAssetId", UUID)
 EventId = NewType("EventId", UUID)
 LibraryId = NewType("LibraryId", UUID)
 OperationId = NewType("OperationId", UUID)
@@ -38,6 +39,11 @@ def new_action_id() -> ActionId:
 def new_check_run_id() -> CheckRunId:
     """Create a check-run identifier."""
     return CheckRunId(new_uuid7())
+
+
+def new_companion_asset_id() -> CompanionAssetId:
+    """Create a companion-asset identifier."""
+    return CompanionAssetId(new_uuid7())
 
 
 def new_event_id() -> EventId:

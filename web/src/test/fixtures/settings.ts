@@ -24,12 +24,37 @@ export const settingsConfig = {
     on_missing_metadata: "block",
     on_target_exists: "conflict",
   },
+  companions: {
+    enabled: false,
+  },
+  fasttext: {
+    minimum_confidence: 0.8,
+    model_path: null,
+  },
+  hashing: {
+    read_chunk_size_bytes: 1_048_576,
+  },
+  logging: {
+    destination: null,
+    level: "INFO",
+    retention_files: 3,
+    rotation_max_bytes: 5_242_880,
+  },
   metadata: {
     album_year_resolution: "latest",
     prefer_album_artist: true,
     require_album: false,
     require_artist: true,
     require_title: true,
+  },
+  musicbrainz: {
+    application_name: "OMYM2",
+    cache_policy: "sticky_positive",
+    contact: "https://github.com/muray0196/omym2",
+    enabled: false,
+    rate_limit_seconds: 1,
+    retry_limit: 1,
+    timeout_seconds: 5,
   },
   organize: { auto_apply: false, default_mode: "plan_first" },
   path_policy: {
@@ -46,6 +71,11 @@ export const settingsConfig = {
     library: "/music/library",
   },
   refresh: { auto_apply: false, default_mode: "plan_first" },
+  unprocessed: {
+    directory: "Unprocessed",
+    enabled: false,
+    result_preview_limit: 100,
+  },
   version: 1,
 } satisfies AppConfigResource;
 
@@ -57,7 +87,9 @@ export const settingsEnvelope = {
       disc_number_conditions: ["always", "multiple_discs"],
       disc_number_styles: ["plain", "d_prefixed"],
       duplicate_hash_policies: ["skip"],
+      logging_levels: ["CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING"],
       missing_metadata_policies: ["block"],
+      musicbrainz_cache_policies: ["sticky_positive"],
       path_placeholders: [
         "{album_artist}",
         "{album}",
@@ -69,6 +101,8 @@ export const settingsEnvelope = {
         "{artist_id}",
       ],
       target_exists_policies: ["conflict"],
+      unprocessed_result_preview_limit_max: 500,
+      unprocessed_result_preview_limit_min: 1,
     },
     config: settingsConfig,
     config_revision: "settings-revision-one",

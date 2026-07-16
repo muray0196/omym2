@@ -1,14 +1,17 @@
 ---
 type: Execution Spec
 title: Refresh Execution
-description: Defines refresh target re-evaluation with artist-name resolution diagnostics and reconciliation safety, move versus metadata actions, stable Track identity, and the explicit size+mtime trust-stat optimization and fallback rules.
-tags: [refresh, metadata, artist-names, plan-creation, track-id]
-timestamp: 2026-07-16T01:53:29+09:00
+description: Defines Refresh target re-evaluation for Tracks and associated companions, relocation dependencies, stable identities, metadata-only actions, and trust-stat rules.
+tags: [refresh, metadata, artist-names, companions, plan-creation, track-id]
+timestamp: 2026-07-16T03:44:47+09:00
 ---
 
 # Refresh Execution
 
-This document is authoritative for refresh after external tag correction, file / directory / all targets, metadata reload, canonical path recalculation, relocation plan creation, metadata-only refresh action selection, and stable `track_id` preservation.
+This document is authoritative for Refresh after external tag correction,
+file/directory/all targets, metadata reload, canonical relocation, associated
+companion movement, metadata-only action selection, and stable Track and
+CompanionAsset identity.
 
 Common execution rules are in [model.md](model.md). Apply rules are in [apply.md](apply.md).
 
@@ -75,6 +78,27 @@ the sticky result.
 Stable `track_id` allows refresh to treat tag changes and canonical path changes as changes to the same managed Track, not as removal of one Track and creation of another.
 
 Only when `--apply` is specified is the created plan applied within the same command.
+
+## Companion Relocation
+
+When `companions.enabled` is true and a selected audio Track is relocating,
+Refresh applies the shared
+[Companion Association](../DOMAIN.md#companion-association) policy across the
+Library inventory and active managed companions. A discovered or already
+managed lyrics/artwork file that must follow the relocation becomes a
+content-only `move_lyrics` or `move_artwork` action.
+
+The companion action follows all relevant audio actions through durable
+dependencies and records its semantic owner separately. An existing asset
+keeps `companion_asset_id`; a newly discovered one preallocates an ID but
+does not create managed state during planning. Active audio and companion paths,
+batch targets, and live filesystem entries all participate in no-overwrite
+collision judgment.
+
+A `refresh_metadata` action with no audio relocation does not move
+companions. Companion processing also leaves previously managed state
+unchanged when disabled. Companion snapshots never use the Track
+`--trust-stat` shortcut and carry no metadata hash.
 
 ## Trust-Stat Optimization
 

@@ -68,6 +68,7 @@ class FileEventResource(ApiModel):
     error_code: str | None
     error_message: str | None
     sequence_no: int
+    companion_asset_id: UUID | None
 
 
 class RunFacetSets(ApiModel):

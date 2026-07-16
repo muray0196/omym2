@@ -28,6 +28,7 @@ class ArtistNameResolutionIssue(StrEnum):
     MISSING_SOURCE = "missing_source"
     COMPOSITE_UNSUPPORTED = "composite_unsupported"
     NON_LATIN_REQUIRED = "non_latin_required"
+    AUTOMATIC_LOOKUP_DISABLED = "automatic_lookup_disabled"
     DETECTOR_UNAVAILABLE = "detector_unavailable"
     NOT_JAPANESE = "not_japanese"
     LOW_LANGUAGE_CONFIDENCE = "low_language_confidence"

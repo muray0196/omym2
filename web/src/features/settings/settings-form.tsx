@@ -571,6 +571,278 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
         </SettingsSection>
 
         <SettingsSection
+          description={settingsCopy.musicbrainzHelp}
+          title={settingsCopy.musicbrainzTitle}
+        >
+          <BooleanField
+            id="settings-musicbrainz-enabled"
+            label={settingsCopy.musicbrainzEnabled}
+            register={register("musicbrainz.enabled")}
+          />
+          <div className={styles.fieldGrid}>
+            <label
+              className={styles.field}
+              htmlFor="settings-musicbrainz-application-name"
+            >
+              {settingsCopy.musicbrainzApplicationName}
+              <input
+                id="settings-musicbrainz-application-name"
+                {...register("musicbrainz.application_name")}
+              />
+            </label>
+            <label
+              className={styles.field}
+              htmlFor="settings-musicbrainz-contact"
+            >
+              {settingsCopy.musicbrainzContact}
+              <input
+                id="settings-musicbrainz-contact"
+                {...register("musicbrainz.contact")}
+              />
+            </label>
+            <label
+              className={styles.field}
+              htmlFor="settings-musicbrainz-timeout"
+            >
+              {settingsCopy.musicbrainzTimeout}
+              <input
+                id="settings-musicbrainz-timeout"
+                min="0.001"
+                step="any"
+                type="number"
+                {...register("musicbrainz.timeout_seconds", {
+                  setValueAs: requiredNumber,
+                })}
+              />
+            </label>
+            <label
+              className={styles.field}
+              htmlFor="settings-musicbrainz-retry-limit"
+            >
+              {settingsCopy.musicbrainzRetryLimit}
+              <input
+                id="settings-musicbrainz-retry-limit"
+                min="0"
+                step="1"
+                type="number"
+                {...register("musicbrainz.retry_limit", {
+                  setValueAs: requiredNumber,
+                })}
+              />
+            </label>
+            <label
+              className={styles.field}
+              htmlFor="settings-musicbrainz-rate-limit"
+            >
+              {settingsCopy.musicbrainzRateLimit}
+              <input
+                id="settings-musicbrainz-rate-limit"
+                min="1"
+                step="any"
+                type="number"
+                {...register("musicbrainz.rate_limit_seconds", {
+                  setValueAs: requiredNumber,
+                })}
+              />
+            </label>
+            <ChoiceField
+              id="settings-musicbrainz-cache-policy"
+              label={settingsCopy.musicbrainzCachePolicy}
+              options={initial.choices.musicbrainz_cache_policies}
+              register={register("musicbrainz.cache_policy")}
+            />
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          description={settingsCopy.fasttextHelp}
+          title={settingsCopy.fasttextTitle}
+        >
+          <div className={styles.fieldGrid}>
+            <div className={styles.field}>
+              <label htmlFor="settings-fasttext-model">
+                {settingsCopy.fasttextModelPath}
+              </label>
+              <input
+                aria-describedby="settings-fasttext-model-help"
+                id="settings-fasttext-model"
+                {...register("fasttext.model_path", {
+                  setValueAs: nullableString,
+                })}
+              />
+              <span className={styles.help} id="settings-fasttext-model-help">
+                {settingsCopy.fasttextModelPathHelp}
+              </span>
+            </div>
+            <label
+              className={styles.field}
+              htmlFor="settings-fasttext-confidence"
+            >
+              {settingsCopy.fasttextMinimumConfidence}
+              <input
+                id="settings-fasttext-confidence"
+                max="1"
+                min="0"
+                step="0.01"
+                type="number"
+                {...register("fasttext.minimum_confidence", {
+                  setValueAs: requiredNumber,
+                })}
+              />
+            </label>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          description={settingsCopy.hashingHelp}
+          title={settingsCopy.hashingTitle}
+        >
+          <label className={styles.field} htmlFor="settings-hashing-chunk-size">
+            {settingsCopy.hashingReadChunkSize}
+            <input
+              id="settings-hashing-chunk-size"
+              min="1"
+              step="1"
+              type="number"
+              {...register("hashing.read_chunk_size_bytes", {
+                setValueAs: requiredNumber,
+              })}
+            />
+          </label>
+        </SettingsSection>
+
+        <SettingsSection
+          description={settingsCopy.loggingHelp}
+          title={settingsCopy.loggingTitle}
+        >
+          <p className={styles.help} id="settings-logging-restart">
+            {settingsCopy.loggingRestart}
+          </p>
+          <div className={styles.fieldGrid}>
+            <div className={styles.field}>
+              <label htmlFor="settings-logging-destination">
+                {settingsCopy.loggingDestination}
+              </label>
+              <input
+                aria-describedby="settings-logging-destination-help settings-logging-restart"
+                id="settings-logging-destination"
+                {...register("logging.destination", {
+                  setValueAs: nullableString,
+                })}
+              />
+              <span
+                className={styles.help}
+                id="settings-logging-destination-help"
+              >
+                {settingsCopy.loggingDestinationHelp}
+              </span>
+            </div>
+            <ChoiceField
+              describedBy="settings-logging-restart"
+              id="settings-logging-level"
+              label={settingsCopy.loggingLevel}
+              options={initial.choices.logging_levels}
+              register={register("logging.level")}
+            />
+            <label className={styles.field} htmlFor="settings-logging-rotation">
+              {settingsCopy.loggingRotationMaxBytes}
+              <input
+                aria-describedby="settings-logging-restart"
+                id="settings-logging-rotation"
+                min="1"
+                step="1"
+                type="number"
+                {...register("logging.rotation_max_bytes", {
+                  setValueAs: requiredNumber,
+                })}
+              />
+            </label>
+            <label
+              className={styles.field}
+              htmlFor="settings-logging-retention"
+            >
+              {settingsCopy.loggingRetentionFiles}
+              <input
+                aria-describedby="settings-logging-restart"
+                id="settings-logging-retention"
+                min="1"
+                step="1"
+                type="number"
+                {...register("logging.retention_files", {
+                  setValueAs: requiredNumber,
+                })}
+              />
+            </label>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          description={settingsCopy.companionsHelp}
+          title={settingsCopy.companionsTitle}
+        >
+          <BooleanField
+            id="settings-companions-enabled"
+            label={settingsCopy.companionsEnabled}
+            register={register("companions.enabled")}
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          description={settingsCopy.unprocessedHelp}
+          title={settingsCopy.unprocessedTitle}
+        >
+          <BooleanField
+            id="settings-unprocessed-enabled"
+            label={settingsCopy.unprocessedEnabled}
+            register={register("unprocessed.enabled")}
+          />
+          <div className={styles.fieldGrid}>
+            <div className={styles.field}>
+              <label htmlFor="settings-unprocessed-directory">
+                {settingsCopy.unprocessedDirectory}
+              </label>
+              <input
+                aria-describedby="settings-unprocessed-directory-help"
+                id="settings-unprocessed-directory"
+                required
+                {...register("unprocessed.directory")}
+              />
+              <span
+                className={styles.help}
+                id="settings-unprocessed-directory-help"
+              >
+                {settingsCopy.unprocessedDirectoryHelp}
+              </span>
+            </div>
+            <div className={styles.field}>
+              <label htmlFor="settings-unprocessed-preview-limit">
+                {settingsCopy.unprocessedResultPreviewLimit}
+              </label>
+              <input
+                aria-describedby="settings-unprocessed-preview-limit-help"
+                id="settings-unprocessed-preview-limit"
+                max={initial.choices.unprocessed_result_preview_limit_max}
+                min={initial.choices.unprocessed_result_preview_limit_min}
+                required
+                step="1"
+                type="number"
+                {...register("unprocessed.result_preview_limit", {
+                  setValueAs: requiredNumber,
+                })}
+              />
+              <span
+                className={styles.help}
+                id="settings-unprocessed-preview-limit-help"
+              >
+                {settingsCopy.unprocessedResultPreviewLimitHelp}{" "}
+                {initial.choices.unprocessed_result_preview_limit_min}–
+                {initial.choices.unprocessed_result_preview_limit_max}.
+              </span>
+            </div>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
           description={settingsCopy.previewBody}
           title={settingsCopy.previewTitle}
         >
@@ -769,11 +1041,13 @@ function SettingsSection({
 }
 
 function ChoiceField({
+  describedBy,
   id,
   label,
   options,
   register,
 }: {
+  describedBy?: string;
   id: string;
   label: string;
   options: string[];
@@ -784,7 +1058,7 @@ function ChoiceField({
   return (
     <label className={styles.field} htmlFor={id}>
       {label}
-      <select id={id} {...register}>
+      <select aria-describedby={describedBy} id={id} {...register}>
         {options.map((option) => (
           <option key={option} value={option}>
             {humanize(option)}
@@ -1360,6 +1634,24 @@ function errorFieldTarget(field: string | undefined): string | null {
     ["collision.on_target_exists", "settings-target-exists"],
     ["collision.on_duplicate_hash", "settings-duplicate-hash"],
     ["collision.on_missing_metadata", "settings-missing-metadata"],
+    ["musicbrainz.enabled", "settings-musicbrainz-enabled"],
+    ["musicbrainz.application_name", "settings-musicbrainz-application-name"],
+    ["musicbrainz.contact", "settings-musicbrainz-contact"],
+    ["musicbrainz.timeout_seconds", "settings-musicbrainz-timeout"],
+    ["musicbrainz.retry_limit", "settings-musicbrainz-retry-limit"],
+    ["musicbrainz.rate_limit_seconds", "settings-musicbrainz-rate-limit"],
+    ["musicbrainz.cache_policy", "settings-musicbrainz-cache-policy"],
+    ["fasttext.model_path", "settings-fasttext-model"],
+    ["fasttext.minimum_confidence", "settings-fasttext-confidence"],
+    ["hashing.read_chunk_size_bytes", "settings-hashing-chunk-size"],
+    ["logging.destination", "settings-logging-destination"],
+    ["logging.level", "settings-logging-level"],
+    ["logging.rotation_max_bytes", "settings-logging-rotation"],
+    ["logging.retention_files", "settings-logging-retention"],
+    ["companions.enabled", "settings-companions-enabled"],
+    ["unprocessed.enabled", "settings-unprocessed-enabled"],
+    ["unprocessed.directory", "settings-unprocessed-directory"],
+    ["unprocessed.result_preview_limit", "settings-unprocessed-preview-limit"],
   ];
   return targets.find(([path]) => field.includes(path))?.[1] ?? null;
 }

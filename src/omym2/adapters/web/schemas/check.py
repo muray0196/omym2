@@ -28,6 +28,7 @@ class CheckIssueResource(ApiModel):
     path: str | None
     track_id: UUID | None
     plan_id: UUID | None
+    companion_asset_id: UUID | None
     detail: str | None
 
 

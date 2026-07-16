@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Testing
-description: Defines OMYM2's Python, frontend, browser, native Windows UI Automation package, architecture, integration, contract, fixture, and CI test policy.
-tags: [testing, pytest, vitest, playwright, desktop, windows, architecture-tests, fixtures]
-timestamp: 2026-07-15T01:07:35+09:00
+description: Defines OMYM2's Python, frontend, browser, architecture, integration, retained-object filesystem, native Windows, provider/companion/unprocessed fixture, rollback, and CI test policy.
+tags: [testing, pytest, vitest, playwright, desktop, windows, architecture-tests, fixtures, musicbrainz, companions, unprocessed, rollback]
+timestamp: 2026-07-16T06:02:32+09:00
 ---
 
 # Testing
@@ -66,6 +66,9 @@ Use integration tests for:
 * SQLite migrations and repositories
 * internal storage creation under the application root
 * filesystem scanning and snapshot capture
+* retained-object observation and mutation on POSIX and native Windows,
+  including link/reparse rejection, replacement races, exclusive target claims,
+  and exact-object deletion and cleanup
 * metadata adapter behavior
 * vertical flows that combine usecases with real adapters
 * exclusive-operation contention and crash release through independent
@@ -175,9 +178,9 @@ Contract changes require tests for the changed behavior.
 | --- | --- |
 | Config contract | config load, save, validation, defaults, and migration behavior; include Web settings JSON serialization and parsing when that boundary changes |
 | DB schema contract | migrations, repositories, constraints, stored JSON, timestamps, and path representation |
-| Path identity contract | path normalization, relink, Library identity, Track identity, and Library-root-relative persistence |
-| Status catalog | state transitions, failure behavior, and persistence of allowed values |
-| Execution contract | Plan, PlanAction, Run, FileEvent, apply order, failure cases, and undo/refresh/check behavior |
+| Path identity contract | path normalization, relink, Library, Track, and CompanionAsset identity, unprocessed retained-root/protected-path rules, Library-root-relative persistence, and the POSIX descriptor/native Windows retained-HANDLE observation and mutation boundary |
+| Status catalog | state transitions, failure behavior, persistence of allowed values, catalog-version bump, and old-client refusal |
+| Execution contract | Plan, PlanAction dependencies, Run, typed FileEvents, apply order, companion failure/recovery, unprocessed collection/reversal, and undo/refresh/check behavior |
 | Architecture contract | dependency-boundary tests and source naming tests |
 | Web API contract | route-level request and response JSON shapes, success and error status/envelopes, CSRF on state-changing routes, and affected filters, pagination, facets, or groups |
 | Durable operation contract | persistence, idempotency replay/conflict, progress, polling metadata, retention, restart interruption, and reconciliation |
@@ -190,7 +193,55 @@ Use in-memory repositories for usecase tests.
 
 Use fixed Clock and IdGenerator ports in tests so time and IDs are deterministic.
 
-Filesystem fixtures should be minimal and task-focused. Read-only filesystem fixtures are appropriate for FileScanner, metadata, hashing, and FileSnapshotReader tests. File-moving fixtures should wait until apply behavior is under test because apply is the workflow that mutates Library music files.
+Filesystem fixtures should be minimal and task-focused. Read-only filesystem
+fixtures are appropriate for scanners, metadata, hashing, and snapshot-reader
+tests. File-moving fixtures should wait until Apply behavior is under test
+because Apply is the workflow that mutates audio, companion, or unprocessed
+files.
+
+### Provider And Companion Fixtures
+
+Automatic naming tests must not load a real model or contact MusicBrainz. Use
+fixed predictor output, recorded provider payloads/errors, a fixed or advancing
+clock, and temporary SQLite cache/cadence state. Cover persisted opt-out,
+missing model/runtime, confidence boundaries, accepted and ambiguous results,
+retry limits, and one cadence reservation per attempt without wall-clock
+sleeps.
+
+Companion fixtures use minimal temporary roots with explicit regular,
+non-symlink audio, `.lrc`, `.jpg`, and `.png` entries plus fixed content
+snapshots and IDs. Cover disabled behavior, ambiguous ownership, shared
+artwork-once ordering, dependencies, collisions, partial/pending failure,
+Check recovery classification, and Undo. Mutation fixtures must assert both
+no-overwrite behavior and the exact source/Library root boundary.
+
+### Unprocessed And Downgrade Fixtures
+
+Unprocessed tests use a temporary external source root, separate Library root,
+exact internal Config/data/log paths, regular leftovers, claimed audio and
+companion files, the destination subtree, a symlink, and fixed content hashes.
+They prove that Add does not request complete inventory when both feature
+toggles are false and that unprocessed-only mode still applies
+classification-only companion claims which reserve recognized paths without
+actions, content snapshots, IDs, or dependencies. They also prove that Check
+unmanaged-companion discovery follows `companions.enabled` while managed and
+recorded diagnostics do not. Further cases cover music/companion claim
+precedence, precise exclusions, protected target overlap, broken-symlink
+target presence, snapshot failures, deterministic ordering, and persistence of
+every action beyond the result preview limit.
+
+The concrete filesystem/SQLite vertical fixture covers Plan creation, current
+toggle disablement before Apply, pending-first no-overwrite mutation, History,
+clean Check, missing/changed Check errors, exact Undo, and absence of Track or
+CompanionAsset state. Separate cases retain pending evidence after simulated
+process loss, block Undo after content changes, preserve late-collision source
+and target bytes, and prove that neither direction removes empty directories.
+
+Downgrade/rollback validation starts from a matched Config/SQLite backup. It
+exercises Apply and Cancel for ready Plans containing each newer action family,
+keeps pending companion/unprocessed events manual-review-only, restores both
+stores together, and proves an older binary is never used to read or apply a
+Plan containing an unknown closed value.
 
 ### Web Fixture Catalog
 
@@ -202,10 +253,12 @@ paths, hashes, counts, and ordering are deterministic.
 | --- | --- |
 | `degraded_bootstrap` | missing Config and invalid raw TOML variants; Bootstrap still supplies CSRF and recovery data |
 | `library_readiness` | unregistered, stale, and blocked Library variants with backend-provided disabled reasons |
-| `ready_plan_mixed_actions` | ready Plan containing move, `refresh_metadata`, skip, and blocked actions with a typed summary |
+| `ready_plan_mixed_actions` | ready Plan containing move, `move_unprocessed`, `refresh_metadata`, skip, and blocked actions with a typed summary |
 | `blocked_only_plan` | ready Plan whose actions are all blocked and whose Apply capability/copy explains the zero-mutation outcome |
 | `partial_failed_run` | terminal Run with confirmed successes and failures plus linked PlanAction evidence |
 | `pending_file_event` | pending FileEvent presented as manual-review-required, with no automatic repair action |
+| `unprocessed_history` | succeeded `move_unprocessed_file` evidence with its explicit History label and null managed identity |
+| `unprocessed_health` | missing/changed unprocessed findings presented as danger/error evidence with an `omym2 history` remediation |
 | `precondition_failure_without_event` | failed apply-time PlanAction for which no Library mutation or FileEvent occurred |
 | `undo_ineligible_refresh_run` | terminal Run containing `refresh_metadata`, with a backend-provided Undo refusal reason |
 
@@ -222,11 +275,16 @@ The bundled frontend requires these independently diagnosable CI gates:
 4. pinned-Chromium Playwright E2E with keyboard and axe checks
 5. installed-package performance budget measurement (`npm run test:performance`)
 6. wheel/sdist content audit, clean install, installed-package smoke, and sdist-to-wheel rebuild without Node
-7. Windows desktop build, audit, native-window smoke with JSON evidence, and
-   real multiprocess exclusive-lock contention/crash-release tests
+7. native Windows retained-HANDLE observation and mutation, scanner
+   containment, companion/unprocessed concrete adapter E2E, real multiprocess
+   exclusive-lock contention/crash release, and desktop build, audit, and
+   native-window smoke with JSON evidence
 
 Pull requests and protected branches run gates 1–6 on Linux. Windows CI runs
-the native desktop package smoke and real multiprocess lock tests from gate 7. Completed
+the rooted observation contract, scanner containment, concrete companion and
+unprocessed adapter E2E, real multiprocess lock tests, and native desktop
+package smoke from gate 7. These native repository tests do not replace the
+packaged smoke or turn hosted-server evidence into release evidence. Completed
 product-flow gates must not be weakened or silently skipped.
 
 The hosted `windows-2025` job is a native Windows Server 2025 x64 development

@@ -31,6 +31,15 @@ if TYPE_CHECKING:
 INTERRUPTED_MESSAGE = "The process stopped before this Operation reached a confirmed result."
 APPLY_INTERRUPTED_SUMMARY = "Apply was interrupted before every action outcome was confirmed."
 APPLY_FAILED_MESSAGE = "Apply stopped before producing a confirmed Run result."
+APPLY_OUTCOME_ACTION_TYPES = frozenset(
+    {
+        ActionType.MOVE,
+        ActionType.MOVE_LYRICS,
+        ActionType.MOVE_ARTWORK,
+        ActionType.MOVE_UNPROCESSED,
+        ActionType.REFRESH_METADATA,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +129,7 @@ def _mark_unconfirmed_actions(uow: UnitOfWork, actions: Sequence[PlanAction]) ->
             continue
         if action.action_type is ActionType.SKIP:
             uow.plan_actions.save(action.mark_applied())
-        elif action.action_type in {ActionType.MOVE, ActionType.REFRESH_METADATA}:
+        elif action.action_type in APPLY_OUTCOME_ACTION_TYPES:
             uow.plan_actions.save(action.mark_failed(PlanActionReason.OPERATION_INTERRUPTED))
 
 
@@ -131,9 +140,7 @@ def _reconciled_apply_outcome(
     events: Sequence[FileEvent],
     completed_at: datetime,
 ) -> tuple[Plan, Run]:
-    eligible_actions = tuple(
-        action for action in actions if action.action_type in {ActionType.MOVE, ActionType.REFRESH_METADATA}
-    )
+    eligible_actions = tuple(action for action in actions if action.action_type in APPLY_OUTCOME_ACTION_TYPES)
     success_count = sum(action.status is ActionStatus.APPLIED for action in eligible_actions)
     failure_count = sum(action.status is ActionStatus.FAILED for action in eligible_actions)
     has_pending_event = any(event.status is FileEventStatus.PENDING for event in events)

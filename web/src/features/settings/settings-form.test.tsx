@@ -32,6 +32,8 @@ import {
 } from "../../test/fixtures/settings";
 import { server } from "../../test/server";
 
+const UPDATED_UNPROCESSED_PREVIEW_LIMIT = 250;
+
 describe("Settings route", () => {
   it("renders the default preview and updates it once after sample editing pauses", async () => {
     const user = userEvent.setup();
@@ -70,6 +72,46 @@ describe("Settings route", () => {
     expect(screen.getByLabelText("Require title")).toBeChecked();
     expect(screen.getByLabelText("When a target exists")).toHaveValue(
       "conflict",
+    );
+    expect(
+      screen.getByRole("heading", { name: "MusicBrainz" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Enable MusicBrainz lookup"),
+    ).not.toBeChecked();
+    expect(screen.getByLabelText("Request timeout (seconds)")).toHaveValue(5);
+    expect(screen.getByLabelText("Model path")).toHaveValue("");
+    expect(screen.getByLabelText("Minimum confidence")).toHaveValue(0.8);
+    expect(screen.getByLabelText("Read chunk size (bytes)")).toHaveValue(
+      1_048_576,
+    );
+    expect(screen.getByLabelText("Relative log destination")).toHaveValue("");
+    expect(screen.getByLabelText("Log level")).toHaveValue("INFO");
+    expect(
+      screen.getByText(
+        "Restart required: logging changes take effect the next time the application starts.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Relative log destination"),
+    ).toHaveAccessibleDescription(
+      "Leave empty to use the application-data default destination. Restart required: logging changes take effect the next time the application starts.",
+    );
+    expect(
+      screen.getByLabelText("Enable companion lyrics and artwork"),
+    ).not.toBeChecked();
+    expect(
+      screen.getByLabelText("Enable unprocessed-file collection"),
+    ).not.toBeChecked();
+    expect(screen.getByLabelText("Destination directory name")).toHaveValue(
+      "Unprocessed",
+    );
+    const resultPreviewLimit = screen.getByLabelText("Result preview limit");
+    expect(resultPreviewLimit).toHaveValue(100);
+    expect(resultPreviewLimit).toHaveAttribute("min", "1");
+    expect(resultPreviewLimit).toHaveAttribute("max", "500");
+    expect(resultPreviewLimit).toHaveAccessibleDescription(
+      "Choose how many reviewed unprocessed results are shown at once. Allowed range: 1–500.",
     );
     expect(screen.getByText("{artist_id}")).toBeInTheDocument();
     expect(screen.getByLabelText("Sample artist")).toHaveValue("Aimer");
@@ -293,6 +335,61 @@ describe("Settings route", () => {
     const libraryPath = await screen.findByLabelText("Library path");
     await user.clear(libraryPath);
     await user.type(libraryPath, "/music/new-library");
+
+    await user.click(screen.getByLabelText("Enable MusicBrainz lookup"));
+    const applicationName = screen.getByLabelText("Application name");
+    await user.clear(applicationName);
+    await user.type(applicationName, "OMYM2 Web Tests");
+    const timeout = screen.getByLabelText("Request timeout (seconds)");
+    await user.clear(timeout);
+    await user.type(timeout, "7.5");
+    const retryLimit = screen.getByLabelText("Retry limit");
+    await user.clear(retryLimit);
+    await user.type(retryLimit, "2");
+    const rateLimit = screen.getByLabelText("Rate limit (seconds)");
+    await user.clear(rateLimit);
+    await user.type(rateLimit, "1.25");
+
+    const modelPath = screen.getByLabelText("Model path");
+    await user.type(modelPath, "/models/lid.176.bin");
+    await user.clear(modelPath);
+    const confidence = screen.getByLabelText("Minimum confidence");
+    await user.clear(confidence);
+    await user.type(confidence, "0.91");
+
+    const chunkSize = screen.getByLabelText("Read chunk size (bytes)");
+    await user.clear(chunkSize);
+    await user.type(chunkSize, "2097152");
+
+    const destination = screen.getByLabelText("Relative log destination");
+    await user.type(destination, "logs/test.log");
+    await user.clear(destination);
+    await user.selectOptions(screen.getByLabelText("Log level"), "ERROR");
+    const rotationSize = screen.getByLabelText("Rotation size (bytes)");
+    await user.clear(rotationSize);
+    await user.type(rotationSize, "10485760");
+    const retainedFiles = screen.getByLabelText("Retained files");
+    await user.clear(retainedFiles);
+    await user.type(retainedFiles, "5");
+
+    await user.click(
+      screen.getByLabelText("Enable companion lyrics and artwork"),
+    );
+    await user.click(
+      screen.getByLabelText("Enable unprocessed-file collection"),
+    );
+    const unprocessedDirectory = screen.getByLabelText(
+      "Destination directory name",
+    );
+    await user.clear(unprocessedDirectory);
+    await user.type(unprocessedDirectory, "Review Later");
+    const resultPreviewLimit = screen.getByLabelText("Result preview limit");
+    await user.clear(resultPreviewLimit);
+    await user.type(
+      resultPreviewLimit,
+      String(UPDATED_UNPROCESSED_PREVIEW_LIMIT),
+    );
+
     await user.click(screen.getByRole("button", { name: "Save Settings" }));
     const savedHeading = await screen.findByRole("heading", {
       name: "Settings saved.",
@@ -309,6 +406,34 @@ describe("Settings route", () => {
     );
     expect(captured.request?.config.artist_names.preferences).toEqual({
       宇多田ヒカル: "Hikaru Utada",
+    });
+    expect(captured.request?.config.musicbrainz).toEqual({
+      application_name: "OMYM2 Web Tests",
+      cache_policy: "sticky_positive",
+      contact: "https://github.com/muray0196/omym2",
+      enabled: true,
+      rate_limit_seconds: 1.25,
+      retry_limit: 2,
+      timeout_seconds: 7.5,
+    });
+    expect(captured.request?.config.fasttext).toEqual({
+      minimum_confidence: 0.91,
+      model_path: null,
+    });
+    expect(captured.request?.config.hashing).toEqual({
+      read_chunk_size_bytes: 2_097_152,
+    });
+    expect(captured.request?.config.logging).toEqual({
+      destination: null,
+      level: "ERROR",
+      retention_files: 5,
+      rotation_max_bytes: 10_485_760,
+    });
+    expect(captured.request?.config.companions).toEqual({ enabled: true });
+    expect(captured.request?.config.unprocessed).toEqual({
+      directory: "Review Later",
+      enabled: true,
+      result_preview_limit: UPDATED_UNPROCESSED_PREVIEW_LIMIT,
     });
     const diff = screen.getByRole("table");
     expect(within(diff).getByText("paths.library")).toBeInTheDocument();

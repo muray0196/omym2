@@ -332,6 +332,7 @@ def _event_resource(event: FileEvent) -> FileEventResource:
         error_code=event.error_code,
         error_message=event.error_message,
         sequence_no=event.sequence_no,
+        companion_asset_id=event.companion_asset_id,
     )
 
 

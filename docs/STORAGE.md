@@ -1,9 +1,9 @@
 ---
 type: Storage Design
 title: Storage
-description: Defines application-root selection, TOML raw-revision and atomic-save ownership, artist-name cache and Plan-diagnostic storage boundaries, SQLite managed state, durable Operation and FileEvent storage, consistency, reproducibility, and path responsibilities.
-tags: [storage, sqlite, toml, persistence, artist-names, desktop]
-timestamp: 2026-07-16T00:44:26+09:00
+description: Defines application-root selection, TOML ownership, provider cadence, managed companion state, trackless unprocessed-file evidence, durable file mutations, and path responsibilities.
+tags: [storage, sqlite, toml, persistence, artist-names, musicbrainz, companions, unprocessed, desktop]
+timestamp: 2026-07-16T04:51:16+09:00
 ---
 
 # Storage
@@ -33,13 +33,14 @@ and persisted check diagnostics.
 | Editable full artist display-name preferences | TOML |
 | Config defaults and validation results | Config adapter / AppConfig |
 | Raw Config revision and atomic replacement | Config adapter / TOML file |
-| Managed Library and Track state | SQLite |
-| Plans and PlanActions | SQLite |
+| Managed Library, Track, and CompanionAsset state | SQLite |
+| Plans, PlanActions, and action dependencies | SQLite |
 | Runs and FileEvents | SQLite |
 | Durable background Operations | SQLite |
 | CheckRuns and CheckIssues | SQLite |
 | Accepted provider artist names and provenance | SQLite |
-| Actual music files | Filesystem, not DB |
+| Provider request cadence reservations | SQLite |
+| Actual audio, companion, and unprocessed files | Filesystem, not DB |
 
 Config and DB files are created lazily when an operation needs them. Desktop
 startup creates its log directory and current log file. Missing Config or DB is
@@ -110,7 +111,7 @@ for later resolver calls.
 OMYM2 uses a single application database.
 
 The DB records OMYM2's last known managed state, scheduled plans, execution
-attempts, durable background-request Operations, durable Library music file
+attempts, durable background-request Operations, durable Library-managed file
 mutation logs, and persisted check diagnostics.
 
 The DB is not used as the editable settings store. It is not the source of truth for the actual filesystem. The filesystem can diverge from the DB because users or external tools may move, delete, rename, or modify files. Such divergence is detected by `check`.
@@ -122,14 +123,17 @@ The exact database file location and schema are authoritative in [contracts/db-s
 ```text
 libraries
 tracks
+companion_assets
 plans
 plan_actions
+plan_action_dependencies
 runs
 file_events
 operations
 check_runs
 check_issues
 accepted_artist_names
+provider_request_cadence
 ```
 
 `accepted_artist_names` is a global sticky provider cache rather than a
@@ -145,8 +149,22 @@ that were actually observed while calculating their reviewed targets. These
 bounded snapshots explain a recorded action without turning a Plan into a
 negative provider cache or authorizing later name resolution.
 
+`companion_assets` stores the last confirmed Library-managed state of lyrics
+and artwork independently from Tracks. PlanAction ownership and dependency
+rows preserve the reviewed association and ordering before an asset exists.
+`plans.source_root_at_plan` retains the exact external Add root used to
+anchor later companion observation, Apply, Check, and Undo; an inverse Undo
+Plan copies the source Plan's root.
+
+Unprocessed collection has no managed-state table. Its entire durable contract
+is the retained Add root plus trackless `move_unprocessed` PlanActions and
+`move_unprocessed_file` FileEvents. Those rows retain content hash, absolute
+source/target shape, status, and reversal provenance without inventing a Track
+or CompanionAsset.
+
 `check` replaces each Library's prior CheckRun and CheckIssues with its latest
-diagnostics. It does not change Tracks, Plans, Runs, or Library music files.
+diagnostics. It does not change Tracks, CompanionAssets, Plans, Runs, or
+Library-managed files.
 The detailed persistence and browsing contract is in
 [contracts/db-schema.md](contracts/db-schema.md#check_runs) and
 [execution/check.md](execution/check.md).
@@ -159,9 +177,9 @@ evidence across a lost response or process restart. It may link to a Library,
 Plan, or Run, but it never replaces those records.
 
 A FileEvent has a narrower safety role: it is durable evidence for one attempted
-Library music file mutation and is persisted as `pending` immediately before
-that mutation. Operation progress or completion cannot stand in for a
-FileEvent. The authoritative distinction and lifecycle are in
+audio, companion, or unprocessed-file mutation and is persisted as `pending`
+immediately before that mutation. Operation progress or completion cannot
+stand in for a FileEvent. The authoritative distinction and lifecycle are in
 [Durable Operation Contract](contracts/operations.md#operation-versus-fileevent);
 the persistence and polling decision is recorded in
 [ADR 0002](decisions/0002-durable-operations-over-polling.md).
@@ -194,6 +212,21 @@ need no final transaction because negative outcomes are not cached. The exact
 UnitOfWork choreography is defined in
 [Ports And UnitOfWork](codebase/ports-uow.md#artist-name-cache-coordination).
 
+## Provider Request Cadence
+
+SQLite stores the last reserved request timestamp for each provider so separate
+CLI, Web, or desktop processes and process restarts share the same minimum
+MusicBrainz cadence. A caller opens a short `BEGIN IMMEDIATE` transaction,
+reads the provider row, and either reserves the current permitted slot or rolls
+back with the remaining delay. It closes the connection before sleeping and
+retries the reservation afterward. No transaction or exclusive-operation lock
+is held during the wait or HTTP request.
+
+The reservation is deliberately separate from accepted-name cache state. It
+limits attempts, including retries, but does not claim a request succeeded and
+does not create negative cache entries. Unavailable cadence storage fails the
+provider call closed to the resolver's ordinary local fallback.
+
 ## Track Stat Baselines
 
 SQLite may store nullable Track `size` and `mtime` values associated with the last verified snapshot. The exact columns, constraints, and migration behavior are defined in [contracts/db-schema.md](contracts/db-schema.md#tracks). Existing rows remain ineligible for stat trust while either value is `NULL`.
@@ -204,6 +237,39 @@ Refresh plan creation and check never backfill or update Track baselines. A no-a
 
 Stat trust is an explicit per-command runtime choice, not TOML application configuration. Its command-specific eligibility and risk rules are authoritative in [execution/organize.md](execution/organize.md), [execution/refresh.md](execution/refresh.md), and [execution/check.md](execution/check.md). Apply never honors stat trust.
 
+## Companion State
+
+Companion snapshots contain file content/stat evidence but no music metadata
+or metadata hash. An already canonical companion can become managed state
+during Organize without a FileEvent because no filesystem mutation occurs.
+Relocations create or update the CompanionAsset only after the pending
+FileEvent's mutation succeeds. Failed or unknown mutations never advance the
+asset row.
+
+An external Add Undo keeps the CompanionAsset row and stable ID, marks it
+`removed`, and retains its last Library-relative current/canonical paths;
+the external restore destination is preserved by Plan/FileEvent history rather
+than stored as managed state.
+
+A definitive failed companion mutation leaves no advanced managed asset state.
+Its PlanAction, owner-audio provenance, source root, and failed FileEvent remain
+the durable inputs for a later reviewed recovery Plan. A pending event is never
+converted into recovery permission.
+
+## Unprocessed File Evidence
+
+A collected leftover remains an ordinary external file. SQLite stores no
+current-row projection for it. The forward Add PlanAction and succeeded
+FileEvent retain the exact source root, absolute source/target paths, and
+content hash needed for History, Check, and Undo. A confirmed inverse event
+retires that forward evidence for current-target Check diagnostics without
+deleting history.
+
+Apply and Undo read the recorded shape even when the current unprocessed
+toggle, directory, preview limit, or other Config differs. Missing or changed
+collected content is persisted only as a CheckIssue; Check never promotes it to
+managed state or repairs it.
+
 ## DB Consistency
 
 The DB must preserve enough state to inspect interrupted or partially failed apply attempts:
@@ -212,8 +278,10 @@ The DB must preserve enough state to inspect interrupted or partially failed app
   running Run, and a queued Operation before worker dispatch
 * a Run exists for the apply attempt
 * the Plan records that apply has started
-* each Library music file mutation has a pending FileEvent before the mutation starts
-* FileEvents, PlanActions, Tracks, Runs, and Plans are updated as the apply attempt progresses
+* each audio, companion, or unprocessed-file mutation has a pending FileEvent
+  before the mutation starts
+* FileEvents, PlanActions, Tracks or CompanionAssets, Runs, and Plans are
+  updated as the apply attempt progresses
 
 The exact acceptance transaction is defined in
 [Atomic Apply Acceptance](contracts/db-schema.md#atomic-apply-acceptance). It
@@ -221,7 +289,7 @@ does not make later DB and filesystem mutation atomic.
 
 If the process crashes, pending or partially recorded FileEvents remain available for inspection. Recovery behavior is defined in [execution/model.md](execution/model.md#durable-file-mutation-log).
 
-Apply retains one lazily opened SQLite connection for the lifetime of one apply usecase. Every inner UnitOfWork block remains an independent `BEGIN` / commit-or-rollback transaction, including the commit that persists a PENDING FileEvent before its Library music file mutation. The connection is closed deterministically on the same thread when the usecase ends. UnitOfWork blocks outside that outer scope keep their close-per-transaction behavior; connections are not process-global or shared across Web requests or threads.
+Apply retains one lazily opened SQLite connection for the lifetime of one apply usecase. Every inner UnitOfWork block remains an independent `BEGIN` / commit-or-rollback transaction, including the commit that persists a PENDING FileEvent before its Library-managed file mutation. The connection is closed deterministically on the same thread when the usecase ends. UnitOfWork blocks outside that outer scope keep their close-per-transaction behavior; connections are not process-global or shared across Web requests or threads.
 
 Connections enable `journal_mode = WAL` for read/write concurrency and explicitly set `synchronous = FULL`: SQLite build defaults may select NORMAL for WAL, which only guarantees a WAL fsync at the next checkpoint. Under NORMAL, a committed PENDING FileEvent could remain unsynced in the WAL file while the subsequent Library music file move already executed, reopening the crash-safety gap the pending-FileEvent-before-mutation ordering exists to close. Reusing the apply connection changes checkpoint timing only: normal WAL auto-checkpointing bounds growth, and deterministic final connection close allows SQLite's last-connection checkpoint. OMYM2 does not force an extra per-transaction or apply-end checkpoint.
 
@@ -237,8 +305,9 @@ association remains eligible for an idempotent repair pass.
 
 When an interrupted Apply already reserved a Run, reconciliation uses only
 durable PlanAction and FileEvent evidence. It leaves every `pending` FileEvent
-pending, applies planned skips, and marks unconfirmed planned move/metadata
-actions with `operation_interrupted`. If all action/event evidence is
+pending, applies planned skips, and marks unconfirmed planned audio,
+companion, unprocessed, or metadata actions with `operation_interrupted`. If all
+action/event evidence is
 determinate it derives the normal terminal result;
 otherwise it uses `partial_failed` only when an eligible action is durably
 confirmed applied and `failed` when none is. It directs the user to Check plus
@@ -256,7 +325,12 @@ In the initial version, this means:
 
 * store concrete path references in PlanActions according to [contracts/path-identity-storage.md](contracts/path-identity-storage.md)
 * store the plan-time artist and album-artist resolution diagnostics on each PlanAction that reached name resolution
-* store `config_hash` and `library_root_at_plan` in Plans
+* store `config_hash`, `library_root_at_plan`, and the nullable external
+  `source_root_at_plan` in Plans
+* store companion identity, semantic owner, and every same-Plan execution
+  dependency without inferring them from sort order
+* store every unprocessed action, including rows beyond the presentation
+  preview limit, with its exact root-anchored content-only path shape
 * apply recorded PlanActions instead of recalculating paths from the latest config
 * reject or expire unapplied Plans when the owning Library root has changed since plan creation
 

@@ -9,12 +9,18 @@ import errno
 import os
 import shutil
 import stat
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from omym2.adapters.fs.hash_calculator import FileContentHasher
+from omym2.adapters.fs.win32_file_handles import (
+    Win32FileHandle,
+    Win32FileHandleBackend,
+    Win32FileIdentity,
+    default_win32_file_handle_backend,
+)
 from omym2.config import PARENT_DIRECTORY_REFERENCE
 
 if TYPE_CHECKING:
@@ -33,6 +39,11 @@ _STAT_SUPPORTS_NOFOLLOW = os.stat in os.supports_follow_symlinks
 _UNLINK_SUPPORTS_DIR_FD = os.unlink in os.supports_dir_fd
 _MKDIR_SUPPORTS_DIR_FD = os.mkdir in os.supports_dir_fd
 _OPEN_FILE_DESCRIPTOR_DIRECTORY = Path("/proc/self/fd")
+
+
+def _native_windows_file_handle_backend() -> Win32FileHandleBackend | None:
+    """Build the retained HANDLE backend only on native Windows."""
+    return default_win32_file_handle_backend()
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,10 +69,56 @@ class _ClaimedTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class _WindowsPathBoundary:
+    """Lexically rooted path pieces for retained Windows traversal."""
+
+    path: Path
+    root_path: Path
+    parent_parts: tuple[str, ...]
+    name: str
+
+
+def _windows_path_boundary(
+    path: Path,
+    root: Path | None,
+    *,
+    message: str,
+) -> _WindowsPathBoundary:
+    if not path.is_absolute() or PARENT_DIRECTORY_REFERENCE in path.parts:
+        raise ValueError(message)
+    if root is None:
+        if not path.anchor:
+            raise ValueError(message)
+        root_path = Path(path.anchor)
+    else:
+        if not root.is_absolute() or PARENT_DIRECTORY_REFERENCE in root.parts:
+            raise ValueError(message)
+        root_path = root
+    try:
+        relative_path = path.relative_to(root_path)
+    except ValueError as exc:
+        raise ValueError(message) from exc
+    relative_parts = relative_path.parts
+    if not relative_parts or PARENT_DIRECTORY_REFERENCE in relative_parts:
+        raise ValueError(message)
+    return _WindowsPathBoundary(
+        path=path,
+        root_path=root_path,
+        parent_parts=relative_parts[:-1],
+        name=relative_parts[-1],
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class FilesystemFileMover:
     """Move one filesystem file without applying business policy."""
 
     content_hasher: FileContentHasher = field(default_factory=FileContentHasher)
+    windows_backend: Win32FileHandleBackend | None = field(
+        default_factory=_native_windows_file_handle_backend,
+        repr=False,
+        compare=False,
+    )
     _ensured_parent_directories: set[Path] = field(default_factory=set, init=False, repr=False, compare=False)
 
     def move(  # noqa: PLR0913  # Source identity and content hash are separate mutation preconditions.
@@ -85,6 +142,19 @@ class FilesystemFileMover:
         """
         source_path = Path(source)
         target_path = Path(target)
+        if self.windows_backend is not None:
+            _move_with_windows_handles(
+                backend=self.windows_backend,
+                source_path=source_path,
+                target_path=target_path,
+                source_root=None if source_root is None else Path(source_root),
+                target_root=None if target_root is None else Path(target_root),
+                expected_source_identity=expected_source_identity,
+                expected_source_content_hash=expected_source_content_hash,
+                content_hasher=self.content_hasher,
+            )
+            return
+
         _require_descriptor_relative_support(
             needs_target_root=target_root is not None,
         )
@@ -133,6 +203,285 @@ class FilesystemFileMover:
                 raise
         finally:
             _close_source(opened_source)
+
+
+def _move_with_windows_handles(  # noqa: PLR0913  # Mirrors the stable FileMover precondition boundary.
+    *,
+    backend: Win32FileHandleBackend,
+    source_path: Path,
+    target_path: Path,
+    source_root: Path | None,
+    target_root: Path | None,
+    expected_source_identity: FilesystemIdentity | None,
+    expected_source_content_hash: str | None,
+    content_hasher: FileContentHasher,
+) -> None:
+    """Move through retained Win32 handles when directory descriptors are unavailable."""
+    source_boundary = _windows_path_boundary(
+        source_path,
+        source_root,
+        message=SOURCE_BELOW_ROOT_MESSAGE,
+    )
+    target_boundary = _windows_path_boundary(
+        target_path,
+        target_root,
+        message=TARGET_BELOW_ROOT_MESSAGE,
+    )
+    with ExitStack() as retained:
+        source_directories = _open_windows_parent_chain(
+            retained=retained,
+            backend=backend,
+            boundary=source_boundary,
+            create_missing=False,
+            message=SOURCE_BELOW_ROOT_MESSAGE,
+        )
+        try:
+            source_handle = backend.open_source(source_boundary.path)
+        except ValueError as exc:
+            raise ValueError(SOURCE_SYMLINK_MESSAGE) from exc
+        _ = retained.callback(source_handle.close)
+        _ = _verify_windows_handle(
+            source_handle,
+            expected_path=source_boundary.path,
+            expected_identity=source_handle.identity,
+            message=SOURCE_REPLACED_MESSAGE,
+        )
+        source_descriptor = source_handle.duplicate_binary_fd()
+        _ = retained.callback(os.close, source_descriptor)
+        source_stat = os.fstat(source_descriptor)
+        if not stat.S_ISREG(source_stat.st_mode):
+            raise ValueError(SOURCE_REPLACED_MESSAGE)
+        if expected_source_identity is not None and not _stat_matches_identity(
+            source_stat,
+            expected_source_identity,
+        ):
+            raise ValueError(SOURCE_REPLACED_MESSAGE)
+
+        target_directories = _open_windows_parent_chain(
+            retained=retained,
+            backend=backend,
+            boundary=target_boundary,
+            create_missing=True,
+            message=TARGET_BELOW_ROOT_MESSAGE,
+        )
+        try:
+            target_handle = backend.create_file_new(target_boundary.path)
+        except FileNotFoundError as exc:
+            raise ValueError(TARGET_BELOW_ROOT_MESSAGE) from exc
+        _ = retained.callback(target_handle.close)
+        target_descriptor = target_handle.duplicate_binary_fd(writable=True)
+        _ = retained.callback(os.close, target_descriptor)
+
+        try:
+            source_stat_after_copy = _copy_open_source_with_windows_handles(
+                source_descriptor=source_descriptor,
+                source_stat=source_stat,
+                target_descriptor=target_descriptor,
+                expected_source_content_hash=expected_source_content_hash,
+                content_hasher=content_hasher,
+            )
+            target_identity = _verify_windows_handle(
+                target_handle,
+                expected_path=target_boundary.path,
+                message=TARGET_REPLACED_MESSAGE,
+            )
+            _verify_windows_path_chain(
+                source_directories,
+                message=SOURCE_BELOW_ROOT_MESSAGE,
+            )
+            _verify_windows_path_chain(
+                target_directories,
+                message=TARGET_BELOW_ROOT_MESSAGE,
+            )
+            _ = _verify_windows_handle(
+                source_handle,
+                expected_path=source_boundary.path,
+                expected_identity=source_handle.identity,
+                message=SOURCE_REPLACED_MESSAGE,
+            )
+            _ = _verify_windows_handle(
+                target_handle,
+                expected_path=target_boundary.path,
+                expected_identity=target_identity,
+                message=TARGET_REPLACED_MESSAGE,
+            )
+            _require_unchanged_file_state(source_descriptor, source_stat_after_copy)
+            _verify_expected_content_hash(
+                source_descriptor,
+                expected_source_content_hash,
+                content_hasher,
+            )
+            _verify_expected_content_hash(
+                target_descriptor,
+                expected_source_content_hash,
+                content_hasher,
+            )
+            target_identity = target_handle.set_metadata(
+                mode=stat.S_IMODE(source_stat.st_mode),
+                atime_ns=source_stat.st_atime_ns,
+                mtime_ns=source_stat.st_mtime_ns,
+            )
+            _ = _verify_windows_handle(
+                target_handle,
+                expected_path=target_boundary.path,
+                expected_identity=target_identity,
+                message=TARGET_REPLACED_MESSAGE,
+            )
+            source_handle.delete_exact(expected_identity=source_handle.identity)
+        except BaseException as exc:
+            try:
+                _cleanup_windows_target(target_handle, source_stat)
+            except BaseException as cleanup_error:  # noqa: BLE001  # Preserve the mutation error if cleanup fails.
+                exc.add_note(f"Exact claimed-target cleanup also failed: {cleanup_error!r}")
+            raise
+
+
+def _open_windows_parent_chain(
+    *,
+    retained: ExitStack,
+    backend: Win32FileHandleBackend,
+    boundary: _WindowsPathBoundary,
+    create_missing: bool,
+    message: str,
+) -> tuple[Win32FileHandle, ...]:
+    handles: list[Win32FileHandle] = []
+    current_path = Path(boundary.root_path.anchor)
+    handles.append(
+        _open_windows_directory(
+            retained=retained,
+            backend=backend,
+            path=current_path,
+            message=message,
+        )
+    )
+    root_parts = boundary.root_path.relative_to(current_path).parts
+    for part in root_parts:
+        current_path = current_path / part
+        handles.append(
+            _open_windows_directory(
+                retained=retained,
+                backend=backend,
+                path=current_path,
+                message=message,
+            )
+        )
+    for part in boundary.parent_parts:
+        current_path = current_path / part
+        if create_missing:
+            try:
+                current_path.mkdir()
+            except FileExistsError:
+                pass
+            except FileNotFoundError as exc:
+                raise ValueError(message) from exc
+        handles.append(
+            _open_windows_directory(
+                retained=retained,
+                backend=backend,
+                path=current_path,
+                message=message,
+            )
+        )
+    return tuple(handles)
+
+
+def _open_windows_directory(
+    *,
+    retained: ExitStack,
+    backend: Win32FileHandleBackend,
+    path: Path,
+    message: str,
+) -> Win32FileHandle:
+    try:
+        handle = backend.open_directory(path)
+    except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+        raise ValueError(message) from exc
+    _ = retained.callback(handle.close)
+    _ = _verify_windows_handle(
+        handle,
+        expected_path=path,
+        expected_identity=handle.identity,
+        message=message,
+    )
+    return handle
+
+
+def _verify_windows_path_chain(
+    handles: tuple[Win32FileHandle, ...],
+    *,
+    message: str,
+) -> None:
+    for handle in handles:
+        _ = _verify_windows_handle(
+            handle,
+            expected_path=handle.path,
+            message=message,
+        )
+
+
+def _verify_windows_handle(
+    handle: Win32FileHandle,
+    *,
+    expected_path: os.PathLike[str] | str,
+    message: str,
+    expected_identity: Win32FileIdentity | None = None,
+) -> Win32FileIdentity:
+    try:
+        return handle.verify_current(
+            expected_path=expected_path,
+            expected_identity=expected_identity,
+        )
+    except (OSError, ValueError) as exc:
+        raise ValueError(message) from exc
+
+
+def _copy_open_source_with_windows_handles(
+    *,
+    source_descriptor: int,
+    source_stat: os.stat_result,
+    target_descriptor: int,
+    expected_source_content_hash: str | None,
+    content_hasher: FileContentHasher,
+) -> os.stat_result:
+    if not _file_states_match(os.fstat(source_descriptor), source_stat):
+        raise ValueError(SOURCE_REPLACED_MESSAGE)
+    _ = os.lseek(source_descriptor, 0, os.SEEK_SET)
+    with (
+        os.fdopen(source_descriptor, "rb", closefd=False) as source_file,
+        os.fdopen(target_descriptor, "wb", closefd=False) as target_file,
+    ):
+        _ = shutil.copyfileobj(source_file, target_file)
+    if not _file_states_match(os.fstat(source_descriptor), source_stat):
+        raise ValueError(SOURCE_REPLACED_MESSAGE)
+    _verify_expected_content_hash(target_descriptor, expected_source_content_hash, content_hasher)
+    _verify_expected_content_hash(source_descriptor, expected_source_content_hash, content_hasher)
+    source_stat_after_copy = os.fstat(source_descriptor)
+    if not _file_states_match(source_stat_after_copy, source_stat):
+        raise ValueError(SOURCE_REPLACED_MESSAGE)
+    return source_stat_after_copy
+
+
+def _cleanup_windows_target(target_handle: Win32FileHandle, source_stat: os.stat_result) -> None:
+    metadata_error: BaseException | None = None
+    try:
+        _ = target_handle.set_metadata(
+            mode=stat.S_IWRITE,
+            atime_ns=source_stat.st_atime_ns,
+            mtime_ns=source_stat.st_mtime_ns,
+        )
+    except BaseException as exc:  # noqa: BLE001  # Still attempt exact deletion after metadata cleanup fails.
+        metadata_error = exc
+    try:
+        target_handle.delete_exact()
+    except BaseException as exc:
+        if metadata_error is not None:
+            exc.add_note(f"Restoring target writability also failed: {metadata_error!r}")
+        raise
+
+
+def _require_unchanged_file_state(file_descriptor: int, expected_stat: os.stat_result) -> None:
+    if not _file_states_match(os.fstat(file_descriptor), expected_stat):
+        raise ValueError(SOURCE_REPLACED_MESSAGE)
 
 
 def _open_source(

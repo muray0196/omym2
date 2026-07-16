@@ -39,13 +39,24 @@ if TYPE_CHECKING:
     from omym2.domain.models.accepted_artist_name import AcceptedArtistName
     from omym2.domain.models.check_issue import CheckIssue, CheckIssueGrouping, CheckIssueType
     from omym2.domain.models.check_run import CheckRun
+    from omym2.domain.models.companion_asset import CompanionAsset
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.library import Library
     from omym2.domain.models.plan import Plan
-    from omym2.domain.models.plan_action import ActionType, PlanAction, PlanActionReason
+    from omym2.domain.models.plan_action import ActionType, PlanAction, PlanActionDependency, PlanActionReason
     from omym2.domain.models.run import Run, RunStatus
     from omym2.domain.models.track import Track, TrackStatus
-    from omym2.shared.ids import ActionId, CheckRunId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
+    from omym2.shared.ids import (
+        ActionId,
+        CheckRunId,
+        CompanionAssetId,
+        EventId,
+        LibraryId,
+        OperationId,
+        PlanId,
+        RunId,
+        TrackId,
+    )
     from omym2.shared.pagination import PageRequest
 
 KEYSET_CURSOR_KEY_LENGTH = 2  # every Track/Track-group cursor key is a 2-tuple
@@ -243,6 +254,7 @@ def _check_issue_matches_search(issue: CheckIssue, search: str) -> bool:
         issue.path,
         None if issue.track_id is None else str(issue.track_id),
         None if issue.plan_id is None else str(issue.plan_id),
+        None if issue.companion_asset_id is None else str(issue.companion_asset_id),
         issue.detail,
     )
     return any(value is not None and needle in ascii_lower(value) for value in values)
@@ -390,6 +402,30 @@ def _track_group_member_cursor_from_key(cursor_key: tuple[str, ...]) -> tuple[in
         return (int(rank_text), int(number_text), title, track_id)
     except ValueError as error:
         raise CursorDecodeError(INVALID_CURSOR_MESSAGE) from error
+
+
+@dataclass(slots=True)
+class InMemoryCompanionAssetRepository:
+    """In-memory CompanionAssetRepository fake."""
+
+    records: dict[CompanionAssetId, CompanionAsset] = field(default_factory=dict)
+
+    def get(self, companion_asset_id: CompanionAssetId) -> CompanionAsset | None:
+        """Return one companion asset by stable ID."""
+        return self.records.get(companion_asset_id)
+
+    def list_by_library(self, library_id: LibraryId) -> tuple[CompanionAsset, ...]:
+        """Return companion assets for one Library in stable path order."""
+        return tuple(
+            sorted(
+                (asset for asset in self.records.values() if asset.library_id == library_id),
+                key=lambda asset: (asset.current_path, str(asset.companion_asset_id)),
+            )
+        )
+
+    def save(self, companion_asset: CompanionAsset) -> None:
+        """Store or replace one companion asset."""
+        self.records[companion_asset.companion_asset_id] = companion_asset
 
 
 @dataclass(slots=True)
@@ -710,12 +746,34 @@ def _plan_action_matches_search(action: PlanAction, search: str) -> bool:
     values = (
         str(action.action_id),
         None if action.track_id is None else str(action.track_id),
+        None if action.companion_asset_id is None else str(action.companion_asset_id),
+        None if action.owner_action_id is None else str(action.owner_action_id),
         action.source_path,
         action.target_path,
         action.content_hash_at_plan,
         action.metadata_hash_at_plan,
     )
     return any(value is not None and needle in ascii_lower(value) for value in values)
+
+
+@dataclass(slots=True)
+class InMemoryPlanActionDependencyRepository:
+    """In-memory PlanActionDependencyRepository fake."""
+
+    records: dict[tuple[ActionId, ActionId], PlanActionDependency] = field(default_factory=dict)
+
+    def list_by_action(self, action_id: ActionId) -> tuple[PlanActionDependency, ...]:
+        """Return one action's dependencies in stable dependency-ID order."""
+        return tuple(
+            sorted(
+                (dependency for dependency in self.records.values() if dependency.action_id == action_id),
+                key=lambda dependency: str(dependency.depends_on_action_id),
+            )
+        )
+
+    def save(self, dependency: PlanActionDependency) -> None:
+        """Store or replace one PlanAction dependency."""
+        self.records[(dependency.action_id, dependency.depends_on_action_id)] = dependency
 
 
 @dataclass(slots=True)
@@ -988,8 +1046,12 @@ class InMemoryUnitOfWork:
     check_runs: InMemoryCheckRunRepository = field(default_factory=InMemoryCheckRunRepository)
     check_issues: InMemoryCheckIssueRepository = field(default_factory=InMemoryCheckIssueRepository)
     tracks: InMemoryTrackRepository = field(default_factory=InMemoryTrackRepository)
+    companion_assets: InMemoryCompanionAssetRepository = field(default_factory=InMemoryCompanionAssetRepository)
     plans: InMemoryPlanRepository = field(default_factory=InMemoryPlanRepository)
     plan_actions: InMemoryPlanActionRepository = field(default_factory=InMemoryPlanActionRepository)
+    plan_action_dependencies: InMemoryPlanActionDependencyRepository = field(
+        default_factory=InMemoryPlanActionDependencyRepository
+    )
     runs: InMemoryRunRepository = field(default_factory=InMemoryRunRepository)
     file_events: InMemoryFileEventRepository = field(default_factory=InMemoryFileEventRepository)
     operations: InMemoryOperationRepository = field(default_factory=InMemoryOperationRepository)

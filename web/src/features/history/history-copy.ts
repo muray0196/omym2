@@ -57,6 +57,7 @@ export const historyCopy = {
     completed: "Completed",
     eventId: "Event ID",
     actionId: "PlanAction ID",
+    companionAssetId: "Companion asset ID",
     source: "Source path",
     target: "Target path",
     error: "Recorded error",

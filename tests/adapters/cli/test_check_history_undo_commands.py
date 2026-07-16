@@ -18,10 +18,17 @@ from omym2.adapters.config.application_paths import ApplicationPaths, default_ap
 from omym2.adapters.config.default_config import default_app_config
 from omym2.adapters.db.sqlite.unit_of_work import SQLiteUnitOfWork
 from omym2.adapters.metadata.mutagen_reader import MutagenMetadataReader
+from omym2.domain.models.companion_asset import CompanionAsset, CompanionAssetKind, CompanionAssetStatus
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
-from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
+from omym2.domain.models.plan_action import (
+    ActionStatus,
+    ActionType,
+    PlanAction,
+    PlanActionDependency,
+    PlanActionReason,
+)
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
@@ -31,7 +38,7 @@ from omym2.domain.services.metadata_fingerprint import calculate_metadata_finger
 from omym2.features.check.dto import CheckLibraryRequest, CheckLibraryResult
 from omym2.features.common_ports import ExclusiveOperationBusyError, ExclusiveOperationRequest
 from omym2.platform.cli_entry_point import run_cli as main
-from omym2.shared.ids import ActionId, EventId, LibraryId, PlanId, RunId, TrackId
+from omym2.shared.ids import ActionId, CompanionAssetId, EventId, LibraryId, PlanId, RunId, TrackId
 from omym2.shared.pagination import PageRequest
 
 if TYPE_CHECKING:
@@ -49,11 +56,21 @@ EXTERNAL_SOURCE = "incoming/Imported.flac"
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
 PLAN_ID = PlanId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567a"))
 ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567b"))
+ARTWORK_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345682"))
+ARTWORK_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345687"))
+ARTWORK_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345686"))
 RUN_ID = RunId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
 EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
+LYRICS_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
+LYRICS_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345684"))
+LYRICS_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345685"))
 SUCCESS_EXIT_CODE = 0
 TARGET_PATH = "Artist/2026_Album/1-02_Title.flac"
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
+TYPED_EVENT_COUNT = 4
+UNPROCESSED_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345683"))
+UNPROCESSED_EVENT_ID = EventId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345688"))
+USAGE_EXIT_CODE = 2
 
 METADATA = TrackMetadata(title="Title", artist="Artist", album="Album", year=2026, track_number=2, disc_number=1)
 CONTENT_HASH = calculate_content_fingerprint(AUDIO_CONTENT)
@@ -148,6 +165,102 @@ def test_history_command_lists_runs(tmp_path: Path) -> None:
     assert str(RUN_ID) in stdout.getvalue()
     assert "status=succeeded" in stdout.getvalue()
     assert stderr.getvalue() == ""
+
+
+def test_history_command_run_detail_lists_typed_events_and_pending_evidence(tmp_path: Path) -> None:
+    """history RUN_ID exposes every recorded mutation type and leaves pending evidence unknown."""
+    app_paths = default_application_paths(tmp_path)
+    library_root = tmp_path / "library"
+    source_root = tmp_path / "incoming"
+    library_root.mkdir()
+    source_root.mkdir()
+    _register_library_state(app_paths.database_file, str(library_root), _track())
+    source_paths, target_paths = _save_typed_run_history(
+        app_paths.database_file,
+        library_root=library_root,
+        source_root=source_root,
+    )
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = main(
+        ["history", str(RUN_ID)],
+        stdout=stdout,
+        stderr=stderr,
+        database_path=app_paths.database_file,
+    )
+
+    assert exit_code == SUCCESS_EXIT_CODE
+    output = stdout.getvalue()
+    assert f"run_id: {RUN_ID}\n" in output
+    assert "status: partial_failed\n" in output
+    assert f"file_events: {TYPED_EVENT_COUNT}\n" in output
+    assert [line.removeprefix("    event_type: ") for line in output.splitlines() if "event_type:" in line] == [
+        "move_file",
+        "move_lyrics_file",
+        "move_artwork_file",
+        "move_unprocessed_file",
+    ]
+    assert [line.removeprefix("    status: ") for line in output.splitlines() if line.startswith("    status:")] == [
+        "succeeded",
+        "succeeded",
+        "succeeded",
+        "pending",
+    ]
+    assert output.count(f"    library_id: {LIBRARY_ID}\n") == TYPED_EVENT_COUNT
+    assert output.count(f"    run_id: {RUN_ID}\n") == TYPED_EVENT_COUNT
+    for source_path, target_path in zip(source_paths, target_paths, strict=True):
+        assert f"    source_path: {source_path}\n" in output
+        assert f"    target_path: {target_path}\n" in output
+    assert f"    companion_asset_id: {LYRICS_ASSET_ID}\n" in output
+    assert f"    companion_asset_id: {ARTWORK_ASSET_ID}\n" in output
+
+    pending_block = output[output.index(f"  - event_id: {UNPROCESSED_EVENT_ID}\n") :]
+    assert "    event_type: move_unprocessed_file\n" in pending_block
+    assert "    status: pending\n" in pending_block
+    assert "    companion_asset_id: -\n" in pending_block
+    assert "    completed_at: -\n" in pending_block
+    assert "    error_code: -\n" in pending_block
+    assert "    error_message: -\n" in pending_block
+    assert stderr.getvalue() == ""
+
+
+def test_history_command_run_detail_reports_invalid_and_unknown_ids(tmp_path: Path) -> None:
+    """history detail distinguishes malformed and unknown Run IDs without writing stdout."""
+    app_paths = default_application_paths(tmp_path)
+    invalid_stdout, invalid_stderr = StringIO(), StringIO()
+    unknown_stdout, unknown_stderr = StringIO(), StringIO()
+
+    invalid_exit_code = main(
+        ["history", "not-a-run"],
+        stdout=invalid_stdout,
+        stderr=invalid_stderr,
+        database_path=app_paths.database_file,
+    )
+    unknown_exit_code = main(
+        ["history", "018f6a4f-3c2d-7b8a-9abc-def012345699"],
+        stdout=unknown_stdout,
+        stderr=unknown_stderr,
+        database_path=app_paths.database_file,
+    )
+
+    assert invalid_exit_code == ERROR_EXIT_CODE
+    assert invalid_stdout.getvalue() == ""
+    assert invalid_stderr.getvalue() == "Invalid Run ID.\n"
+    assert unknown_exit_code == ERROR_EXIT_CODE
+    assert unknown_stdout.getvalue() == ""
+    assert unknown_stderr.getvalue() == "Run was not found.\n"
+
+
+def test_history_command_rejects_more_than_one_run_id() -> None:
+    """history detail accepts exactly one Run ID."""
+    stdout, stderr = StringIO(), StringIO()
+
+    exit_code = main(["history", str(RUN_ID), str(RUN_ID)], stdout=stdout, stderr=stderr)
+
+    assert exit_code == USAGE_EXIT_CODE
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue() == "Usage: omym2 history [RUN_ID]\n"
 
 
 def test_undo_command_creates_external_restore_plan(
@@ -253,7 +366,12 @@ def _setup_applied_add_history(tmp_path: Path) -> tuple[ApplicationPaths, Path, 
     library_file = _write_audio_file(library_root, TARGET_PATH)
     incoming_file = incoming_root / "Imported.flac"
     _register_library_state(app_paths.database_file, str(library_root), _track())
-    _save_run_history(app_paths.database_file, source_path=str(incoming_file), target_path=TARGET_PATH)
+    _save_run_history(
+        app_paths.database_file,
+        source_path=str(incoming_file),
+        source_root_at_plan=str(incoming_root),
+        target_path=TARGET_PATH,
+    )
     assert library_file.is_file()
     assert not incoming_file.exists()
     return app_paths, library_root, incoming_file
@@ -275,14 +393,226 @@ def _save_run_history(
     database_file: Path,
     *,
     source_path: str = EXTERNAL_SOURCE,
+    source_root_at_plan: str | None = None,
     target_path: str = TARGET_PATH,
 ) -> None:
     with SQLiteUnitOfWork(database_file) as uow:
-        uow.plans.save(_plan())
+        uow.plans.save(_plan(source_root_at_plan=source_root_at_plan))
         uow.plan_actions.save(_action(source_path=source_path, target_path=target_path))
         uow.runs.save(_run())
         uow.file_events.save(_event(source_path=source_path, target_path=target_path))
         uow.commit()
+
+
+def _save_typed_run_history(
+    database_file: Path,
+    *,
+    library_root: Path,
+    source_root: Path,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    audio_source = str(source_root / "Imported.flac")
+    lyrics_source = str(source_root / "Imported.lrc")
+    artwork_source = str(source_root / "cover.jpg")
+    unprocessed_source = str(source_root / "notes.txt")
+    lyrics_target = "Artist/2026_Album/1-02_Title.lrc"
+    artwork_target = "Artist/2026_Album/cover.jpg"
+    unprocessed_target = str(source_root / "Unprocessed" / "notes.txt")
+    actions = (
+        PlanAction(
+            action_id=ACTION_ID,
+            plan_id=PLAN_ID,
+            library_id=LIBRARY_ID,
+            track_id=TRACK_ID,
+            action_type=ActionType.MOVE,
+            source_path=audio_source,
+            target_path=TARGET_PATH,
+            content_hash_at_plan=CONTENT_HASH,
+            metadata_hash_at_plan=METADATA_HASH,
+            status=ActionStatus.APPLIED,
+            reason=None,
+            sort_order=1,
+        ),
+        PlanAction(
+            action_id=LYRICS_ACTION_ID,
+            plan_id=PLAN_ID,
+            library_id=LIBRARY_ID,
+            track_id=TRACK_ID,
+            action_type=ActionType.MOVE_LYRICS,
+            source_path=lyrics_source,
+            target_path=lyrics_target,
+            content_hash_at_plan=CONTENT_HASH,
+            metadata_hash_at_plan=None,
+            status=ActionStatus.APPLIED,
+            reason=None,
+            sort_order=2,
+            companion_asset_id=LYRICS_ASSET_ID,
+            owner_action_id=ACTION_ID,
+        ),
+        PlanAction(
+            action_id=ARTWORK_ACTION_ID,
+            plan_id=PLAN_ID,
+            library_id=LIBRARY_ID,
+            track_id=TRACK_ID,
+            action_type=ActionType.MOVE_ARTWORK,
+            source_path=artwork_source,
+            target_path=artwork_target,
+            content_hash_at_plan=CONTENT_HASH,
+            metadata_hash_at_plan=None,
+            status=ActionStatus.APPLIED,
+            reason=None,
+            sort_order=3,
+            companion_asset_id=ARTWORK_ASSET_ID,
+            owner_action_id=ACTION_ID,
+        ),
+        PlanAction(
+            action_id=UNPROCESSED_ACTION_ID,
+            plan_id=PLAN_ID,
+            library_id=LIBRARY_ID,
+            track_id=None,
+            action_type=ActionType.MOVE_UNPROCESSED,
+            source_path=unprocessed_source,
+            target_path=unprocessed_target,
+            content_hash_at_plan=CONTENT_HASH,
+            metadata_hash_at_plan=None,
+            status=ActionStatus.FAILED,
+            reason=PlanActionReason.OPERATION_INTERRUPTED,
+            sort_order=4,
+        ),
+    )
+    events = (
+        FileEvent(
+            event_id=EVENT_ID,
+            library_id=LIBRARY_ID,
+            run_id=RUN_ID,
+            plan_action_id=ACTION_ID,
+            event_type=FileEventType.MOVE_FILE,
+            source_path=audio_source,
+            target_path=TARGET_PATH,
+            status=FileEventStatus.SUCCEEDED,
+            started_at=BASE_TIME,
+            completed_at=BASE_TIME,
+            error_code=None,
+            error_message=None,
+            sequence_no=1,
+        ),
+        FileEvent(
+            event_id=LYRICS_EVENT_ID,
+            library_id=LIBRARY_ID,
+            run_id=RUN_ID,
+            plan_action_id=LYRICS_ACTION_ID,
+            event_type=FileEventType.MOVE_LYRICS_FILE,
+            source_path=lyrics_source,
+            target_path=lyrics_target,
+            status=FileEventStatus.SUCCEEDED,
+            started_at=BASE_TIME,
+            completed_at=BASE_TIME,
+            error_code=None,
+            error_message=None,
+            sequence_no=2,
+            companion_asset_id=LYRICS_ASSET_ID,
+        ),
+        FileEvent(
+            event_id=ARTWORK_EVENT_ID,
+            library_id=LIBRARY_ID,
+            run_id=RUN_ID,
+            plan_action_id=ARTWORK_ACTION_ID,
+            event_type=FileEventType.MOVE_ARTWORK_FILE,
+            source_path=artwork_source,
+            target_path=artwork_target,
+            status=FileEventStatus.SUCCEEDED,
+            started_at=BASE_TIME,
+            completed_at=BASE_TIME,
+            error_code=None,
+            error_message=None,
+            sequence_no=3,
+            companion_asset_id=ARTWORK_ASSET_ID,
+        ),
+        FileEvent(
+            event_id=UNPROCESSED_EVENT_ID,
+            library_id=LIBRARY_ID,
+            run_id=RUN_ID,
+            plan_action_id=UNPROCESSED_ACTION_ID,
+            event_type=FileEventType.MOVE_UNPROCESSED_FILE,
+            source_path=unprocessed_source,
+            target_path=unprocessed_target,
+            status=FileEventStatus.PENDING,
+            started_at=BASE_TIME,
+            completed_at=None,
+            error_code=None,
+            error_message=None,
+            sequence_no=4,
+        ),
+    )
+    with SQLiteUnitOfWork(database_file) as uow:
+        uow.plans.save(
+            Plan(
+                plan_id=PLAN_ID,
+                library_id=LIBRARY_ID,
+                plan_type=PlanType.ADD,
+                status=PlanStatus.PARTIAL_FAILED,
+                created_at=BASE_TIME,
+                config_hash=calculate_config_fingerprint(default_app_config()),
+                library_root_at_plan=str(library_root),
+                source_root_at_plan=str(source_root),
+                summary={"action_count": str(len(actions))},
+            ),
+        )
+        for action in actions:
+            uow.plan_actions.save(action)
+        for action in actions[1:3]:
+            uow.plan_action_dependencies.save(
+                PlanActionDependency(
+                    plan_id=PLAN_ID,
+                    action_id=action.action_id,
+                    depends_on_action_id=ACTION_ID,
+                ),
+            )
+        uow.companion_assets.save(
+            _companion_asset(LYRICS_ASSET_ID, CompanionAssetKind.LYRICS, lyrics_target),
+        )
+        uow.companion_assets.save(
+            _companion_asset(ARTWORK_ASSET_ID, CompanionAssetKind.ARTWORK, artwork_target),
+        )
+        uow.runs.save(
+            Run(
+                run_id=RUN_ID,
+                plan_id=PLAN_ID,
+                library_id=LIBRARY_ID,
+                status=RunStatus.PARTIAL_FAILED,
+                started_at=BASE_TIME,
+                completed_at=BASE_TIME,
+                error_summary="operation interrupted",
+            ),
+        )
+        for event in events:
+            uow.file_events.save(event)
+        uow.commit()
+    return (
+        (audio_source, lyrics_source, artwork_source, unprocessed_source),
+        (TARGET_PATH, lyrics_target, artwork_target, unprocessed_target),
+    )
+
+
+def _companion_asset(
+    companion_asset_id: CompanionAssetId,
+    kind: CompanionAssetKind,
+    path: str,
+) -> CompanionAsset:
+    return CompanionAsset(
+        companion_asset_id=companion_asset_id,
+        library_id=LIBRARY_ID,
+        kind=kind,
+        owner_track_id=TRACK_ID,
+        current_path=path,
+        canonical_path=path,
+        content_hash=CONTENT_HASH,
+        size=None,
+        mtime=None,
+        status=CompanionAssetStatus.ACTIVE,
+        first_seen_at=BASE_TIME,
+        last_seen_at=BASE_TIME,
+        updated_at=BASE_TIME,
+    )
 
 
 def _write_audio_file(root: Path, relative_path: str) -> Path:
@@ -333,7 +663,7 @@ def _track() -> Track:
     )
 
 
-def _plan() -> Plan:
+def _plan(*, source_root_at_plan: str | None = None) -> Plan:
     return Plan(
         plan_id=PLAN_ID,
         library_id=LIBRARY_ID,
@@ -342,6 +672,7 @@ def _plan() -> Plan:
         created_at=BASE_TIME,
         config_hash=calculate_config_fingerprint(default_app_config()),
         library_root_at_plan="/unused",
+        source_root_at_plan=source_root_at_plan,
         summary={"action_count": "1"},
     )
 

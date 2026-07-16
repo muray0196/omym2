@@ -74,6 +74,12 @@ DESKTOP_WINDOWS_SMOKE_POLL_INTERVAL_SECONDS = 0.1  # log and process polling int
 DESKTOP_WINDOWS_SMOKE_DIAGNOSTIC_TAIL_BYTES = 8_000  # maximum printed bytes per native failure stream, >= 1
 DESKTOP_WINDOWS_SMOKE_UI_AUTOMATION_TIMEOUT_SECONDS = 300  # complete native UI evidence timeout, seconds, >= startup
 DESKTOP_WINDOWS_SMOKE_AUDIO_FILE_BYTES = 4_096  # synthetic tagged FLAC input size, bytes, >= metadata size
+DESKTOP_WINDOWS_SMOKE_ARTIST_NAME = "宇多田ヒカル"  # eligible non-Latin artist value used by local-only smoke
+DESKTOP_WINDOWS_SMOKE_ARTIST_FALLBACK_ISSUE = (  # expected disabled-lookup diagnostic, exact enum value
+    "automatic_lookup_disabled"
+)
+DESKTOP_WINDOWS_SMOKE_ARTIST_FALLBACK_PROVENANCE = "original"  # expected local-only fallback provenance
+DESKTOP_WINDOWS_SMOKE_PROVIDER_NAME = "musicbrainz"  # provider cadence identity that must remain unused
 DESKTOP_WINDOWS_SMOKE_UNICODE_DIRECTORY_NAME = "音楽-パッケージ"  # Unicode segment used by native path smoke
 DESKTOP_WINDOWS_SMOKE_LONG_COMPONENT_CHARACTERS = 110  # long-path smoke segment length, characters, 32..240
 DESKTOP_WINDOWS_SMOKE_LONG_COMPONENT_COUNT = 2  # nested long-path smoke components, components, >= 2
@@ -145,8 +151,13 @@ DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_BASENAMES = (  # forbidden bundled runtime fil
     "snapshot_blob.bin",
     "v8_context_snapshot.bin",
 )
+DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_SUFFIXES = (  # forbidden bundled artist-model file suffixes, lowercase suffixes
+    ".bin",
+    ".ftz",
+)
 DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_FRAGMENTS = (  # forbidden bundled framework path fragments, lowercase text
     "cefpython",
+    "fasttext",
     "node_modules",
     "pyqt5",
     "pyqt6",
@@ -155,6 +166,9 @@ DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_FRAGMENTS = (  # forbidden bundled framework p
     "qt5",
     "qt6",
     "qtwebengine",
+)
+DESKTOP_WINDOWS_FORBIDDEN_RUNTIME_DISTRIBUTION_PREFIXES = (  # forbidden normalized distribution-name prefixes
+    "fasttext",
 )
 DESKTOP_WINDOWS_FORBIDDEN_WEBVIEW_RESOURCES = (  # prohibited architecture or renderer resource fragments, lowercase text
     "/runtimes/win-arm64/",

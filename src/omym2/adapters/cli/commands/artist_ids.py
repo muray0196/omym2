@@ -42,10 +42,9 @@ class ArtistIdsCommandPorts:
     """Ports injected for artist ID generation."""
 
     generate_artist_ids: Callable[
-        [GenerateArtistIdsRequest, ArtistLanguagePredictor, ArtistNameProvider], GenerateArtistIdsResult
+        [GenerateArtistIdsRequest, ArtistLanguagePredictor, ArtistNameProvider | None], GenerateArtistIdsResult
     ]
     language_predictor_factory: Callable[[Path | None], ArtistLanguagePredictor]
-    artist_name_provider: ArtistNameProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,12 +89,11 @@ def run_artist_ids_command(
         write_line(stderr, predictor_error or FASTTEXT_MODEL_LOAD_ERROR_MESSAGE)
         return ERROR_EXIT_CODE
 
-    provider = command_dependencies.artist_name_provider or ports.artist_name_provider
     try:
         result = ports.generate_artist_ids(
             GenerateArtistIdsRequest(parsed_args.artist_names, overwrite=parsed_args.overwrite),
             predictor,
-            provider,
+            command_dependencies.artist_name_provider,
         )
     except ConfigStoreValidationError as exc:
         write_validation_errors(stderr, exc.errors)

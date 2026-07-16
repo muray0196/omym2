@@ -249,14 +249,26 @@ jobs:
       - name: Install locked test dependencies
         run: uv sync --locked --dev
 
-      - name: Test Windows lock and desktop runtime boundaries
+      - name: Test Windows filesystem and desktop runtime boundaries
         run: >-
           uv run pytest
           tests/adapters/fs/test_exclusive_operation_lock.py
+          tests/adapters/fs/test_file_observation.py
+          tests/adapters/fs/test_win32_file_handles.py
+          tests/adapters/fs/test_win32_file_observation.py
+          tests/features/test_companion_adapter_e2e.py
+          tests/features/test_unprocessed_adapter_e2e.py
           tests/adapters/desktop
           tests/platform/test_desktop_entry_point.py
           tests/platform/test_desktop_runtime.py
           -q
+
+      - name: Test Windows scanner containment
+        run: >-
+          uv run pytest
+          tests/adapters/fs/test_read_adapters.py
+          -q
+          -k "file_scanner or file_stat_reader"
 
       - name: Download audited package evidence
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5

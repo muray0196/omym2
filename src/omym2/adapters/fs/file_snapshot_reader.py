@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from omym2.adapters.fs.hash_calculator import FileContentHasher
 from omym2.config import FILE_SNAPSHOT_CAPTURE_MIN_WORKER_COUNT, FILE_SNAPSHOT_CAPTURE_WORKER_COUNT
@@ -31,13 +31,21 @@ INVALID_SNAPSHOT_CAPTURE_WORKER_COUNT_MESSAGE = "Snapshot capture worker count m
 SOURCE_CHANGED_DURING_SNAPSHOT_MESSAGE = "Source path changed during snapshot capture."
 
 
+class SnapshotContentHasher(Protocol):
+    """Calculate one content hash for snapshot capture."""
+
+    def calculate(self, path: FileSystemPath) -> str:
+        """Return the stable content hash for one path."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class FilesystemFileSnapshotReader:
     """Capture metadata and hash state for one filesystem file."""
 
     metadata_reader: MetadataReader
     clock: Clock = field(default_factory=SystemClock)
-    hasher: FileContentHasher = field(default_factory=FileContentHasher)
+    hasher: SnapshotContentHasher = field(default_factory=FileContentHasher)
     worker_count: int = FILE_SNAPSHOT_CAPTURE_WORKER_COUNT
 
     def __post_init__(self) -> None:

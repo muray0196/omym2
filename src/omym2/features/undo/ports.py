@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from omym2.features.common_ports import (
         Clock,
+        FileContentSnapshotReader,
         FilePresence,
         FileSnapshotReader,
         IdGenerator,
@@ -25,6 +26,7 @@ class CreateUndoPlanPorts:
 
     uow: UnitOfWork
     file_snapshot_reader: FileSnapshotReader
+    file_content_snapshot_reader: FileContentSnapshotReader
     file_presence: FilePresence
     path_resolver: PathResolver
     clock: Clock
