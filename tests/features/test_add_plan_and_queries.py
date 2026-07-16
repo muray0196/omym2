@@ -50,8 +50,11 @@ from omym2.domain.models.plan_action import (
 from omym2.domain.models.run import Run, RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
-from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
+from omym2.domain.services.config_fingerprint import (
+    STALE_LIBRARY_MESSAGE,
+    calculate_config_fingerprint,
+    calculate_path_policy_fingerprint,
+)
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.add.dto import CreateAddPlanRequest
 from omym2.features.add.ports import CreateAddPlanPorts
@@ -61,7 +64,6 @@ from omym2.features.add.usecases.create_add_plan import (
     NO_REGISTERED_LIBRARY_MESSAGE,
     SELECTED_LIBRARY_NOT_FOUND_MESSAGE,
     SOURCE_INSIDE_LIBRARY_MESSAGE,
-    STALE_LIBRARY_MESSAGE,
     AddLibraryReconciliationRequiredError,
     AddLibrarySelectionError,
     AddSourceSelectionError,
@@ -88,6 +90,7 @@ from omym2.shared.ids import (
     RunId,
     TrackId,
 )
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 from tests.fakes.file_observation import MappingFileContentSnapshotReader, StaticSourceInventoryReader
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator
@@ -154,7 +157,6 @@ SECOND_LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345680"))
 SECOND_LIBRARY_ROOT = "/music/second"
 SECOND_TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345681"))
 THIRD_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567d"))
-FOURTH_ACTION_ID = ActionId(UUID("018f6a4f-3c2d-7b8a-9abc-def01234567e"))
 THIRD_INCOMING_FILE = "/music/incoming/Title3.flac"
 TRACK_ID = TrackId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345679"))
 YEAR_1998 = 1998

@@ -12,8 +12,8 @@ import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
 import { PageHeader } from "../../ui/primitives/page-header";
 import { VisuallyHidden } from "../../ui/primitives/visually-hidden";
 import toolbarStyles from "../../ui/primitives/toolbar.module.css";
+import { InspectionErrorState } from "../inspection/inspection-error-state";
 import { planCopy } from "./plan-copy";
-import { PlanErrorState } from "./plan-error-state";
 import { PlanStatusBadge, PlanTypeValue } from "./plan-presentation";
 import { plansInfiniteQuery, type PlanSummary } from "./plan-query";
 import {
@@ -143,10 +143,9 @@ export function PlanList() {
 
       {query.isPending ? <LoadingState label={planCopy.list.loading} /> : null}
       {query.isError ? (
-        <PlanErrorState
+        <InspectionErrorState
           error={query.error}
           onRetry={() => void query.refetch()}
-          retryLabel={planCopy.list.retry}
           title={planCopy.list.loadError}
         />
       ) : null}

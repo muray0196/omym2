@@ -50,7 +50,7 @@ from omym2.domain.services.companion_association import (
     associate_companions,
 )
 from omym2.domain.services.config_fingerprint import (
-    STALE_LIBRARY_MESSAGE as STALE_LIBRARY_MESSAGE,  # noqa: PLC0414 - re-exported for existing test imports.
+    STALE_LIBRARY_MESSAGE as _STALE_LIBRARY_MESSAGE,
 )
 from omym2.domain.services.config_fingerprint import (
     calculate_config_fingerprint,
@@ -831,7 +831,7 @@ def _require_registered_current_library(library: Library, path_policy_hash: str)
     if library.status != LibraryStatus.REGISTERED:
         raise RefreshLibrarySelectionError(SELECTED_LIBRARY_NOT_REGISTERED_MESSAGE)
     if is_path_policy_stale(library.path_policy_hash, path_policy_hash):
-        raise RefreshLibrarySelectionError(STALE_LIBRARY_MESSAGE)
+        raise RefreshLibrarySelectionError(_STALE_LIBRARY_MESSAGE)
     return library
 
 

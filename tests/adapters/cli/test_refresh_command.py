@@ -24,11 +24,11 @@ from omym2.domain.models.run import RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.refresh.dto import CreateRefreshPlanRequest
 from omym2.platform.cli_entry_point import run_cli as main
 from omym2.shared.ids import LibraryId, PlanId, TrackId
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 
 if TYPE_CHECKING:
     from pathlib import Path

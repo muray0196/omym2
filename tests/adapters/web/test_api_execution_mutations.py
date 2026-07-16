@@ -41,7 +41,6 @@ from omym2.domain.models.plan_action import ActionStatus, ActionType, PlanAction
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.artist_name import derive_artist_name_source_key
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.apply.usecases.apply_plan import TARGET_EXISTS_MOVE_FAILURE_MESSAGE
 from omym2.features.artist_names.dto import (
@@ -53,6 +52,7 @@ from omym2.features.common_ports import ExclusiveOperationRequest
 from omym2.platform.runtime_context import runtime_context_for
 from omym2.platform.web_composition import build_api_route_context
 from omym2.shared.ids import ActionId, LibraryId, PlanId, RunId
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 
 if TYPE_CHECKING:
     from pathlib import Path

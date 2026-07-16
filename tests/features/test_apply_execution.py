@@ -1138,7 +1138,7 @@ class RecordingFileMover:
         if self._root_after_first_move is not None and len(self.moves) == 1:
             library = self._uow.libraries.get(LIBRARY_ID)
             assert library is not None
-            self._uow.libraries.save(library.with_root_path(self._root_after_first_move, BASE_TIME))
+            self._uow.libraries.save(replace(library, root_path=self._root_after_first_move, updated_at=BASE_TIME))
 
 
 def _ports(

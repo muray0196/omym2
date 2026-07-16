@@ -3,7 +3,7 @@ type: Architecture Decision Record
 title: "ADR 0001: Replace the Bundled Web API Without a Version Prefix"
 description: Records why the bundled SPA and Web API use one coordinated breaking contract without an external-client compatibility layer or version prefix.
 tags: [adr, web-api, openapi, breaking-change]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # ADR 0001: Replace the Bundled Web API Without a Version Prefix
@@ -30,11 +30,16 @@ The renewed SPA and Web API make one coordinated breaking replacement under
 envelopes, or provide a compatibility adapter. External clients receive no
 stability or migration guarantee for this local API.
 
-M1-M5 changes remain on an unreleased renewal integration line. Its CI pairs
-`web-v2` only with the new API, while the last supported `main`/`stable`
-release retains the old paired package. Only the completed M5 tree is
-merged/released; intermediate artifacts are evaluation evidence, not a
-supported compatibility period.
+OMYM2 is pre-release. Development databases, Config files, browser URLs,
+opaque group keys, generated clients, and internal Python imports are not
+supported upgrade surfaces. A coordinated contract change updates or removes
+all owning code and artifacts in one change. Old local state is rejected with
+an explicit reset instruction instead of being translated.
+
+The 2026-07-16 clean-slate cutover rebased SQLite to one baseline migration,
+advanced the Config schema version, removed the retired Track
+`group_by=artist_album` wire key, and removed dormant Operation progress
+fields. No adapters or aliases preserve those pre-release contracts.
 
 Pydantic request and response models are the schema source. A schema-only app
 exports OpenAPI, and the SPA consumes the generated TypeScript client rather
@@ -48,7 +53,8 @@ routes, errors, and generation requirements live in the
 * Every API contract change must update its Pydantic models, OpenAPI artifact,
   generated client, contract tests, and bundled SPA together.
 * Generated-client drift is a build failure.
-* Existing clients of the old local API may break without a compatibility
-  period; this is deliberate because they are unsupported.
+* Old local API requests, browser URLs, Config files, and SQLite databases may
+  break without a compatibility period; this is deliberate because they are
+  unsupported pre-release state.
 * Supporting independent external clients or introducing a version prefix
   requires a new architecture decision.

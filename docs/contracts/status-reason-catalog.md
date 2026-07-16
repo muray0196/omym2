@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Status And Reason Catalog
-description: Defines the versioned Track and CompanionAsset statuses, Plan action/reason, unprocessed FileEvent and CheckIssue values, durable-operation catalogs, triage, and presentation behavior.
+description: Defines the closed Track, CompanionAsset, Plan, FileEvent, CheckIssue, and Operation catalogs, triage semantics, and exhaustive bundled-client presentation behavior.
 tags: [status, reason-codes, catalog, execution, companions, unprocessed, operations]
-timestamp: 2026-07-16T04:51:16+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Status And Reason Catalog
@@ -13,24 +13,6 @@ type, check issue, Operation kind/status/result values, the FileEvent error-code
 schema, and cross-surface status presentation behavior.
 
 Domain concepts are in [../DOMAIN.md](../DOMAIN.md). Execution state transitions are in [../execution/model.md](../execution/model.md), [../execution/apply.md](../execution/apply.md), and [../execution/failure-policy.md](../execution/failure-policy.md).
-
-## Catalog Version
-
-The catalog version returned by Bootstrap is integer `3`. It versions the
-closed catalogs in this document as one bundled client/server contract. Adding,
-removing, or redefining a closed value increments the version in the same
-coordinated change. It does not version the open FileEvent error-code or
-Operation stage-code schemas.
-
-Version 2 adds companion closed values. Binaries bundled with version 1 must
-not apply Plans containing them; the backup, ready-Plan cleanup, and
-manual-review downgrade procedure is authoritative in
-[Stage 4 And 5 Backup And Downgrade](db-schema.md#stage-4-and-5-backup-and-downgrade).
-
-Version 3 adds `move_unprocessed`, `move_unprocessed_file`,
-`unprocessed_file_missing`, and `unprocessed_content_hash_changed`. Version 1
-or 2 binaries must not read current Stage 5 state or apply a Plan containing
-these values; they must use the matched backup/downgrade procedure above.
 
 ## Library Status
 
@@ -255,9 +237,9 @@ target of an unreversed succeeded `move_unprocessed_file` event. Both have
 repair because the Plan/FileEvent pair, not a managed Track row, is the durable
 evidence.
 
-## Stage 5 Presentation Labels
+## Unprocessed Presentation Labels
 
-The product-default labels for the new closed values are:
+The product-default labels for the unprocessed-file values are:
 
 | Value | Label | Tone |
 | --- | --- | --- |
@@ -314,11 +296,12 @@ The lifecycle, result fields, and retention contract are in
 
 ## Status Presentation Contract
 
-Every known closed value has an explicit product-default-language label,
-meaning, tone, and icon mapping in the renewed frontend. Every open schema and
-every server value newer than the bundled mapping has a neutral unknown-value
-fallback that displays the raw stable code without crashing or enabling an
-operation.
+Every closed value has an explicit product-default-language label, meaning,
+tone, and icon mapping in the bundled frontend. The SPA and API ship from the
+same commit; a missing closed-value mapping is a programming or data-integrity
+error and fails explicitly instead of presenting a neutral fallback. Only an
+explicitly open field such as `FileEvent.error_code` may display an unknown raw
+stable code.
 
 Presentation follows these rules:
 
@@ -353,6 +336,6 @@ Presentation follows these rules:
 * Blocked actions remain blocked during apply.
 * Precondition failures before mutation do not create FileEvents.
 * Terminal Plans are single-use.
-* Operation stage codes and FileEvent error codes are open stable snake_case
-  schemas and require unknown-value fallbacks.
+* FileEvent error codes are an open stable snake_case schema and retain an
+  explicit unknown-value presentation.
 * Status catalog changes require state transition and failure behavior tests.

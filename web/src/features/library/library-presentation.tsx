@@ -4,6 +4,7 @@
  */
 import type { ReactNode } from "react";
 
+import type { LibraryStatus, TrackStatus } from "../../api/generated";
 import { Icon, type IconName } from "../../ui/icon";
 import {
   libraryStatusIcon,
@@ -16,7 +17,7 @@ import {
 } from "./library-catalog";
 import styles from "./library-inspection.module.css";
 
-export function LibraryStatusBadge({ value }: { value: string }) {
+export function LibraryStatusBadge({ value }: { value: LibraryStatus }) {
   return (
     <StatusBadge
       icon={libraryStatusIcon(value)}
@@ -27,7 +28,7 @@ export function LibraryStatusBadge({ value }: { value: string }) {
   );
 }
 
-export function TrackStatusBadge({ value }: { value: string }) {
+export function TrackStatusBadge({ value }: { value: TrackStatus }) {
   return (
     <StatusBadge
       icon={trackStatusIcon(value)}

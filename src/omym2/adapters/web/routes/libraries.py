@@ -5,14 +5,16 @@ Why: Exposes stable identity and effective readiness without adapter-side infere
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID  # noqa: TC003  # FastAPI resolves path annotations at registration.
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse  # noqa: TC002  # FastAPI resolves route return annotations.
 
-from omym2.adapters.web.routes.api_context import ApiContext  # noqa: TC001  # FastAPI resolves dependencies.
+from omym2.adapters.web.routes.api_context import (  # FastAPI resolves dependencies.
+    ApiContext,
+    LibrariesRouteContext,
+)
 from omym2.adapters.web.routes.read_query import CORRELATION_HEADER_SCHEMA, not_found_failure
 from omym2.adapters.web.schemas.api_envelopes import ApiEnvelope, ApiFailureEnvelope
 from omym2.adapters.web.schemas.api_errors import ApiErrorCode
@@ -34,29 +36,20 @@ from omym2.features.libraries.usecases.inspect_libraries import (
 from omym2.shared.ids import LibraryId
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from omym2.features.libraries.dto import LibraryInspection
 
 LIBRARY_HANDLERS_UNAVAILABLE_MESSAGE = "Library route handlers are unavailable."
 
 
-@dataclass(frozen=True, slots=True)
-class LibraryRouteHandlers:
-    """Read-only Library handlers supplied by the composition root."""
-
-    inspect_libraries: Callable[[InspectLibrariesRequest], tuple[LibraryInspection, ...]]
-
-
-def get_library_route_handlers(context: ApiContext) -> LibraryRouteHandlers:
+def get_library_route_handlers(context: ApiContext) -> LibrariesRouteContext:
     """Resolve Library-specific collaborators from the shared route context."""
-    handlers = getattr(context, "libraries", None)
+    handlers = context.libraries
     if handlers is None:
         raise RuntimeError(LIBRARY_HANDLERS_UNAVAILABLE_MESSAGE)
-    return cast("LibraryRouteHandlers", cast("object", handlers))
+    return handlers
 
 
-type LibrariesContext = Annotated[LibraryRouteHandlers, Depends(get_library_route_handlers)]
+type LibrariesContext = Annotated[LibrariesRouteContext, Depends(get_library_route_handlers)]
 
 
 def create_libraries_router() -> APIRouter:

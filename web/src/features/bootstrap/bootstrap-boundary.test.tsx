@@ -38,7 +38,7 @@ describe("BootstrapBoundary", () => {
     renderShell();
 
     expect(
-      await screen.findByRole("link", { name: "Resume Operation progress" }),
+      await screen.findByRole("link", { name: "Resume Operation status" }),
     ).toHaveAttribute("href", `/operations/${operationId}`);
   });
 

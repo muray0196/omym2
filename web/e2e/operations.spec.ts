@@ -8,11 +8,8 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page, Response } from "@playwright/test";
 
 import type {
-  ApiEnvelopeOperationRef,
-  ApiEnvelopeOperationResource,
   ApiEnvelopePaginatedDataRunHeader,
   ApiEnvelopePlanDetailData,
-  OperationResource,
 } from "../src/api/generated";
 import {
   applyDesktopZoom,
@@ -20,6 +17,14 @@ import {
   readDesktopZoomMetrics,
 } from "./desktop-zoom";
 import { expect, test } from "./playwright-fixtures";
+import {
+  requiredOperation,
+  requiredOperationReference,
+  requiredPlanId,
+  requiredRunId,
+  waitForMutation,
+  waitForSucceededOperation,
+} from "./operation-helpers";
 import { snapshotIsolatedLibrary } from "./library-snapshot";
 
 test.describe.configure({ mode: "serial", retries: 0 });
@@ -390,38 +395,6 @@ async function createAddPlanByKeyboard(page: Page) {
   return requiredPathIdentifier(page.url(), "plans");
 }
 
-function waitForMutation(page: Page, pathname: string) {
-  return page.waitForResponse((response) => {
-    return (
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname === pathname
-    );
-  });
-}
-
-async function requiredOperationReference(response: Response) {
-  expect(response.status()).toBe(202);
-  const envelope = (await response.json()) as ApiEnvelopeOperationRef;
-  if (envelope.data === null) {
-    throw new Error("Accepted Operation response did not contain data.");
-  }
-  expect(envelope.errors).toEqual([]);
-  expect(envelope.data.status_url).toBe(
-    `/api/operations/${envelope.data.operation_id}`,
-  );
-  return envelope.data;
-}
-
-async function requiredOperation(response: Response) {
-  const envelope = (await response.json()) as ApiEnvelopeOperationResource;
-  if (envelope.data === null) {
-    throw new Error("Operation poll did not contain data.");
-  }
-  expect(envelope.errors).toEqual([]);
-  expect(envelope.data.status).toBe("succeeded");
-  return envelope.data;
-}
-
 async function requiredPlanDetail(response: Response) {
   expect(response.status()).toBe(200);
   const envelope = (await response.json()) as ApiEnvelopePlanDetailData;
@@ -430,20 +403,6 @@ async function requiredPlanDetail(response: Response) {
   }
   expect(envelope.errors).toEqual([]);
   return envelope.data;
-}
-
-function requiredRunId(operation: OperationResource) {
-  if (operation.result?.kind !== "run_completed") {
-    throw new Error("Apply Operation did not return a completed Run.");
-  }
-  return operation.result.run_id;
-}
-
-function requiredPlanId(operation: OperationResource) {
-  if (operation.result?.kind !== "plan_created") {
-    throw new Error("Planning Operation did not return a Plan.");
-  }
-  return operation.result.plan_id;
 }
 
 function requiredPathIdentifier(url: string, resource: string) {
@@ -490,20 +449,5 @@ function isMissingFileError(error: unknown) {
     error instanceof Error &&
     "code" in error &&
     (error as NodeJS.ErrnoException).code === "ENOENT"
-  );
-}
-
-function waitForSucceededOperation(page: Page) {
-  return page.waitForResponse(async (response) => {
-    if (!isOperationPoll(response)) return false;
-    const envelope = (await response.json()) as ApiEnvelopeOperationResource;
-    return envelope.data?.status === "succeeded";
-  });
-}
-
-function isOperationPoll(response: Response) {
-  return (
-    response.request().method() === "GET" &&
-    /\/api\/operations\/[0-9a-f-]+$/.test(response.url())
   );
 }

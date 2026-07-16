@@ -110,21 +110,5 @@ def artist_name_resolver_for(
     )
 
 
-def plan_artist_name_resolver_for(
-    database_file: Path,
-    runtime: ArtistNameRuntime,
-    musicbrainz_config: MusicBrainzConfig,
-    fasttext_config: FastTextConfig,
-) -> ResolveArtistNamesUseCase:
-    """Build Plan resolution from current persisted controls and process-shared adapters."""
-    return artist_name_resolver_for(
-        database_file,
-        runtime.language_predictor_for(fasttext_config),
-        runtime.provider_for(musicbrainz_config),
-        automatic_lookup_enabled=musicbrainz_config.enabled,
-        minimum_confidence=fasttext_config.minimum_confidence,
-    )
-
-
 def _musicbrainz_user_agent(application_name: str, contact: str) -> str:
     return f"{application_name.strip()}/{__version__} ({contact.strip()})"

@@ -29,8 +29,6 @@ from omym2.config import (
     WEB_CONTENT_SECURITY_POLICY,
     WEB_CORRELATION_HEADER_NAME,
     WEB_CSP_HEADER_NAME,
-    WEB_FRAME_OPTIONS,
-    WEB_FRAME_OPTIONS_HEADER_NAME,
     WEB_HTML_ACCEPT_MEDIA_TYPE,
     WEB_STATIC_ASSET_ROUTE,
 )
@@ -106,7 +104,6 @@ def test_real_desktop_server_serves_existing_ui_api_and_security_contract(tmp_pa
     assert isinstance(typed_bootstrap_payload.get("data"), dict)
     assert csrf_status == HTTP_FORBIDDEN_STATUS
     assert root_headers[WEB_CSP_HEADER_NAME.lower()] == WEB_CONTENT_SECURITY_POLICY
-    assert root_headers[WEB_FRAME_OPTIONS_HEADER_NAME.lower()] == WEB_FRAME_OPTIONS
     assert root_headers[WEB_CORRELATION_HEADER_NAME.lower()]
 
     with pytest.raises(ConnectionRefusedError):

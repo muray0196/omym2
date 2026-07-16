@@ -20,11 +20,7 @@ import { Component as HealthRoute } from "../../routes/health/route";
 import { normalBootstrap } from "../../test/fixtures/bootstrap";
 import { completedCheckOperation } from "../../test/fixtures/operations";
 import { server } from "../../test/server";
-import {
-  healthGroupValueLabel,
-  issueTypeLabel,
-  issueTypePresentation,
-} from "./health-catalog";
+import { healthGroupValueLabel, issueTypePresentation } from "./health-catalog";
 
 const COMPANION_ASSET_ID = "018f6a4f-3c2d-7b8a-9abc-def012345713";
 
@@ -63,10 +59,7 @@ describe("Health inspection", () => {
     expect(checkStarts).toBe(0);
   });
 
-  it("preserves a raw unknown issue value", () => {
-    expect(issueTypeLabel("future_issue")).toBe(
-      "Unknown issue type: future_issue",
-    );
+  it("maps catalog-backed and server-labeled group values", () => {
     expect(
       healthGroupValueLabel(
         "issue_type",
@@ -74,20 +67,12 @@ describe("Health inspection", () => {
         "Server label",
       ),
     ).toBe("Pending FileEvent requires review");
-    expect(
-      healthGroupValueLabel("issue_type", "future_issue", "Server label"),
-    ).toBe("Unknown issue type: future_issue");
     expect(healthGroupValueLabel("severity", "warning", "Warnings")).toBe(
       "Warnings",
     );
     expect(
       healthGroupValueLabel("suggested_command", "history", "omym2 history"),
     ).toBe("omym2 history");
-    expect(issueTypePresentation("future_issue")).toMatchObject({
-      icon: "info",
-      label: "Unknown issue type: future_issue",
-      tone: "neutral",
-    });
   });
 
   it("maps every known CheckIssue type with full presentation data", () => {
@@ -169,16 +154,22 @@ describe("Health inspection", () => {
     renderRoute("/health");
 
     expect(await screen.findByText("First finding detail")).toBeVisible();
-    expect(screen.getByText("Unknown issue type: first-group")).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: /Pending FileEvent requires review/,
+      }),
+    ).toBeVisible();
 
     await user.click(
       screen.getByRole("button", { name: "Next page of Health groups" }),
     );
     expect(
-      await screen.findByText("Unknown issue type: second-group"),
+      await screen.findByRole("button", { name: /Managed file is missing/ }),
     ).toBeVisible();
     expect(
-      screen.queryByText("Unknown issue type: first-group"),
+      screen.queryByRole("button", {
+        name: /Pending FileEvent requires review/,
+      }),
     ).not.toBeInTheDocument();
 
     await user.click(
@@ -195,10 +186,14 @@ describe("Health inspection", () => {
     );
 
     expect(await screen.findByText("First finding detail")).toBeVisible();
-    expect(screen.getByText("Unknown issue type: first-group")).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: /Pending FileEvent requires review/,
+      }),
+    ).toBeVisible();
     expect(screen.queryByText("Second finding detail")).not.toBeInTheDocument();
     expect(
-      screen.queryByText("Unknown issue type: second-group"),
+      screen.queryByRole("button", { name: /Managed file is missing/ }),
     ).not.toBeInTheDocument();
     expect(screen.getAllByText("Page 1 of 2")).toHaveLength(2);
   });
@@ -378,7 +373,7 @@ const firstCheckGroupPage = {
     group_by: "issue_type",
     items: [
       {
-        key: "first-group",
+        key: "pending_file_event_exists",
         label: "First finding group",
         count: 1,
         common_path_root: null,
@@ -393,7 +388,7 @@ const secondCheckGroupPage = {
     group_by: "issue_type",
     items: [
       {
-        key: "second-group",
+        key: "db_file_missing",
         label: "Second finding group",
         count: 1,
         common_path_root: null,

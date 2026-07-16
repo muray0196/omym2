@@ -1,12 +1,11 @@
 """
 Summary: Defines durable Operation, polling, and planning Web resources.
-Why: Generates one typed client contract for accepted work, progress, and navigation results.
+Why: Generates one typed client contract for accepted work, status, and navigation results.
 """
 
 from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003  # Pydantic resolves timestamp schema types at runtime.
-from re import fullmatch
 from typing import Annotated, Literal
 from uuid import UUID  # noqa: TC003  # Pydantic resolves UUID schema types at runtime.
 
@@ -20,8 +19,6 @@ from omym2.domain.models.operation import (  # Pydantic resolves enum schema typ
 
 INVALID_REFRESH_TARGET_MESSAGE = "Refresh target_path must be set exactly for file or directory targets."
 INVALID_OPERATION_RESOURCE_MESSAGE = "Operation resource fields do not match its lifecycle status."
-INVALID_OPERATION_PROGRESS_MESSAGE = "Operation progress counts must be a valid nullable pair."
-INVALID_OPERATION_STAGE_MESSAGE = "Operation progress stage_code must be stable snake_case."
 INVALID_OPERATION_RESULT_MESSAGE = "Operation result does not match its kind or durable associations."
 EMPTY_OPERATION_PATH_MESSAGE = "Operation path fields must not be empty."
 
@@ -34,30 +31,6 @@ class OperationRef(ApiModel):
     status: OperationStatus
     status_url: str
     poll_after_ms: int = Field(gt=0)
-
-
-class OperationProgressResource(ApiModel):
-    """Display-safe durable progress without fabricated percentages."""
-
-    stage_code: str | None
-    completed_units: int | None
-    total_units: int | None
-    message: str | None
-
-    @model_validator(mode="after")
-    def validate_progress(self) -> OperationProgressResource:
-        """Reject partial, negative, decreasing, or unstable-code progress evidence."""
-        if self.stage_code is not None and fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", self.stage_code) is None:
-            raise ValueError(INVALID_OPERATION_STAGE_MESSAGE)
-        if (self.completed_units is None) != (self.total_units is None):
-            raise ValueError(INVALID_OPERATION_PROGRESS_MESSAGE)
-        if (
-            self.completed_units is not None
-            and self.total_units is not None
-            and (self.completed_units < 0 or self.total_units < 0 or self.completed_units > self.total_units)
-        ):
-            raise ValueError(INVALID_OPERATION_PROGRESS_MESSAGE)
-        return self
 
 
 class PlanCreatedResultResource(ApiModel):
@@ -108,7 +81,6 @@ class OperationResource(ApiModel):
     library_id: UUID | None
     plan_id: UUID | None
     run_id: UUID | None
-    progress: OperationProgressResource
     result: OperationResultResource | None
     error: ApiError | None
     requested_at: datetime

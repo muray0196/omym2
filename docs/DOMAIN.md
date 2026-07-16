@@ -3,7 +3,7 @@ type: Domain Model
 title: Domain
 description: Defines OMYM2's core entities, including metadata, companion identity, trackless unprocessed-file evidence, Plan dependencies, durable mutations, snapshots, and UUIDv7 identity policy.
 tags: [domain-model, entities, invariants, artist-names, companions, unprocessed, operations, id-design]
-timestamp: 2026-07-16T04:51:16+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Domain
@@ -264,6 +264,11 @@ PathPolicy may normalize metadata values for path generation. Artist and album
 artist display values are resolved before rendering and passed explicitly;
 PathPolicy does not read AppConfig preferences or provider state. Source file
 extensions are normalized to lowercase when appended to generated paths.
+When sanitization is enabled, NFKC normalization, uniform unsafe-character
+replacement, UTF-8 component limits, Windows reserved-name protection, and
+extension preservation are current OMYM2 portability rules. They are not
+defined by output compatibility with another application. Exact behavior is
+authoritative in [the Config contract](contracts/config.md#pathpolicyconfig).
 
 PathPolicy is deterministic and does not perform I/O. It does not join paths with the Library root and does not check whether the target path exists. Target existence is handled by usecases through filesystem ports and CollisionPolicy.
 
@@ -643,9 +648,6 @@ Representative fields:
 * status
 * idempotency_key
 * request_fingerprint
-* stage_code (nullable)
-* completed_units / total_units (nullable pair)
-* progress_message (nullable and redacted)
 * result (nullable typed union)
 * error_code / error_message (nullable and redacted)
 * plan_id / run_id (nullable durable links)

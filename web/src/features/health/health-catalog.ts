@@ -1,12 +1,12 @@
 /**
- * Summary: Maps persisted Check catalogs to visible labels and neutral unknown fallbacks.
- * Why: Makes findings understandable without branching on display text.
+ * Summary: Maps closed persisted Check catalogs to visible labels and tones.
+ * Why: Gives every coordinated generated enum value an exhaustive presentation.
  */
-import { healthCopy } from "./health-copy";
-import type { CheckIssueType } from "../../api/generated";
+import type { CheckIssueGrouping, CheckIssueType } from "../../api/generated";
+import { catalogValueOrThrow } from "../../ui/catalog";
 import type { IconName } from "../../ui/icon";
 
-export type HealthTone = "warning" | "danger" | "neutral";
+export type HealthTone = "warning" | "danger";
 export type HealthCatalogPresentation = {
   icon: IconName;
   label: string;
@@ -146,7 +146,7 @@ const GROUP_LABELS = {
   artist_album: "Artist and album",
   suggested_command: "Suggested command",
   library_id: "Library ID",
-} as const;
+} as const satisfies Record<CheckIssueGrouping, string>;
 
 export function issueTypeLabel(value: string) {
   return issueTypePresentation(value).label;
@@ -155,27 +155,19 @@ export function issueTypeLabel(value: string) {
 export function issueTypePresentation(
   value: string,
 ): HealthCatalogPresentation {
-  return (
-    ISSUE_PRESENTATIONS[value as CheckIssueType] ?? {
-      icon: "info",
-      label: `${healthCopy.unknown.issueType}: ${value}`,
-      meaning: `No bundled presentation is available for the raw stable code ${value}.`,
-      tone: "neutral",
-    }
-  );
+  return catalogValueOrThrow("Check issue type", value, ISSUE_PRESENTATIONS);
 }
 
 export function groupingLabel(value: string) {
-  return (
-    GROUP_LABELS[value as keyof typeof GROUP_LABELS] ??
-    `${healthCopy.unknown.grouping}: ${value}`
-  );
+  return catalogValueOrThrow("Check grouping", value, GROUP_LABELS);
 }
 
 export function healthGroupValueLabel(
-  groupBy: string,
+  groupBy: CheckIssueGrouping,
   key: string,
   serverLabel: string,
 ) {
-  return groupBy === "issue_type" ? issueTypeLabel(key) : serverLabel;
+  return groupBy === "issue_type"
+    ? catalogValueOrThrow("Check issue type", key, ISSUE_PRESENTATIONS).label
+    : serverLabel;
 }

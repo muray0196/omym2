@@ -21,7 +21,6 @@ from omym2.adapters.fs.win32_file_handles import (
     WIN32_FILE_FLAG_BACKUP_SEMANTICS,
     WIN32_FILE_FLAG_OPEN_REPARSE_POINT,
     WIN32_FILE_READ_ATTRIBUTES,
-    WIN32_FILE_SHARE_DELETE,
     WIN32_FILE_SHARE_READ,
     WIN32_FILE_SHARE_WRITE,
     WIN32_FILE_WRITE_ATTRIBUTES,
@@ -43,6 +42,7 @@ FILE_ID = bytes(range(16))
 VOLUME_SERIAL_NUMBER = 7
 DESCRIPTOR_CONVERSION_MESSAGE = "descriptor conversion failed"
 FILE_DISPOSITION_INFO_SIZE = 1
+FILE_SHARE_DELETE_FLAG = 0x00000004
 FILE_STANDARD_DIRECTORY_OFFSET = 21
 FILE_STANDARD_INFO_SIZE = 24
 FILE_STANDARD_PENDING_OFFSET = 20
@@ -242,7 +242,7 @@ def test_backend_opens_directory_with_no_follow_and_no_delete_sharing(tmp_path: 
     assert opened_path == str(directory_path)
     assert disposition == WIN32_OPEN_EXISTING
     assert share_mode == WIN32_FILE_SHARE_READ | WIN32_FILE_SHARE_WRITE
-    assert not share_mode & WIN32_FILE_SHARE_DELETE
+    assert not share_mode & FILE_SHARE_DELETE_FLAG
     assert flags == WIN32_FILE_FLAG_OPEN_REPARSE_POINT | WIN32_FILE_FLAG_BACKUP_SEMANTICS
     assert api.closed_handles == [NATIVE_HANDLE]
 
@@ -276,8 +276,8 @@ def test_backend_uses_stricter_sharing_and_attribute_access_for_mutation_handles
     assert source_access & (WIN32_GENERIC_READ | WIN32_FILE_READ_ATTRIBUTES | WIN32_FILE_WRITE_ATTRIBUTES)
     assert source_share == WIN32_FILE_SHARE_READ
     assert target_share == WIN32_FILE_SHARE_READ
-    assert not source_share & (WIN32_FILE_SHARE_WRITE | WIN32_FILE_SHARE_DELETE)
-    assert not target_share & (WIN32_FILE_SHARE_WRITE | WIN32_FILE_SHARE_DELETE)
+    assert not source_share & (WIN32_FILE_SHARE_WRITE | FILE_SHARE_DELETE_FLAG)
+    assert not target_share & (WIN32_FILE_SHARE_WRITE | FILE_SHARE_DELETE_FLAG)
 
 
 def test_readonly_exact_delete_clears_attribute_through_retained_handle(tmp_path: Path) -> None:
@@ -510,7 +510,6 @@ def _kernel_identity(
         size=0,
         creation_time_100ns=0,
         last_write_time_100ns=0,
-        change_time_100ns=0,
         attributes=attributes,
         reparse_tag=reparse_tag,
         is_directory=is_directory,

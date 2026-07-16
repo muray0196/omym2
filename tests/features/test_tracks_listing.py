@@ -168,7 +168,7 @@ def test_get_track_status_facets_orders_count_desc_then_value_asc_and_sums_to_to
 
 
 def test_group_tracks_orders_count_desc_then_key_asc_with_unknown_fallback() -> None:
-    """Groups are ordered count DESC, key ASC; missing artist/album falls back to '(unknown)'."""
+    """Artist groups are ordered count DESC, key ASC with an unknown fallback."""
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library(LIBRARY_ID))
     uow.tracks.save(
@@ -204,12 +204,12 @@ def test_group_tracks_orders_count_desc_then_key_asc_with_unknown_fallback() -> 
         )
     )
 
-    page = GroupTracksUseCase(TracksPorts(uow)).execute(GroupTracksRequest(grouping=TrackGrouping.ARTIST_ALBUM))
+    page = GroupTracksUseCase(TracksPorts(uow)).execute(GroupTracksRequest(grouping=TrackGrouping.ARTIST))
 
     assert [(group.key, group.label, group.count) for group in page.items] == [
-        ("Nova\x1fDawn", "Nova — Dawn", 2),
-        ("(unknown)\x1f(unknown)", "(unknown) — (unknown)", 1),
-        ("Echo Collective\x1fDusk", "Echo Collective — Dusk", 1),
+        ('["Nova"]', "Nova", 2),
+        ('["(unknown)"]', "(unknown)", 1),
+        ('["Echo Collective"]', "Echo Collective", 1),
     ]
     assert page.total == GROUPED_TRACK_GROUP_TOTAL
 
@@ -228,7 +228,7 @@ def test_group_tracks_paginates_with_count_then_key_keyset() -> None:
     for _ in range(3):
         page = usecase.execute(
             GroupTracksRequest(
-                grouping=TrackGrouping.ARTIST_ALBUM,
+                grouping=TrackGrouping.ARTIST,
                 page=PageRequest(limit=1, cursor_key=cursor),
             )
         )
@@ -238,7 +238,7 @@ def test_group_tracks_paginates_with_count_then_key_keyset() -> None:
             break
         cursor = page.next_cursor_key
 
-    assert visited_keys == ["Nova\x1f(unknown)", "Echo\x1f(unknown)"]
+    assert visited_keys == ['["Nova"]', '["Echo"]']
 
 
 def test_group_tracks_hierarchy_derives_metadata_keys_labels_and_parent_scopes() -> None:

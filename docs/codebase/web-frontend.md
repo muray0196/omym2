@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Defines the bundled desktop React and Vite Web frontend contract, including routes, artist-name settings and Plan diagnostics, design rules, API boundaries, browser and native-window serving, packaging, security, and performance gates.
 tags: [web-frontend, react, vite, static-spa, artist-names, desktop, windows, performance]
-timestamp: 2026-07-16T00:44:26+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Web Frontend
@@ -234,8 +234,10 @@ The backend returns operation `capabilities` and structured
 mutations from entity status. Displayed capabilities are revalidated by the
 backend when a mutation is accepted.
 
-Known labels and required unknown-value behavior are authoritative in the
-[status presentation contract](../contracts/status-reason-catalog.md#status-presentation-contract).
+Closed catalog labels are exhaustive and fail explicitly when a mapping is
+missing. Raw-value fallback is permitted only for fields whose contract is
+explicitly open, such as `FileEvent.error_code`; the details are authoritative
+in the [status presentation contract](../contracts/status-reason-catalog.md#status-presentation-contract).
 
 Cursors are opaque. The frontend passes `next_cursor` unchanged and never
 parses, constructs, or derives meaning from it. Full UUIDs are authoritative;

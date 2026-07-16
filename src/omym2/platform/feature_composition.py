@@ -31,7 +31,7 @@ from omym2.features.refresh.ports import CreateRefreshPlanPorts
 from omym2.features.settings.ports import SettingsPorts
 from omym2.features.tracks.ports import TracksPorts
 from omym2.features.undo.ports import CreateUndoPlanPorts
-from omym2.platform.artist_name_composition import plan_artist_name_resolver_for
+from omym2.platform.artist_name_composition import artist_name_resolver_for
 from omym2.platform.logging_composition import resolve_log_file
 
 if TYPE_CHECKING:
@@ -107,11 +107,12 @@ def build_create_add_plan_ports(runtime: RuntimeContext) -> CreateAddPlanPorts:
         source_inventory_reader=FilesystemSourceInventoryReader(),
         file_presence=FilesystemFilePresence(),
         config_store=runtime.config_store,
-        artist_name_resolver=plan_artist_name_resolver_for(
+        artist_name_resolver=artist_name_resolver_for(
             runtime.database_file,
-            runtime.artist_name_runtime,
-            config.musicbrainz,
-            config.fasttext,
+            runtime.artist_name_runtime.language_predictor_for(config.fasttext),
+            runtime.artist_name_runtime.provider_for(config.musicbrainz),
+            automatic_lookup_enabled=config.musicbrainz.enabled,
+            minimum_confidence=config.fasttext.minimum_confidence,
         ),
         path_resolver=FilesystemPathResolver(),
         clock=clock,
@@ -207,11 +208,12 @@ def build_create_organize_plan_ports(runtime: RuntimeContext) -> CreateOrganizeP
         source_inventory_reader=FilesystemSourceInventoryReader(),
         file_presence=FilesystemFilePresence(),
         config_store=runtime.config_store,
-        artist_name_resolver=plan_artist_name_resolver_for(
+        artist_name_resolver=artist_name_resolver_for(
             runtime.database_file,
-            runtime.artist_name_runtime,
-            config.musicbrainz,
-            config.fasttext,
+            runtime.artist_name_runtime.language_predictor_for(config.fasttext),
+            runtime.artist_name_runtime.provider_for(config.musicbrainz),
+            automatic_lookup_enabled=config.musicbrainz.enabled,
+            minimum_confidence=config.fasttext.minimum_confidence,
         ),
         path_resolver=FilesystemPathResolver(),
         clock=clock,
@@ -239,11 +241,12 @@ def build_create_refresh_plan_ports(runtime: RuntimeContext) -> CreateRefreshPla
         file_stat_reader=FilesystemFileScanner(),
         file_presence=FilesystemFilePresence(),
         config_store=runtime.config_store,
-        artist_name_resolver=plan_artist_name_resolver_for(
+        artist_name_resolver=artist_name_resolver_for(
             runtime.database_file,
-            runtime.artist_name_runtime,
-            config.musicbrainz,
-            config.fasttext,
+            runtime.artist_name_runtime.language_predictor_for(config.fasttext),
+            runtime.artist_name_runtime.provider_for(config.musicbrainz),
+            automatic_lookup_enabled=config.musicbrainz.enabled,
+            minimum_confidence=config.fasttext.minimum_confidence,
         ),
         path_resolver=FilesystemPathResolver(),
         clock=clock,

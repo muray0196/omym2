@@ -22,7 +22,6 @@ export const normalBootstrap = {
       is_path_policy_current: true,
     },
     active_operation_id: null,
-    app_version: "0.1.0-test",
     config_validation: {
       config_revision: "fixture-config-revision",
       errors: [],
@@ -38,7 +37,6 @@ export const normalBootstrap = {
       can_start_operations: true,
       disabled_reasons: [],
     },
-    status_catalog_version: 3,
   },
   errors: [],
 } satisfies ApiEnvelopeBootstrapData;
@@ -112,7 +110,6 @@ export const degradedBootstrap = {
   data: {
     active_library: null,
     active_operation_id: null,
-    app_version: "0.1.0-test",
     config_validation: {
       config_revision: "fixture-invalid-config-revision",
       errors: [configInvalidError],
@@ -132,7 +129,6 @@ export const degradedBootstrap = {
         configInvalidOrganizeCapabilityError,
       ],
     },
-    status_catalog_version: 3,
   },
   errors: [configInvalidError],
 } satisfies ApiEnvelopeBootstrapData;

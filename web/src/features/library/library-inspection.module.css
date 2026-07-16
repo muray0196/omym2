@@ -118,7 +118,6 @@
 }
 
 .sectionHeader,
-.rowHeader,
 .groupHeader {
   align-items: center;
   display: flex;
@@ -219,10 +218,7 @@
 .trackTitle,
 .trackArtist,
 .path,
-.identifier,
-.resultCount,
 .subtle,
-.selectedGroup,
 .inlineError p {
   margin: 0;
 }
@@ -240,14 +236,7 @@
   font-size: 13px;
 }
 
-.resultCount {
-  color: var(--color-mute);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
 .path,
-.identifier,
 .monoValue {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
@@ -258,11 +247,6 @@
   font-size: 13px;
 }
 
-.identifier {
-  color: var(--color-mute);
-  font-size: 12px;
-}
-
 .monoValue {
   font-size: 13px;
 }
@@ -271,17 +255,6 @@
   color: var(--color-mute);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-}
-
-.selectedGroup {
-  color: var(--color-blue);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.paginationRow {
-  display: flex;
-  justify-content: flex-end;
 }
 
 .inlineError {
@@ -408,24 +381,6 @@
   border-radius: 0;
   margin: 0;
   padding: var(--space-24) var(--space-16);
-}
-
-.error {
-  border-color: var(--color-red);
-  justify-items: start;
-  text-align: left;
-}
-
-.error h2 {
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.error ul {
-  color: var(--color-body);
-  font-size: 13px;
-  margin: 0;
-  padding-left: var(--space-16);
 }
 
 @media (max-width: 767px) {

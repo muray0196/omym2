@@ -1,13 +1,12 @@
 """
 Summary: Defines durable background Operation lifecycle records.
-Why: Preserves accepted request identity, progress, results, and interruption across process loss.
+Why: Preserves accepted request identity, lifecycle, results, and interruption across process loss.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from re import fullmatch
 from typing import TYPE_CHECKING
 
 from omym2.shared.time import as_utc
@@ -21,9 +20,6 @@ if TYPE_CHECKING:
 INVALID_OPERATION_TRANSITION_MESSAGE = "Operation status transition is not allowed."
 INVALID_OPERATION_STATE_MESSAGE = "Operation fields do not match its lifecycle status."
 INVALID_OPERATION_TIME_ORDER_MESSAGE = "Operation timestamps must be monotonic."
-INVALID_OPERATION_PROGRESS_MESSAGE = "Operation progress counts must be a valid nullable pair."
-INVALID_OPERATION_PROGRESS_ORDER_MESSAGE = "Operation progress counts must be monotonic within one stage."
-INVALID_OPERATION_STAGE_CODE_MESSAGE = "Operation stage_code must be stable snake_case."
 INVALID_OPERATION_RESULT_MESSAGE = "Operation result does not match its kind or durable associations."
 INVALID_OPERATION_ERROR_MESSAGE = "Operation error does not match its terminal status."
 EMPTY_OPERATION_IDENTITY_MESSAGE = "Operation idempotency and fingerprint values must not be empty."
@@ -128,29 +124,6 @@ type OperationResult = PlanCreatedResult | RegisteredWithoutPlanResult | CheckCo
 
 
 @dataclass(frozen=True, slots=True)
-class OperationProgress:
-    """One durable, display-safe progress snapshot."""
-
-    stage_code: str | None = None
-    completed_units: int | None = None
-    total_units: int | None = None
-    message: str | None = None
-
-    def __post_init__(self) -> None:
-        """Validate open stage codes and real, bounded progress counts."""
-        if self.stage_code is not None and fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", self.stage_code) is None:
-            raise ValueError(INVALID_OPERATION_STAGE_CODE_MESSAGE)
-        if (self.completed_units is None) != (self.total_units is None):
-            raise ValueError(INVALID_OPERATION_PROGRESS_MESSAGE)
-        if (
-            self.completed_units is not None
-            and self.total_units is not None
-            and (self.completed_units < 0 or self.total_units < 0 or self.completed_units > self.total_units)
-        ):
-            raise ValueError(INVALID_OPERATION_PROGRESS_MESSAGE)
-
-
-@dataclass(frozen=True, slots=True)
 class OperationRemediation:
     """Optional display-safe recovery guidance for a terminal Operation error."""
 
@@ -194,7 +167,6 @@ class Operation:
     library_id: LibraryId | None = None
     plan_id: PlanId | None = None
     run_id: RunId | None = None
-    progress: OperationProgress = field(default_factory=OperationProgress)
     result: OperationResult | None = None
     error: OperationError | None = None
     started_at: datetime | None = None
@@ -258,26 +230,6 @@ class Operation:
         if self.status is not OperationStatus.QUEUED:
             raise ValueError(INVALID_OPERATION_TRANSITION_MESSAGE)
         return replace(self, status=OperationStatus.RUNNING, started_at=started_at, updated_at=started_at)
-
-    def update_progress(self, progress: OperationProgress, updated_at: datetime) -> Operation:
-        """Return this running Operation with a newer durable progress snapshot."""
-        if self.status is not OperationStatus.RUNNING:
-            raise ValueError(INVALID_OPERATION_TRANSITION_MESSAGE)
-        if as_utc(updated_at) < self.updated_at:
-            raise ValueError(INVALID_OPERATION_TIME_ORDER_MESSAGE)
-        if (
-            self.progress.stage_code == progress.stage_code
-            and self.progress.completed_units is not None
-            and self.progress.total_units is not None
-            and progress.completed_units is not None
-            and progress.total_units is not None
-            and (
-                progress.completed_units < self.progress.completed_units
-                or progress.total_units < self.progress.total_units
-            )
-        ):
-            raise ValueError(INVALID_OPERATION_PROGRESS_ORDER_MESSAGE)
-        return replace(self, progress=progress, updated_at=updated_at)
 
     def mark_succeeded(
         self,

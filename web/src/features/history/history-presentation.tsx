@@ -2,6 +2,11 @@
  * Summary: Presents Run and FileEvent statuses as text-backed evidence badges.
  * Why: Avoids color-only meaning and preserves unknown server values.
  */
+import type {
+  FileEventStatus,
+  FileEventType,
+  RunStatus,
+} from "../../api/generated";
 import {
   eventStatusIcon,
   eventStatusLabel,
@@ -15,7 +20,7 @@ import {
 import { Icon, type IconName } from "../../ui/icon";
 import styles from "../inspection/inspection.module.css";
 
-export function RunStatusBadge({ value }: { value: string }) {
+export function RunStatusBadge({ value }: { value: RunStatus }) {
   return (
     <EvidenceBadge
       icon={runStatusIcon(value)}
@@ -25,7 +30,7 @@ export function RunStatusBadge({ value }: { value: string }) {
   );
 }
 
-export function EventStatusBadge({ value }: { value: string }) {
+export function EventStatusBadge({ value }: { value: FileEventStatus }) {
   return (
     <EvidenceBadge
       label={eventStatusLabel(value)}
@@ -35,7 +40,7 @@ export function EventStatusBadge({ value }: { value: string }) {
   );
 }
 
-export function EventTypeValue({ value }: { value: string }) {
+export function EventTypeValue({ value }: { value: FileEventType }) {
   const presentation = eventTypePresentation(value);
   return (
     <EvidenceBadge
@@ -64,9 +69,14 @@ function EvidenceBadge({
 }
 
 function toneClass(tone: EvidenceTone) {
-  if (tone === "success") return styles.success;
-  if (tone === "warning") return styles.warningTone;
-  if (tone === "danger") return styles.danger;
-  if (tone === "info") return styles.info;
-  return styles.neutral;
+  switch (tone) {
+    case "success":
+      return styles.success;
+    case "warning":
+      return styles.warningTone;
+    case "danger":
+      return styles.danger;
+    case "info":
+      return styles.info;
+  }
 }

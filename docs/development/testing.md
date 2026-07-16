@@ -3,7 +3,7 @@ type: Development Guide
 title: Testing
 description: Defines OMYM2's Python, frontend, browser, architecture, integration, retained-object filesystem, native Windows, provider/companion/unprocessed fixture, rollback, and CI test policy.
 tags: [testing, pytest, vitest, playwright, desktop, windows, architecture-tests, fixtures, musicbrainz, companions, unprocessed, rollback]
-timestamp: 2026-07-16T06:02:32+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Testing
@@ -84,13 +84,14 @@ behavior rather than DOM class names or component internals.
 
 Required coverage includes:
 
-* status, capability, and structured-error presentation, including unknown-value fallbacks
+* status, capability, and structured-error presentation, with exhaustive maps
+  for coordinated closed enums and explicit failure for impossible values
 * cursor reset and URL synchronization when query, filters, grouping, sort, or selection changes
 * loading, empty, degraded, disconnected, validation, conflict, and unexpected-error states
 * CSRF attachment and the one explicitly safe Bootstrap-refresh retry
 * Settings diff, unsaved-draft protection, and Config revision conflicts
 * keyboard navigation, focus restoration, live-region announcements, and reduced motion
-* operation polling, progress changes, terminal results, interruption, expiration, and loss of connectivity
+* operation status polling, terminal results, interruption, expiration, and loss of connectivity
 
 MSW handlers and fixtures must implement the same generated API types consumed
 by production code. Handwritten fixture shapes must fail type checking when the
@@ -176,14 +177,14 @@ Contract changes require tests for the changed behavior.
 
 | Contract change | Required test focus |
 | --- | --- |
-| Config contract | config load, save, validation, defaults, and migration behavior; include Web settings JSON serialization and parsing when that boundary changes |
-| DB schema contract | migrations, repositories, constraints, stored JSON, timestamps, and path representation |
+| Config contract | current-version load, save, validation, defaults, reset rejection, and Web settings JSON serialization/parsing |
+| DB schema contract | clean baseline and future migrations, old-state rejection, repositories, constraints, stored JSON, timestamps, and path representation |
 | Path identity contract | path normalization, relink, Library, Track, and CompanionAsset identity, unprocessed retained-root/protected-path rules, Library-root-relative persistence, and the POSIX descriptor/native Windows retained-HANDLE observation and mutation boundary |
-| Status catalog | state transitions, failure behavior, persistence of allowed values, catalog-version bump, and old-client refusal |
+| Status catalog | state transitions, failure behavior, persistence of allowed values, and exhaustive bundled-client presentation |
 | Execution contract | Plan, PlanAction dependencies, Run, typed FileEvents, apply order, companion failure/recovery, unprocessed collection/reversal, and undo/refresh/check behavior |
 | Architecture contract | dependency-boundary tests and source naming tests |
 | Web API contract | route-level request and response JSON shapes, success and error status/envelopes, CSRF on state-changing routes, and affected filters, pagination, facets, or groups |
-| Durable operation contract | persistence, idempotency replay/conflict, progress, polling metadata, retention, restart interruption, and reconciliation |
+| Durable operation contract | persistence, idempotency replay/conflict, status polling metadata, retention, restart interruption, and reconciliation |
 | Exclusive operation contract | Web/CLI exclusion, crash release, 409 conflicts, atomic claims, and Apply/Cancel/Check/Settings race behavior |
 | Generated API contract | schema-only OpenAPI export, Pydantic/serializer agreement, committed TypeScript generation, and zero generation drift |
 
@@ -215,7 +216,7 @@ artwork-once ordering, dependencies, collisions, partial/pending failure,
 Check recovery classification, and Undo. Mutation fixtures must assert both
 no-overwrite behavior and the exact source/Library root boundary.
 
-### Unprocessed And Downgrade Fixtures
+### Unprocessed Fixtures
 
 Unprocessed tests use a temporary external source root, separate Library root,
 exact internal Config/data/log paths, regular leftovers, claimed audio and
@@ -237,16 +238,10 @@ CompanionAsset state. Separate cases retain pending evidence after simulated
 process loss, block Undo after content changes, preserve late-collision source
 and target bytes, and prove that neither direction removes empty directories.
 
-Downgrade/rollback validation starts from a matched Config/SQLite backup. It
-exercises Apply and Cancel for ready Plans containing each newer action family,
-keeps pending companion/unprocessed events manual-review-only, restores both
-stores together, and proves an older binary is never used to read or apply a
-Plan containing an unknown closed value.
-
 ### Web Fixture Catalog
 
 The bundled Web test boundary implements these canonical scenarios. Fixture
-IDs and entity IDs are fixed, full UUID values; timestamps, operation progress,
+IDs and entity IDs are fixed, full UUID values; timestamps, operation status,
 paths, hashes, counts, and ordering are deterministic.
 
 | Fixture | Required evidence |

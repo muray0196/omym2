@@ -11,7 +11,6 @@ export const libraryCopy = {
     searchLabel: "Search Tracks",
     searchPlaceholder: "Title, artist, album, path, or Track ID…",
     statusLabel: "Track status",
-    groupingLabel: "Group Tracks by",
     viewLabel: "Library view",
     tracksView: "Tracks",
     groupsView: "Browse groups",
@@ -28,7 +27,6 @@ export const libraryCopy = {
     noLibraryBody:
       "Follow the readiness guidance above before opening Library inspection.",
     loadError: "Library Tracks could not be loaded",
-    retry: "Try again",
     resultCount: "matching Tracks",
     facetsTitle: "Status facets",
     facetsError: "Status facets could not be loaded.",
@@ -56,7 +54,6 @@ export const libraryCopy = {
     notFoundBody:
       "This Track is not available in persisted Library state. Check the full Track ID and try again.",
     loadError: "Track detail could not be loaded",
-    retry: "Try again",
     identity: "Identity",
     paths: "Recorded paths",
     metadata: "Persisted metadata",
@@ -88,10 +85,6 @@ export const libraryCopy = {
     lastSeen: "Last seen",
     updated: "Updated",
     groupCount: "Tracks",
-  },
-  unknown: {
-    status: "Unknown status",
-    grouping: "Unknown grouping",
   },
   missingValue: "—",
 } as const;

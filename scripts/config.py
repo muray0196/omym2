@@ -98,7 +98,7 @@ DESKTOP_WINDOWS_LOG_RELATIVE_PATH = "OMYM2/.data/logs/omym2-desktop.log"  # LOCA
 DESKTOP_WINDOWS_CONFIG_RELATIVE_PATH = "OMYM2/.config/config.toml"  # LOCALAPPDATA-relative mutable Config file
 DESKTOP_WINDOWS_DATABASE_RELATIVE_PATH = "OMYM2/.data/omym2.sqlite3"  # LOCALAPPDATA-relative mutable SQLite file
 DESKTOP_WINDOWS_SMOKE_CONFIG_MARKER = (  # valid minimal Config used as a persistence marker, TOML text
-    "# OMYM2 packaged-smoke persistence marker\nversion = 1\n"
+    "# OMYM2 packaged-smoke persistence marker\nversion = 2\n"
 )
 DESKTOP_WINDOWS_SMOKE_PRIMARY_ROUTES = (  # production SPA routes exercised through the packaged listener
     "/",

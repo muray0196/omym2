@@ -1,6 +1,6 @@
 """
 Summary: Tests durable Operation lifecycle invariants.
-Why: Prevents invalid progress, results, errors, and timestamp combinations from reaching persistence.
+Why: Prevents invalid results, errors, and timestamp combinations from reaching persistence.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from omym2.domain.models.operation import (
     OperationError,
     OperationErrorCode,
     OperationKind,
-    OperationProgress,
     OperationStatus,
     OperationTombstone,
     PlanCreatedResult,
@@ -27,13 +26,9 @@ from omym2.shared.ids import CheckRunId, LibraryId, OperationId, PlanId, RunId
 
 BASE_TIME = datetime(2026, 7, 13, tzinfo=UTC)
 STARTED_TIME = BASE_TIME + timedelta(seconds=1)
-PROGRESS_TIME = STARTED_TIME + timedelta(seconds=1)
-COMPLETED_TIME = PROGRESS_TIME + timedelta(seconds=1)
+COMPLETED_TIME = STARTED_TIME + timedelta(seconds=1)
 RESULT_EXPIRY_TIME = COMPLETED_TIME + timedelta(hours=24)
 TOMBSTONE_EXPIRY_TIME = COMPLETED_TIME + timedelta(days=30)
-COMPLETED_UNITS = 2
-EARLIER_COMPLETED_UNITS = 1
-TOTAL_UNITS = 5
 TRACK_COUNT = 3
 ISSUE_COUNT = 1
 IDEMPOTENCY_KEY = UUID("1e53732d-4b41-4833-b27a-e3f58bcfc764")
@@ -47,16 +42,10 @@ REQUEST_FINGERPRINT = "request-fingerprint"
 
 
 def test_operation_transitions_from_queued_through_typed_success() -> None:
-    """A queued Plan operation records running progress and one linked typed result."""
+    """A queued Plan operation records running state and one linked typed result."""
     queued = _queued(OperationKind.ADD_PLAN)
-    progress = OperationProgress(
-        stage_code="inspect_files",
-        completed_units=COMPLETED_UNITS,
-        total_units=TOTAL_UNITS,
-        message="Inspecting files",
-    )
 
-    running = queued.mark_running(STARTED_TIME).update_progress(progress, PROGRESS_TIME)
+    running = queued.mark_running(STARTED_TIME)
     succeeded = running.mark_succeeded(
         result=PlanCreatedResult(PLAN_ID),
         completed_at=COMPLETED_TIME,
@@ -65,7 +54,6 @@ def test_operation_transitions_from_queued_through_typed_success() -> None:
     )
 
     assert succeeded.status is OperationStatus.SUCCEEDED
-    assert succeeded.progress == progress
     assert succeeded.plan_id == PLAN_ID
     assert succeeded.result == PlanCreatedResult(PLAN_ID)
     assert succeeded.error is None
@@ -82,86 +70,6 @@ def test_operation_result_types_validate_required_counts_and_ids() -> None:
         _ = CheckCompletedResult((), ISSUE_COUNT)
     with pytest.raises(ValueError, match="nonnegative"):
         _ = RegisteredWithoutPlanResult(LIBRARY_ID, -1)
-
-
-@pytest.mark.parametrize(
-    ("stage_code", "completed_units", "total_units", "message"),
-    [
-        pytest.param(
-            None,
-            COMPLETED_UNITS,
-            None,
-            "nullable pair",
-            id="half-null",
-        ),
-        pytest.param(
-            None,
-            TOTAL_UNITS,
-            COMPLETED_UNITS,
-            "nullable pair",
-            id="completed-over-total",
-        ),
-        pytest.param("Invalid Stage", None, None, "snake_case", id="invalid-stage"),
-    ],
-)
-def test_operation_progress_rejects_invalid_snapshots(
-    stage_code: str | None,
-    completed_units: int | None,
-    total_units: int | None,
-    message: str,
-) -> None:
-    """Progress accepts unknown snake_case stages but never partial or fabricated counts."""
-    with pytest.raises(ValueError, match=message):
-        _ = OperationProgress(
-            stage_code=stage_code,
-            completed_units=completed_units,
-            total_units=total_units,
-        )
-
-
-def test_operation_progress_accepts_unknown_stage_with_nullable_counts() -> None:
-    """An unknown stable stage remains pollable without fabricated percentage data."""
-    progress = OperationProgress(stage_code="new_worker_stage")
-
-    assert progress.stage_code == "new_worker_stage"
-    assert progress.completed_units is None
-    assert progress.total_units is None
-
-
-def test_operation_progress_counts_are_monotonic_within_one_stage() -> None:
-    """A worker may reset counts only by advancing to a different stable stage."""
-    running = (
-        _queued(OperationKind.CHECK)
-        .mark_running(STARTED_TIME)
-        .update_progress(
-            OperationProgress(
-                stage_code="inspect_files",
-                completed_units=COMPLETED_UNITS,
-                total_units=TOTAL_UNITS,
-            ),
-            PROGRESS_TIME,
-        )
-    )
-
-    with pytest.raises(ValueError, match="monotonic"):
-        _ = running.update_progress(
-            OperationProgress(
-                stage_code="inspect_files",
-                completed_units=EARLIER_COMPLETED_UNITS,
-                total_units=TOTAL_UNITS,
-            ),
-            COMPLETED_TIME,
-        )
-
-    next_stage = running.update_progress(
-        OperationProgress(
-            stage_code="persist_results",
-            completed_units=EARLIER_COMPLETED_UNITS,
-            total_units=TOTAL_UNITS,
-        ),
-        COMPLETED_TIME,
-    )
-    assert next_stage.progress.stage_code == "persist_results"
 
 
 def test_operation_rejects_result_for_wrong_kind() -> None:

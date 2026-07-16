@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import stat
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
@@ -36,7 +36,6 @@ from omym2.domain.models.run import RunStatus
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.add.dto import CreateAddPlanRequest
 from omym2.features.add.ports import CreateAddPlanPorts
@@ -46,15 +45,16 @@ from omym2.features.apply.ports import ApplyPlanPorts
 from omym2.features.apply.usecases.apply_plan import ApplyPlanUseCase
 from omym2.features.apply.usecases.claim_apply import ClaimApplyUseCase
 from omym2.features.common_ports import ConfigRevisionMismatchError, ConfigSnapshot, ConfigSnapshotState
-from omym2.features.history.dto import GetRunHeaderRequest, ListRunEventsRequest, ListRunsRequest
+from omym2.features.history.dto import GetRunDetailRequest, ListRunEventsRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
-from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase
+from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
 from omym2.features.history.usecases.list_run_events import ListRunEventsUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.inspect.dto import InspectFileRequest
 from omym2.features.inspect.ports import InspectFilePorts
 from omym2.features.inspect.usecases.inspect_file import InspectFileUseCase
 from omym2.shared.ids import ActionId, EventId, LibraryId, OperationId, PlanId, RunId, TrackId
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 from tests.fakes.runtime import (
     FixedClock,
     MappingArtistNameResolver,
@@ -142,7 +142,7 @@ def test_inspect_plan_apply_and_history_use_recorded_paths_with_concrete_adapter
 
     history_ports = HistoryPorts(SQLiteUnitOfWork(setup.database_file))
     runs = ListRunsUseCase(history_ports).execute(ListRunsRequest())
-    header = GetRunHeaderUseCase(history_ports).execute(GetRunHeaderRequest(run.run_id))
+    header = GetRunDetailUseCase(history_ports).execute(GetRunDetailRequest(run.run_id)).run
     event_page = ListRunEventsUseCase(history_ports).execute(ListRunEventsRequest(run_id=run.run_id))
 
     assert tuple(item.run_id for item in runs.items) == (run.run_id,)
@@ -410,7 +410,7 @@ def test_library_identity_survives_root_path_change_in_sqlite_storage(tmp_path: 
     with SQLiteUnitOfWork(database_file) as uow:
         library = uow.libraries.get(LIBRARY_ID)
         assert library is not None
-        uow.libraries.save(library.with_root_path(str(moved_root), BASE_TIME))
+        uow.libraries.save(replace(library, root_path=str(moved_root), updated_at=BASE_TIME))
         uow.commit()
 
     with SQLiteUnitOfWork(database_file) as uow:

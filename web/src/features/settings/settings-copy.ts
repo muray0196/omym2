@@ -11,7 +11,6 @@ export const settingsCopy = {
     "Edit paths, planning policy, integrations, and runtime controls. Save applies valid changes; Review changes previews the diff.",
   loading: "Loading Settings…",
   loadError: "Settings could not be loaded",
-  retry: "Try again",
   recoveryTitle: "Configuration recovery",
   recoveryBody:
     "The saved configuration is invalid. Fix this draft and choose Save Settings; valid changes apply immediately.",

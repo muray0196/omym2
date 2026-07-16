@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, assert_never, cast
 from uuid import UUID
 
 from omym2.config import PERSISTED_JSON_ITEM_SEPARATOR, PERSISTED_JSON_KEY_SEPARATOR
@@ -47,7 +47,6 @@ from omym2.domain.models.operation import (
     OperationErrorCode,
     OperationKind,
     OperationLookup,
-    OperationProgress,
     OperationRemediation,
     OperationResult,
     OperationResultKind,
@@ -108,8 +107,6 @@ INVALID_ROW_INTEGER_MESSAGE = "Expected SQLite integer value."
 INVALID_SUMMARY_VALUE_MESSAGE = "Persisted summary JSON must contain string values."
 INVALID_OPERATION_PAYLOAD_MESSAGE = "Persisted Operation JSON does not match its typed discriminant."
 LIKE_ESCAPE_CHAR = "\\"  # escape character used for LIKE search patterns
-UNSUPPORTED_TRACK_GROUPING_MESSAGE = "Unsupported Track grouping"
-TRACK_GROUP_FILTER_PAIRING_MESSAGE = "grouping and group_key must be provided together."
 KEYSET_CURSOR_KEY_LENGTH = 2  # every keyset cursor key in this module is a 2-tuple
 CHECK_ISSUE_CURSOR_KEY_LENGTH = 1  # a CheckIssue cursor key is a single issue_seq value
 TRACK_GROUP_MEMBER_CURSOR_KEY_LENGTH = 4  # grouped Track member cursor: rank, number, title, track ID
@@ -159,13 +156,6 @@ CHECK_ISSUE_EXTERNAL_PATH_CONDITION = """(
                         AND (substr(ci.path, 3, 1) = '/' OR substr(ci.path, 3, 1) = char(92))
                     )
                 )"""
-TRACK_GROUP_SOURCE_SELECT = """
-            SELECT
-                COALESCE(json_extract(metadata_json, '$.album_artist'), json_extract(metadata_json, '$.artist'), ?)
-                    AS group_artist,
-                COALESCE(json_extract(metadata_json, '$.album'), ?) AS group_album
-            FROM tracks
-"""
 CHECK_ISSUE_PATH_ROOT_SELECT = f"""
                 CASE
                     WHEN ci.path IS NULL OR ci.path = '' THEN NULL
@@ -383,10 +373,6 @@ OPERATION_SELECT_FROM = """
                 status,
                 idempotency_key,
                 request_fingerprint,
-                stage_code,
-                completed_units,
-                total_units,
-                progress_message,
                 result_kind,
                 result_json,
                 error_code,
@@ -893,8 +879,6 @@ class SQLiteTrackRepository(_SQLiteRepository):
         page: PageRequest,
     ) -> Page[Track]:
         """Return one keyset page of Tracks ordered (current_path, track_id)."""
-        if (grouping is None) != (group_key is None):
-            raise ValueError(TRACK_GROUP_FILTER_PAIRING_MESSAGE)
         if grouping is not None and group_key is not None:
             return self._group_member_page(
                 library_id,
@@ -1002,77 +986,7 @@ class SQLiteTrackRepository(_SQLiteRepository):
         status: TrackStatus | None = None,
     ) -> Page[GroupCount]:
         """Return one keyset page of Track groups ordered count DESC then key ASC."""
-        if grouping is TrackGrouping.ARTIST_ALBUM:
-            return self._legacy_artist_album_group_page(library_id, search, status, page)
         return self._hierarchy_group_page(library_id, grouping, parent_key, search, status, page)
-
-    def _legacy_artist_album_group_page(
-        self,
-        library_id: LibraryId | None,
-        search: str | None,
-        status: TrackStatus | None,
-        page: PageRequest,
-    ) -> Page[GroupCount]:
-        """Return the existing artist/album grouping without changing its key contract."""
-        where_sql, where_params = _track_filter_where(library_id, None, status, search)
-        source_params = [TRACK_GROUP_UNKNOWN_KEY, TRACK_GROUP_UNKNOWN_KEY, *where_params]
-
-        # SQL-injection safety note: TRACK_GROUP_SOURCE_SELECT and where_sql are static templates bound with `?`.
-        total = _scalar_int(
-            self._connection,
-            f"""
-            SELECT COUNT(*) FROM (
-                SELECT 1
-                FROM (
-                    {TRACK_GROUP_SOURCE_SELECT}
-                    {where_sql}
-                )
-                GROUP BY group_artist, group_album
-            )
-            """,  # noqa: S608
-            tuple(source_params),
-        )
-
-        cursor_sql, cursor_params = _track_group_cursor_clause(page.cursor_key)
-        # SQL-injection safety note: TRACK_GROUP_SOURCE_SELECT, where_sql, and cursor_sql are static templates
-        # bound with `?`; never raw input.
-        rows = _fetch_all(
-            self._connection,
-            f"""
-            SELECT key, label, count
-            FROM (
-                SELECT
-                    group_artist || char(31) || group_album AS key,
-                    group_artist || ? || group_album AS label,
-                    COUNT(*) AS count
-                FROM (
-                    {TRACK_GROUP_SOURCE_SELECT}
-                    {where_sql}
-                )
-                GROUP BY group_artist, group_album
-            )
-            {cursor_sql}
-            ORDER BY count DESC, key ASC
-            LIMIT ?
-            """,  # noqa: S608
-            (
-                TRACK_GROUP_LABEL_SEPARATOR,
-                TRACK_GROUP_UNKNOWN_KEY,
-                TRACK_GROUP_UNKNOWN_KEY,
-                *where_params,
-                *cursor_params,
-                page.limit + 1,
-            ),
-        )
-
-        groups = tuple(
-            GroupCount(key=_row_text(row, "key"), label=_row_text(row, "label"), count=_row_int(row, "count"))
-            for row in rows
-        )
-        page_items = groups[: page.limit]
-        has_more = len(groups) > page.limit
-        next_cursor_key = (str(page_items[-1].count), page_items[-1].key) if has_more else None
-        return Page(items=page_items, next_cursor_key=next_cursor_key, total=total)
 
     def _hierarchy_group_page(  # noqa: PLR0913  # Keeps hierarchy filtering aligned with Track lists.
         self,
@@ -1766,10 +1680,6 @@ class SQLiteOperationRepository(_SQLiteRepository):
                 status,
                 idempotency_key,
                 request_fingerprint,
-                stage_code,
-                completed_units,
-                total_units,
-                progress_message,
                 result_kind,
                 result_json,
                 error_code,
@@ -1781,7 +1691,7 @@ class SQLiteOperationRepository(_SQLiteRepository):
                 result_expires_at,
                 tombstone_expires_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(operation_id) DO UPDATE SET
                 library_id = excluded.library_id,
                 plan_id = excluded.plan_id,
@@ -1790,10 +1700,6 @@ class SQLiteOperationRepository(_SQLiteRepository):
                 status = excluded.status,
                 idempotency_key = excluded.idempotency_key,
                 request_fingerprint = excluded.request_fingerprint,
-                stage_code = excluded.stage_code,
-                completed_units = excluded.completed_units,
-                total_units = excluded.total_units,
-                progress_message = excluded.progress_message,
                 result_kind = excluded.result_kind,
                 result_json = excluded.result_json,
                 error_code = excluded.error_code,
@@ -1814,10 +1720,6 @@ class SQLiteOperationRepository(_SQLiteRepository):
                 operation.status.value,
                 str(operation.idempotency_key),
                 operation.request_fingerprint,
-                operation.progress.stage_code,
-                operation.progress.completed_units,
-                operation.progress.total_units,
-                operation.progress.message,
                 result_kind,
                 result_json,
                 error_code,
@@ -2370,12 +2272,6 @@ def _operation_from_row(row: sqlite3.Row) -> Operation:
         status=OperationStatus(_row_text(row, "status")),
         idempotency_key=UUID(_row_text(row, "idempotency_key")),
         request_fingerprint=_row_text(row, "request_fingerprint"),
-        progress=OperationProgress(
-            stage_code=_row_optional_text(row, "stage_code"),
-            completed_units=_row_optional_int(row, "completed_units"),
-            total_units=_row_optional_int(row, "total_units"),
-            message=_row_optional_text(row, "progress_message"),
-        ),
         result=_operation_result_from_row(row),
         error=_operation_error_from_row(row),
         requested_at=_timestamp_from_text(_row_text(row, "requested_at")),
@@ -2519,8 +2415,6 @@ def _track_group_member_source_sql(
     where_params: list[object],
 ) -> tuple[str, list[object]]:
     """Return a static source CTE for one exact Track group's members."""
-    if grouping is TrackGrouping.ARTIST_ALBUM:
-        return _legacy_artist_album_member_source_sql(where_sql, where_params)
     return _track_hierarchy_source_sql(
         grouping,
         where_sql,
@@ -2528,49 +2422,6 @@ def _track_group_member_source_sql(
         parent_key=None,
         apply_parent_scope=False,
     )
-
-
-def _legacy_artist_album_member_source_sql(
-    where_sql: str,
-    where_params: list[object],
-) -> tuple[str, list[object]]:
-    """Return the existing artist_album key derivation plus grouped-member ordering columns."""
-    source_sql = f"""
-            WITH base AS (
-                SELECT
-                    tracks.*,
-                    COALESCE(
-                        json_extract(metadata_json, '$.album_artist'),
-                        json_extract(metadata_json, '$.artist'),
-                        ?
-                    ) AS group_artist,
-                    COALESCE(json_extract(metadata_json, '$.album'), ?) AS group_album,
-                    CASE
-                        WHEN json_extract(metadata_json, '$.track_number') >= ? THEN ?
-                        ELSE ?
-                    END AS track_number_rank,
-                    CASE
-                        WHEN json_extract(metadata_json, '$.track_number') >= ?
-                            THEN json_extract(metadata_json, '$.track_number')
-                        ELSE ?
-                    END AS track_number_value,
-                    COALESCE(json_extract(metadata_json, '$.title'), '') AS track_title
-                FROM tracks
-                {where_sql}
-            ), source AS (
-                SELECT
-                    base.*,
-                    group_artist || char(31) || group_album AS group_key
-                FROM base
-            )
-    """  # noqa: S608  # where_sql is built only from static clauses and bound values
-    params = [
-        TRACK_GROUP_UNKNOWN_KEY,
-        TRACK_GROUP_UNKNOWN_KEY,
-        *_track_group_member_order_params(),
-        *where_params,
-    ]
-    return source_sql, params
 
 
 def _track_hierarchy_source_sql(
@@ -2688,8 +2539,7 @@ def _track_hierarchy_group_expressions(grouping: TrackGrouping) -> tuple[str, st
                 TRACK_GROUP_DISC_LABEL_PREFIX,
             ),
         )
-    unsupported_grouping_message = f"{UNSUPPORTED_TRACK_GROUPING_MESSAGE}: {grouping}"
-    raise ValueError(unsupported_grouping_message)
+    assert_never(grouping)
 
 
 def _track_hierarchy_parent_clause(
@@ -2703,8 +2553,7 @@ def _track_hierarchy_parent_clause(
         return " WHERE artist_key = ?", [parent_key]
     if grouping is TrackGrouping.DISC:
         return " WHERE album_key = ?", [parent_key]
-    unsupported_grouping_message = f"{UNSUPPORTED_TRACK_GROUPING_MESSAGE}: {grouping}"
-    raise ValueError(unsupported_grouping_message)
+    assert_never(grouping)
 
 
 def _track_group_member_cursor_clause(cursor_key: tuple[str, ...] | None) -> tuple[str, list[object]]:

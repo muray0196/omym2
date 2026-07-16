@@ -1,5 +1,5 @@
 /**
- * Summary: Styles the shared durable Operation progress surface.
+ * Summary: Styles the shared durable Operation status surface.
  * Why: Keeps asynchronous state readable without relying on color alone.
  */
 .panel {
@@ -82,10 +82,6 @@
   color: var(--color-red);
 }
 
-.toneNeutral {
-  color: var(--color-mute);
-}
-
 .operationId {
   color: var(--color-mute);
   font-family: var(--font-mono);
@@ -103,13 +99,6 @@
 .catalogMeaning {
   color: var(--color-body);
   font-size: 13px;
-}
-
-.stageCode {
-  color: var(--color-ink);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  overflow-wrap: anywhere;
 }
 
 .warning,

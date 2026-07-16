@@ -125,16 +125,16 @@ describe("PlanDetail", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: /^Unknown status: fixture-group-planned/,
+        name: /^Planned/,
       }),
     );
     await waitFor(() => {
       const parameters = new URLSearchParams(router.state.location.search);
-      expect(parameters.get("group_key")).toBe("fixture-group-planned");
+      expect(parameters.get("group_key")).toBe("planned");
     });
   });
 
-  it("renders null names and preserves unknown diagnostic catalog values", async () => {
+  it("renders null names with closed diagnostic catalog values", async () => {
     const [action] = readyPlanActionsFirstPage.data.items;
     if (action === undefined) {
       throw new Error("The Plan action fixture must not be empty.");
@@ -148,8 +148,8 @@ describe("PlanDetail", () => {
                 ...action,
                 artist_name_diagnostics: {
                   artist: {
-                    issue: "future_issue",
-                    provenance: "future_provenance",
+                    issue: "missing_source",
+                    provenance: "original",
                     resolved_name: null,
                     source_name: null,
                   },
@@ -175,13 +175,11 @@ describe("PlanDetail", () => {
     });
     const artistNaming = within(artistNamingHeading.parentElement!);
     expect(artistNaming.getAllByText("—")).toHaveLength(2);
-    expect(
-      artistNaming.getByText(/Unknown provenance: future_provenance/),
-    ).toBeVisible();
-    expect(artistNaming.getByText(/Unknown issue: future_issue/)).toBeVisible();
+    expect(artistNaming.getAllByText("Original metadata")).toHaveLength(2);
+    expect(artistNaming.getByText("Missing source name")).toBeVisible();
   });
 
-  it("starts Apply once, polls durable progress, and opens the completed Run in History", async () => {
+  it("starts Apply once, polls durable status, and opens the completed Run in History", async () => {
     const applyHeaders: Headers[] = [];
     let operationReads = 0;
     server.use(

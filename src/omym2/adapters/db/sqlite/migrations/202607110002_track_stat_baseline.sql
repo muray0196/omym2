@@ -1,6 +1,0 @@
-ALTER TABLE tracks
-ADD COLUMN size INTEGER
-CHECK (size IS NULL OR size >= 0);
-
-ALTER TABLE tracks
-ADD COLUMN mtime TEXT;

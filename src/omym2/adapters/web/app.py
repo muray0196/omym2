@@ -53,8 +53,6 @@ from omym2.config import (
     WEB_CORRELATION_HEADER_NAME,
     WEB_CSP_HEADER_NAME,
     WEB_CSRF_HEADER_NAME,
-    WEB_FRAME_OPTIONS,
-    WEB_FRAME_OPTIONS_HEADER_NAME,
     WEB_HTML_ACCEPT_MEDIA_TYPE,
     WEB_INDEX_CACHE_CONTROL,
     WEB_METHOD_NOT_ALLOWED_MESSAGE,
@@ -264,7 +262,6 @@ def _set_common_response_headers(response: Response, correlation_id: str) -> Non
     response.headers[WEB_CSP_HEADER_NAME] = WEB_CONTENT_SECURITY_POLICY
     response.headers[WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME] = WEB_CONTENT_TYPE_OPTIONS_VALUE
     response.headers[WEB_REFERRER_POLICY_HEADER_NAME] = WEB_REFERRER_POLICY
-    response.headers[WEB_FRAME_OPTIONS_HEADER_NAME] = WEB_FRAME_OPTIONS
 
 
 def _api_failure(

@@ -47,25 +47,18 @@ export const historyCopy = {
   },
   pending:
     "Outcome unknown. Run Health and review this event manually; OMYM2 will not repair it automatically.",
-  retry: "Try again",
   labels: {
-    runId: "Run ID",
     planId: "Plan ID",
     libraryId: "Library ID",
-    status: "Status",
     started: "Started",
     completed: "Completed",
-    eventId: "Event ID",
     actionId: "PlanAction ID",
     companionAssetId: "Companion asset ID",
     source: "Source path",
     target: "Target path",
     error: "Recorded error",
-    activeOperation: "Active Operation ID",
   },
   unknown: {
-    status: "Unknown status",
-    eventType: "Unknown event type",
     errorCode: "Unknown error code",
   },
 } as const;

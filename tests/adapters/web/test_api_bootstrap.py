@@ -24,7 +24,6 @@ from omym2.config import (
     WEB_CONTENT_SECURITY_POLICY,
     WEB_CORRELATION_HEADER_NAME,
     WEB_CSP_HEADER_NAME,
-    WEB_STATUS_CATALOG_VERSION,
 )
 from omym2.domain.models.library import Library, LibraryStatus
 from omym2.domain.services.config_fingerprint import calculate_path_policy_fingerprint
@@ -120,7 +119,6 @@ def test_bootstrap_projects_one_current_library_as_ready(tmp_path: Path) -> None
     assert capabilities["can_start_operations"] is True
     assert capabilities["can_start_organize"] is True
     assert capabilities["disabled_reasons"] == []
-    assert data["status_catalog_version"] == WEB_STATUS_CATALOG_VERSION
     assert polling == {
         "initial_ms": int(OPERATION_POLL_INITIAL_SECONDS * MILLISECONDS_PER_SECOND),
         "backoff_factor": OPERATION_POLL_BACKOFF_FACTOR,
@@ -182,7 +180,6 @@ def test_bootstrap_response_has_security_and_correlation_headers(tmp_path: Path)
     assert response.headers[WEB_CORRELATION_HEADER_NAME]
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["Referrer-Policy"] == "no-referrer"
-    assert response.headers["X-Frame-Options"] == "DENY"
 
 
 def _client(config_path: Path, database_path: Path) -> TestClient:

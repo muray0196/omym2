@@ -136,7 +136,6 @@ WEB_API_NOT_FOUND_MESSAGE: Final = "Web API endpoint was not found."  # unknown 
 WEB_METHOD_NOT_ALLOWED_MESSAGE: Final = "Method is not allowed for this endpoint."  # unsupported HTTP method text
 WEB_UI_NOT_FOUND_MESSAGE: Final = "Web UI route was not found."  # rejected UI fallback response text
 WEB_URL_SCHEME: Final = "http"  # scheme used for the local Web UI browser URL
-WEB_STATUS_CATALOG_VERSION: Final = 3  # bundled Web status and reason catalog version
 MILLISECONDS_PER_SECOND: Final = 1000  # conversion factor from seconds to milliseconds
 WEB_PRODUCTION_ALLOWED_HOSTS: Final = ("127.0.0.1", "localhost")  # accepted production Host header values
 WEB_HTML_ACCEPT_MEDIA_TYPE: Final = "text/html"  # media type required for SPA fallback
@@ -147,7 +146,6 @@ WEB_CONTENT_SECURITY_POLICY: Final = (
     "base-uri 'none'; frame-ancestors 'none'"
 )  # local-only Web content security policy
 WEB_REFERRER_POLICY: Final = "no-referrer"  # Web response referrer policy
-WEB_FRAME_OPTIONS: Final = "DENY"  # legacy framing prohibition response value
 WEB_ASSET_HASH_MIN_LENGTH: Final = 8  # minimum Vite content hash length in packaged asset names, characters
 HTTP_BAD_REQUEST_STATUS: Final = 400  # malformed HTTP request status code
 HTTP_ACCEPTED_STATUS: Final = 202  # durable Operation accepted status code
@@ -165,7 +163,6 @@ WEB_CSP_HEADER_NAME: Final = "Content-Security-Policy"  # content security polic
 WEB_CONTENT_TYPE_OPTIONS_HEADER_NAME: Final = "X-Content-Type-Options"  # MIME sniffing response header
 WEB_CONTENT_TYPE_OPTIONS_VALUE: Final = "nosniff"  # MIME sniffing prohibition response value
 WEB_REFERRER_POLICY_HEADER_NAME: Final = "Referrer-Policy"  # referrer policy response header
-WEB_FRAME_OPTIONS_HEADER_NAME: Final = "X-Frame-Options"  # legacy framing response header
 OPERATION_POLL_INITIAL_SECONDS: Final = 0.5  # initial Operation polling delay, seconds, > 0
 OPERATION_POLL_BACKOFF_FACTOR: Final = 2.0  # unchanged Operation polling multiplier, >= 1
 OPERATION_POLL_MAX_SECONDS: Final = 5.0  # maximum Operation polling delay, seconds, >= initial
@@ -176,7 +173,6 @@ OPERATION_REQUEST_FINGERPRINT_ALGORITHM: Final = "sha256"  # canonical Operation
 OPERATION_WORKER_COUNT: Final = 1  # exclusive background Operation worker slots, exactly 1
 LOGICAL_PATH_SEPARATOR: Final = "/"
 PARENT_DIRECTORY_REFERENCE: Final = ".."
-UUID_VERSION: Final = 7
 PLAN_ACTION_SORT_ORDER_START: Final = 1  # first review-order value stored for PlanActions
 PLAN_ACTION_SORT_ORDER_STEP: Final = 1  # increment between adjacent PlanAction sort orders
 FILE_EVENT_SEQUENCE_START: Final = 1  # first durable mutation event sequence number in a Run
@@ -208,7 +204,7 @@ ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES: Final = frozenset(
 ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS: Final = frozenset(
     {PATH_POLICY_DISC_NUMBER_CONDITION_ALWAYS, PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS}
 )  # supported {disc} rendering condition values
-CONFIG_VERSION: Final = 1  # supported user config schema version
+CONFIG_VERSION: Final = 2  # supported clean-slate user config schema version
 DEFAULT_COMMAND_MODE: Final = "plan_first"  # initial plan creation mode for mutating commands
 DEFAULT_ADD_AUTO_APPLY: Final = False  # add command auto-apply default
 DEFAULT_ORGANIZE_AUTO_APPLY: Final = False  # organize command auto-apply default
@@ -315,10 +311,7 @@ METADATA_FINGERPRINT_JSON_KEY_SEPARATOR: Final = ":"  # canonical JSON key separ
 PERSISTED_JSON_ITEM_SEPARATOR: Final = ","  # compact JSON item separator for SQLite payloads
 PERSISTED_JSON_KEY_SEPARATOR: Final = ":"  # compact JSON key separator for SQLite payloads
 PATH_EXTENSION_PREFIX: Final = "."  # separator before generated file extensions
-SANITIZER_ALBUM_MAX_BYTES: Final = 90  # maximum sanitized album text length, UTF-8 bytes
 SANITIZER_ALLOWED_EXTENSION_PATTERN: Final = r"^[A-Za-z0-9]+$"  # extension pattern preserved by sanitizer
-SANITIZER_APOSTROPHE: Final = "'"  # ASCII apostrophe removed before unsafe character replacement
-SANITIZER_ARTIST_MAX_BYTES: Final = 50  # maximum sanitized artist text length, UTF-8 bytes
 SANITIZER_FALLBACK_TITLE: Final = "Unknown-Title"  # title text used when sanitized title is empty
 SANITIZER_HYPHEN_RUN_PATTERN: Final = r"-+"  # repeated hyphens collapsed after replacement
 SANITIZER_REPLACEMENT: Final = "-"  # replacement for sanitizer characters outside [\w-]
@@ -339,7 +332,7 @@ PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     PATH_POLICY_YEAR_PLACEHOLDER,
     PATH_POLICY_ARTIST_ID_PLACEHOLDER,
 )  # placeholders allowed in path policy stem templates
-PATH_POLICY_BEHAVIOR_VERSION: Final = 6  # version included in hashes when canonical path behavior changes
+PATH_POLICY_BEHAVIOR_VERSION: Final = 7  # version included in hashes when canonical path behavior changes
 PATH_POLICY_EMPTY_COMPONENT_REPLACEMENT: Final = "_"  # replacement for empty generated path components
 PATH_POLICY_DISC_NUMBER_PREFIX: Final = "D"  # prefix used by d_prefixed {disc} rendering
 PATH_POLICY_RESERVED_WINDOWS_DEVICE_NAMES: Final[frozenset[str]] = frozenset(

@@ -6,21 +6,16 @@ import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { TrackGrouping, TrackStatus } from "../../api/generated";
-import { trackGroupingLabel, trackStatusLabel } from "./library-catalog";
+import { trackStatusLabel } from "./library-catalog";
 
 const TRACK_STATUSES = [
   "active",
   "removed",
 ] as const satisfies readonly TrackStatus[];
-const ROOT_GROUPINGS = [
-  "artist",
-  "artist_album",
-] as const satisfies readonly TrackGrouping[];
 const TRACK_GROUPINGS = [
   "artist",
   "album",
   "disc",
-  "artist_album",
 ] as const satisfies readonly TrackGrouping[];
 const DEFAULT_GROUPING: TrackGrouping = "artist";
 const DEFAULT_VIEW: LibraryView = "tracks";
@@ -49,11 +44,6 @@ export type LibraryBrowseFilters = {
 
 export const trackStatusOptions = TRACK_STATUSES.map((value) => ({
   label: trackStatusLabel(value),
-  value,
-}));
-
-export const rootGroupingOptions = ROOT_GROUPINGS.map((value) => ({
-  label: trackGroupingLabel(value),
   value,
 }));
 
@@ -90,20 +80,6 @@ export function useLibraryBrowseFilters() {
   const updateFilters = useCallback(
     (changes: Partial<LibraryBrowseFilters>) => {
       writeFilters({ ...filters, ...changes });
-    },
-    [filters, writeFilters],
-  );
-
-  const changeRootGrouping = useCallback(
-    (groupBy: TrackGrouping) => {
-      writeFilters({
-        ...filters,
-        albumKey: undefined,
-        artistKey: undefined,
-        groupBy,
-        groupKey: undefined,
-        view: "groups",
-      });
     },
     [filters, writeFilters],
   );
@@ -186,7 +162,6 @@ export function useLibraryBrowseFilters() {
   return {
     backOneLevel,
     browseGroup,
-    changeRootGrouping,
     clearGroup,
     filters,
     hasActiveFilters:
@@ -221,7 +196,7 @@ function readLibraryBrowseFilters(
   if (groupBy === "disc" && albumKey === undefined) {
     groupBy = artistKey === undefined ? DEFAULT_GROUPING : "album";
   }
-  if (groupBy === "artist" || groupBy === "artist_album") {
+  if (groupBy === "artist") {
     artistKey = undefined;
     albumKey = undefined;
   } else if (groupBy === "album") {

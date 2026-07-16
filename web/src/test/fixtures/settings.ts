@@ -76,7 +76,7 @@ export const settingsConfig = {
     enabled: false,
     result_preview_limit: 100,
   },
-  version: 1,
+  version: 2,
 } satisfies AppConfigResource;
 
 export const settingsEnvelope = {

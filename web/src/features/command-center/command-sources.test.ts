@@ -4,7 +4,12 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { PlanSummary, RunHeader } from "../../api/generated";
+import type {
+  PlanStatus,
+  PlanSummary,
+  RunHeader,
+  RunStatus,
+} from "../../api/generated";
 import { buildCommands, filterCommands } from "./command-sources";
 
 describe("filterCommands", () => {
@@ -83,30 +88,18 @@ describe("filterCommands", () => {
     );
   });
 
-  it("uses catalog labels for known and unknown Plan and Run statuses", () => {
+  it("uses catalog labels for Plan and Run statuses", () => {
     const commands = buildCommands({
-      plans: [
-        planWithStatus("018f1000-plan", "partial_failed"),
-        planWithStatus("018f2000-plan", "future_plan_status"),
-      ],
-      runs: [
-        runWithStatus("018f3000-run", "partial_failed"),
-        runWithStatus("018f4000-run", "future_run_status"),
-      ],
+      plans: [planWithStatus("018f1000-plan", "partial_failed")],
+      runs: [runWithStatus("018f3000-run", "partial_failed")],
     });
 
     expect(
       commands.filter((item) => item.kind === "plan").map((item) => item.label),
-    ).toEqual([
-      "Plan 018f1000 · Partially failed",
-      "Plan 018f2000 · Unknown status: future_plan_status",
-    ]);
+    ).toEqual(["Plan 018f1000 · Partially failed"]);
     expect(
       commands.filter((item) => item.kind === "run").map((item) => item.label),
-    ).toEqual([
-      "Run 018f3000 · Partially failed",
-      "Run 018f4000 · Unknown status: future_run_status",
-    ]);
+    ).toEqual(["Run 018f3000 · Partially failed"]);
   });
 
   it("returns an empty result for an unknown command", () => {
@@ -114,7 +107,7 @@ describe("filterCommands", () => {
   });
 });
 
-function planWithStatus(planId: string, status: string): PlanSummary {
+function planWithStatus(planId: string, status: PlanStatus): PlanSummary {
   return {
     created_at: "2026-07-13T00:00:00Z",
     library_id: "library-id",
@@ -158,10 +151,10 @@ function planWithStatus(planId: string, status: string): PlanSummary {
         },
       },
     },
-  } as unknown as PlanSummary;
+  };
 }
 
-function runWithStatus(runId: string, status: string): RunHeader {
+function runWithStatus(runId: string, status: RunStatus): RunHeader {
   return {
     completed_at: "2026-07-13T00:00:01Z",
     error_summary: null,
@@ -170,5 +163,5 @@ function runWithStatus(runId: string, status: string): RunHeader {
     run_id: runId,
     started_at: "2026-07-13T00:00:00Z",
     status,
-  } as unknown as RunHeader;
+  };
 }

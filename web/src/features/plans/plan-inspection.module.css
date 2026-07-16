@@ -7,7 +7,6 @@
   gap: var(--space-16);
 }
 
-.filterPanel,
 .section,
 .executionSection,
 .state {
@@ -19,12 +18,6 @@
 .section,
 .executionSection {
   padding: var(--space-20);
-}
-
-.filterPanel {
-  display: grid;
-  gap: var(--space-12);
-  padding: var(--space-12) var(--space-16);
 }
 
 .executionSection {
@@ -91,47 +84,6 @@
   min-height: var(--target-dense);
 }
 
-.filterGrid {
-  display: grid;
-  gap: var(--space-12);
-  grid-template-columns: minmax(220px, 1.4fr) repeat(
-      auto-fit,
-      minmax(140px, 1fr)
-    );
-}
-
-.field {
-  align-content: start;
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.field label {
-  color: var(--color-mute);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.field input,
-.field select {
-  min-width: 0;
-  width: 100%;
-}
-
-.checkboxLabel {
-  align-items: center;
-  color: var(--color-body);
-  display: inline-flex;
-  font-size: 13px;
-  font-weight: 500;
-  gap: var(--space-8);
-  min-height: var(--target-dense);
-  width: fit-content;
-}
-
-.filterActions,
-.loadMoreArea,
 .backLinkRow {
   align-items: center;
   display: flex;
@@ -139,7 +91,6 @@
   gap: var(--space-12);
 }
 
-.resultCount,
 .subtle {
   color: var(--color-mute);
   font-size: 13px;
@@ -256,11 +207,7 @@
   background: var(--color-surface-elevated);
 }
 
-.rowHeader,
-.rowMetadata,
 .actionHeader,
-.groupHeader,
-.facetHeader,
 .sectionHeader {
   align-items: center;
   display: flex;
@@ -284,7 +231,6 @@
   overflow-wrap: anywhere;
 }
 
-.rowMetadata,
 .actionMetadata,
 .metadataList {
   color: var(--color-mute);
@@ -320,7 +266,6 @@
   white-space: nowrap;
 }
 
-.rowMetadata,
 .actionMetadata {
   align-items: baseline;
   display: flex;
@@ -607,13 +552,6 @@
   color: var(--color-ink);
 }
 
-.selectedGroup {
-  color: var(--color-blue);
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0;
-}
-
 .count {
   color: var(--color-ink);
   font-size: 13px;
@@ -646,20 +584,6 @@
   font-size: 13px;
 }
 
-.state ul {
-  color: var(--color-mute);
-  display: grid;
-  font-size: 13px;
-  gap: var(--space-4);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.error {
-  border-color: color-mix(in srgb, var(--color-red) 45%, transparent);
-}
-
 .backLink {
   align-items: center;
   color: var(--color-ink);
@@ -669,18 +593,7 @@
   min-height: var(--target-dense);
 }
 
-@media (max-width: 1279px) {
-  .filterGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .field:first-child {
-    grid-column: 1 / -1;
-  }
-}
-
 @media (max-width: 767px) {
-  .filterPanel,
   .section,
   .executionSection {
     padding: var(--space-16);
@@ -690,14 +603,9 @@
     flex-direction: column;
   }
 
-  .filterGrid,
   .metadataList,
   .artistNameDiagnosticList {
     grid-template-columns: 1fr;
-  }
-
-  .field:first-child {
-    grid-column: auto;
   }
 
   .planLink,

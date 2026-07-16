@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines OMYM2's SQLite tables, provider cadence, CompanionAsset identity, trackless unprocessed action/event provenance, migrations, downgrade safety, indexes, JSON, and timestamps.
+description: Defines OMYM2's SQLite tables, clean baseline migration, reset policy, indexes, constraints, JSON, timestamps, and persisted companion and unprocessed evidence.
 tags: [database, sqlite, schema, migrations, artist-names, musicbrainz, companions, unprocessed, provenance]
-timestamp: 2026-07-16T04:51:16+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # DB Schema Contract
@@ -314,7 +314,7 @@ Run per Plan.
 
 Stores durable state for accepted background requests. An
 Operation is distinct from a FileEvent: it supports acceptance, idempotency,
-polling, progress, retention, and restart reconciliation, while a FileEvent is
+status polling, retention, and restart reconciliation, while a FileEvent is
 evidence for one attempted Library-managed audio or companion mutation.
 
 Minimum representative fields:
@@ -327,10 +327,6 @@ Minimum representative fields:
 * `status`
 * `idempotency_key`
 * `request_fingerprint`
-* `stage_code` nullable
-* `completed_units` nullable
-* `total_units` nullable
-* `progress_message` nullable
 * `result_kind` nullable
 * `result_json` nullable
 * `error_code` nullable
@@ -354,8 +350,9 @@ resources, but they do not replace the resources' own identities.
 [Operation Lifecycle](operations.md#lifecycle). Typed success and failure
 persistence requires a discriminant (`result_kind` or `error_code`) together
 with its validated, redacted payload; an untyped JSON payload alone is not a
-business-policy boundary. Progress counts are either both `NULL` or both
-present and constrained to `0 <= completed_units <= total_units`.
+business-policy boundary. The pre-release progress columns were removed
+because no runtime producer existed; the row stores only lifecycle state the
+application can produce.
 
 Terminal writes derive `result_expires_at` at 24 hours and
 `tombstone_expires_at` at 30 days after `completed_at`. Result/error payloads
@@ -448,73 +445,22 @@ Minimum representative fields:
 
 ## Migrations
 
-Migrations must preserve existing managed state or fail explicitly before partially changing schema state.
+OMYM2 performed a pre-release clean-slate schema cutover on 2026-07-16. The
+packaged history contains exactly one current baseline:
+`202607160001_baseline.sql`. It creates every table, index, trigger, foreign
+key, check constraint, and closed-value constraint described by this contract.
+There are no backfills, table-rebuild upgrades, or inferred Undo provenance.
 
-Every schema change needs tests for:
+A fresh database file is the only supported starting point. The runner rejects
+an existing database when it finds application tables without migration
+metadata, application tables with no applied migration, or applied migration
+names that are not an exact prefix of the packaged history. The error instructs
+the developer to delete the SQLite file and restart OMYM2. It never adopts or
+rewrites unsupported pre-release state.
 
-* migration execution
-* repository persistence and restore behavior
-* path representation changes when affected
-* foreign-key or uniqueness behavior when affected
-
-`202607130001_operations.sql` implements the `operations` table.
-`202607130002_undo_provenance_and_apply_claim.sql` adds nullable
-`plans.source_run_id` and `plan_actions.reverses_event_id` columns. Their
-foreign keys use `ON DELETE RESTRICT` against `runs.run_id` and
-`file_events.event_id`, respectively.
-
-`202607140001_operation_retention_tombstones.sql` forward-rebuilds the
-`operations` table for databases created with the original terminal-row
-constraint. It copies every column verbatim and recreates the same indexes,
-while permitting the result or error discriminant and JSON payload to be
-cleared together after result expiry. The terminal status, timestamps,
-associations, idempotency identity, and tombstone expiry remain unchanged.
-
-`202607150001_accepted_artist_names.sql` additively creates the global
-`accepted_artist_names` table. It has no legacy backfill and does not modify
-Library, Track, Plan, or execution rows.
-
-`202607160001_plan_action_artist_name_diagnostics.sql` additively adds nullable
-`plan_actions.artist_name_diagnostics_json`. Existing PlanActions remain
-`NULL`; no historical diagnostic is inferred from recorded paths or current
-provider state.
-
-`202607160002_provider_request_cadence.sql` additively creates the global
-provider reservation table without changing Library-managed state.
-
-`202607160003_companion_assets.sql` creates `companion_assets` and
-`plan_action_dependencies`, adds nullable companion/owner columns to
-PlanActions and FileEvents, and installs the same-Plan owner triggers. Existing
-Plans and events remain valid with null companion fields.
-
-`202607160004_plan_source_and_companion_check.sql` adds nullable
-`plans.source_root_at_plan` and `check_issues.companion_asset_id`, plus the
-companion finding lookup index. Existing Plans do not infer an external root.
-
-Stage 5 needs no additional SQLite column or table. It uses the existing
-nullable Plan/action/event provenance columns and introduces new closed text
-values for action, event, and CheckIssue fields. Existing rows are not
-backfilled or reclassified; allowed values and meaning are authoritative in
-[status-reason-catalog.md](status-reason-catalog.md).
-
-Before adding those columns to a database that already contains Undo Plans,
-`202607130002_undo_provenance_and_apply_claim.sql` proves the legacy provenance
-from durable records. A candidate for an Undo move action must be a succeeded
-source move FileEvent, have the same Library and Track through an applied source
-move PlanAction whose recorded paths exactly match that event, belong to the
-same Plan and Library as its terminal source Run, and have both the event and
-Run complete no later than the Undo Plan's creation. The Undo action's target
-must match the event's recorded source path, and the terminal source Plan's
-Config hash must match the Undo Plan. Every legacy Undo Plan must have at least
-one action, every action must have exactly one candidate source event, one
-event may map to only one action in that Plan, and all candidates for the Plan
-must belong to one source Run.
-
-The migration backfills only those proven associations. An absent or ambiguous
-association violates its migration guard before either column is added. The
-migration runner then rolls back the guard, schema changes, indexes, and
-`schema_migrations` marker in the same transaction; it never enables
-deduplication with nullable legacy Undo provenance.
+Every future schema change needs tests for migration execution, the resulting
+complete schema, repository persistence, transactional rollback, packaged
+resources, and affected constraints or path representations.
 
 ### Migration Safety Rules
 
@@ -533,46 +479,11 @@ deduplication with nullable legacy Undo provenance.
   `sqlite3.DatabaseError`), so a migration is never recorded as applied
   unless it fully succeeded; there are no silent partial migrations.
 
-### Stage 4 And 5 Backup And Downgrade
-
-Stage 4 migrations and the Stage 5 closed/config values are forward-only.
-Before installing either stage, and again before attempting to run an older
-binary, stop every OMYM2 process and make a
-restorable backup of both the application-root Config and SQLite database.
-The DB copy must be made through SQLite's backup mechanism or after a clean
-shutdown/checkpoint; copying only the main file while WAL writers are active is
-not a backup.
-
-Before downgrade, inspect Plans and History:
-
-1. Apply or cancel every `ready` Plan containing `move_lyrics`,
-   `move_artwork`, or `move_unprocessed`. Do not leave a ready Plan containing
-   a newer closed value for an older binary.
-2. Reconcile any `applying` Plan with the current binary. If any companion or
-   unprocessed FileEvent remains `pending`, run Check and inspect History plus
-   the filesystem manually.
-3. Never infer that a pending event succeeded, failed, or rolled back. Restore
-   from the pre-upgrade backup or complete manual recovery before changing
-   binaries.
-
-An older binary does not understand the Stage 4/5 closed action, reason, event,
-or CheckIssue values, or the Stage 5 `[unprocessed]` Config section. It must not
-read current state or apply a Plan containing a new value. There is no in-place
-schema, Config, or enum downgrade. Restoring the matched Config/DB backup as one
-unit is the supported rollback boundary; restoring only one side can combine a
-new Plan with an old Config contract or vice versa.
-
-Release validation must exercise this procedure with Apply and Cancel outcomes
-for ready companion and unprocessed Plans, pending events that remain
-manual-review-only, and restoration of the matched Config/DB backup. It must
-also prove that no old-binary run reads or applies a Plan containing newer enum
-values.
-
 ## Indexes
 
 Indexes exist to keep the Web API's list, facet, and group-by endpoints (authoritative in [web-api.md](web-api.md)) fast at scale. They are persistence details: they change lookup cost, never table responsibilities or stored data.
 
-`202607130001_operations.sql` adds:
+The baseline creates these Operation indexes:
 
 * `uq_operations_idempotency_key`, a unique index on
   `operations (idempotency_key)`.
@@ -590,7 +501,7 @@ Indexes exist to keep the Web API's list, facet, and group-by endpoints (authori
   `idx_operations_run` on `operations (run_id, operation_id)` for association
   lookup.
 
-`202607130002_undo_provenance_and_apply_claim.sql` adds:
+The baseline creates these single-use and Undo provenance indexes:
 
 * `uq_runs_plan_id`, a unique index on `runs (plan_id)` that enforces at most
   one Run for a single-use Plan.
@@ -610,7 +521,7 @@ Indexes exist to keep the Web API's list, facet, and group-by endpoints (authori
 These unique constraints are defense in depth behind the cross-process lock
 and compare-and-set usecases.
 
-`202607090001_browsing_indexes.sql` adds:
+The baseline creates these Track, action, and Run browsing indexes:
 
 * `idx_tracks_current_path` on `tracks (current_path, track_id)` — backs Track list ordering and keyset pagination (`GET /api/tracks`).
 * `idx_tracks_status` on `tracks (library_id, status)` — backs Track status filtering and status facet counts scoped to one Library.
@@ -618,42 +529,40 @@ and compare-and-set usecases.
 * `idx_plan_actions_type` on `plan_actions (plan_id, action_type)` — backs PlanAction type filtering within one Plan.
 * `idx_runs_started` on `runs (started_at, run_id)` — backs Run history ordering and keyset pagination.
 
-`202607090002_check_results.sql` adds:
+The baseline creates this CheckIssue browsing index:
 
 * `idx_check_issues_library_type` on `check_issues (library_id, issue_type, issue_seq)` — backs CheckIssue Library/issue_type filtering, ordering, and keyset pagination (`GET /api/check`).
 
-`202607100001_plan_browsing_index.sql` adds:
+The baseline creates these Plan browsing indexes:
 
 * `idx_plans_created` on `plans (created_at, plan_id)` — backs Plan list ordering and keyset pagination (`GET /api/plans`).
 * `idx_plans_library_created` on `plans (library_id, created_at, plan_id)` — backs Library-scoped Plan ordering and keyset pagination.
 
-`202607110001_performance_indexes.sql` adds:
+The baseline creates these supporting indexes:
 
 * `idx_check_issues_check_run_id` on `check_issues (check_run_id)` — backs foreign-key lookup and cascade cleanup when replacing a CheckRun.
 * `idx_file_events_library_status` on `file_events (library_id, status, sequence_no)` — backs ordered pending-FileEvent lookup for one Library during `check`.
 
-The same migration removes two redundant single-column indexes whose lookup prefixes are covered by existing composite indexes:
+The baseline omits two redundant single-column indexes whose lookup prefixes are covered by composite indexes:
 
 * `idx_tracks_library_id`, superseded by indexes beginning with `tracks.library_id`.
 * `idx_plans_library_id`, superseded by `idx_plans_library_created`.
 
-`202607110002_track_stat_baseline.sql` adds:
+The baseline defines:
 
 * nullable `tracks.size`, constrained to nonnegative integer values when present
 * nullable `tracks.mtime`, stored as timestamp text when present
 
-The migration does not backfill existing rows. Both values therefore remain
-`NULL` until a later verified snapshot is persisted for that Track.
+Both values remain `NULL` until a verified snapshot is persisted for that Track.
 
-`202607160003_companion_assets.sql` adds:
+The baseline also creates:
 
 * `idx_companion_assets_library_current_path` for stable Library/path reads
 * `idx_companion_assets_library_content_hash` for Library-scoped hash lookup
 * `uq_plan_actions_action_plan` for composite same-Plan references
 * `idx_plan_action_dependencies_depends_on` for reverse dependency lookup
 
-`202607160004_plan_source_and_companion_check.sql` adds
-`idx_check_issues_companion_asset` on
+It creates `idx_check_issues_companion_asset` on
 `check_issues (companion_asset_id, issue_seq)`.
 
 ## Stored JSON Fields

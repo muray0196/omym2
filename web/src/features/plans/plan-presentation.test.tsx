@@ -1,6 +1,6 @@
 /**
- * Summary: Verifies Plan catalog labels remain explicit and resilient to newer server values.
- * Why: Prevents status-only color cues or crashes when the bundled catalog is older than the API.
+ * Summary: Verifies exhaustive Plan catalog labels and explicit failures for invalid values.
+ * Why: Prevents status-only color cues or silent presentation of corrupted enum data.
  */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
@@ -17,12 +17,10 @@ import {
   actionGroupingLabel,
   actionStatusIcon,
   actionStatusPresentation,
-  actionStatusTone,
   actionTypePresentation,
   actionTypeLabel,
   planStatusIcon,
   planStatusPresentation,
-  planStatusTone,
   planTypePresentation,
   planTypeLabel,
   reasonPresentation,
@@ -52,16 +50,13 @@ describe("Plan presentation", () => {
     expect(actionStatusIcon("blocked")).toBe("warning");
   });
 
-  it("falls back to the raw stable value for an unknown server catalog entry", () => {
-    render(<PlanStatusBadge value="future_status" />);
-
-    expect(screen.getByText("Unknown status: future_status")).toBeVisible();
-    expect(planStatusTone("future_status")).toBe("neutral");
-    expect(planStatusIcon("future_status")).toBe("info");
-    expect(actionStatusTone("future_status")).toBe("neutral");
-    expect(actionStatusIcon("future_status")).toBe("info");
-    expect(planStatusPresentation("future_status").meaning).not.toBe("");
-    expect(actionStatusPresentation("future_status").meaning).not.toBe("");
+  it("rejects an unknown server catalog entry", () => {
+    expect(() => planStatusPresentation("future_status")).toThrow(
+      "Unknown Plan status value: future_status",
+    );
+    expect(() => actionStatusPresentation("future_status")).toThrow(
+      "Unknown PlanAction status value: future_status",
+    );
   });
 
   it("maps every known Plan and action status with full presentation data", () => {
@@ -146,28 +141,22 @@ describe("Plan presentation", () => {
     );
   });
 
-  it("uses neutral info presentation for unknown Plan catalog values", () => {
-    expect(planTypePresentation("future_type")).toMatchObject({
-      icon: "info",
-      label: "Unknown type: future_type",
-      tone: "neutral",
-    });
-    expect(actionTypePresentation("future_action")).toMatchObject({
-      icon: "info",
-      label: "Unknown action type: future_action",
-      tone: "neutral",
-    });
-    expect(reasonPresentation("future_reason")).toMatchObject({
-      icon: "info",
-      label: "Unknown reason: future_reason",
-      tone: "neutral",
-    });
+  it("rejects invalid Plan catalog values", () => {
+    expect(() => planTypePresentation("future_type")).toThrow(
+      "Unknown Plan type value: future_type",
+    );
+    expect(() => actionTypePresentation("future_action")).toThrow(
+      "Unknown PlanAction type value: future_action",
+    );
+    expect(() => reasonPresentation("future_reason")).toThrow(
+      "Unknown PlanAction reason value: future_reason",
+    );
   });
 
   it("labels each selectable grouping without assuming an opaque group key", () => {
     expect(actionGroupingLabel("target_directory")).toBe("Target directory");
-    expect(actionGroupingLabel("future_grouping")).toBe(
-      "Unknown grouping: future_grouping",
+    expect(() => actionGroupingLabel("future_grouping")).toThrow(
+      "Unknown PlanAction grouping value: future_grouping",
     );
   });
 
@@ -181,9 +170,9 @@ describe("Plan presentation", () => {
     expect(
       actionGroupValueLabel("block_reason", "target_exists", "Server reason"),
     ).toBe("Target already exists");
-    expect(
+    expect(() =>
       actionGroupValueLabel("status", "future_status", "Server future"),
-    ).toBe("Unknown status: future_status");
+    ).toThrow("Unknown PlanAction status value: future_status");
     expect(
       actionGroupValueLabel(
         "target_directory",

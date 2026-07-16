@@ -29,8 +29,8 @@ from omym2.adapters.fs.win32_file_handles import (
     Win32FileIdentity,
     win32_directory_prefixes,
 )
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.features.common_ports import SourceInventoryRequest
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 from tests.fakes.runtime import FixedClock
 
 if TYPE_CHECKING:
@@ -80,10 +80,6 @@ class PosixRetainedHandle:
         if expected_identity is not None and not expected_identity.same_file_state(current):
             raise FileNotFoundError(WIN32_PATH_CHANGED_MESSAGE)
         return current
-
-    def matches_path(self, path: os.PathLike[str] | str) -> bool:
-        """Return whether the fake retained path matches exactly."""
-        return os.path.abspath(_string_path(path)) == self.path  # noqa: PTH100  # Fake mirrors lexical adapter paths.
 
     def delete_exact(self, *, expected_identity: Win32FileIdentity | None = None) -> None:
         """Reject mutation through an observation-only fake."""

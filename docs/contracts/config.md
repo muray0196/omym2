@@ -3,7 +3,7 @@ type: Contract
 title: Config Contract
 description: Defines OMYM2's TOML config schema, atomic-save protocol, naming and path policy, runtime controls, companion processing, and unprocessed-file collection.
 tags: [config, toml, concurrency, atomic-save, path-policy, artist-names, musicbrainz, logging, companions, unprocessed]
-timestamp: 2026-07-16T04:51:16+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Config Contract
@@ -18,7 +18,9 @@ Storage responsibility is summarized in [../STORAGE.md](../STORAGE.md). Domain c
 
 Editable settings live in TOML, not SQLite.
 
-Domain and usecases do not read TOML directly. Config loading, validation, saving, default creation, and migration are adapter concerns. Usecases receive `AppConfig` or narrower config objects through ports.
+Domain and usecases do not read TOML directly. Config loading, validation,
+saving, and default creation are adapter concerns. Usecases receive `AppConfig`
+or narrower config objects through ports.
 
 Missing config is not an error by itself. Config is created lazily when a command needs persisted settings.
 
@@ -116,7 +118,7 @@ set.
 
 | TOML path | Accepted value | Default when omitted |
 | --- | --- | --- |
-| `version` | integer `1` exactly | Required; omission is invalid. |
+| `version` | integer `2` exactly | Required; omission is invalid. |
 | `paths.library` | non-empty string path | unset (`null` in `AppConfig`) |
 | `paths.incoming` | non-empty string path | unset (`null` in `AppConfig`) |
 | `add.default_mode` | `"plan_first"` | `"plan_first"` |
@@ -178,19 +180,17 @@ non-empty when present; integers reject booleans; booleans must be TOML
 booleans. TOML validation checks configured paths only for string type and
 non-emptiness, not filesystem existence or accessibility.
 
-The obsolete `[ui]` section is not part of AppConfig. Existing files that
-still contain it fail validation as unknown-key configs; no migration or
-compatibility translation is applied.
+## Versioning And Reset
 
-## Versioning And Migration
+Only config version `2` is supported. Missing, non-integer, or unsupported
+versions are validation errors. No version-based migration exists. The
+2026-07-16 pre-release clean-slate cutover intentionally made older Config
+files unsupported; delete `.config/config.toml` and recreate Settings with the
+current binary. Removed, renamed, and unknown keys are rejected rather than
+translated.
 
-Only config version `1` is supported. Missing, non-integer, or unsupported
-versions are validation errors. No version-based migration exists: a removed
-or renamed key is rejected as unknown, and an older version is rejected rather
-than silently upgraded.
-
-Config migration policy belongs in this contract. Migration implementation
-belongs to the config adapter. Do not add a separate migration document.
+Any future version cutover and its reset policy belong in this contract. Do not
+add an implicit adapter migration or a separate migration document.
 
 ## PathPolicyConfig
 
@@ -216,6 +216,30 @@ Default template:
 ```
 
 The source music file suffix is appended after template rendering. Source suffixes are normalized to lowercase in the generated path. `max_filename_length` budgets the total generated file name including the extension; the extension is always preserved.
+
+When `sanitize = true`, every rendered component follows current OMYM2
+portability rules:
+
+* normalize text with Unicode NFKC;
+* replace every character outside Unicode word characters and `-` with `-`,
+  collapse repeated hyphens, and trim leading or trailing hyphens;
+* enforce the one configured `max_filename_length` as a UTF-8 byte budget for
+  artist, album, directory, and final filename components;
+* preserve an alphanumeric final extension and reserve its bytes before
+  truncating the stem;
+* use `_` for a component that sanitizes away, use `Unknown-Title` for title
+  text that sanitizes away, and prevent Windows reserved device-name
+  stems such as `CON`, `NUL`, `COM1`, and `LPT1`;
+* continue to enforce Library-relative containment after rendering.
+
+There is no apostrophe exception or artist/album-specific byte limit. Spaces,
+apostrophes, punctuation, and path separators all follow the same unsafe-run
+replacement rule. These rules are justified by deterministic Unicode output,
+portable component safety, Windows filename constraints, extension
+preservation, and containment; they do not reproduce an earlier application's
+output. With `sanitize = false`, OMYM2 skips text replacement but still applies
+the configured byte budget, preserves the extension, and enforces
+Library-relative containment.
 
 The default template does not include hash-based suffixes. If the final target path already exists, the PlanAction is blocked with `target_exists`.
 

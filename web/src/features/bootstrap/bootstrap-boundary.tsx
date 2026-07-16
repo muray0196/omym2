@@ -12,6 +12,7 @@ import type {
   BootstrapData,
 } from "../../api/generated";
 import { Icon } from "../../ui/icon";
+import { sharedCopy } from "../../ui/copy";
 import { Button } from "../../ui/primitives/button";
 import { bootstrapCopy } from "./bootstrap-copy";
 import { BootstrapContext } from "./bootstrap-context";
@@ -191,7 +192,7 @@ function UnexpectedBanner({
         {unique.some((diagnostic) => diagnostic.retryable) ? (
           <div className={styles.actions}>
             <Button onClick={onRetry} variant="secondary">
-              {bootstrapCopy.retry}
+              {sharedCopy.retry}
             </Button>
           </div>
         ) : null}
@@ -252,7 +253,7 @@ function DisconnectedBanner({
         {onRetry === undefined ? null : (
           <div className={styles.actions}>
             <Button onClick={onRetry} variant="secondary">
-              {bootstrapCopy.retry}
+              {sharedCopy.retry}
             </Button>
           </div>
         )}

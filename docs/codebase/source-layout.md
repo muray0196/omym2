@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Layout
 description: Defines OMYM2's feature-oriented source layout, including artist naming, Bootstrap, durable Operation, desktop-shell placement, dependency layers, composition, and directory rules.
 tags: [source-layout, architecture, artist-names, operations, desktop, hexagonal-architecture, python]
-timestamp: 2026-07-15T23:22:18+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Source Layout
@@ -187,7 +187,7 @@ Adapters may create and restore domain models. They must not contain business ru
   supplies that typed context to the FastAPI app. Schema generation instead
   uses the adapter's no-I/O `create_api_schema_app()` factory.
 * `operation_composition.py`: wires durable Operation persistence, the
-  application-root lock, progress reporting, reconciliation, and the one-slot
+  application-root lock, status polling, reconciliation, and the one-slot
   worker that invokes already-wired feature usecases without making features
   import each other.
 

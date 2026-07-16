@@ -60,9 +60,6 @@ from omym2.features.check.usecases.check_library import CheckLibraryUseCase
 from omym2.features.check.usecases.get_check_issue_facets import GetCheckIssueFacetsUseCase
 from omym2.features.check.usecases.group_check_issues import (
     GroupCheckIssuesUseCase,
-    check_issue_severity,
-    common_path_root_for_check_issue,
-    derive_check_issue_group_key,
 )
 from omym2.features.check.usecases.list_check_issues import ListCheckIssuesUseCase
 from omym2.features.common_ports import (
@@ -70,9 +67,9 @@ from omym2.features.common_ports import (
     FileObservationInvalidPathError,
     SourceInventoryEntry,
 )
-from omym2.features.history.dto import GetRunHeaderRequest, ListRunEventsRequest, ListRunsRequest
+from omym2.features.history.dto import GetRunDetailRequest, ListRunEventsRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
-from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase
+from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
 from omym2.features.history.usecases.list_run_events import ListRunEventsUseCase
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.undo.dto import CreateUndoPlanRequest
@@ -99,6 +96,11 @@ from omym2.shared.ids import (
     TrackId,
 )
 from tests.fakes.file_observation import MappingFileContentSnapshotReader
+from tests.fakes.grouping import (
+    check_issue_severity,
+    common_path_root_for_check_issue,
+    derive_check_issue_group_key,
+)
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import (
     EmptySourceInventoryReader,
@@ -1038,7 +1040,7 @@ def test_history_lists_runs_newest_first_and_loads_detail() -> None:
     ports = HistoryPorts(uow)
 
     runs = ListRunsUseCase(ports).execute(ListRunsRequest())
-    header = GetRunHeaderUseCase(ports).execute(GetRunHeaderRequest(RUN_ID))
+    header = GetRunDetailUseCase(ports).execute(GetRunDetailRequest(RUN_ID)).run
     events = ListRunEventsUseCase(ports).execute(ListRunEventsRequest(run_id=RUN_ID))
 
     assert tuple(run.run_id for run in runs.items) == (SECOND_RUN_ID, RUN_ID)
@@ -2774,7 +2776,7 @@ def _stage_claimed_apply(
 ) -> ApplyPlanRequest:
     plan = uow.plans.get(plan_id)
     assert plan is not None
-    uow.plans.save(plan.mark_applying())
+    uow.plans.save(replace(plan, status=PlanStatus.APPLYING))
     uow.runs.save(
         Run(
             run_id=run_id,

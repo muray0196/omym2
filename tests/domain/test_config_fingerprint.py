@@ -91,13 +91,13 @@ def test_operational_config_changes_full_hash_without_staling_path_policy(change
 
 
 def test_path_policy_fingerprint_includes_behavior_version() -> None:
-    """PathPolicy behavior changes invalidate legacy Library registrations."""
+    """PathPolicy behavior identity participates in every registration fingerprint."""
     config = AppConfig()
-    legacy_payload = json.dumps(asdict(config.path_policy), sort_keys=True, separators=JSON_SEPARATORS)
-    legacy_digest = new(CONFIG_FINGERPRINT_ALGORITHM)
-    legacy_digest.update(legacy_payload.encode(CONFIG_FINGERPRINT_ENCODING))
+    unversioned_payload = json.dumps(asdict(config.path_policy), sort_keys=True, separators=JSON_SEPARATORS)
+    unversioned_digest = new(CONFIG_FINGERPRINT_ALGORITHM)
+    unversioned_digest.update(unversioned_payload.encode(CONFIG_FINGERPRINT_ENCODING))
 
-    assert calculate_path_policy_fingerprint(config.path_policy) != legacy_digest.hexdigest()
+    assert calculate_path_policy_fingerprint(config.path_policy) != unversioned_digest.hexdigest()
 
 
 def test_path_policy_fingerprint_ignores_artist_ids_when_template_cannot_use_them() -> None:

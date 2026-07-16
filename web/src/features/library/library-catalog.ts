@@ -1,9 +1,9 @@
 /**
- * Summary: Maps Track catalog values to visible labels and neutral fallback tones.
- * Why: Keeps newer server values readable without inferring behavior from status.
+ * Summary: Maps closed Library and Track catalogs to visible labels and tones.
+ * Why: Keeps every coordinated generated enum value exhaustively presented.
  */
-import { libraryCopy } from "./library-copy";
 import type { LibraryStatus, TrackStatus } from "../../api/generated";
+import { catalogValueOrThrow } from "../../ui/catalog";
 import type { IconName } from "../../ui/icon";
 
 export type LibraryTone = "success" | "warning" | "neutral";
@@ -62,7 +62,6 @@ const TRACK_GROUPING_LABELS = {
   artist: "Artist",
   album: "Album",
   disc: "Disc",
-  artist_album: "Artist and album",
 } as const;
 
 export function trackStatusLabel(value: string) {
@@ -84,7 +83,11 @@ export function libraryStatusIcon(value: string): IconName {
 export function libraryStatusPresentation(
   value: string,
 ): LibraryCatalogPresentation {
-  return statusPresentationFor(value, LIBRARY_STATUS_PRESENTATIONS);
+  return catalogValueOrThrow(
+    "Library status",
+    value,
+    LIBRARY_STATUS_PRESENTATIONS,
+  );
 }
 
 export function trackStatusTone(value: string): TrackTone {
@@ -98,31 +101,9 @@ export function trackStatusIcon(value: string): IconName {
 export function trackStatusPresentation(
   value: string,
 ): LibraryCatalogPresentation {
-  return statusPresentationFor(value, TRACK_STATUS_PRESENTATIONS);
+  return catalogValueOrThrow("Track status", value, TRACK_STATUS_PRESENTATIONS);
 }
 
 export function trackGroupingLabel(value: string) {
-  return labelFor(value, TRACK_GROUPING_LABELS, libraryCopy.unknown.grouping);
-}
-
-function labelFor(
-  value: string,
-  labels: Record<string, string>,
-  unknownPrefix: string,
-) {
-  return labels[value] ?? `${unknownPrefix}: ${value}`;
-}
-
-function statusPresentationFor(
-  value: string,
-  presentations: Partial<Record<string, LibraryCatalogPresentation>>,
-): LibraryCatalogPresentation {
-  return (
-    presentations[value] ?? {
-      icon: "info",
-      label: `${libraryCopy.unknown.status}: ${value}`,
-      meaning: `No bundled presentation is available for the raw stable code ${value}.`,
-      tone: "neutral",
-    }
-  );
+  return catalogValueOrThrow("Track grouping", value, TRACK_GROUPING_LABELS);
 }

@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Ports And UnitOfWork
 description: Defines OMYM2's ports and UnitOfWork contract, including configured artist-name resolution, cache and cadence transactions, durable Operations, Config revision CAS, atomic Apply claims, cross-platform retained-object mutation preconditions, and FileEvent ordering.
 tags: [ports, unit-of-work, transactions, architecture, artist-names, musicbrainz]
-timestamp: 2026-07-16T06:02:32+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Ports And UnitOfWork
@@ -209,13 +209,6 @@ class ExclusiveOperationLock(Protocol):
         self,
         request: ExclusiveOperationRequest,
     ) -> AbstractContextManager[ExclusiveOperationLease]: ...
-
-class OperationProgressReporter(Protocol):
-    def report(
-        self,
-        operation_id: OperationId,
-        progress: OperationProgress,
-    ) -> None: ...
 ```
 
 `ExclusiveOperationLock` is the common Web/CLI cross-process boundary. The
@@ -225,13 +218,6 @@ It is not scoped only to request acceptance, one DB transaction, or worker
 dispatch. Read-only snapshot requests do not acquire it. Concrete crash-safe
 lock mechanics belong to the outbound adapter; operation eligibility and the
 409 conflict decision remain usecase/orchestration rules.
-
-`OperationProgressReporter` records backend-provided stage and count progress
-without coupling a usecase to Web polling or SQLite. A usecase reports only
-progress it can observe; the adapter must not fabricate a percentage when no
-completed/total measurement exists. Progress updates use short independent
-transactions and do not extend a DB transaction across scanning, hashing, or
-filesystem mutation.
 
 ```python
 class Clock(Protocol):
@@ -259,7 +245,7 @@ ActionId, RunId, EventId, and OperationId, not on a concrete UUID library.
 ## Operation And FileEvent Responsibilities
 
 Operation is the shared durable control-plane model for an accepted background
-request. It records identity, kind, status, idempotency, progress, typed result,
+request. It records identity, kind, status, idempotency, typed result,
 and interruption state. An Operation may complete without creating a Run or a
 FileEvent, for example when Check finishes or Organize registers a clean
 Library without a Plan.
@@ -272,7 +258,7 @@ its Operation `interrupted` while a FileEvent remains `pending` for manual
 review.
 
 Operation is shared because Add, Organize, Refresh, Check, and Apply use the
-same durable acceptance and progress substrate. FileEvent remains specific to
+same durable acceptance and lifecycle substrate. FileEvent remains specific to
 actual Library music file mutations. Repositories persist both models but do
 not infer operation availability, Plan capability, mutation outcome, or repair
 policy.
@@ -340,7 +326,7 @@ Apply is permitted; the adapter supplies the atomic conditional write and does
 not infer capability from status for presentation.
 
 The claim transaction commits before any background Apply work is dispatched.
-No hashing, snapshot capture, progress callback, FileMover call, or other
+No hashing, snapshot capture, FileMover call, or other
 filesystem I/O occurs inside that transaction. The exclusive lease remains
 held after the commit and across the background worker's full execution.
 
@@ -368,4 +354,4 @@ Architecture preserves these boundaries:
 * FileEvents record Library music file mutations before they are executed.
 * Operations record background-request lifecycle and never substitute for FileEvents.
 * Platform or inbound orchestration chains features; adding Operation support does not permit direct feature-to-feature imports.
-* The lock, progress, Config, and persistence adapters implement mechanics but do not decide business capabilities, conflicts, or recovery outcomes.
+* The lock, Config, and persistence adapters implement mechanics but do not decide business capabilities, conflicts, or recovery outcomes.

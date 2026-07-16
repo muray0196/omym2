@@ -33,29 +33,11 @@ class SaveSettingsRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class SaveSettingsResult:
-    """Successfully installed settings and their new raw-storage identity."""
-
-    config: AppConfig
-    config_revision: str
-
-
-@dataclass(frozen=True, slots=True)
 class ValidateSettingsRequest:
     """Candidate application settings tied to the raw state the caller edited."""
 
     config: AppConfig
     expected_config_revision: str
-
-
-@dataclass(frozen=True, slots=True)
-class ValidateSettingsResult:
-    """Result of validating a revision-bound application settings candidate."""
-
-    valid: bool
-    errors: tuple[str, ...]
-    config_revision: str
-    config_hash: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

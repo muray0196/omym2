@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from omym2.features.history.usecases.get_run_header import RUN_NOT_FOUND_MESSAGE, RunNotFoundError
+from omym2.features.history.usecases.get_run_detail import RUN_NOT_FOUND_MESSAGE, RunNotFoundError
 
 if TYPE_CHECKING:
     from omym2.domain.models.file_event import FileEvent

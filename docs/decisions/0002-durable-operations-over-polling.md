@@ -3,7 +3,7 @@ type: Architecture Decision Record
 title: "ADR 0002: Persist Durable Operations and Poll Their Status"
 description: Records why long-running work uses persisted SQLite operations, idempotent acceptance, bounded polling, and conservative restart recovery.
 tags: [adr, operations, polling, idempotency]
-timestamp: 2026-07-13T00:31:39+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # ADR 0002: Persist Durable Operations and Poll Their Status
@@ -19,7 +19,7 @@ by process termination. Tying that work to a synchronous request would make a
 lost response indistinguishable from a rejected request and would encourage
 unsafe retries.
 
-An Operation records orchestration progress and its typed result. It does not
+An Operation records orchestration lifecycle status and its typed result. It does not
 replace the Plan, Run, and FileEvent records that are authoritative for music
 file execution and crash inspection. Those semantics remain in the
 [execution model](../execution/model.md#durable-file-mutation-log).
@@ -34,7 +34,7 @@ the key with the same fingerprint returns the existing operation, while reuse
 with a different fingerprint is a conflict.
 
 Clients use polling only, with bounded backoff that resets when observable
-progress changes. Terminal results have a finite full-result window followed
+status, result, or error state changes. Terminal results have a finite full-result window followed
 by an idempotency-preserving `410 Gone` tombstone window and eventual
 `404 Not Found`. The exact timings, central constants, and transition behavior
 are owned by the Durable Operation contract rather than repeated in this ADR.
@@ -62,5 +62,7 @@ authoritative in the
   tombstones and then deletion.
 * Interrupted work remains visible, but operators must deliberately inspect
   uncertain filesystem outcomes.
-* Adding streaming progress or in-flight cancellation requires a new
-  architecture decision and corresponding safety contracts.
+* Stage/count progress is intentionally absent until a complete producer,
+  persistence contract, and UI are designed together. Adding it, streaming,
+  or in-flight cancellation requires a new architecture decision and
+  corresponding safety contracts.

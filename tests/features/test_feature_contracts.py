@@ -13,7 +13,6 @@ from uuid import UUID
 import pytest
 
 from omym2.adapters.config.default_config import default_app_config
-from omym2.config import UUID_VERSION
 from omym2.domain.models.companion_asset import CompanionAsset, CompanionAssetKind, CompanionAssetStatus
 from omym2.domain.models.file_event import FileEvent, FileEventStatus, FileEventType
 from omym2.domain.models.library import Library, LibraryStatus
@@ -26,9 +25,9 @@ from omym2.features.check.dto import CheckLibraryRequest
 from omym2.features.check.ports import CheckLibraryPorts
 from omym2.features.check.usecases.check_library import CheckLibraryError, CheckLibraryUseCase
 from omym2.features.common_ports import FileSnapshotCaptureRequest, FileSystemPath, Uuid7IdGenerator
-from omym2.features.history.dto import GetRunHeaderRequest, ListRunsRequest
+from omym2.features.history.dto import GetRunDetailRequest, ListRunsRequest
 from omym2.features.history.ports import HistoryPorts
-from omym2.features.history.usecases.get_run_header import GetRunHeaderUseCase, RunNotFoundError
+from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase, RunNotFoundError
 from omym2.features.history.usecases.list_runs import ListRunsUseCase
 from omym2.features.undo.dto import CreateUndoPlanRequest
 from omym2.features.undo.ports import CreateUndoPlanPorts
@@ -42,7 +41,6 @@ from omym2.shared.ids import (
     PlanId,
     RunId,
     TrackId,
-    is_uuid7,
 )
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import (
@@ -68,6 +66,7 @@ EVENT_SEQUENCE_EARLY = 1
 EVENT_SEQUENCE_LATE = 2
 EVENT_SEQUENCE_THIRD = 3
 EVENT_SEQUENCE_FOURTH = 4
+EXPECTED_UUID_VERSION = 7
 EXPECTED_ONE_CALL = 1
 FILE_EXTENSION = ".flac"
 LIBRARY_ROOT = "/music/library"
@@ -116,8 +115,7 @@ def test_uuid7_id_generator_returns_documented_id_versions() -> None:
 
     for generated_id in generated_ids:
         assert isinstance(generated_id, UUID)
-        assert generated_id.version == UUID_VERSION
-        assert is_uuid7(generated_id)
+        assert generated_id.version == EXPECTED_UUID_VERSION
 
 
 def test_fixed_clock_and_sequence_id_generator_are_deterministic() -> None:
@@ -245,7 +243,7 @@ def test_diagnostics_and_recovery_usecases_handle_empty_repository_contracts() -
     assert ListRunsUseCase(HistoryPorts(uow)).execute(ListRunsRequest()).items == ()
 
     with pytest.raises(RunNotFoundError):
-        _ = GetRunHeaderUseCase(HistoryPorts(uow)).execute(GetRunHeaderRequest(RUN_ID))
+        _ = GetRunDetailUseCase(HistoryPorts(uow)).execute(GetRunDetailRequest(RUN_ID))
 
     with pytest.raises(UndoPlanError):
         _ = CreateUndoPlanUseCase(

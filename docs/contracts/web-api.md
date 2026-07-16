@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Web API Contract
-description: Defines the bundled local Web API's typed envelopes, companion and unprocessed Plan/FileEvent/Check resources, settings, Bootstrap catalog v3, operations, and browsing semantics.
+description: Defines the bundled local Web API's clean-slate typed envelopes, closed catalogs, generated client, operations, settings, and browsing semantics.
 tags: [web-api, openapi, artist-names, companions, unprocessed, operations, concurrency, pagination]
-timestamp: 2026-07-16T04:51:16+09:00
+timestamp: 2026-07-16T22:15:00+09:00
 ---
 
 # Web API Contract
@@ -28,11 +28,16 @@ The SPA and API ship from the same commit in one Python package. The API is not
 an independently supported external-client surface.
 
 * Routes remain under `/api`; there is no `/api/v1` prefix.
-* The previous handwritten envelopes and synchronous long-running endpoints
-  receive no compatibility adapter or transition period.
-* The renewed SPA and API cut over together.
+* Old requests, response fields, browser URLs, and opaque keys receive no
+  compatibility adapter or transition period.
+* The SPA and API cut over together from the same commit.
 * Supporting independent external clients or a versioned compatibility
   surface requires a new architecture decision.
+
+The 2026-07-16 pre-release clean-slate cutover removed the Track
+`group_by=artist_album` value, three unused path error codes, and Operation
+progress fields. Generated clients from older development builds are
+unsupported and must be regenerated from the current OpenAPI document.
 
 ## Schema Source And Generated Client
 
@@ -55,6 +60,9 @@ contract tests, and SPA in one change. CI runs these steps in order:
 4. Frontend typecheck.
 
 The drift check fails when regeneration changes a committed generated file.
+Because producer and consumer are bundled, generated closed enums use
+exhaustive presentation maps. An impossible value fails explicitly; the SPA
+does not present unknown raw enum values as a neutral forward-compatible state.
 
 ## Generic Envelope
 
@@ -118,7 +126,7 @@ envelopes is:
 | `405` | `method_not_allowed` |
 | `409` | `config_invalid`, `config_changed`, `operation_in_progress`, `idempotency_key_reused`, `library_selection_ambiguous`, `library_unregistered`, `library_stale`, `library_blocked`, `plan_not_ready`, `library_root_changed`, `run_not_terminal`, `nothing_to_undo`, `undo_refresh_metadata_unsupported`, `already_undone_or_in_progress`, `pending_file_event_requires_review` |
 | `410` | `operation_expired` |
-| `422` | `validation_failed`, `path_not_found`, `path_not_directory`, `path_outside_library` |
+| `422` | `validation_failed` |
 | `500` | `storage_unavailable`, `config_io_failed`, `internal_error` |
 
 Embedded `disabled_reasons`, validation diagnostics, and degraded Bootstrap
@@ -300,9 +308,7 @@ Returns `200 ApiEnvelope<BootstrapData>`:
 
 ```ts
 type BootstrapData = {
-  app_version: string
   csrf_token: string
-  status_catalog_version: number
   active_library: LibraryResource | null
   library_diagnostics: ApiError[]
   config_validation: {
@@ -333,9 +339,8 @@ It never silently selects the first Library.
 
 Bootstrap is the sole degraded-envelope exception. Invalid Config or
 unavailable persistence may produce non-null recovery data and top-level
-errors simultaneously. CSRF issuance, app version, and catalog version remain
-available so the client can open Settings and display recovery guidance.
-`status_catalog_version` is exactly `3` for this bundled contract.
+errors simultaneously. CSRF issuance remains available so the client can open
+Settings and display recovery guidance.
 The polling values are serialized from the constants centralized in
 `src/omym2/config.py`; the SPA and its tests do not repeat policy literals.
 
@@ -534,12 +539,6 @@ type OperationResource = {
   library_id: string | null
   plan_id: string | null
   run_id: string | null
-  progress: {
-    stage_code: string | null
-    completed_units: number | null
-    total_units: number | null
-    message: string | null
-  }
   result:
     | { kind: "plan_created"; plan_id: string }
     | { kind: "registered_without_plan"; library_id: string; track_count: number }
@@ -553,9 +552,10 @@ type OperationResource = {
 }
 ```
 
-`poll_after_ms` is 500 initially. Clients apply the polling/backoff policy from
-the Operation contract. Progress counts are both null or both non-null; the
-client never fabricates a percentage.
+`poll_after_ms` is 500 initially. Clients apply the status polling/backoff
+policy from the Operation contract. Stage, count, message, and percentage
+progress are not part of the resource because the runtime has no producer for
+them.
 
 The nullable Library/Plan/Run associations are durable navigation evidence,
 not a success result. They remain available on failed or interrupted
@@ -761,7 +761,7 @@ drill-down orders Tracks by positive `track_number` first, then title and
 * `GET /api/tracks/facets?query=&library_id=` returns the `status` facet.
   Counts apply search while omitting a selected list status.
 * `GET /api/tracks/groups?group_by=&parent_key=&query=&status=&library_id=&limit=&cursor=`
-  returns `artist`, `album`, `disc`, or `artist_album` groups. Search and status
+  returns `artist`, `album`, or `disc` groups. Search and status
   apply before grouping and carry into drill-down.
 
 Track groups derive only from persisted metadata. They never read the
@@ -777,11 +777,9 @@ canonical path.
 * `disc` is identified by parent album and positive recorded disc number.
   Missing, zero, or negative numbers use `Unnumbered disc`. It requires the
   opaque album `parent_key`.
-* `artist_album` retains the artist/album aggregate and has no parent key.
-
 All Track group keys are opaque. Clients echo returned keys and never
-construct, parse, or infer membership from labels. Counts include removed
-Tracks.
+construct, parse, or infer membership from labels. Keys and URLs from removed
+pre-release groupings are unsupported. Counts include removed Tracks.
 
 ## Check Endpoints
 

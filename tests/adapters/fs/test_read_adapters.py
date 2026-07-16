@@ -38,9 +38,9 @@ from omym2.adapters.fs.win32_file_handles import Win32FileHandle, Win32FileIdent
 from omym2.config import FILE_SNAPSHOT_CAPTURE_MIN_WORKER_COUNT
 from omym2.domain.models.file_snapshot import FilesystemIdentity
 from omym2.domain.models.track_metadata import TrackMetadata
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.common_ports import FileSnapshotCaptureRequest, MetadataReadError
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 from tests.fakes.runtime import FixedClock
 
 if TYPE_CHECKING:
@@ -1685,10 +1685,6 @@ class _PathBackedWin32Handle:
         if expected_identity is not None and not expected_identity.same_file_state(current_identity):
             raise FileNotFoundError(SIMULATED_EXPECTED_IDENTITY_MISMATCH_MESSAGE)
         return current_identity
-
-    def matches_path(self, path: os.PathLike[str] | str) -> bool:
-        """Return whether the lexical test path matches the retained path."""
-        return Path(path) == Path(self.path)
 
     def delete_exact(self, *, expected_identity: Win32FileIdentity | None = None) -> None:
         """Delete only when the current path still names this exact descriptor."""

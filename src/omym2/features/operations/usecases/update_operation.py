@@ -10,7 +10,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from omym2.config import OPERATION_RESULT_RETENTION_HOURS, OPERATION_TOMBSTONE_RETENTION_DAYS
-from omym2.domain.models.operation import Operation, OperationProgress
+from omym2.domain.models.operation import Operation
 from omym2.features.operations.dto import FinishOperationRequest, OperationLifecycleError
 
 if TYPE_CHECKING:
@@ -36,22 +36,6 @@ class MarkOperationRunningUseCase:
             uow.operations.save(running)
             uow.commit()
             return running
-
-
-@dataclass(frozen=True, slots=True)
-class UpdateOperationProgressUseCase:
-    """Persist real worker progress for one running Operation."""
-
-    ports: OperationPorts
-
-    def execute(self, operation_id: OperationId, progress: OperationProgress) -> Operation:
-        """Persist a monotonic progress snapshot."""
-        with self.ports.uow as uow:
-            operation = _require_operation(uow.operations.lookup(operation_id))
-            updated = operation.update_progress(progress, self.ports.clock.now())
-            uow.operations.save(updated)
-            uow.commit()
-            return updated
 
 
 @dataclass(frozen=True, slots=True)

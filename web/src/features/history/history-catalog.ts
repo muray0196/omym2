@@ -1,17 +1,16 @@
 /**
- * Summary: Maps Run and FileEvent catalog values to visible labels and tones.
- * Why: Preserves unknown-value evidence without enabling operations from status.
+ * Summary: Maps closed Run and FileEvent catalogs to visible labels and tones.
+ * Why: Gives every coordinated generated enum value an exhaustive presentation.
  */
-import { historyCopy } from "./history-copy";
 import type {
   FileEventStatus,
   FileEventType,
   RunStatus,
 } from "../../api/generated";
 import type { IconName } from "../../ui/icon";
+import { catalogValueOrThrow } from "../../ui/catalog";
 
-export type EvidenceTone =
-  "info" | "success" | "warning" | "danger" | "neutral";
+export type EvidenceTone = "info" | "success" | "warning" | "danger";
 export type HistoryCatalogPresentation = {
   icon: IconName;
   label: string;
@@ -109,7 +108,7 @@ export function runStatusIcon(value: string): IconName {
 export function runStatusPresentation(
   value: string,
 ): HistoryCatalogPresentation {
-  return statusPresentationFor(value, RUN_STATUS_PRESENTATIONS);
+  return catalogValueOrThrow("Run status", value, RUN_STATUS_PRESENTATIONS);
 }
 
 export function eventStatusLabel(value: string) {
@@ -127,42 +126,21 @@ export function eventStatusIcon(value: string): IconName {
 export function eventStatusPresentation(
   value: string,
 ): HistoryCatalogPresentation {
-  return statusPresentationFor(value, EVENT_STATUS_PRESENTATIONS);
-}
-
-export function eventTypeLabel(value: string) {
-  return eventTypePresentation(value).label;
+  return catalogValueOrThrow(
+    "FileEvent status",
+    value,
+    EVENT_STATUS_PRESENTATIONS,
+  );
 }
 
 export function eventTypePresentation(
   value: string,
 ): HistoryCatalogPresentation {
-  return (
-    EVENT_TYPE_PRESENTATIONS[value as FileEventType] ?? {
-      icon: "info",
-      label: `${historyCopy.unknown.eventType}: ${value}`,
-      meaning: `No bundled presentation is available for the raw stable code ${value}.`,
-      tone: "neutral",
-    }
-  );
+  return catalogValueOrThrow("FileEvent type", value, EVENT_TYPE_PRESENTATIONS);
 }
 
 export function formatTimestamp(value: string | null) {
   if (value === null) return "—";
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
-}
-
-function statusPresentationFor(
-  value: string,
-  presentations: Partial<Record<string, HistoryCatalogPresentation>>,
-): HistoryCatalogPresentation {
-  return (
-    presentations[value] ?? {
-      icon: "info",
-      label: `${historyCopy.unknown.status}: ${value}`,
-      meaning: `No bundled presentation is available for the raw stable code ${value}.`,
-      tone: "neutral",
-    }
-  );
 }

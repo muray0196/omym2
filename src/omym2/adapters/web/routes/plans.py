@@ -5,16 +5,16 @@ Why: Gives Plan Review typed evidence and a lock-protected synchronous Cancel ac
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import JSONResponse  # noqa: TC002  # FastAPI resolves response annotations at registration.
 
 from omym2.adapters.web.routes.api_context import (
-    ApiContext,  # noqa: TC001  # FastAPI resolves dependency annotations at registration.
+    ApiContext,  # FastAPI resolves dependency annotations at registration.
+    PlansRouteContext,
 )
 from omym2.adapters.web.routes.api_responses import api_failure_response
 from omym2.adapters.web.routes.operations import operation_in_progress_failure
@@ -83,7 +83,7 @@ from omym2.features.plans.usecases.get_plan_capabilities import (
     PlanCapabilityReason,
 )
 from omym2.features.plans.usecases.get_plan_header import PlanNotFoundError
-from omym2.shared.ids import OperationId, PlanId
+from omym2.shared.ids import PlanId
 from omym2.shared.pagination import (
     DEFAULT_PAGE_LIMIT,
     CursorDecodeError,
@@ -94,7 +94,7 @@ from omym2.shared.pagination import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable
 
     from omym2.domain.models.artist_name_resolution import (
         ArtistNameDiagnostics,
@@ -102,7 +102,7 @@ if TYPE_CHECKING:
     )
     from omym2.domain.models.plan import Plan
     from omym2.domain.models.plan_action import PlanAction
-    from omym2.features.plans.dto import PlanActionFacetsResult, PlanActionGroup
+    from omym2.features.plans.dto import PlanActionFacetsResult
     from omym2.features.plans.dto import PlanActionSummary as PlanActionSummaryDto
     from omym2.features.plans.dto import PlanActionTypeCounts as PlanActionTypeCountsDto
     from omym2.shared.ids import ActionId
@@ -120,35 +120,15 @@ CORRELATION_HEADER_SCHEMA = {
 }
 
 
-@dataclass(frozen=True, slots=True)
-class PlanRouteHandlers:
-    """Read-only Plan handlers supplied by the composition root."""
-
-    list_plans: Callable[[ListPlansRequest], Page[Plan]]
-    get_plan_header: Callable[[GetPlanHeaderRequest], Plan]
-    get_plan_action_summaries: Callable[[GetPlanActionSummariesRequest], dict[PlanId, PlanActionSummaryDto]]
-    get_plan_capabilities: Callable[[GetPlanCapabilitiesRequest], PlanCapabilitiesResult]
-    list_plan_actions: Callable[[ListPlanActionsRequest], Page[PlanAction]]
-    get_plan_action_dependencies: Callable[
-        [GetPlanActionDependenciesRequest],
-        Mapping[ActionId, tuple[ActionId, ...]],
-    ]
-    get_plan_action_facets: Callable[[PlanActionFacetsRequest], PlanActionFacetsResult]
-    group_plan_actions: Callable[[GroupPlanActionsRequest], Page[PlanActionGroup]]
-    cancel_plan: Callable[[CancelPlanRequest], Plan]
-    active_operation_id: Callable[[PlanId], OperationId | None]
-    conflicting_operation_id: Callable[[], OperationId | None]
-
-
-def get_plan_route_handlers(context: ApiContext) -> PlanRouteHandlers:
+def get_plan_route_handlers(context: ApiContext) -> PlansRouteContext:
     """Resolve the Plan-specific collaborators from the shared route context."""
     handlers = context.plans
     if handlers is None:
         raise RuntimeError(PLAN_HANDLERS_UNAVAILABLE_MESSAGE)
-    return cast("PlanRouteHandlers", cast("object", handlers))
+    return handlers
 
 
-type PlansContext = Annotated[PlanRouteHandlers, Depends(get_plan_route_handlers)]
+type PlansContext = Annotated[PlansRouteContext, Depends(get_plan_route_handlers)]
 type CsrfToken = Annotated[str, Header(alias=WEB_CSRF_HEADER_NAME, min_length=1)]
 
 
@@ -476,7 +456,7 @@ def _plan_header(plan: Plan) -> PlanHeader:
 
 
 def _plan_detail_data(
-    context: PlanRouteHandlers,
+    context: PlansRouteContext,
     plan: Plan,
     summary: PlanActionSummaryDto | None,
     capabilities: PlanCapabilitiesResult,

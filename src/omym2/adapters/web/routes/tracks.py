@@ -5,15 +5,15 @@ Why: Gives the renewed Library UI persisted list, detail, facet, and group data.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID  # noqa: TC003  # FastAPI resolves UUID route annotations at registration.
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse  # noqa: TC002  # FastAPI resolves response annotations at registration.
 
 from omym2.adapters.web.routes.api_context import (
-    ApiContext,  # noqa: TC001  # FastAPI resolves dependency annotations at registration.
+    ApiContext,  # FastAPI resolves dependency annotations at registration.
+    TracksRouteContext,
 )
 from omym2.adapters.web.routes.api_responses import api_failure_response
 from omym2.adapters.web.schemas.api_envelopes import ApiEnvelope, ApiFailureEnvelope
@@ -59,11 +59,8 @@ from omym2.shared.pagination import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from omym2.domain.models.track import Track
-    from omym2.features.tracks.dto import TrackStatusFacetsResult
-    from omym2.shared.pagination import GroupCount, Page
+    from omym2.shared.pagination import Page
 
 TRACK_NOT_FOUND_MESSAGE = "Track was not found."
 INVALID_TRACK_QUERY_MESSAGE = "Track browse query is invalid."
@@ -74,25 +71,15 @@ CORRELATION_HEADER_SCHEMA = {
 }
 
 
-@dataclass(frozen=True, slots=True)
-class TrackRouteHandlers:
-    """Read-only Track handlers supplied by the composition root."""
-
-    list_tracks: Callable[[ListTracksRequest], Page[Track]]
-    get_track: Callable[[GetTrackRequest], Track]
-    get_track_status_facets: Callable[[TrackStatusFacetsRequest], TrackStatusFacetsResult]
-    group_tracks: Callable[[GroupTracksRequest], Page[GroupCount]]
-
-
-def get_track_route_handlers(context: ApiContext) -> TrackRouteHandlers:
+def get_track_route_handlers(context: ApiContext) -> TracksRouteContext:
     """Resolve the Track-specific collaborators from the shared route context."""
-    handlers = getattr(context, "tracks", None)
+    handlers = context.tracks
     if handlers is None:
         raise RuntimeError(TRACK_HANDLERS_UNAVAILABLE_MESSAGE)
-    return cast("TrackRouteHandlers", handlers)
+    return handlers
 
 
-type TracksContext = Annotated[TrackRouteHandlers, Depends(get_track_route_handlers)]
+type TracksContext = Annotated[TracksRouteContext, Depends(get_track_route_handlers)]
 
 
 def create_tracks_router() -> APIRouter:

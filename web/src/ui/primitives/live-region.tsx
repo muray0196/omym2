@@ -1,6 +1,6 @@
 /**
  * Summary: Provides a stable polite announcement region for asynchronous updates.
- * Why: Ensures later operation progress can be conveyed without moving focus.
+ * Why: Ensures asynchronous status changes can be conveyed without moving focus.
  */
 import { useCallback, useRef, useState, type ReactNode } from "react";
 

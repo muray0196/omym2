@@ -5,14 +5,16 @@ Why: Exposes durable execution evidence without mutating managed state.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Literal
 from uuid import UUID  # noqa: TC003  # FastAPI resolves path and query annotations.
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse  # noqa: TC002  # FastAPI resolves route return annotations.
 
-from omym2.adapters.web.routes.api_context import ApiContext  # noqa: TC001  # FastAPI resolves dependencies.
+from omym2.adapters.web.routes.api_context import (  # FastAPI resolves dependencies.
+    ApiContext,
+    HistoryRouteContext,
+)
 from omym2.adapters.web.routes.read_query import (
     CORRELATION_HEADER_SCHEMA,
     INVALID_CURSOR_MESSAGE,
@@ -59,55 +61,34 @@ from omym2.domain.models.file_event import (  # FastAPI resolves query enums.
 from omym2.domain.models.run import RunStatus  # FastAPI resolves query enums.
 from omym2.features.history.dto import (
     FileEventStatusFacetsRequest,
-    GetRunHeaderRequest,
+    GetRunDetailRequest,
     GroupRunEventsRequest,
     ListRunEventsRequest,
     ListRunsRequest,
     RunCapabilityReason,
     RunStatusFacetsRequest,
 )
-from omym2.features.history.usecases.get_run_header import RUN_NOT_FOUND_MESSAGE, RunNotFoundError
+from omym2.features.history.usecases.get_run_detail import RUN_NOT_FOUND_MESSAGE, RunNotFoundError
 from omym2.shared.ids import LibraryId, PlanId, RunId
 from omym2.shared.pagination import CursorDecodeError, encode_cursor
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from omym2.domain.models.file_event import FileEvent
     from omym2.domain.models.run import Run
-    from omym2.features.history.dto import (
-        FileEventStatusFacetsResult,
-        RunDetailResult,
-        RunStatusFacetsResult,
-    )
-    from omym2.shared.ids import OperationId
-    from omym2.shared.pagination import GroupCount, Page
+    from omym2.shared.pagination import Page
 
 HISTORY_HANDLERS_UNAVAILABLE_MESSAGE = "History route handlers are unavailable."
 
 
-@dataclass(frozen=True, slots=True)
-class HistoryRouteHandlers:
-    """Read-only History handlers supplied by the composition root."""
-
-    list_runs: Callable[[ListRunsRequest], Page[Run]]
-    get_run_detail: Callable[[GetRunHeaderRequest], RunDetailResult]
-    get_run_status_facets: Callable[[RunStatusFacetsRequest], RunStatusFacetsResult]
-    list_run_events: Callable[[ListRunEventsRequest], Page[FileEvent]]
-    get_file_event_status_facets: Callable[[FileEventStatusFacetsRequest], FileEventStatusFacetsResult]
-    group_run_events: Callable[[GroupRunEventsRequest], Page[GroupCount]]
-    active_operation_id: Callable[[RunId], OperationId | None]
-
-
-def get_history_route_handlers(context: ApiContext) -> HistoryRouteHandlers:
+def get_history_route_handlers(context: ApiContext) -> HistoryRouteContext:
     """Resolve History-specific collaborators from the shared route context."""
-    handlers = getattr(context, "history", None)
+    handlers = context.history
     if handlers is None:
         raise RuntimeError(HISTORY_HANDLERS_UNAVAILABLE_MESSAGE)
-    return cast("HistoryRouteHandlers", cast("object", handlers))
+    return handlers
 
 
-type HistoryContext = Annotated[HistoryRouteHandlers, Depends(get_history_route_handlers)]
+type HistoryContext = Annotated[HistoryRouteContext, Depends(get_history_route_handlers)]
 
 
 def create_history_router() -> APIRouter:  # noqa: C901  # One factory keeps the route family together.
@@ -187,7 +168,7 @@ def create_history_router() -> APIRouter:  # noqa: C901  # One factory keeps the
         context: HistoryContext,
     ) -> ApiEnvelope[RunDetailData] | JSONResponse:
         try:
-            result = context.get_run_detail(GetRunHeaderRequest(run_id=RunId(run_id)))
+            result = context.get_run_detail(GetRunDetailRequest(run_id=RunId(run_id)))
         except RunNotFoundError:
             return not_found_failure(ApiErrorCode.RUN_NOT_FOUND, RUN_NOT_FOUND_MESSAGE, field="path.run_id")
         return ApiEnvelope(

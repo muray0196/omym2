@@ -35,8 +35,11 @@ from omym2.domain.models.plan_action import (
 )
 from omym2.domain.models.track import Track, TrackStatus
 from omym2.domain.models.track_metadata import TrackMetadata
-from omym2.domain.services.config_fingerprint import calculate_config_fingerprint, calculate_path_policy_fingerprint
-from omym2.domain.services.content_fingerprint import calculate_content_fingerprint
+from omym2.domain.services.config_fingerprint import (
+    STALE_LIBRARY_MESSAGE,
+    calculate_config_fingerprint,
+    calculate_path_policy_fingerprint,
+)
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
 from omym2.features.common_ports import SourceInventoryEntry
 from omym2.features.refresh.dto import CreateRefreshPlanRequest
@@ -46,13 +49,13 @@ from omym2.features.refresh.usecases.create_refresh_plan import (
     ARTIST_NAME_RECONCILIATION_REQUIRED_MESSAGE,
     NO_REGISTERED_LIBRARY_MESSAGE,
     REFRESH_TARGET_NOT_FOUND_MESSAGE,
-    STALE_LIBRARY_MESSAGE,
     CreateRefreshPlanUseCase,
     RefreshLibraryReconciliationRequiredError,
     RefreshLibrarySelectionError,
     RefreshTargetSelectionError,
 )
 from omym2.shared.ids import ActionId, CompanionAssetId, LibraryId, OperationId, PlanId, TrackId
+from tests.fakes.content_fingerprint import calculate_content_fingerprint
 from tests.fakes.file_observation import MappingFileContentSnapshotReader, StaticSourceInventoryReader
 from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
 from tests.fakes.runtime import FixedClock, MappingArtistNameResolver, SequenceIdGenerator

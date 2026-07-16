@@ -364,7 +364,7 @@ export type ApiError = {
  *
  * Closed top-level Web API error catalog.
  */
-export type ApiErrorCode = 'invalid_json' | 'csrf_invalid' | 'api_not_found' | 'library_not_found' | 'track_not_found' | 'plan_not_found' | 'run_not_found' | 'operation_not_found' | 'method_not_allowed' | 'config_invalid' | 'config_changed' | 'operation_in_progress' | 'idempotency_key_reused' | 'library_selection_ambiguous' | 'library_unregistered' | 'library_stale' | 'library_blocked' | 'plan_not_ready' | 'library_root_changed' | 'run_not_terminal' | 'nothing_to_undo' | 'undo_refresh_metadata_unsupported' | 'already_undone_or_in_progress' | 'pending_file_event_requires_review' | 'operation_expired' | 'validation_failed' | 'path_not_found' | 'path_not_directory' | 'path_outside_library' | 'storage_unavailable' | 'config_io_failed' | 'internal_error' | 'operation_interrupted' | 'metadata_read_failed' | 'operation_failed';
+export type ApiErrorCode = 'invalid_json' | 'csrf_invalid' | 'api_not_found' | 'library_not_found' | 'track_not_found' | 'plan_not_found' | 'run_not_found' | 'operation_not_found' | 'method_not_allowed' | 'config_invalid' | 'config_changed' | 'operation_in_progress' | 'idempotency_key_reused' | 'library_selection_ambiguous' | 'library_unregistered' | 'library_stale' | 'library_blocked' | 'plan_not_ready' | 'library_root_changed' | 'run_not_terminal' | 'nothing_to_undo' | 'undo_refresh_metadata_unsupported' | 'already_undone_or_in_progress' | 'pending_file_event_requires_review' | 'operation_expired' | 'validation_failed' | 'storage_unavailable' | 'config_io_failed' | 'internal_error' | 'operation_interrupted' | 'metadata_read_failed' | 'operation_failed';
 
 /**
  * ApiFailureEnvelope
@@ -571,10 +571,6 @@ export type BootstrapData = {
      * Active Operation Id
      */
     active_operation_id: string | null;
-    /**
-     * App Version
-     */
-    app_version: string;
     config_validation: ConfigValidationResource;
     /**
      * Csrf Token
@@ -586,10 +582,6 @@ export type BootstrapData = {
     library_diagnostics: Array<ApiError>;
     operation_polling: OperationPollingPolicy;
     runtime_capabilities: RuntimeCapabilities;
-    /**
-     * Status Catalog Version
-     */
-    status_catalog_version: number;
 };
 
 /**
@@ -1198,30 +1190,6 @@ export type OperationPollingPolicy = {
 };
 
 /**
- * OperationProgressResource
- *
- * Display-safe durable progress without fabricated percentages.
- */
-export type OperationProgressResource = {
-    /**
-     * Completed Units
-     */
-    completed_units: number | null;
-    /**
-     * Message
-     */
-    message: string | null;
-    /**
-     * Stage Code
-     */
-    stage_code: string | null;
-    /**
-     * Total Units
-     */
-    total_units: number | null;
-};
-
-/**
  * OperationRef
  *
  * Compact reference returned when durable work is accepted or replayed.
@@ -1267,7 +1235,6 @@ export type OperationResource = {
      * Plan Id
      */
     plan_id: string | null;
-    progress: OperationProgressResource;
     /**
      * Requested At
      */
@@ -2104,7 +2071,7 @@ export type TrackFacetsData = {
  *
  * Known Track group-by query groupings.
  */
-export type TrackGrouping = 'artist' | 'album' | 'disc' | 'artist_album';
+export type TrackGrouping = 'artist' | 'album' | 'disc';
 
 /**
  * TrackGroupsData

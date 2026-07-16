@@ -505,6 +505,7 @@ def test_apply_latest_applies_most_recent_ready_plan(
         ["apply", "latest"],
         stdout=apply_stdout,
         stderr=apply_stderr,
+        config_path=app_paths.config_file,
         database_path=app_paths.database_file,
     )
 

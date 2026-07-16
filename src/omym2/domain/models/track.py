@@ -32,11 +32,9 @@ class TrackGrouping(StrEnum):
     ARTIST = "artist"
     ALBUM = "album"
     DISC = "disc"
-    ARTIST_ALBUM = "artist_album"
 
 
 TRACK_GROUP_UNKNOWN_KEY = "(unknown)"
-TRACK_GROUP_ARTIST_ALBUM_SEPARATOR = "\x1f"  # collision-resistant separator for the legacy artist/album key
 TRACK_GROUP_LABEL_SEPARATOR = " — "
 TRACK_GROUP_DISC_LABEL_PREFIX = "Disc "
 TRACK_GROUP_UNNUMBERED_DISC_LABEL = "Unnumbered disc"
@@ -73,21 +71,3 @@ class Track:
         object.__setattr__(self, "first_seen_at", as_utc(self.first_seen_at))
         object.__setattr__(self, "last_seen_at", as_utc(self.last_seen_at))
         object.__setattr__(self, "updated_at", as_utc(self.updated_at))
-
-    def with_paths(self, current_path: str, canonical_path: str, updated_at: datetime) -> Track:
-        """Return updated path state without changing Track identity."""
-        return Track(
-            track_id=self.track_id,
-            library_id=self.library_id,
-            current_path=current_path,
-            canonical_path=canonical_path,
-            content_hash=self.content_hash,
-            metadata_hash=self.metadata_hash,
-            size=self.size,
-            mtime=self.mtime,
-            metadata=self.metadata,
-            status=self.status,
-            first_seen_at=self.first_seen_at,
-            last_seen_at=self.last_seen_at,
-            updated_at=updated_at,
-        )

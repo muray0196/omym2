@@ -451,14 +451,14 @@ export const readyPlanGroupsFirstPage = {
       {
         blocked_count: 0,
         count: 4,
-        key: "fixture-group-planned",
+        key: "planned",
         label: "Planned",
         top_reason: "duplicate_hash",
       },
       {
         blocked_count: 1,
         count: 1,
-        key: "fixture-group-blocked",
+        key: "blocked",
         label: "Blocked",
         top_reason: "target_exists",
       },
@@ -479,7 +479,7 @@ export const readyPlanGroupsSecondPage = {
       {
         blocked_count: 0,
         count: 0,
-        key: "fixture-group-applied",
+        key: "applied",
         label: "Applied",
         top_reason: null,
       },
