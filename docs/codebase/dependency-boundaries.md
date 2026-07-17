@@ -1,21 +1,16 @@
 ---
 type: Codebase Reference
 title: Dependency Boundaries
-description: Defines OMYM2's dependency direction between CLI, Web, desktop and outbound adapters, features, domain, and shared layers, the forbidden dependencies, and where business rules must live.
+description: Dependency direction, forbidden dependency list, feature-import rules, adapter rules, and business-rule placement.
 tags: [architecture, dependency-boundaries, desktop, hexagonal-architecture, business-rules]
-timestamp: 2026-07-15T00:13:25+09:00
+timestamp: 2026-07-18T12:00:00+09:00
 ---
 
 # Dependency Boundaries
 
-This document is authoritative for OMYM2 dependency direction, forbidden dependencies, direct feature-to-feature import rules, adapter rules, and business rule placement.
-
-Source placement is in [source-layout.md](source-layout.md).
+Authoritative for dependency direction, forbidden dependencies, direct feature-to-feature import rules, adapter rules, and business-rule placement. Source placement: [source-layout.md](source-layout.md).
 
 ## Dependency Direction
-
-CLI and Web inbound adapters call features, features use domain and may use
-shared primitives, and domain may use shared primitives.
 
 ```text
 adapters/cli, adapters/web
@@ -27,11 +22,9 @@ domain/
 shared/
 ```
 
-`adapters/desktop` is an inbound presentation/runtime adapter invoked by the
-platform composition root. It receives the already-composed ASGI application
-through its server boundary and does not import features or `adapters/web`.
+`adapters/desktop` is an inbound presentation/runtime adapter invoked by the platform composition root: it receives the already-composed ASGI application through its server boundary and does not import features or `adapters/web`.
 
-Outbound adapters implement ports owned by features or common feature ports.
+Outbound adapters implement ports owned by features or common feature ports:
 
 ```text
 adapters/db, adapters/fs, adapters/metadata, adapters/config, adapters/artist_ids
@@ -41,106 +34,38 @@ features/*/ports.py or features/common_ports.py
 domain/
 ```
 
-`platform/` is the composition root and wires features and adapters together.
-Inbound adapters do not construct outbound adapters themselves. The current
-composition-module inventory and responsibilities are documented in
-[source-layout.md](source-layout.md).
+`platform/` is the composition root wiring features and adapters together; inbound adapters never construct outbound adapters themselves. Composition-module inventory: [source-layout.md](source-layout.md).
 
 ## Forbidden Dependencies
 
 ```text
-domain -> adapters
-domain -> platform
-domain -> db
-domain -> fs
-domain -> web
-domain -> cli
-
+domain -> adapters | platform | db | fs | web | cli
 features -> concrete adapter implementations
 features -> internal implementations of other features
-
 adapters -> platform
 adapters/cli, adapters/web, adapters/desktop -> adapters/db, adapters/fs, adapters/metadata, adapters/config, adapters/artist_ids
 adapters/cli -> adapters/web
 adapters/desktop -> adapters/web
-
 adapters/web/routes -> direct filesystem operations
 adapters/cli/commands -> direct filesystem operations
 ```
 
-Inbound adapters must not import concrete outbound adapter subpackages
-(`adapters.db`, `adapters.fs`, `adapters.metadata`, `adapters.config`, or
-`adapters.artist_ids`). The exact-pair allowlist permits only the pure,
-I/O-free TOML-representation helper import from
-`adapters/cli/commands/config.py` to
-`omym2.adapters.config.toml_config_store`. That exception does not permit
-adapter construction or I/O from the CLI. No file under `adapters/web/` or
-`adapters/desktop/`, and no other file under `adapters/cli/`, may import a
-concrete outbound adapter subpackage; typed Web schemas translate feature DTOs
-without importing TOML validators or serializers. The desktop adapter also
-does not import the Web adapter: the platform layer injects the composed
-FastAPI application into its server boundary.
+Inbound adapters must not import concrete outbound adapter subpackages. The exact-pair allowlist permits only the pure, I/O-free TOML-representation helper import from `adapters/cli/commands/config.py` to `omym2.adapters.config.toml_config_store`; it does not permit adapter construction or I/O from the CLI. No file under `adapters/web/` or `adapters/desktop/`, and no other file under `adapters/cli/`, may import a concrete outbound adapter subpackage; typed Web schemas translate feature DTOs without importing TOML validators or serializers. The desktop adapter does not import the Web adapter — the platform layer injects the composed FastAPI application.
 
-Direct imports between features are prohibited in principle. When multiple usecases are chained, orchestration is done in CLI, Web, or platform.
-
-For example, `omym2 add --apply` does not have `features/add` call `features/apply` directly. Instead, the CLI or platform calls `ApplyPlanUseCase` after executing `CreateAddPlanUseCase`.
+Direct imports between features are prohibited in principle; chained usecases are orchestrated in CLI, Web, or platform. Example: `omym2 add --apply` does not have `features/add` call `features/apply`; the CLI or platform calls `ApplyPlanUseCase` after `CreateAddPlanUseCase`.
 
 ## Business Rule Placement
 
-Domain services and usecases decide business rules.
-
-Adapters persist, restore, read, write, scan, move, render, parse, and call external tools. They must not decide conflicts, duplicates, canonical paths, metadata validity, or PlanAction status.
-
-Bad example:
-
-```python
-# adapters/db/sqlite/repositories.py
-
-if target_path_exists:
-    action = PlanAction.conflict(...)
-```
-
-Conflict judgment is the responsibility of a domain service or usecase.
-
-Good example:
-
-```python
-# adapters/db/sqlite/repositories.py
-
-return Track(
-    id=row["id"],
-    current_path=row["current_path"],
-    metadata_hash=row["metadata_hash"],
-)
-```
-
-This only restores a domain model from persisted data, so it is allowed.
+Domain services and usecases decide business rules. Adapters persist, restore, read, write, scan, move, render, parse, and call external tools — they must not decide conflicts, duplicates, canonical paths, metadata validity, or PlanAction status. A repository that sets a PlanAction to conflict because a target path exists is a violation; a repository that merely restores a `Track` from persisted row data is correct.
 
 ## Inbound Adapter Rule
 
-CLI and Web route user intent to usecases. The desktop adapter supplies native
-window and server mechanics around the already-composed Web application; it
-does not call feature usecases or expose a native bridge. Inbound adapters may
-orchestrate multiple usecases when the command contract requires it, but they
-must not perform filesystem mutations directly.
-
-Route handlers and command handlers should stay thin. They translate input, call usecases, and format output.
+CLI and Web route user intent to usecases. The desktop adapter supplies native window and server mechanics around the composed Web application; it never calls feature usecases or exposes a native bridge. Inbound adapters may orchestrate multiple usecases when the command contract requires it but must not perform filesystem mutations directly. Route and command handlers stay thin: translate input, call usecases, format output.
 
 ## Outbound Adapter Rule
 
-DB, filesystem, metadata, and config adapters implement ports.
-
-FileScanner must not read tags or calculate hashes. FileSnapshotReader may compose filesystem stat, MetadataReader, hash calculation, and Clock, but it must not decide conflicts, duplicates, canonical paths, or PlanAction status.
+DB, filesystem, metadata, and config adapters implement ports. FileScanner must not read tags or calculate hashes. FileSnapshotReader may compose filesystem stat, MetadataReader, hash calculation, and Clock, but must not decide conflicts, duplicates, canonical paths, or PlanAction status.
 
 ## Tests
 
-Architecture tests enforce the highest-risk dependency rules:
-
-* source files follow naming conventions
-* usecases do not import concrete adapters
-* domain does not import adapters or platform
-* shared stays below upper layers
-* adapters do not import platform
-* CLI, Web, and desktop adapters do not import concrete outbound adapters (`db`,
-  `fs`, `metadata`, `config`, `artist_ids`), except the one CLI-only pair above
-* the desktop adapter does not import the Web adapter or expose feature access
+Architecture tests enforce the highest-risk rules: source naming conventions; usecases not importing concrete adapters; domain not importing adapters or platform; shared staying below upper layers; adapters not importing platform; CLI/Web/desktop adapters not importing concrete outbound adapters (except the one CLI-only pair above); the desktop adapter not importing the Web adapter or exposing feature access.

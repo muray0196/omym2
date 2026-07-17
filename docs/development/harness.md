@@ -1,63 +1,35 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, Windows desktop CI expectations, suppressions, and runtime boundaries.
+description: Quality commands, validation gates, checks.sh modes, Codex completion hook, suppressions, and runtime configuration boundaries.
 tags: [development, tooling, quality-gates, validation, web, desktop]
-timestamp: 2026-07-17T22:43:57+09:00
+timestamp: 2026-07-18T12:00:00+09:00
 ---
 
 # Development Harness
 
-This document is authoritative for developer quality commands, validation gates,
-suppressions, and runtime configuration boundaries.
-
-Product command behavior is defined in [COMMANDS.md](../COMMANDS.md). Test design is defined in [testing.md](testing.md). Application config and stored path policy are defined in [STORAGE.md](../STORAGE.md) and [contracts/](../contracts/).
-
-Keep this file limited to commands and validation policy.
+Authoritative for developer quality commands, validation gates, suppressions, and runtime configuration boundaries. Product command behavior: [COMMANDS.md](../COMMANDS.md); test design: [testing.md](testing.md); config and stored path policy: [STORAGE.md](../STORAGE.md), [contracts/](../contracts/). This file stays limited to commands and validation policy.
 
 ## Dependency Setup
 
-Install dependencies after checkout, when a dependency manifest or lockfile changes, or when the environment is missing:
+After checkout, on manifest/lockfile changes, or when the environment is missing:
 
 ```bash
 uv sync --locked --dev
-cd web
-npm ci
-cd ..
+cd web && npm ci && cd ..
 ```
 
-Dependency installation is setup, not a quality check. Reuse `.venv`,
-`web/node_modules/`, and tool caches during ordinary edit loops and
-validation reruns. Do not routinely delete or reinstall them; clean
-installation rewrites the complete dependency tree. Hosted CI performs both
-locked installations before running the quality wrapper.
+Installation is setup, not a quality check. Reuse `.venv`, `web/node_modules/`, and tool caches during edit loops and validation reruns; do not routinely delete or reinstall. Hosted CI performs both locked installations before the quality wrapper.
 
 ## Bundled Web Source
 
-The React and Vite frontend lives under `web/`. It is the only frontend source,
-dependency, test, fixture, and CI working directory.
-
-The generated API boundary is intentional source. After a coordinated
-Pydantic/OpenAPI contract change, regenerate it with:
-
-```bash
-cd web
-npm run api:generate
-cd ..
-```
-
-Ordinary validation uses `npm run api:check`, which regenerates into temporary
-output and compares it with the committed OpenAPI/client files without using
-the current Git diff as its baseline.
+The React/Vite frontend under `web/` is the only frontend source, dependency, test, fixture, and CI working directory. The generated API boundary is intentional source: after a coordinated Pydantic/OpenAPI contract change, regenerate with `cd web && npm run api:generate`. Ordinary validation uses `npm run api:check`, which regenerates into temporary output and compares against the committed OpenAPI/client files without using the Git diff as baseline.
 
 ## Edit-Loop Commands
 
-During implementation, check only Python files changed in the current task.
-Avoid project-wide diagnostics during the edit loop unless the change crosses
-many modules or the failure cannot be understood from changed-file checks.
+Check only Python files changed in the current task; avoid project-wide diagnostics unless the change crosses many modules or the failure cannot be understood from changed-file checks.
 
-Use this command group after editing Python files. Replace <py-files>
-with the Python files changed in the current task:
+After editing Python files (`<py-files>` = changed files):
 
 ```bash
 uv run ruff check <py-files> --fix --output-format=concise
@@ -65,12 +37,9 @@ uv run ruff format <py-files> -q
 uv run basedpyright <py-files> --level error
 ```
 
-Ruff auto-fix runs before formatting. Basedpyright reports errors only. Do not
-use verbose, statistics, JSON output, or full-project diagnostics during the edit
-loop. The checked-in configuration resolves dependencies from the repository's
-locked `.venv`.
+Ruff auto-fix runs before formatting; basedpyright reports errors only. No verbose/statistics/JSON output or full-project diagnostics in the edit loop. The checked-in configuration resolves dependencies from the locked `.venv`.
 
-Use this command group after editing the React Web UI:
+After editing the React Web UI:
 
 ```bash
 cd web
@@ -85,143 +54,66 @@ uv run python scripts/web/sync_web_static.py
 uv run python scripts/web/audit_web_static.py
 ```
 
-The sync performs a complete destination replacement. The audit hashes both
-trees and rejects stale, missing, remote, source-map, secret, inline-script,
-and inline-style output before packaging.
+The sync performs a complete destination replacement; the audit hashes both trees and rejects stale, missing, remote, source-map, secret, inline-script, and inline-style output before packaging.
 
 ## Final Quality Gates
 
-The aggregate completion gate is:
-
-```bash
-scripts/checks.sh all
-```
-
-All gates must pass:
+The aggregate completion gate is `scripts/checks.sh all`. All gates must pass:
 
 * OpenAPI generation and the committed TypeScript client have zero drift.
-* Frontend formatting fails if Prettier would change any file.
-* Frontend linting fails if ESLint reports any issue.
-* Strict frontend type checking reports no error.
+* Frontend formatting (Prettier), linting (ESLint), and strict typechecking report no change/issue/error.
 * Vitest unit/component tests pass without watch mode.
 * The Vite production build and synchronized static export audit pass.
-* Pinned-Chromium Playwright keyboard and axe E2E passes against an isolated
-  loopback FastAPI application root.
-* Wheel/sdist audit, sdist-to-wheel rebuild without Node.js, and clean-install
-  smoke pass for the direct and rebuilt wheels.
-* `npm run test:performance` enforces the installed-package interactive-shell
-  time and initial JavaScript-size budgets.
-* Linting fails if any lint error remains.
-* Formatting fails if Ruff would change any file.
-* Type checking fails if `basedpyright` reports any error or warning.
-* Tests fail if any test fails.
+* Pinned-Chromium Playwright keyboard and axe E2E passes against an isolated loopback FastAPI application root.
+* Wheel/sdist audit, sdist-to-wheel rebuild without Node.js, and clean-install smoke pass for direct and rebuilt wheels.
+* `npm run test:performance` enforces the installed-package interactive-shell and initial JavaScript-size budgets.
+* Ruff linting and formatting report no error/change; `basedpyright` reports no error or warning; all tests pass.
 
-If the Python project skeleton or tool configuration does not exist yet, report the commands as not runnable instead of inventing replacement commands.
+If the Python project skeleton or tool configuration does not exist yet, report the commands as not runnable instead of inventing replacements.
 
 ## Codex Completion Backstop
 
-The repo-local `.codex/hooks.json` registers one `Stop` hook that delegates to
-the path-aware `scripts/checks.sh completion` mode when repository work is
-present. The hook does not redefine gate commands or install dependencies.
+The repo-local `.codex/hooks.json` registers one `Stop` hook delegating to path-aware `scripts/checks.sh completion` when repository work is present; the hook does not redefine gate commands or install dependencies.
 
-During Codex implementation, run the smallest checks that cover the changed
-area, then let the `Stop` hook own one completion run. Do not run
-`scripts/checks.sh completion` manually immediately before a normal Codex
-handoff: the hook cannot consume that result and would repeat the same checks.
+During Codex implementation, run the smallest checks covering the changed area, then let the `Stop` hook own one completion run — do not run `scripts/checks.sh completion` manually immediately before a normal handoff (the hook cannot consume that result and would repeat the checks). Run completion manually only when the hook is unavailable or bypassed, a hook failure needs direct diagnosis, or an environment-only repair must be verified. Repository edits change the hook fingerprint and re-trigger validation; environment-only repairs do not and require one manual completion run.
 
-Run the completion mode manually when the hook is unavailable or bypassed, a
-hook failure needs direct diagnosis, or an environment-only repair must be
-verified. Repository edits change the hook fingerprint and trigger validation
-again. Environment-only repairs do not, so they require one manual completion
-run before completion is attempted again.
-
-The completion mode selects checks from paths changed relative to the merge base
-with `origin/main`, including staged, unstaged, and untracked work. Docs-only
-changes run docs checks, frontend changes run Web checks, Python/backend/tooling
-changes run Python gates, and Web-adapter changes run both Web and Python gates.
-Unknown paths conservatively run Python gates. If `origin/main` is unavailable,
-all completion check groups run. E2E, package, performance, and cross-platform
-checks remain in the full aggregate gate and hosted CI.
-
-This division of responsibility applies to Codex sessions only. It does not
-replace independent CI or developer validation outside that workflow.
+Completion mode selects checks from paths changed relative to the merge base with `origin/main` (staged, unstaged, untracked): docs-only → docs checks; frontend → Web checks; Python/backend/tooling → Python gates; Web-adapter → both; unknown paths conservatively run Python gates; missing `origin/main` runs all groups. E2E, package, performance, and cross-platform checks remain in the full aggregate gate and hosted CI. This division applies to Codex sessions only; it does not replace independent CI or developer validation.
 
 ## Wrapper Script
 
-`scripts/checks.sh` wraps the command groups in this document so they can be run with one call:
+`scripts/checks.sh` wraps the command groups in this document:
 
 ```bash
 scripts/checks.sh <changed|completion|py|api|web|e2e|package|performance|all|docs|arch>
 scripts/checks.sh test <pytest-target>
 ```
 
-The mode is required; there is no default. The wrapper does not install dependencies.
-
-Each underlying command writes combined output to a private temporary log.
-Successful command logs are deleted, and a successful mode reports only its
-single pass line. On failure, the wrapper stops at the first failed gate, prints
-a bounded tail, and retains the complete log at the reported path.
-
-Use that bounded tail as the first diagnostic. If it is insufficient, inspect a
-larger tail or a targeted range from the retained log. Read the whole log or
-rerun the exact command with full output only as the final diagnostic step. For
-pytest, keep the existing progression: aggregate one-line traceback, focused
-short traceback, then focused long traceback with full capture.
+The mode is required; there is no default. The wrapper does not install dependencies. Each command writes combined output to a private temporary log: success deletes the log and prints one pass line; failure stops at the first failed gate, prints a bounded tail, and retains the complete log at the reported path. Use the bounded tail first, then a larger tail or targeted range, and read the whole log or rerun with full output only as the final step. For pytest keep the progression: aggregate one-line traceback → focused short traceback → focused long traceback with full capture.
 
 * `changed`: edit-loop checks on Python files changed vs `HEAD`
-* `completion`: path-aware Codex completion checks; excludes E2E, package,
-  performance, and cross-platform validation
+* `completion`: path-aware Codex completion checks; excludes E2E, package, performance, cross-platform
 * `py`: full Python gates
 * `api`: schema-only OpenAPI and generated-client drift gate
-* `web`: API drift, frontend format/lint/typecheck/unit/build, static sync, and
-  static audit
-* `e2e`: `web` plus two pinned-Chromium Playwright profiles against isolated
-  source-checkout servers. The registered profile covers normal inspection and
-  execution with deterministic state. The first-run profile starts without a
-  Config or registered Library and proves Settings recovery, both Organize
-  outcomes, Add review, Apply, blocked evidence, History, and filesystem state.
-  Every browser context rejects non-loopback runtime requests.
-* `package`: Vite build, complete static replacement/audit, wheel/sdist audit,
-  Node-poisoned sdist rebuild, and clean-install smoke
-* `performance`: `package` plus the installed-package frontend performance
-  budget gate and measurement record
-* `all`: `web` + `py` + E2E + package/performance, the final local gate
+* `web`: API drift, frontend format/lint/typecheck/unit/build, static sync, static audit
+* `e2e`: `web` plus two pinned-Chromium Playwright profiles against isolated source-checkout servers — the registered profile covers normal inspection/execution with deterministic state; the first-run profile starts without Config or a registered Library and proves Settings recovery, both Organize outcomes, Add review, Apply, blocked evidence, History, and filesystem state. Every browser context rejects non-loopback runtime requests.
+* `package`: Vite build, complete static replacement/audit, wheel/sdist audit, Node-poisoned sdist rebuild, clean-install smoke
+* `performance`: `package` plus the installed-package frontend performance budget gate and measurement record
+* `all`: `web` + `py` + E2E + package/performance — the final local gate
 * `docs`: docs bundle conformance tests
 * `arch`: architecture tests
 * `test <pytest-target>`: focused failure inspection
 
-The command groups in this document remain authoritative; the script must stay in sync with them.
+The command groups in this document remain authoritative; the script must stay in sync.
 
-Hosted CI runs independently diagnosable Python, API/client, frontend,
-Playwright, Linux package, Windows desktop package/native-smoke, and installed-package
-performance jobs. Linux measurement uses the pinned `ubuntu-24.04` image;
-Windows desktop package smoke uses `windows-2025`. Frontend jobs install with
-`web/package-lock.json` and pinned Chromium. The Linux package job uploads
-short-lived audited wheel evidence for the Windows job, which freezes that
-wheel, audits and smoke-tests the native ZIP, emits JSON measurements, and also
-runs the real multiprocess lock contention/crash-release test. The authoritative
-Windows build and smoke commands are in
-[Windows Desktop Packaging](desktop-packaging.md).
+Hosted CI runs independently diagnosable Python, API/client, frontend, Playwright, Linux package, Windows desktop package/native-smoke, and installed-package performance jobs. Linux measurement uses pinned `ubuntu-24.04`; Windows desktop smoke uses `windows-2025`. Frontend jobs install with `web/package-lock.json` and pinned Chromium. The Linux package job uploads short-lived audited wheel evidence for the Windows job, which freezes that wheel, audits and smoke-tests the native ZIP, emits JSON measurements, and runs the real multiprocess lock contention/crash-release test (authoritative Windows commands: [Windows Desktop Packaging](desktop-packaging.md)). The hosted Windows Server 2025 x64 job is a native development build/smoke proxy, not Windows 11 release evidence.
 
-The hosted Windows Server 2025 x64 job is a native development build/smoke
-proxy, not Windows 11 release evidence. The supported end-user target and its
-additional release-validation requirement are defined in the packaging guide.
-
-CI runs `git diff --exit-code` after tracked generators. The final diff check is
-a clean-checkout guard against validation tools mutating tracked files; it is
-intentionally CI-only because a local implementation worktree normally
-contains intended changes. Ignored `static_dist/` is protected instead by its
-explicit byte-for-byte audit.
+CI runs `git diff --exit-code` after tracked generators as a clean-checkout guard against validation tools mutating tracked files — intentionally CI-only, since a local worktree normally contains intended changes. Ignored `static_dist/` is protected instead by its explicit byte-for-byte audit.
 
 ## Pipeline Performance Benchmark
 
-For a performance change, read [benchmarks.md](benchmarks.md) and run its
-pipeline benchmark before and after the change. It owns the benchmark dataset,
-measurement boundaries, and `--trust-stat` comparison procedure.
+For a performance change, read [benchmarks.md](benchmarks.md) and run its pipeline benchmark before and after; it owns the dataset, measurement boundaries, and `--trust-stat` comparison procedure.
 
 ## Test Commands
-
-Use these pytest commands by intent:
 
 ```bash
 # Inspect a focused failure.
@@ -231,32 +123,12 @@ uv run pytest <test-target> -q --tb=short --show-capture=all
 uv run pytest <test-target> -q --tb=long -s --show-capture=all
 ```
 
-Replace `<test-target>` with a test file, test class, test function, or pytest node id.
+`<test-target>` is a test file, class, function, or pytest node id.
 
 ## Suppressions
 
-Use suppressions sparingly.
-
-Allowed suppression forms:
-
-* `# pyright: ignore[...]`
-* `# ruff: noqa: RULE`
-
-Each suppression must include a brief justification comment explaining why the warning or rule is intentionally suppressed.
+Use sparingly. Allowed forms: `# pyright: ignore[...]` and `# ruff: noqa: RULE`. Each suppression carries a brief justification comment.
 
 ## Runtime Configuration
 
-OMYM2 has no environment-variable override for artist naming, hashing, or
-logging. MusicBrainz enablement, provider bounds, hash chunk size, and log
-behavior are persisted application
-settings governed by [Config Contract](../contracts/config.md). CLI,
-browser-hosted Web, and desktop composition read that same boundary.
-
-Automatic provider lookup is enabled by default and can be disabled with
-`musicbrainz.enabled = false`. Eligibility uses Unicode script properties:
-Latin-only names stay local, while names containing non-Latin letters may
-contact MusicBrainz.
-
-Apply, Undo, Check, history, inspection, Track browsing, and Settings preview
-never invoke the provider. Operational settings do not mark a
-Library stale, and already-reviewed Plans retain their recorded paths.
+No environment-variable override exists for artist naming, hashing, or logging: MusicBrainz enablement, provider bounds, hash chunk size, and log behavior are persisted application settings governed by the [Config Contract](../contracts/config.md), read by CLI, browser-hosted Web, and desktop composition alike. Automatic provider lookup is enabled by default (`musicbrainz.enabled = false` disables); eligibility uses Unicode script properties — Latin-only names stay local, names containing non-Latin letters may contact MusicBrainz. Apply, Undo, Check, history, inspection, Track browsing, and Settings preview never invoke the provider. Operational settings do not mark a Library stale, and already-reviewed Plans retain recorded paths.

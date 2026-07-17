@@ -1,151 +1,57 @@
 ---
 type: Domain Model
 title: Domain
-description: Defines OMYM2's core entities, including metadata, companion identity, trackless unprocessed-file evidence, Plan dependencies, durable mutations, snapshots, and UUIDv7 identity policy.
+description: Entity catalog with contractual fields, domain invariants, and UUIDv7 ID policy; the authoritative home for domain concepts.
 tags: [domain-model, entities, invariants, artist-names, companions, unprocessed, operations, id-design]
-timestamp: 2026-07-17T22:43:57+09:00
+timestamp: 2026-07-18T12:00:00+09:00
 ---
 
 # Domain
 
-This document is authoritative for OMYM2 domain concepts, domain invariants, and ID design policy. Execution semantics are in [execution/](execution/), and persistence/path storage details are in [STORAGE.md](STORAGE.md) and [contracts/path-identity-storage.md](contracts/path-identity-storage.md). Any storage representation mentioned here is a domain-facing summary only.
-
-The central concepts are independent from CLI, Web UI, SQLite, TOML, filesystem APIs, and metadata extraction libraries.
+Authoritative for OMYM2 domain concepts, domain invariants, and ID design policy. Execution semantics: [execution/](execution/). Persistence and path storage: [STORAGE.md](STORAGE.md), [contracts/path-identity-storage.md](contracts/path-identity-storage.md). Storage representations mentioned here are domain-facing summaries. Core concepts are independent of CLI, Web UI, SQLite, TOML, filesystem APIs, and metadata extraction libraries.
 
 ## AppConfig
 
-Application behavior settings used by usecases.
+In-memory representation of user settings, used by usecases. Loaded from TOML by a ConfigStore adapter; domain and usecases never read TOML directly. Pure domain services receive narrow config objects (e.g. PathPolicy receives PathPolicyConfig, not AppConfig). Schema and defaults: [contracts/config.md](contracts/config.md).
 
-AppConfig is the in-memory representation of user settings. It may be loaded from TOML by a ConfigStore adapter, but domain and usecases do not read TOML directly.
-
-Usecases may receive AppConfig. Pure domain services should receive narrow config objects when possible. For example, PathPolicy should receive PathPolicyConfig instead of the entire AppConfig.
-
-The config schema and defaults are authoritative in [contracts/config.md](contracts/config.md).
-
-Artist IDs are compact internal path values generated only when PathPolicy
-renders `{artist_id}`. AppConfig contains only generation tunables; per-artist
-IDs are not user-editable settings and are not entity identities like
-`track_id` or `library_id`.
-
-Editable romanized artist-name mappings are feature data in SQLite,
-not AppConfig. They replace only display text used by artist path placeholders
-and supply the string passed to automatic compact-ID generation; they do not
-rewrite raw tags.
+* Artist IDs are compact internal path values generated only when PathPolicy renders `{artist_id}`. AppConfig holds only generation tunables; per-artist IDs are not user-editable settings and not entity identities like `track_id` or `library_id`.
+* Editable romanized artist-name mappings are feature data in SQLite, not AppConfig. They replace only display text used by artist path placeholders and supply the string passed to automatic compact-ID generation; they never rewrite raw tags.
 
 ## FileScanEntry
 
-A cheap filesystem discovery result produced while scanning a directory tree.
-
-Representative fields:
-
-* path
-* size
-* mtime
-* file_extension
-
-FileScanEntry is the output of FileScanner or a single-file FileStatReader observation. It represents that a candidate file was found, but it does not contain music metadata, content hash, or metadata hash.
-
-FileScanEntry must not be used to decide duplicates, metadata validity, or final movement by itself. It is only an input for later inspection.
+Cheap filesystem discovery result from scanning (output of FileScanner or a single-file FileStatReader observation). Fields: path, size, mtime, file_extension. Carries no music metadata, content hash, or metadata hash. Must not decide duplicates, metadata validity, or final movement by itself; it is only input for later inspection.
 
 ## FileSnapshot
 
-A complete observed state of one file at a certain point in time.
+Complete observed state of one file at a point in time, created by a snapshot-capturing port after stat, metadata read, and hash calculation (FileScanner never creates one). Fields: path, size, mtime, file_extension, content_hash, metadata_hash, metadata, filesystem_identity, captured_at. Not the identity of a managed track.
 
-Representative fields:
-
-* path
-* size
-* mtime
-* file_extension
-* content_hash
-* metadata_hash
-* metadata
-* filesystem_identity
-* captured_at
-
-FileSnapshot is created by a snapshot-capturing port after filesystem stat, metadata reading, and hash calculation have been performed. FileScanner does not create FileSnapshot.
-
-FileSnapshot is not the identity of a managed track.
-
-A fresh filesystem capture carries an ephemeral token containing device,
-inode, size, nanosecond mtime, and nanosecond ctime. Capture accepts the token
-only when the same state is observed before and after metadata and hash reads.
-Apply requires that token and the captured content hash from its fresh
-precondition capture. The FileMover verifies the token before claiming a
-target and both the token and bytes before unlinking the source. The token is
-not persisted; snapshots reconstructed from trusted Track stat baselines carry
-no filesystem token and are never sufficient for Apply.
-
-`size` and `mtime` are optimization hints, not proof of content equality. Default workflows and apply must not rely on them alone. The explicit CLI `--trust-stat` mode may reconstruct a snapshot from the last verified Track state only under the eligibility and risk rules owned by the organize, refresh, and check execution contracts.
+* A fresh filesystem capture carries an ephemeral token (device, inode, size, nanosecond mtime, nanosecond ctime), accepted only when the same state is observed before and after metadata and hash reads. Apply requires that token plus the captured content hash from its fresh precondition capture. FileMover verifies the token before claiming a target, and both token and bytes before unlinking the source. The token is not persisted; snapshots reconstructed from trusted Track stat baselines carry no token and are never sufficient for Apply.
+* `size` and `mtime` are optimization hints, not proof of content equality; default workflows and apply must not rely on them alone. Explicit CLI `--trust-stat` may reconstruct a snapshot from the last verified Track state only under the eligibility and risk rules of the organize, refresh, and check execution contracts.
 
 ## TrackMetadata
 
-Metadata read from a music file tag.
+Metadata read from a music file tag: title, artist, album, album_artist, genre, year, track_number, track_total, disc_number, disc_total. Filesystem attributes (extension, size) are not TrackMetadata. Missing, empty, malformed, or inconsistent values are allowed at this layer; validation and fallback belong to usecases or PathPolicy per AppConfig.
 
-Representative fields:
-
-* title
-* artist
-* album
-* album_artist
-* genre
-* year
-* track_number
-* track_total
-* disc_number
-* disc_total
-
-Filesystem attributes such as file extension or file size are not part of TrackMetadata.
-
-Missing, empty, malformed, or inconsistent tag values are allowed at this layer. Validation and fallback are performed by usecases or PathPolicy according to AppConfig.
-
-Raw TrackMetadata is never overwritten by a derived artist display name.
-Metadata hashes, Track persistence, album grouping, and artist-ID lookup keep
-using the raw tag values even when a user-edited or automatic mapping supplies
-different display text.
+Raw TrackMetadata is never overwritten by a derived artist display name. Metadata hashes, Track persistence, album grouping, and artist-ID lookup keep using raw tag values even when a user-edited or automatic mapping supplies different display text.
 
 ## ArtistNameSourceKey
 
-`derive_artist_name_source_key` produces the sole lookup key used for editable
-artist-name mappings. It treats the complete source artist or album-artist
-value as one opaque string and applies these rules in order:
+`derive_artist_name_source_key` produces the sole lookup key for editable artist-name mappings, treating the complete artist or album-artist value as one opaque string:
 
 1. Missing input produces no key.
-2. Normalize the string to Unicode NFC.
-3. Replace each run of Unicode whitespace with one ASCII space and remove
-   leading and trailing whitespace.
-4. If no text remains, produce no key.
+2. Normalize to Unicode NFC.
+3. Replace each Unicode-whitespace run with one ASCII space; trim leading/trailing whitespace.
+4. Empty result produces no key.
 
-Key derivation preserves case, punctuation, compatibility characters, source
-order, and multi-artist separators. It never applies PathPolicy sanitization,
-case folding, transliteration, or multi-artist splitting. Consequently,
-canonically equivalent spellings and whitespace-only variations share a cache
-entry while other textual distinctions remain separate.
-
-Naming usecases derive the key with this function before every accepted-name
-cache lookup and insertion. The exact raw metadata string remains available as
-the accepted record's `source_name`; deriving a key never changes TrackMetadata.
+Derivation preserves case, punctuation, compatibility characters, source order, and multi-artist separators. It never applies PathPolicy sanitization, case folding, transliteration, or multi-artist splitting; canonically equivalent spellings and whitespace-only variants share a cache entry, other distinctions stay separate. Naming usecases derive the key before every accepted-name cache lookup and insertion. The exact raw string remains as the accepted record's `source_name`; deriving a key never changes TrackMetadata.
 
 ## ArtistNameProjection
 
-An immutable derived value containing the effective `artist` and
-`album_artist` display strings for one raw TrackMetadata value.
-
-The projection is assembled from resolver output before PathPolicy receives it.
-Missing mappings preserve the original strings, and a composite multi-artist
-string is treated as one opaque key. PathPolicy itself does not load mapping
-state, run a language model, or contact a provider.
-
-The shared resolver below returns `ArtistNameResolution` values for explicit
-consumers. Any consumer that turns those results into an
-`ArtistNameProjection` must do so explicitly and pass that projection onward;
-defining the resolver does not make PathPolicy or ordinary path projection
-perform cache, model, or provider work.
+Immutable derived value with the effective `artist` and `album_artist` display strings for one raw TrackMetadata value, assembled from resolver output before PathPolicy receives it. Missing mappings preserve the original strings; a composite multi-artist string is one opaque key. PathPolicy never loads mapping state, runs a language model, or contacts a provider. Any consumer turning resolver `ArtistNameResolution` results into a projection must do so explicitly and pass it onward; the resolver's existence does not make PathPolicy or ordinary path projection perform cache, model, or provider work.
 
 ## Artist Name Batch Resolution
 
-The shared artist-name resolver accepts artist and album-artist source values
-as one batch and resolves each complete value with this precedence:
+The shared resolver accepts artist and album-artist source values as one batch and resolves each complete value with this precedence:
 
 ```text
 saved original-to-English mapping by ArtistNameSourceKey
@@ -153,590 +59,207 @@ saved original-to-English mapping by ArtistNameSourceKey
 -> original source value
 ```
 
-The resolver derives the whole-string source key and
-deduplicates the batch by that key. It performs at most one accepted-cache
-lookup and, on an eligible miss, at most one provider lookup for each distinct
-key. The resulting display value is reused for every occurrence of that key;
-the resolver never splits a source into artist components or changes their
-order. Missing and whitespace-only values produce no key and remain unchanged.
-
-The resolver returns one `ArtistNameResolution` for each input in input order.
-Each result retains `source_name` and `source_key`, supplies the effective
-`resolved_name`, and records provenance as `user_preference`,
-`accepted_musicbrainz`, `new_musicbrainz`, or `original`. A result that keeps
-the original may also carry a stable issue describing ineligibility,
-unavailability, low confidence, no confident match, or ambiguity. Provider
-provenance is carried by the associated `AcceptedArtistName` mapping; it does
-not modify TrackMetadata. `user_preference` means the saved mapping was added or
-last corrected by the user, not that a second TOML preference layer exists.
-
-Only positive provider results are accepted automatically. Automatic insertion
-is sticky: a later lookup cannot replace the row selected for the same source
-key. Users may add, edit, or delete any mapping in Settings; an edit marks that
-row as user-supplied and removes provider provenance. If another writer wins an
-automatic insert race, the persisted winner supplies the resolved value.
-Misses, ambiguity, ineligibility, model or provider
-unavailability, malformed responses, timeouts, and other provider failures are
-not negative cache entries and preserve the original source value. These
-fallbacks are normal resolution outcomes rather than errors for the caller.
+* Deduplicates the batch by whole-string source key; at most one accepted-cache lookup and, on an eligible miss, at most one provider lookup per distinct key. The resolved display value is reused for every occurrence of that key. The resolver never splits a source into artist components or reorders them. Missing and whitespace-only values produce no key and remain unchanged.
+* Returns one `ArtistNameResolution` per input, in input order, retaining `source_name` and `source_key`, supplying the effective `resolved_name`, and recording provenance: `user_preference`, `accepted_musicbrainz`, `new_musicbrainz`, or `original`. A kept-original result may carry a stable issue (ineligibility, unavailability, low confidence, no confident match, ambiguity). Provider provenance is carried by the associated `AcceptedArtistName` mapping; TrackMetadata is never modified. `user_preference` means the saved mapping was added or last corrected by the user — no second TOML preference layer exists.
+* Only positive provider results are accepted automatically. Automatic insertion is sticky: a later lookup cannot replace the row for the same source key. Users may add, edit, or delete mappings in Settings; an edit marks the row user-supplied and removes provider provenance. If another writer wins an automatic insert race, the persisted winner supplies the resolved value. Misses, ambiguity, ineligibility, model/provider unavailability, malformed responses, timeouts, and other provider failures are not negative cache entries; they preserve the original value and are normal outcomes, not caller errors.
 
 ### Plan Review Diagnostics
 
-When an Add, Organize, or Refresh candidate reaches artist-name resolution and
-becomes a PlanAction, that action records a review-only diagnostic pair for its
-artist and album-artist fields. Each field snapshots the source value, resolved
-value, resolution provenance, and nullable resolution issue observed while the
-target path was calculated. A missing field remains an explicit resolution
-outcome inside the pair.
-
-Candidates blocked before artist-name resolution and Undo actions record no
-artist-name diagnostic pair. Plan review reads only this recorded snapshot; it
-does not reload mappings or contact MusicBrainz. Apply preserves the snapshot while changing action status
-and continues to execute only the recorded paths.
+When an Add, Organize, or Refresh candidate reaches artist-name resolution and becomes a PlanAction, the action records a review-only diagnostic pair for its artist and album-artist fields: source value, resolved value, provenance, and nullable issue as observed while the target path was calculated. A missing field is still an explicit resolution outcome. Candidates blocked before resolution and Undo actions record no pair. Plan review reads only the recorded snapshot — no mapping reload, no MusicBrainz. Apply preserves the snapshot while changing action status and executes only recorded paths.
 
 ### Automatic lookup eligibility
 
-A cache miss is eligible for a new MusicBrainz lookup only when all of these
-conditions hold:
+A cache miss triggers a new MusicBrainz lookup only when all hold:
 
 * persisted automatic lookup is enabled
-* the source does not contain the ASCII comma (`U+002C`); comma-composite
-  values remain unresolved by automatic lookup
-* the source contains at least one alphabetic character outside the Unicode
-  Latin script
+* the source contains no ASCII comma (`U+002C`); comma-composite values remain unresolved by automatic lookup
+* the source contains at least one alphabetic character outside the Unicode Latin script
 
-Latin-only names, including names with diacritics, and values without
-alphabetic characters do not need romanization and do not contact MusicBrainz.
-Japanese, Chinese, Korean, Cyrillic, and mixed-script sources are eligible.
-
-Saved mappings still apply to comma-composite or otherwise ineligible values.
-Persisted opt-out records `automatic_lookup_disabled`; an otherwise eligible
-source that does not require romanization records
-`romanization_not_required`. Each disables only the new provider lookup and
-does not disable mapping resolution.
+Latin-only names (including diacritics) and values without alphabetic characters never contact MusicBrainz. Japanese, Chinese, Korean, Cyrillic, and mixed-script sources are eligible. Saved mappings still apply to ineligible values. Persisted opt-out records `automatic_lookup_disabled`; an otherwise eligible source not requiring romanization records `romanization_not_required`. Each disables only the new provider lookup, not mapping resolution.
 
 ### Deterministic MusicBrainz acceptance
 
-MusicBrainz search candidates are ranked by numeric score descending. The top
-candidate is considered only when its score is at least `95`. The resolver then
-finds the highest-scoring runner-up with a different MusicBrainz artist
-identity. When that distinct runner-up is within `5` score points of the top
-candidate, including a difference of exactly `5`, the result is ambiguous and
-is not accepted. Repeated rows for the same artist identity do not create
-runner-up ambiguity; they are coalesced by identity, and their alias facts are
-treated as one unordered set.
-
-An accepted candidate must carry a valid MusicBrainz artist identity and a
-usable Latin display name. Name selection uses these tiers in order:
-
-1. a primary `ja-Latn` alias, using its Latin `sort-name` before its Latin
-   `name`
-2. the Latin artist `sort-name`
-
-Aliases are an unordered set; provider response order is never a tie-breaker.
-For the first tier, `ja-Latn` matching is case-insensitive and accepts a hyphen
-or underscore separator. Commas in an alias or artist `sort-name` are
-normalized to spaces, preserving family-name order such as `Sakamoto, Ryuichi`
-→ `Sakamoto Ryuichi`. Duplicate aliases preserve primary status from any
-duplicate observation. English and other aliases do not outrank the artist
-`sort-name`.
-A usable Latin display name is nonblank, contains at least one Latin-script
-alphabetic code point, and contains no non-Latin alphabetic code point.
+* Candidates rank by numeric score descending. The top candidate is considered only when its score is at least `95`. If the highest-scoring runner-up with a different MusicBrainz artist identity is within `5` score points (including exactly `5`), the result is ambiguous and not accepted. Repeated rows for the same artist identity are coalesced by identity and never create runner-up ambiguity; their alias facts are one unordered set.
+* An accepted candidate must carry a valid MusicBrainz artist identity and a usable Latin display name. Name selection tiers, in order:
+  1. a primary `ja-Latn` alias, its Latin `sort-name` before its Latin `name`
+  2. the Latin artist `sort-name`
+* Aliases are an unordered set; provider response order is never a tie-breaker. `ja-Latn` matching is case-insensitive and accepts a hyphen or underscore separator. Commas in an alias or artist `sort-name` normalize to spaces, preserving family-name order (`Sakamoto, Ryuichi` → `Sakamoto Ryuichi`). Duplicate aliases preserve primary status from any duplicate observation. English and other aliases do not outrank the artist `sort-name`. A usable Latin display name is nonblank, contains at least one Latin-script alphabetic code point, and contains no non-Latin alphabetic code point.
 
 ## PathPolicy
 
-A pure domain service that generates the Library-root-relative canonical path for a track.
+Pure domain service generating the Library-root-relative canonical path for a track. Input: TrackMetadata, file_extension, PathPolicyConfig, optional already-derived ArtistNameProjection. Output: `canonical_path`, a normalized relative path from the Library root (never absolute).
 
-Input:
-
-* TrackMetadata
-* file_extension
-* PathPolicyConfig
-* optional already-derived ArtistNameProjection
-
-Output:
-
-* canonical_path
-
-`canonical_path` is a normalized relative path from the Library root. It is not an absolute path.
-
-PathPolicy may normalize metadata values for path generation. Artist and album
-artist display values are resolved before rendering and passed explicitly;
-PathPolicy does not read AppConfig preferences or provider state. Source file
-extensions are normalized to lowercase when appended to generated paths.
-When sanitization is enabled, NFKC normalization, uniform unsafe-character
-replacement, UTF-8 component limits, Windows reserved-name protection, and
-extension preservation are current OMYM2 portability rules. They are not
-defined by output compatibility with another application. Exact behavior is
-authoritative in [the Config contract](contracts/config.md#pathpolicyconfig).
-
-PathPolicy is deterministic and does not perform I/O. It does not join paths with the Library root and does not check whether the target path exists. Target existence is handled by usecases through filesystem ports and CollisionPolicy.
-
-Path policy templates render a library-root-relative destination path stem.
-Templates must not include file extensions.
-
-OMYM2 derives the destination extension from the source music file suffix
-and appends it after rendering the template. The final PlanAction target path
-is recorded with the extension included. Apply uses the recorded target path
-without recalculating it.
-
-Allowed placeholders, initial template, preview behavior, and config validation rules are authoritative in [contracts/config.md](contracts/config.md#pathpolicyconfig).
-
-When the template includes `{artist_id}`, PathPolicy first checks an
-already-loaded internal ID by the raw metadata source key. On a miss, it passes
-the already-derived Latin display name to the pure ID generator, falling back
-to the raw source text. MusicBrainz HTTP lookup remains a feature/adapter
-concern and must not run during canonical path generation. The ID generator
-compatibility-decomposes Latin diacritics before retaining ASCII letters and
-digits, so accented letters keep their base character instead of disappearing.
-
-Planning usecases check generated targets through filesystem ports and
-CollisionPolicy. If a target is occupied, the usecase records the PlanAction
-as blocked with the documented conflict reason; PathPolicy neither performs
-that I/O nor solves collisions itself.
+* Deterministic, no I/O. Does not join paths with the Library root or check target existence. Planning usecases check generated targets through filesystem ports and CollisionPolicy; an occupied target is recorded as a blocked PlanAction with the documented conflict reason — PathPolicy neither performs that I/O nor solves collisions.
+* May normalize metadata values for path generation. Artist and album-artist display values are resolved before rendering and passed explicitly; PathPolicy reads no AppConfig preferences or provider state. Source extensions normalize to lowercase when appended.
+* Sanitization (NFKC normalization, uniform unsafe-character replacement, UTF-8 component limits, Windows reserved-name protection, extension preservation) is an OMYM2 portability rule, not compatibility with another application. Exact behavior, allowed placeholders, initial template, preview, and validation: [contracts/config.md](contracts/config.md#pathpolicyconfig).
+* Templates render a root-relative destination path stem and must not include file extensions. The destination extension is derived from the source suffix and appended after rendering; the final PlanAction target path is recorded with extension, and Apply uses the recorded path without recalculation.
+* With `{artist_id}`: PathPolicy first checks an already-loaded internal ID by the raw metadata source key; on a miss it passes the already-derived Latin display name (falling back to raw source text) to the pure ID generator. MusicBrainz HTTP lookup is a feature/adapter concern and must not run during canonical path generation. The ID generator compatibility-decomposes Latin diacritics before retaining ASCII letters and digits, so accented letters keep their base character.
 
 ## Library
 
-A music Library managed by OMYM2.
+A music Library managed by OMYM2, with stable identity independent of its current root path.
 
-A Library has stable identity independent of its current root path. The current root path is the filesystem location used to resolve Library-root-relative paths at runtime, but it is not the Library identity.
+Fields: library_id, root_path, path_policy_hash, registered_at, status, created_at, updated_at.
 
-Representative fields:
-
-* library_id
-* root_path
-* path_policy_hash
-* registered_at
-* status
-* created_at
-* updated_at
-
-The `library_id` is the stable internal identity of the Library. The initial implementation uses UUIDv7 for `library_id`.
-
-`root_path` is mutable so a future relink can update a Library's location. When
-relink is implemented, it must preserve `library_id` and must not duplicate
-Tracks, Plans, PlanActions, FileEvents, or Library-managed history records.
-
-Allowed Library status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#library-status). Library registration behavior is defined in [execution/organize.md](execution/organize.md#library-registration-behavior), and storage representation is defined in [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
+* `library_id` (UUIDv7) is the stable internal identity. `root_path` is the mutable current filesystem location used to resolve root-relative paths at runtime; it is not the identity.
+* A future relink must preserve `library_id` and must not duplicate Tracks, Plans, PlanActions, FileEvents, or Library-managed history records.
+* Status values: [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#library-status). Registration behavior: [execution/organize.md](execution/organize.md#library-registration-behavior). Storage: [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 
 ## Track
 
-The current managed state of one music file known to OMYM2.
+DB-persisted current managed state of one music file — OMYM2's last known state, not a guarantee the file still exists at the recorded path.
 
-Track is a DB-persisted domain entity. It represents OMYM2's last known state, not a guarantee that the actual file still exists at the recorded path.
+Fields: track_id, library_id, current_path, canonical_path, content_hash, metadata_hash, size (nullable), mtime (nullable), metadata, status, first_seen_at, last_seen_at, updated_at.
 
-Representative fields:
-
-* track_id
-* library_id
-* current_path
-* canonical_path
-* content_hash
-* metadata_hash
-* size (nullable)
-* mtime (nullable)
-* metadata
-* status
-* first_seen_at
-* last_seen_at
-* updated_at
-
-`current_path` and `canonical_path` are normalized paths relative to the Library root. They must not be stored as absolute paths for Library-managed Tracks.
-
-The `track_id` is the stable internal identity of the Track. The initial implementation uses UUIDv7 for `track_id`.
-
-`track_id` is generated when a Track is first recorded as managed state in OMYM2. It must not be derived from file path, canonical path, content hash, or metadata hash. Those values may change during normal operations such as add, organize, refresh, undo, and external tag correction.
-
-Every Track belongs to exactly one Library through `library_id`. Track rows do not define whether the Library is registered.
-
-`size` and `mtime` are the optional filesystem stat baseline associated with a
-verified snapshot of the managed file. Existing Tracks may have no baseline.
-They are change-detection optimization hints only: neither value is Track
-identity, and their presence does not by itself prove content equality. Only an
-explicit trust-stat workflow may treat an exact complete match as permission to
-reuse the last verified hashes and metadata; apply always captures the source.
-
-Allowed Track status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#track-status). `missing` is reported by `check` in the initial version rather than automatically persisted as Track status.
+* `track_id` (UUIDv7) is generated when a Track is first recorded as managed state. It must not be derived from file path, canonical path, content hash, or metadata hash — those change during normal add, organize, refresh, undo, and external tag correction.
+* `current_path` and `canonical_path` are normalized Library-root-relative; never absolute for Library-managed Tracks.
+* Every Track belongs to exactly one Library through `library_id`; Track rows do not define Library registration.
+* `size`/`mtime` are the optional stat baseline from a verified snapshot (existing Tracks may have none) — change-detection hints only, not identity or content-equality proof. Only an explicit trust-stat workflow may treat an exact complete match as permission to reuse the last verified hashes and metadata; apply always captures the source.
+* Status values: [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#track-status). `missing` is reported by `check` in the initial version, not automatically persisted as Track status.
 
 ## CompanionAsset
 
-The current managed state of one lyrics or artwork file associated with a
-Track. A CompanionAsset is not a Track: it has its own stable
-`companion_asset_id`, carries no music metadata, and never changes
-`track_id` identity or meaning.
+Current managed state of one lyrics or artwork file associated with a Track. Not a Track: it has its own stable `companion_asset_id`, carries no music metadata, and never changes `track_id` identity or meaning.
 
-Representative fields:
+Fields: companion_asset_id, library_id, kind (`lyrics` | `artwork`), owner_track_id, current_path, canonical_path, content_hash, size/mtime (nullable), status (`active` | `removed`), first_seen_at, last_seen_at, updated_at.
 
-* companion_asset_id
-* library_id
-* kind (`lyrics` or `artwork`)
-* owner_track_id
-* current_path
-* canonical_path
-* content_hash
-* size and mtime (nullable)
-* status (`active` or `removed`)
-* first_seen_at, last_seen_at, and updated_at
-
-`current_path` and `canonical_path` are normalized Library-root-relative
-paths even after an external Add Undo marks the asset removed. Identity is
-independent from path, hash, owner action, and Plan history. Organize may
-create or refresh an already canonical asset from a verified observation
-without a file mutation. A successful relocation preserves the ID and
-`first_seen_at`; failed or unknown mutations never advance managed state.
+* `current_path`/`canonical_path` stay normalized Library-root-relative even after an external Add Undo marks the asset removed. Identity is independent of path, hash, owner action, and Plan history.
+* Organize may create or refresh an already canonical asset from a verified observation without a file mutation. A successful relocation preserves the ID and `first_seen_at`; failed or unknown mutations never advance managed state.
 
 ### Companion Association
 
-Companion classification is deterministic over regular, non-symlink source
-inventory:
+Deterministic classification over regular, non-symlink source inventory:
 
-* a case-insensitive `.lrc` suffix is lyrics and associates with the single
-  same-directory audio candidate having the same stem;
-* a case-insensitive `.jpg` or `.png` suffix is directory artwork and is
-  represented once per source file, not once per Track;
-* artwork uses the first audio candidate in source-path order as its semantic
-  owner and depends on every audio candidate in that source directory;
-* artwork has a target only when every associated audio target has the same
-  parent, and it preserves its source basename below that parent.
+* case-insensitive `.lrc` is lyrics; associates with the single same-directory audio candidate having the same stem
+* case-insensitive `.jpg`/`.png` is directory artwork; represented once per source file, not once per Track
+* artwork's semantic owner is the first audio candidate in source-path order; it depends on every audio candidate in that source directory
+* artwork has a target only when every associated audio target has the same parent, preserving its source basename below that parent
 
-An ambiguous lyrics owner or divergent artwork target parents produce a
-reviewable blocked companion action rather than a guessed association.
-Planning records the semantic owner separately from every execution dependency.
+An ambiguous lyrics owner or divergent artwork target parents produce a reviewable blocked companion action, never a guessed association. Planning records the semantic owner separately from every execution dependency.
 
-When companion processing is enabled, Add may turn these claims into new
-companion actions. When unprocessed processing alone requests inventory, the
-same classification reserves recognized companion paths from leftover
-collection but creates no companion action, content snapshot, asset ID, or
-dependency. Check performs this classification for unmanaged-companion
-discovery only when companion processing is enabled; managed assets and
-recorded Plan/event diagnostics are checked regardless of the current toggle.
+With companion processing enabled, Add may turn these claims into new companion actions. When unprocessed processing alone requests inventory, the same classification reserves recognized companion paths from leftover collection but creates no companion action, content snapshot, asset ID, or dependency. Check performs this classification for unmanaged-companion discovery only when companion processing is enabled; managed assets and recorded Plan/event diagnostics are checked regardless of the toggle.
 
 ## Unprocessed Collection Evidence
 
-An unprocessed file is a regular, non-symlink Add source left unclaimed after
-audio and companion classification. Unprocessed-only Add inventory still uses
-classification-only companion claims, so a recognized `.lrc`, `.jpg`, or
-`.png` path is not a leftover even when new companion actions are disabled.
-Collection does not create a third kind of managed Library entity: the file is
-neither a Track nor a CompanionAsset and has no stable entity ID, owner,
-metadata, or Library-relative managed path.
+An unprocessed file is a regular, non-symlink Add source left unclaimed after audio and companion classification. Unprocessed-only Add inventory still uses classification-only companion claims, so a recognized `.lrc`, `.jpg`, or `.png` path is not a leftover even when new companion actions are disabled. Collection creates no third managed Library entity: the file is neither Track nor CompanionAsset and has no stable entity ID, owner, metadata, or Library-relative managed path.
 
-Its durable identity is the reviewed `PlanAction.action_id` followed by the
-attempted `FileEvent.event_id`. A forward `move_unprocessed` action records:
+Durable identity is the reviewed `PlanAction.action_id` followed by the attempted `FileEvent.event_id`. A forward `move_unprocessed` action records:
 
-* `track_id`, `companion_asset_id`, and `owner_action_id` as null;
-* no dependencies or artist-name diagnostics;
-* an absolute source and absolute target anchored below the Plan's retained
-  `source_root_at_plan`;
-* a target shaped exactly as
-  `<source-root>/<portable-directory>/<source-relative-path>`;
-* `content_hash_at_plan` from a rooted content-only snapshot and a null
-  `metadata_hash_at_plan`.
+* `track_id`, `companion_asset_id`, and `owner_action_id` as null; no dependencies or artist-name diagnostics
+* absolute source and target anchored below the Plan's retained `source_root_at_plan`
+* a target shaped exactly `<source-root>/<portable-directory>/<source-relative-path>`
+* `content_hash_at_plan` from a rooted content-only snapshot; null `metadata_hash_at_plan`
 
-The inverse action keeps the same trackless, content-only shape and swaps the
-recorded paths only after exact succeeded-event provenance is proven. Current
-Config does not relabel either path.
+The inverse action keeps the same trackless, content-only shape and swaps the recorded paths only after exact succeeded-event provenance is proven. Current Config does not relabel either path.
 
 ## Plan
 
-A scheduled set of actions before execution.
+A scheduled set of actions before execution — the boundary between calculation and execution; no Library-managed mutation has occurred yet.
 
-A Plan describes what OMYM2 intends to do, but no Library-managed file
-mutation has occurred yet. Plan creation is the boundary between calculation
-and execution.
+Fields: plan_id, library_id, plan_type, status, created_at, config_hash, library_root_at_plan, source_root_at_plan (nullable), source_run_id (nullable; undo Plans only), summary, actions.
 
-Representative fields:
+Plan types: add, organize, refresh, undo. Status values: [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#plan-status).
 
-* plan_id
-* library_id
-* plan_type
-* status
-* created_at
-* config_hash
-* library_root_at_plan
-* source_root_at_plan (nullable)
-* source_run_id (nullable; set only for undo Plans)
-* summary
-* actions
-
-Plan types:
-
-* add
-* organize
-* refresh
-* undo
-
-Allowed Plan status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#plan-status).
-
-Execution summary: a Plan stores reviewed action data, including
-`library_root_at_plan`, for later apply. An Add Plan also retains
-`source_root_at_plan` so absolute external audio, companion, and unprocessed
-sources and targets remain anchored to the exact reviewed source root. An Undo
-Plan copies that root from the source Plan when reversing an external import;
-Organize and Refresh leave it null. The authoritative apply contract is in
-[execution/apply.md](execution/apply.md), including stale-root handling in
-[Apply-Time Precondition Failures](execution/apply.md#apply-time-precondition-failures).
-
-A Plan is single-use in the initial version.
-
-An undo Plan records the terminal Run it reverses in `source_run_id`. This is
-provenance and deduplication state, not a path or display-only link. Non-undo
-Plans have no source Run.
+* A Plan is single-use in the initial version.
+* A Plan stores reviewed action data, including `library_root_at_plan`, for later apply. An Add Plan retains `source_root_at_plan` so absolute external audio, companion, and unprocessed sources/targets stay anchored to the exact reviewed source root. An Undo Plan copies that root from the source Plan when reversing an external import; Organize and Refresh leave it null. Apply contract, including stale-root handling: [Apply-Time Precondition Failures](execution/apply.md#apply-time-precondition-failures).
+* An undo Plan records the terminal Run it reverses in `source_run_id` — provenance and deduplication state, not a display-only link. Non-undo Plans have no source Run.
 
 ## PlanAction
 
-A planned action for one file or one managed Track inside a Plan.
+A planned action for one file or one managed Track inside a Plan. Separates the kind of intended operation from its current status and its blocked reason.
 
-PlanAction separates the kind of intended operation from its current status and from the reason why it may be blocked.
+Fields: action_id, plan_id, library_id, track_id (nullable), action_type, source_path, target_path, reverses_event_id (nullable; Undo only), companion_asset_id (nullable), owner_action_id (nullable), content_hash_at_plan, metadata_hash_at_plan, status, reason, sort_order.
 
-Representative fields:
-
-* action_id
-* plan_id
-* library_id
-* track_id (nullable)
-* action_type
-* source_path
-* target_path
-* reverses_event_id (nullable; set only for Undo actions)
-* companion_asset_id (nullable)
-* owner_action_id (nullable)
-* content_hash_at_plan
-* metadata_hash_at_plan
-* status
-* reason
-* sort_order
-
-Path representation summary: managed Library destinations are stored as
-normalized paths relative to the owning Library root. External Add sources are
-absolute. A reviewed unprocessed action stores both paths as absolute values
-below the retained source root; an Undo of an external import also has an
-absolute target. The authoritative storage policy is in
-[contracts/path-identity-storage.md](contracts/path-identity-storage.md).
-
-File operations must resolve path references through PathResolver.
-
-Allowed action types, statuses, and reasons are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#planaction-action-type).
-
-Execution summary: `apply` handles blocked and eligible PlanActions according to [execution/apply.md](execution/apply.md#apply-behavior).
-
-Issues detected during plan creation are represented as `blocked`. Precondition failures detected during apply are represented as `failed`.
-
-`conflict` and `error` are not action types. They are represented as status and reason.
-
-`track_id` may be nullable for PlanActions that target files not yet registered
-as Tracks, such as new files in an Add Plan. It is necessarily null for an
-unprocessed-file action because collection creates no Track.
-
-Lyrics and artwork actions preallocate or reuse `companion_asset_id`; Plan
-creation does not create managed companion state before a reviewed mutation
-succeeds. The semantic owner is the existing `track_id`, an optional same-Plan
-audio `owner_action_id`, or both when the Track already exists. Apply resolves
-the final owner Track from this evidence. The separate durable PlanAction
-dependency relation records every action that must be applied first.
-Dependencies are same-Plan, cannot point to the action itself, and are not
-inferred from sort order or ownership. Shared artwork can therefore have one
-semantic owner while depending on every associated audio action.
-
-Each Undo PlanAction records the succeeded source FileEvent it reverses in
-`reverses_event_id`. Non-Undo actions leave it null. This durable provenance
-lets later Undo generation distinguish an event already reversed by a prior
-partial attempt from one still eligible; path/Track matching alone is not
-identity.
+* Paths: managed Library destinations are normalized root-relative; external Add sources are absolute; a reviewed unprocessed action stores both paths absolute below the retained source root; an Undo of an external import also has an absolute target. Authoritative: [contracts/path-identity-storage.md](contracts/path-identity-storage.md). File operations resolve path references through PathResolver.
+* Allowed action types, statuses, reasons: [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#planaction-action-type). Apply handling of blocked/eligible actions: [execution/apply.md](execution/apply.md#apply-behavior).
+* Issues detected during plan creation are `blocked`; precondition failures during apply are `failed`. `conflict` and `error` are status/reason, not action types.
+* `track_id` may be null for files not yet registered as Tracks (e.g. new Add files); necessarily null for unprocessed actions.
+* Lyrics/artwork actions preallocate or reuse `companion_asset_id`; Plan creation never creates managed companion state before a reviewed mutation succeeds. The semantic owner is the existing `track_id`, an optional same-Plan audio `owner_action_id`, or both when the Track already exists; Apply resolves the final owner Track from this evidence. The separate durable dependency relation records every action that must be applied first: same-Plan, never the action itself, never inferred from sort order or ownership. Shared artwork can have one semantic owner while depending on every associated audio action.
+* Each Undo PlanAction records the succeeded source FileEvent it reverses in `reverses_event_id` (null for non-Undo actions). This durable provenance lets later Undo generation distinguish an event already reversed by a prior partial attempt from one still eligible; path/Track matching alone is not identity.
 
 ## Run
 
-An execution attempt for applying a Plan.
+An execution attempt for applying a Plan — the parent unit for FileEvents and the main unit for history and undo, not merely a historical label.
 
-Execution summary: Run creation and status transitions follow [execution/model.md](execution/model.md#run-behavior) and [execution/apply.md](execution/apply.md#run-status).
+Fields: run_id, plan_id, library_id, status, started_at, completed_at, error_summary.
 
-Representative fields:
-
-* run_id
-* plan_id
-* library_id
-* status
-* started_at
-* completed_at
-* error_summary
-
-Allowed Run status values are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#run-status).
-
-A Run is not merely a historical label. It is the parent unit for FileEvents and the main unit used by history and undo.
+Creation and transitions: [execution/model.md](execution/model.md#run-behavior), [execution/apply.md](execution/apply.md#run-status). Status values: [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#run-status).
 
 ## FileEvent
 
-A durable mutation-log entry for one reviewed audio, companion, or
-unprocessed-file mutation.
+Durable mutation-log entry for one reviewed audio, companion, or unprocessed-file mutation.
 
-Execution summary: FileEvent creation and result updates follow [execution/model.md](execution/model.md#fileevent-behavior) and [execution/apply.md](execution/apply.md#fileevent-status).
+Fields: event_id, library_id, run_id, plan_action_id, event_type, source_path, target_path, status, started_at, completed_at, error_code, error_message, sequence_no, companion_asset_id (nullable).
 
-Representative fields:
-
-* event_id
-* library_id
-* run_id
-* plan_action_id
-* event_type
-* source_path
-* target_path
-* status
-* started_at
-* completed_at
-* error_code
-* error_message
-* sequence_no
-* companion_asset_id (nullable)
-
-Allowed FileEvent types, statuses, and error-code policy are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#fileevent-event-type).
-
-Companion events retain `companion_asset_id` and use their closed lyrics or
-artwork event type. DB-only state changes such as registering an already
-canonical Track or CompanionAsset are not FileEvents.
-
-An unprocessed event uses `move_unprocessed_file`, retains absolute paths below
-the source Plan's root, and has no Track or CompanionAsset identity. Its
-succeeded state is durable evidence for Check and Undo, not managed Library
-state.
-
-FileEvents are used for:
-
-* run detail display
-* diagnosing partial failures
-* crash inspection
-* undo plan creation
+* Behavior: [execution/model.md](execution/model.md#fileevent-behavior), [execution/apply.md](execution/apply.md#fileevent-status). Allowed types, statuses, error-code policy: [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#fileevent-event-type).
+* Companion events retain `companion_asset_id` and use their closed lyrics or artwork event type. DB-only state changes (e.g. registering an already canonical Track or CompanionAsset) are not FileEvents.
+* An unprocessed event uses `move_unprocessed_file`, retains absolute paths below the source Plan's root, and has no Track or CompanionAsset identity. Its succeeded state is durable evidence for Check and Undo, not managed Library state.
+* Used for run detail display, diagnosing partial failures, crash inspection, and undo plan creation.
 
 ## CheckIssue
 
-An inconsistency detected between OMYM2's last known managed state and the actual filesystem state.
+An inconsistency detected between OMYM2's last known managed state and the actual filesystem state. Allowed issue types: [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#checkissue-issue-type).
 
-Allowed issue types are in [contracts/status-reason-catalog.md](contracts/status-reason-catalog.md#checkissue-issue-type).
-
-A finding may identify a Track, Plan, or CompanionAsset. Companion findings
-retain nullable `companion_asset_id`; unmanaged companion findings have no
-managed asset identity.
-
-CheckIssue is calculated by `check` from DB and filesystem observations, then persisted as part of the owning Library's latest CheckRun (below) so Web and CLI browsing read stored findings instead of recomputing them on every request.
-
-Reported CheckIssues that refer to Library-managed files identify the owning Library through `library_id`.
+* A finding may identify a Track, Plan, or CompanionAsset. Companion findings retain nullable `companion_asset_id`; unmanaged companion findings have no managed asset identity.
+* Calculated by `check` from DB and filesystem observations, persisted as part of the owning Library's latest CheckRun so Web and CLI browsing read stored findings instead of recomputing.
+* Findings about Library-managed files identify the owning Library through `library_id`.
 
 ## CheckRun
 
-The persisted record of one Library's latest completed check run.
+Persisted record of one Library's latest completed check run. Fields: check_run_id, library_id, checked_at, total_count.
 
-Representative fields:
-
-* check_run_id
-* library_id
-* checked_at
-* total_count
-
-A Library has at most one CheckRun at a time: each new check run for a Library replaces its prior CheckRun and prior CheckIssues wholesale. CheckRun and CheckIssue persistence is authoritative in [contracts/db-schema.md](contracts/db-schema.md#check_runs).
+A Library has at most one CheckRun at a time: each new check replaces its prior CheckRun and CheckIssues wholesale. Persistence: [contracts/db-schema.md](contracts/db-schema.md#check_runs).
 
 ## Operation
 
-A durable record of one accepted background application request.
+Durable record of one accepted background application request. A shared typed entity: Add, Organize, Refresh, Check, Apply, and Undo use the same lifecycle, persistence, idempotency, and recovery contract. Contains no HTTP, thread, worker-pool, FastAPI, SQLite, or filesystem behavior.
 
-Operation is a shared typed entity because Add, Organize, Refresh, Check, Apply,
-and Undo use the same lifecycle, persistence, idempotency, and recovery
-contract. It contains no HTTP, thread, worker-pool, FastAPI, SQLite, or
-filesystem behavior.
+Fields: operation_id, library_id (nullable before a Library exists or can be selected), kind, status, idempotency_key, request_fingerprint, result (nullable typed union), error_code/error_message (nullable, redacted), plan_id/run_id (nullable durable links), requested_at/started_at/completed_at, result_expires_at/tombstone_expires_at.
 
-Representative fields:
-
-* operation_id
-* library_id (nullable before a Library exists or can be selected)
-* kind
-* status
-* idempotency_key
-* request_fingerprint
-* result (nullable typed union)
-* error_code / error_message (nullable and redacted)
-* plan_id / run_id (nullable durable links)
-* requested_at / started_at / completed_at
-* result_expires_at / tombstone_expires_at
-
-Operation identity is stable by `operation_id`, generated as UUIDv7. An
-idempotency key identifies a client request replay; it is not Operation
-identity and is never reused as `operation_id`.
-
-Operation is distinct from Run and FileEvent. A Run remains one Apply attempt,
-and a FileEvent remains the pre-mutation durable record for one Library music
-file change. Operation lifecycle and recovery are authoritative in
-[contracts/operations.md](contracts/operations.md).
+* `operation_id` is UUIDv7. An idempotency key identifies a client request replay; it is not Operation identity and is never reused as `operation_id`.
+* Operation is distinct from Run (one Apply attempt) and FileEvent (the pre-mutation durable record for one Library music file change). Lifecycle and recovery: [contracts/operations.md](contracts/operations.md).
 
 ## Domain Invariants
 
-The following invariants belong to the domain / usecase layer, not to adapters:
+These invariants belong to the domain/usecase layer, not to adapters:
 
 * A Track has a stable `track_id` independent from path, canonical path, content hash, and metadata hash.
 * A CompanionAsset has a stable `companion_asset_id` and is not a Track.
 * A Library has stable identity independent of its current root path.
 * Library-managed records belong to exactly one Library through `library_id`.
-* The initial implementation generates Library, Track, CompanionAsset, Plan,
-  action, event, Run, CheckRun, and Operation IDs as UUIDv7.
+* The initial implementation generates Library, Track, CompanionAsset, Plan, action, event, Run, CheckRun, and Operation IDs as UUIDv7.
 * A Plan is reviewed and applied through recorded PlanActions.
 * A Plan is single-use in the initial version.
 * Applying a Plan must not recalculate target paths from the latest AppConfig.
-* Artist display-name resolution and projection must not mutate raw
-  TrackMetadata or alter artist-ID lookup keys.
+* Artist display-name resolution and projection must not mutate raw TrackMetadata or alter artist-ID lookup keys.
 * Track and CompanionAsset current/canonical paths are Library-root-relative.
-* Reviewed audio, companion, and unprocessed-file mutations must be represented
-  by FileEvents.
+* Reviewed audio, companion, and unprocessed-file mutations must be represented by FileEvents.
 * FileEvents represent file mutations only, not DB-only updates.
-* A companion mutation may execute only after every recorded dependency has
-  applied successfully.
-* An unprocessed mutation is trackless, metadata-free, dependency-free, and
-  anchored to the retained Add source root.
+* A companion mutation may execute only after every recorded dependency has applied successfully.
+* An unprocessed mutation is trackless, metadata-free, dependency-free, and anchored to the retained Add source root.
 * Conflict judgment is not performed by DB repositories.
 * PathPolicy is pure and does not check filesystem existence.
 * Absolute path resolution is performed at I/O boundaries through PathResolver.
 * Config loading and saving are adapter concerns.
 * Metadata reading is an adapter concern.
-* Durable Operations never replace FileEvents or weaken their
-  pending-before-mutation ordering.
+* Durable Operations never replace FileEvents or weaken their pending-before-mutation ordering.
 
 ## ID Design Policy
 
-The file hash is not treated as the Track identity.
-
-The initial implementation uses UUIDv7 for stable internal IDs.
+The file hash is never Track identity. The initial implementation uses UUIDv7 for all stable internal IDs:
 
 ```text
-track_id        UUIDv7 generated when a Track is first recorded as managed state
-companion_asset_id UUIDv7 allocated for one managed lyrics or artwork identity
-library_id      UUIDv7 generated when a Library is first recorded
-plan_id         UUIDv7 generated when a Plan is created
-run_id          UUIDv7 generated when an apply attempt starts
-action_id       UUIDv7 generated when a PlanAction is created
-event_id        UUIDv7 generated when a FileEvent is created
-check_run_id    UUIDv7 generated when a check run is persisted
-operation_id    UUIDv7 generated when a background request is accepted
+track_id           UUIDv7 when a Track is first recorded as managed state
+companion_asset_id UUIDv7 for one managed lyrics or artwork identity
+library_id         UUIDv7 when a Library is first recorded
+plan_id            UUIDv7 when a Plan is created
+run_id             UUIDv7 when an apply attempt starts
+action_id          UUIDv7 when a PlanAction is created
+event_id           UUIDv7 when a FileEvent is created
+check_run_id       UUIDv7 when a check run is persisted
+operation_id       UUIDv7 when a background request is accepted
 ```
 
-`track_id` must not be derived from:
-
-* file path
-* canonical path
-* content_hash
-* metadata_hash
-
-The reason is that paths, file contents, and metadata may change during normal OMYM2 operations such as add, organize, refresh, undo, and external tag correction.
-
-The concepts are separated.
-
-```text
-track_id        stable internal ID in OMYM2
-companion_asset_id stable internal ID for one managed companion asset
-library_id      stable internal ID for the owning Library
-content_hash    hash of the current file contents
-metadata_hash   hash of the current metadata
-current_path    last known Library-root-relative location
-canonical_path  Library-root-relative location where the file should exist according to PathPolicy
-```
-
-The initial version may use a full-file hash for `content_hash`.
-
-`metadata_hash` is used as a change detection hint. It must not be used as Track identity and must not decide file movement by itself.
-
-Short IDs may be shown in CLI output for readability, but they are display aliases only. Persisted IDs and internal references use full UUIDv7 values.
+* `track_id` must not be derived from file path, canonical path, `content_hash`, or `metadata_hash` — those change during normal add, organize, refresh, undo, and external tag correction.
+* `content_hash` is the hash of current file contents (a full-file hash is allowed initially). `metadata_hash` is a change-detection hint over current metadata — never Track identity and never sufficient to decide file movement. `current_path` is the last known root-relative location; `canonical_path` is the root-relative location PathPolicy says the file should occupy.
+* Short IDs in CLI output are display aliases only; persisted IDs and internal references use full UUIDv7 values.

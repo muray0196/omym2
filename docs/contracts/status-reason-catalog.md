@@ -1,245 +1,95 @@
 ---
 type: Contract
 title: Status And Reason Catalog
-description: Defines the closed Track, CompanionAsset, Plan, FileEvent, CheckIssue, and Operation catalogs, triage semantics, and exhaustive bundled-client presentation behavior.
+description: Closed status/reason/type/error-code catalogs for all entities plus cross-surface presentation rules.
 tags: [status, reason-codes, catalog, execution, companions, unprocessed, operations]
-timestamp: 2026-07-16T22:15:00+09:00
+timestamp: 2026-07-18T12:00:00+09:00
 ---
 
 # Status And Reason Catalog
 
-This document is authoritative for allowed status, reason, action type, event
-type, check issue, Operation kind/status/result values, the FileEvent error-code
-schema, and cross-surface status presentation behavior.
-
-Domain concepts are in [../DOMAIN.md](../DOMAIN.md). Execution state transitions are in [../execution/model.md](../execution/model.md), [../execution/apply.md](../execution/apply.md), and [../execution/failure-policy.md](../execution/failure-policy.md).
+Authoritative for allowed status, reason, action type, event type, check issue, and Operation kind/status/result values, the FileEvent error-code schema, and cross-surface status presentation. Domain concepts: [../DOMAIN.md](../DOMAIN.md); state transitions: [../execution/model.md](../execution/model.md), [../execution/apply.md](../execution/apply.md), [../execution/failure-policy.md](../execution/failure-policy.md).
 
 ## Library Status
 
-Field: `Library.status`.
-
-```text
-registered
-unregistered
-stale
-blocked
-```
+`Library.status`: `registered` | `unregistered` | `stale` | `blocked`
 
 ## Track Status
 
-Field: `Track.status`.
+`Track.status`: `active` | `removed`
 
-```text
-active
-removed
-```
-
-`missing` is reported by `check` in the initial version rather than automatically persisted as Track status.
+`missing` is reported by `check`, not persisted as Track status.
 
 ## CompanionAsset Kind
 
-Field: `CompanionAsset.kind`.
-
-```text
-lyrics
-artwork
-```
+`CompanionAsset.kind`: `lyrics` | `artwork`
 
 ## CompanionAsset Status
 
-Field: `CompanionAsset.status`.
+`CompanionAsset.status`: `active` | `removed`
 
-```text
-active
-removed
-```
-
-`removed` retains the stable asset identity and its last managed
-Library-relative paths after an external Add Undo.
+`removed` retains the stable asset identity and its last managed Library-relative paths after an external Add Undo.
 
 ## Plan Status
 
-Field: `Plan.status`.
-
-```text
-ready
-applying
-applied
-partial_failed
-failed
-cancelled
-expired
-```
+`Plan.status`: `ready` | `applying` | `applied` | `partial_failed` | `failed` | `cancelled` | `expired`
 
 ## PlanAction Action Type
 
-Field: `PlanAction.action_type`.
+`PlanAction.action_type`: `move` | `move_lyrics` | `move_artwork` | `move_unprocessed` | `skip` | `refresh_metadata`
 
-```text
-move
-move_lyrics
-move_artwork
-move_unprocessed
-skip
-refresh_metadata
-```
-
-`conflict` and `error` are not action types.
-
-`move_lyrics` and `move_artwork` are metadata-free companion mutations.
-`move_unprocessed` is a trackless, dependency-free, content-only mutation
-between two absolute paths below a retained Add source root.
-`refresh_metadata` reingests Track metadata and hashes for an unchanged path
-without a file mutation.
+`conflict` and `error` are not action types. `move_lyrics`/`move_artwork` are metadata-free companion mutations. `move_unprocessed` is a trackless, dependency-free, content-only mutation between two absolute paths below a retained Add source root. `refresh_metadata` reingests Track metadata and hashes for an unchanged path without a file mutation.
 
 ## PlanAction Status
 
-Field: `PlanAction.status`.
-
-```text
-planned
-blocked
-applied
-failed
-```
+`PlanAction.status`: `planned` | `blocked` | `applied` | `failed`
 
 `skip` is an action type, not a status.
 
 ## PlanAction Reason
 
-Field: `PlanAction.reason`.
+`PlanAction.reason`: `target_exists` | `missing_required_metadata` | `invalid_path` | `source_missing` | `source_changed` | `duplicate_hash` | `companion_owner_blocked` | `companion_association_ambiguous` | `companion_dependency_failed` | `operation_interrupted`
 
-```text
-target_exists
-missing_required_metadata
-invalid_path
-source_missing
-source_changed
-duplicate_hash
-companion_owner_blocked
-companion_association_ambiguous
-companion_dependency_failed
-operation_interrupted
-```
-
-Plan creation problems are blocked. Apply-time precondition failures are failed.
-`companion_owner_blocked` means a usable owning audio action/target was not
-available at review time. `companion_association_ambiguous` means lyrics had
-multiple possible owners or directory artwork's audio targets did not share
-one parent. `companion_dependency_failed` is an Apply-time failure recorded
-before observation or mutation when a durable dependency or semantic owner is
-not successfully applied.
-`operation_interrupted` marks an eligible action whose completion could not be
-confirmed after worker dispatch failure or process restart. A related pending
-FileEvent remains the authority for an unknown mutation outcome.
+Plan-creation problems are blocked; apply-time precondition failures are failed. `companion_owner_blocked`: no usable owning audio action/target at review time. `companion_association_ambiguous`: lyrics had multiple possible owners, or directory artwork's audio targets did not share one parent. `companion_dependency_failed`: apply-time failure recorded before observation or mutation when a durable dependency or semantic owner is not successfully applied. `operation_interrupted`: an eligible action whose completion could not be confirmed after worker dispatch failure or process restart; a related pending FileEvent remains the authority for an unknown mutation outcome.
 
 ## Run Status
 
-Field: `Run.status`.
-
-```text
-running
-succeeded
-partial_failed
-failed
-```
+`Run.status`: `running` | `succeeded` | `partial_failed` | `failed`
 
 ## FileEvent Event Type
 
-Field: `FileEvent.event_type`.
-
-```text
-move_file
-move_lyrics_file
-move_artwork_file
-move_unprocessed_file
-```
+`FileEvent.event_type`: `move_file` | `move_lyrics_file` | `move_artwork_file` | `move_unprocessed_file`
 
 ## FileEvent Status
 
-Field: `FileEvent.status`.
+`FileEvent.status`: `pending` | `succeeded` | `failed`
 
-```text
-pending
-succeeded
-failed
-```
-
-FileEvents are created only for attempted reviewed audio, companion, or
-unprocessed-file mutations. `move_unprocessed_file` carries no Track or
-CompanionAsset identity.
+FileEvents are created only for attempted reviewed audio, companion, or unprocessed-file mutations. `move_unprocessed_file` carries no Track or CompanionAsset identity.
 
 ## FileEvent Error Code
 
-Field: `FileEvent.error_code`.
+`FileEvent.error_code` is a nullable open schema, not a closed enum. Apply writes `null` for pending and succeeded FileEvents and records a stable snake_case code when a pending move FileEvent fails. Adapter-specific raw exception names/messages are never persisted as codes; `error_message` carries human-readable detail.
 
-This nullable field is an open schema, not a closed enum. Apply writes `null`
-for pending and succeeded FileEvents, and records a stable code when a pending
-move FileEvent fails.
-
-Values must be stable snake_case strings. Adapter-specific raw exception names
-and raw exception messages must not be persisted as codes; `error_message`
-carries the human-readable failure detail.
-
-Current core apply codes are:
+Current core apply codes:
 
 | Code | Meaning |
 | --- | --- |
-| `target_exists` | The FileMover reported `FileExistsError` after the pending event was recorded, including a target that appeared after planning. |
-| `source_missing` | The FileMover reported `FileNotFoundError` after the pending event was recorded. A source missing during precondition verification creates no FileEvent. |
-| `invalid_path` | The anchored FileMover rejected a symlink, path escape, or pathname replacement after the pending event was recorded. Invalid restore provenance found during precondition verification creates no FileEvent. |
-| `move_failed` | The FileMover raised another `OSError` that has no more-specific stable code. |
+| `target_exists` | FileMover reported `FileExistsError` after the pending event, including a target that appeared after planning. |
+| `source_missing` | FileMover reported `FileNotFoundError` after the pending event. A source missing during precondition verification creates no FileEvent. |
+| `invalid_path` | Anchored FileMover rejected a symlink, path escape, or pathname replacement after the pending event. Invalid restore provenance found during precondition verification creates no FileEvent. |
+| `move_failed` | FileMover raised another `OSError` with no more-specific stable code. |
 
-New codes are permitted when a new observable mutation failure needs a stable
-programmatic classification. They must be documented in the execution contract
-that emits them and covered by tests; update the table when core apply begins
-emitting a new code.
+New codes are permitted for a new observable mutation failure needing stable programmatic classification; document them in the emitting execution contract, cover with tests, and update this table when core apply emits one.
 
 ## CheckIssue Issue Type
 
-Field: `CheckIssue.issue_type`.
+`CheckIssue.issue_type`: `db_file_missing` | `unmanaged_file_exists` | `content_hash_changed` | `metadata_hash_changed` | `current_path_differs_from_canonical_path` | `companion_file_missing` | `companion_content_hash_changed` | `companion_current_path_differs_from_canonical_path` | `companion_owner_missing` | `unmanaged_companion_exists` | `failed_companion_source_exists` | `unprocessed_file_missing` | `unprocessed_content_hash_changed` | `duplicate_candidate` | `plan_source_changed` | `pending_file_event_exists` | `library_unregistered` | `library_stale` | `library_blocked`
 
-```text
-db_file_missing
-unmanaged_file_exists
-content_hash_changed
-metadata_hash_changed
-current_path_differs_from_canonical_path
-companion_file_missing
-companion_content_hash_changed
-companion_current_path_differs_from_canonical_path
-companion_owner_missing
-unmanaged_companion_exists
-failed_companion_source_exists
-unprocessed_file_missing
-unprocessed_content_hash_changed
-duplicate_candidate
-plan_source_changed
-pending_file_event_exists
-library_unregistered
-library_stale
-library_blocked
-```
+`failed_companion_source_exists` is a recovery finding, not proof of an unrecorded success. It requires definitive non-pending failure evidence for a terminal companion action, succeeded owner-audio provenance, an active same-Library owner Track, and a safely rooted source that still exists. It permits creation of a new reviewed Plan, never automatic repair. Its `detail` is `add` (exact-root external recovery) or `organize` (Library-relative recovery); this stable scope drives suggested-command grouping on both POSIX and Windows — clients must not infer it from path spelling.
 
-`failed_companion_source_exists` is a recovery finding, not proof of an
-unrecorded success. It requires definitive non-pending failure evidence for a
-terminal companion action, succeeded owner-audio provenance, an active
-same-Library owner Track, and a safely rooted source that still exists. It
-permits creation of a new reviewed Plan; it never authorizes automatic repair.
-Its `detail` is `add` for an exact-root external recovery and `organize` for a
-Library-relative recovery. This stable scope drives suggested-command grouping
-on both POSIX and Windows; clients must not infer it from path spelling.
-
-`unprocessed_file_missing` and `unprocessed_content_hash_changed` describe the
-target of an unreversed succeeded `move_unprocessed_file` event. Both have
-`error` severity and map to the `history` command family with label
-`omym2 history`. They intentionally do not suggest Refresh, Add, or automatic
-repair because the Plan/FileEvent pair, not a managed Track row, is the durable
-evidence.
+`unprocessed_file_missing` and `unprocessed_content_hash_changed` describe the target of an unreversed succeeded `move_unprocessed_file` event. Both have `error` severity and map to the `history` command family with label `omym2 history`; they intentionally do not suggest Refresh, Add, or automatic repair because the Plan/FileEvent pair, not a managed Track row, is the durable evidence.
 
 ## Unprocessed Presentation Labels
-
-The product-default labels for the unprocessed-file values are:
 
 | Value | Label | Tone |
 | --- | --- | --- |
@@ -248,94 +98,46 @@ The product-default labels for the unprocessed-file values are:
 | `unprocessed_file_missing` | Unprocessed file is missing | danger |
 | `unprocessed_content_hash_changed` | Unprocessed file content changed | danger |
 
-The two findings present an explicit History-review remediation and never an
-automatic repair control.
+The two findings present an explicit History-review remediation, never an automatic repair control.
 
 ## Operation Kind
 
-Field: `Operation.kind`.
-
-```text
-add_plan
-organize_plan
-refresh_plan
-check
-apply_plan
-undo_plan
-```
+`Operation.kind`: `add_plan` | `organize_plan` | `refresh_plan` | `check` | `apply_plan` | `undo_plan`
 
 ## Operation Status
 
-Field: `Operation.status`.
+`Operation.status`: `queued` | `running` | `succeeded` | `failed` | `interrupted`
 
-```text
-queued
-running
-succeeded
-failed
-interrupted
-```
-
-`interrupted` applies only to durable Operations. Restart reconciliation makes
-an associated Run and Plan terminal using their existing `failed` or
-`partial_failed` statuses; it does not add an `interrupted` Run or Plan status.
+`interrupted` applies only to durable Operations. Restart reconciliation makes an associated Run and Plan terminal using their existing `failed` or `partial_failed` statuses; there is no `interrupted` Run or Plan status.
 
 ## Operation Result Kind
 
-Field: `Operation.result.kind` when status is `succeeded`.
+`Operation.result.kind` when status is `succeeded`: `plan_created` | `registered_without_plan` | `check_completed` | `run_completed`
 
-```text
-plan_created
-registered_without_plan
-check_completed
-run_completed
-```
-
-The lifecycle, result fields, and retention contract are in
-[operations.md](operations.md).
+Lifecycle, result fields, and retention: [operations.md](operations.md).
 
 ## Status Presentation Contract
 
-Every closed value has an explicit product-default-language label, meaning,
-tone, and icon mapping in the bundled frontend. The SPA and API ship from the
-same commit; a missing closed-value mapping is a programming or data-integrity
-error and fails explicitly instead of presenting a neutral fallback. Only an
-explicitly open field such as `FileEvent.error_code` may display an unknown raw
-stable code.
+Every closed value has an explicit product-default-language label, meaning, tone, and icon mapping in the bundled frontend. The SPA and API ship from the same commit; a missing closed-value mapping is a programming or data-integrity error and fails explicitly instead of presenting a neutral fallback. Only an explicitly open field such as `FileEvent.error_code` may display an unknown raw stable code.
 
-Presentation follows these rules:
-
-* status is never communicated by color alone; text or an accessible name is
-  mandatory;
-* a Plan with blocked actions may still be applied when its backend capability
-  permits it; executable and unresolved blocked counts remain separate;
-* `partial_failed` means confirmed work and failure coexist and must never be
-  described as rollback;
-* a `pending` FileEvent means the mutation outcome is unknown and requires
-  manual review; no automatic repair action is presented;
-* a terminal Plan is never presented with Retry; the recovery action is
-  “Create a new Plan from the current state”;
-* a succeeded Run with zero FileEvents is valid for blocked-only, skip-only, or
-  `refresh_metadata` actions and displays its linked PlanAction summary;
-* a Run whose Plan contains `refresh_metadata` is presented as Undo-ineligible
-  before Apply and in History;
-* disabled controls remain visible with backend-provided reasons and
-  remediation. The frontend never infers permission from these statuses.
+* Status is never communicated by color alone; text or an accessible name is mandatory.
+* A Plan with blocked actions may still be applied when its backend capability permits; executable and unresolved blocked counts stay separate.
+* `partial_failed` means confirmed work and failure coexist; never describe it as rollback.
+* A `pending` FileEvent means the mutation outcome is unknown and requires manual review; no automatic repair action is presented.
+* A terminal Plan is never presented with Retry; the recovery action is "Create a new Plan from the current state".
+* A succeeded Run with zero FileEvents is valid for blocked-only, skip-only, or `refresh_metadata` actions and displays its linked PlanAction summary.
+* A Run whose Plan contains `refresh_metadata` is presented as Undo-ineligible before Apply and in History.
+* Disabled controls remain visible with backend-provided reasons and remediation; the frontend never infers permission from these statuses.
 
 ## Cross-Cutting Rules
 
 * Skip actions become applied without FileEvent.
 * `refresh_metadata` actions become applied without FileEvent; the Track is updated in place.
-* Companion actions require every recorded dependency before filesystem
-  observation and create a typed pending FileEvent before mutation.
-* Unprocessed actions require exact retained-root path shape and content hash,
-  create a typed pending FileEvent, and never create managed Track or
-  CompanionAsset state.
-* A successful companion move creates or advances its CompanionAsset; failed
-  and pending mutations do not.
+* Companion actions require every recorded dependency before filesystem observation and create a typed pending FileEvent before mutation.
+* Unprocessed actions require exact retained-root path shape and content hash, create a typed pending FileEvent, and never create managed Track or CompanionAsset state.
+* A successful companion move creates or advances its CompanionAsset; failed and pending mutations do not.
 * Blocked actions remain blocked during apply.
 * Precondition failures before mutation do not create FileEvents.
 * Terminal Plans are single-use.
-* FileEvent error codes are an open stable snake_case schema and retain an
-  explicit unknown-value presentation.
+* FileEvent error codes are an open stable snake_case schema and retain an explicit unknown-value presentation.
 * Status catalog changes require state transition and failure behavior tests.

@@ -1,9 +1,9 @@
 # Core Documentation
 
-* [Product](PRODUCT.md) - Defines OMYM2 as a Plan-centered local music application with persisted controls and reviewed audio, companion, and opt-in unprocessed-file workflows across CLI, Web, and Windows desktop surfaces.
-* [Domain](DOMAIN.md) - Defines OMYM2's core entities, including metadata, companion identity, trackless unprocessed-file evidence, Plan dependencies, durable mutations, snapshots, and UUIDv7 identity policy.
-* [Storage](STORAGE.md) - Defines application-root selection, TOML ownership, provider cadence, managed companion state, trackless unprocessed-file evidence, durable file mutations, and path responsibilities.
-* [Commands](COMMANDS.md) - Lists the OMYM2 CLI surface, including persisted controls, companion and unprocessed Add review, deterministic result previews, diagnostics, recovery, and trust-stat flags.
+* [Product](PRODUCT.md) - Product scope, non-goals, Web UI role, and Windows desktop positioning; read before scope or surface decisions.
+* [Domain](DOMAIN.md) - Entity catalog with contractual fields, domain invariants, and UUIDv7 ID policy; the authoritative home for domain concepts.
+* [Storage](STORAGE.md) - TOML-vs-SQLite storage boundary, application-root selection, durable-state responsibilities, and DB consistency rules.
+* [Commands](COMMANDS.md) - CLI command surface, flags, and per-command behavior summaries with links to execution semantics.
 
 # Directories
 

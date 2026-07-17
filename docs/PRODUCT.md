@@ -1,216 +1,59 @@
 ---
 type: Product Overview
 title: Product
-description: Defines OMYM2 as a Plan-centered local music application with persisted controls and reviewed audio, companion, and opt-in unprocessed-file workflows across CLI, Web, and Windows desktop surfaces.
+description: Product scope, non-goals, Web UI role, and Windows desktop positioning; read before scope or surface decisions.
 tags: [product, overview, cli, web-ui, artist-names, musicbrainz, companions, unprocessed, desktop, windows, operations-console]
-timestamp: 2026-07-17T22:43:57+09:00
+timestamp: 2026-07-18T12:00:00+09:00
 ---
 
 # Product
 
-This document explains what OMYM2 is and is not. Execution semantics live in [execution/](execution/).
-
-## Overview
-
-OMYM2 safely imports local music files into an organized library.
-
-The CLI and local Web UI are peer inbound surfaces over the same Plan-centered
-domain and feature usecases. The Web UI is a keyboard-first operations console,
-not a separate implementation of path, conflict, or mutation rules.
-
-OMYM2 is not a full music-management application. Its shape is:
+OMYM2 safely imports local music files into an organized Library through a reviewed Plan, keeping enough state and history to diagnose failures and recover safely. Shape:
 
 ```text
 Headless domain/usecase core + CLI runner + local Web operations console + thin native window
 ```
 
-The main value is not moving files quickly. The value is moving files through a reviewed Plan while keeping enough state and history to diagnose failures and recover safely.
+Execution semantics are authoritative in [execution/](execution/); storage rules in [STORAGE.md](STORAGE.md) and [contracts/](contracts/).
 
-## Basic Policy
+## Scope Policy
 
-This is a product-level summary. Execution rules are authoritative in [execution/](execution/), and storage rules are authoritative in [STORAGE.md](STORAGE.md) plus [contracts/](contracts/).
-
-* CLI and Web operations use the same feature usecases, persisted state, and
-  cross-process exclusion protocol.
-* The packaged desktop application is a thin host for the existing local Web
-  application. It adds no second frontend, native business logic, or direct
-  data-access boundary.
-* The Web UI covers Settings, Plan creation and review, Check, Apply, ready-Plan
-  Cancel, History, and Undo-through-Plan.
-* No Web control moves a Library-managed audio or companion file directly.
-  Apply is the only Web execution path, and it executes recorded PlanActions
-  through Run and FileEvent contracts.
-* Daily use imports new files with `add` after one Library has been registered.
-* Unregistered or unorganized Libraries are accepted through `organize --library PATH` before `add`.
-* Tag editing is outside OMYM2; relocation after external tag correction is handled by `refresh`.
-* Automatic MusicBrainz naming is enabled by default for uncached Japanese and
-  Chinese artist names. Korean names are currently left unchanged unless a
-  mapping is added manually. Users can disable new provider work while
-  continuing to reuse saved romanized-name mappings locally.
-* When companion processing is enabled, Add, Organize, and Refresh create
-  actions for newly discovered unmanaged `.lrc`, `.jpg`, and `.png` files, and
-  Check reports unmanaged companion candidates. Disabling it stops those new
-  actions and Check discovery without deleting managed state, changing
-  recorded Plan sources or events, or suppressing managed/recorded Check,
-  recovery, History, or Undo diagnostics. Unprocessed-only Add inventory still
-  classifies companion claims so recognized companions are not collected as
-  leftovers, but it creates no companion action or snapshot.
-* Unprocessed-file collection is a separate disabled-by-default Add-planning
-  opt-in. When enabled, regular source files left unclaimed by audio and
-  companion classification become explicit reviewed actions into a configured
-  directory below that source root. The files do not become Tracks or
-  CompanionAssets, and disabling the option later does not alter a recorded
-  Plan, Apply, History, Check, or Undo.
-* The initial Web release presents one unambiguous Library. All APIs and
-  internal references retain `library_id`; switching and relinking are separate
-  future features.
-
-## Primary Use Case
-
-The primary use case is safely adding new music files from an Incoming folder into the Library.
-
-```text
-Incoming folder
-  ↓
-scan
-  ↓
-create plan
-  ↓
-review
-  ↓
-apply
-  ↓
-Library
-```
-
-The daily entry point is `omym2 add`, but only after exactly one Library is registered and selectable.
-
-With companion processing enabled, associated lyrics and directory artwork
-follow the reviewed audio workflow. They remain distinct managed assets with
-their own actions, history, Check findings, and reversible mutations; no
-companion file is moved as a hidden side effect of an audio action.
-
-With unprocessed-file collection enabled, Add first settles every audio and
-companion classification claim, including reservation-only claims when
-companion actions are disabled, then presents the remaining eligible regular
-files as `move_unprocessed` actions. Apply records each attempted collection as
-`move_unprocessed_file` history. This is reviewed file handling, not automatic
-classification: it creates no Track or CompanionAsset and never overwrites an
-occupied destination.
-
-OMYM2 is not a tool that reorganizes the entire existing library every time. Daily use treats it as a tool for safely importing newly added tracks.
-
-OMYM2 is also not a daily operation tool for arbitrary unorganized music libraries. If the Library is unregistered or unorganized, the supported path is `omym2 organize --library PATH`.
-
-`organize` owns Library registration and reconciliation. `add` owns importing new files after the Library is registered. Detailed registration and add-plan behavior is defined in [execution/organize.md](execution/organize.md) and [execution/add.md](execution/add.md).
-
-Relinking a moved Library is not yet a user-facing operation. Its future identity
-rules are defined in [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
-
-## Usage Image
-
-See [COMMANDS.md](COMMANDS.md) for the command sequence behind the primary
-Incoming-to-Library flow and periodic maintenance operations.
+* CLI and Web are peer inbound surfaces over the same feature usecases, persisted state, and cross-process exclusion protocol. The Web UI is a keyboard-first operations console, not a second implementation of path, conflict, or mutation rules.
+* The packaged desktop application is a thin host for the local Web application: no second frontend, native business logic, or direct data-access boundary.
+* Primary flow: Incoming → scan → create Plan → review → apply → Library. Daily entry point is `add`, only after exactly one Library is registered. Unregistered or unorganized Libraries go through `organize --library PATH` first. `organize` owns registration and reconciliation ([execution/organize.md](execution/organize.md)); `add` owns importing new files ([execution/add.md](execution/add.md)). OMYM2 is not a whole-library reorganizer or a daily tool for arbitrary unorganized libraries.
+* Tag editing is outside OMYM2; relocation after external tag correction is `refresh`.
+* No Web control moves a Library-managed audio or companion file directly. Apply is the only Web execution path and executes recorded PlanActions through Run and FileEvent contracts.
+* Automatic MusicBrainz naming is enabled by default for uncached names containing non-Latin letters; Latin-only names (including diacritics) stay unchanged; Korean names stay unchanged unless a mapping is added manually. Users can disable new provider work while reusing saved romanized-name mappings. Provider unavailability falls back to local naming and never blocks reviewing or applying recorded local work.
+* Companion processing (when enabled): Add, Organize, and Refresh create actions for newly discovered unmanaged `.lrc`, `.jpg`, and `.png` files; Check reports unmanaged companion candidates. Companions remain distinct managed assets with their own actions, history, Check findings, and reversible mutations — never moved as a hidden side effect of an audio action. Disabling stops new actions and Check discovery only: it deletes no managed state, changes no recorded Plan sources or events, and suppresses no managed/recorded Check, recovery, History, or Undo diagnostics.
+* Unprocessed-file collection is a separate disabled-by-default Add-planning opt-in. Add settles every audio and companion classification claim (reservation-only claims when companion actions are disabled), then records remaining eligible regular files as reviewed `move_unprocessed` actions into a configured directory below the source root; Apply records each attempt as `move_unprocessed_file` history. No Track or CompanionAsset is created; an occupied destination is never overwritten; disabling later does not alter a recorded Plan, Apply, History, Check, or Undo. Unprocessed-only Add inventory still classifies companion claims so recognized companions are not collected as leftovers (no companion action or snapshot).
+* The initial Web release presents one unambiguous Library. All APIs and internal references retain `library_id`; switching and relinking are separate future features (relink identity rules: [contracts/path-identity-storage.md](contracts/path-identity-storage.md)).
 
 ## Role of the Web UI
 
-The Web UI makes the safe operating loop available without requiring CLI
-knowledge:
+Operating loop: choose objective → create Plan → review actions → Apply → verify → create Undo Plan when eligible.
 
-```text
-choose objective → create Plan → review actions → Apply → verify → create Undo Plan when eligible
-```
+Surface: Settings (Library path shortcuts, Incoming path, path policy, romanized artist-name mappings, MusicBrainz naming/request bounds/accepted-cache policy, hashing throughput, bounded logging — logging changes require restart, companion toggle, unprocessed toggle plus destination directory and preview cap, artist-ID generation, required metadata, duplicate and conflict behavior, validation, before/after diffs); creating and reviewing add/organize/refresh Plans and PlanActions; applying one ready Plan after a backend-authoritative confirmation; cancelling one ready Plan before Apply claims it; History; Check; creating and reviewing an Undo Plan from an eligible terminal Run; searching Tracks, Plans, Runs, and persisted Check issues.
 
-The roles of the Web UI are:
-
-* Setting optional Library path shortcuts
-* Setting the Incoming path
-* Editing the path policy
-* Reviewing and correcting romanized artist-name mappings populated by MusicBrainz
-* Configuring optional MusicBrainz naming, request bounds, and accepted-result
-  cache policy
-* Configuring hashing throughput and bounded application logging; logging
-  changes clearly require a restart
-* Enabling companion lyrics and artwork in newly created Plans
-* Enabling unprocessed-file collection for newly created Add Plans, choosing
-  its one-component destination directory, and setting the result preview cap
-* Configuring general automatic artist-ID length and fallback behavior
-* Setting required metadata fields
-* Setting behavior for duplicates
-* Setting behavior for conflicts
-* Validating settings
-* Displaying diffs before and after settings changes
-* Creating add, organize, and refresh Plans for review
-* Browsing and reviewing Plans and their PlanActions
-* Applying one ready Plan after a backend-authoritative confirmation
-* Cancelling one ready Plan before Apply claims it
-* Reviewing execution history
-* Checking the state of the DB and filesystem
-* Creating an Undo Plan from an eligible terminal Run and reviewing it before Apply
-* Searching and navigating Tracks, Plans, Runs, and persisted Check issues
-
-Backend capabilities and disabled reasons own operation availability. The Web
-UI never derives permission from a status string, recalculates a target path,
-repairs a pending FileEvent, overwrites a restore conflict, or automatically
-retries a mutation.
-
-Apply, Cancel, and Undo controls use the durable Operation, shared lock, atomic
-Apply claim, crash reconciliation, and mutation contracts together.
+Backend capabilities and disabled reasons own operation availability. The Web UI never derives permission from a status string, recalculates a target path, repairs a pending FileEvent, overwrites a restore conflict, or automatically retries a mutation. Apply, Cancel, and Undo use the durable Operation, shared lock, atomic Apply claim, crash reconciliation, and mutation contracts together.
 
 ## Windows Desktop Application
 
-The packaged desktop v1 supports Windows 11 x64 only. It opens the unchanged
-React application in one pywebview window using the `edgechromium` backend and
-the shared Evergreen Microsoft Edge WebView2 Runtime. OMYM2 does not claim a
-packaged macOS or Linux application until each target has its own native build
-and smoke evidence.
+* v1 supports Windows 11 x64 only; no packaged macOS or Linux claim until each target has its own native build and smoke evidence.
+* One pywebview window (`edgechromium` backend, shared Evergreen WebView2 Runtime) hosting the unchanged React application.
+* The shell starts the FastAPI application on an exclusively retained, dynamically assigned `127.0.0.1` listener and waits for Bootstrap readiness before opening the window. The React application keeps relative same-origin JSON requests with the existing host, CSRF, CSP, framing, and error-redaction protections. No `js_api` or any JavaScript-to-Python bridge.
+* Closing the window requests graceful shutdown; work already accepted as a durable Operation finishes and releases the shared operation lock first. See [ADR 0004](decisions/0004-windows-desktop-application.md).
 
-The shell starts the existing FastAPI application on an exclusively retained,
-dynamically assigned `127.0.0.1` listener and waits for Bootstrap readiness
-before opening the window. The React application continues to use relative,
-same-origin JSON API requests with the existing host, CSRF, CSP, framing, and
-error-redaction protections. The shell does not register `js_api` or any other
-JavaScript-to-Python bridge.
+## Non-Goals
 
-Closing the window requests graceful server shutdown. Work already accepted as
-a durable Operation is not cancelled; the process allows it to finish and
-release the shared operation lock before shutdown completes. The architecture
-decision is recorded in
-[ADR 0004](decisions/0004-windows-desktop-application.md).
+* No music playback, tag editing, lyrics/artwork editing or downloading, or streaming integrations.
+* No arbitrary browser-directed file moves or overwrites.
+* No cloud sync, accounts, remote binding, analytics, telemetry, or service worker. Localhost-only, offline-first.
+* No phone/tablet or touch-first support; desktop browsers only. Accessibility requirements (keyboard operation, zoom, reflow) do not establish mobile support; supported viewport and test conditions: [codebase/web-frontend.md](codebase/web-frontend.md), [development/testing.md](development/testing.md).
+* No initial multi-Library switcher, automatic moved-Library relink, Check history, in-flight operation cancellation, or localization.
+* Unknown or interrupted mutation state is surfaced for Check and manual review, never hidden behind automatic repair.
+* Desktop v1: no macOS, Linux, mobile or tablet OS, bundled Chromium, native file pickers, multiple windows, background startup, automatic updates, or native API bridge.
 
-## Product Non-Goals
-
-The Web UI does not add:
-
-* music playback, tag editing, lyrics/artwork editing or downloading, or
-  streaming integrations
-* arbitrary browser-directed file moves or overwrites
-* cloud sync, accounts, remote binding, analytics, telemetry, or a service worker
-* phone or tablet support, touch-first interaction, or mobile-specific
-  navigation and layout behavior
-* an initial multi-Library switcher, automatic moved-Library relink, Check
-  history, in-flight operation cancellation, or localization
-
-The application remains localhost-only, offline-first, and telemetry-free.
-Unknown or interrupted mutation state is surfaced for Check and manual review,
-never hidden behind automatic repair.
-
-The browser-hosted Web UI supports desktop browsers only. Accessibility
-requirements such as keyboard operation, browser zoom, and reflow on a
-supported desktop viewport do not establish phone or tablet support. The
-supported viewport and test conditions are defined in
-[codebase/web-frontend.md](codebase/web-frontend.md) and
-[development/testing.md](development/testing.md).
-
-The initial packaged application does not support macOS, Linux, mobile or
-tablet operating systems, bundled Chromium, native file pickers, multiple
-windows, background startup, automatic updates, or a native API bridge.
-
-## Product-Facing Technical Policy
-
-This section is a product-facing summary of technology choices.
-
-Accepted stack for the bundled Web surface:
+## Technical Policy
 
 ```text
 Language: Python
@@ -226,23 +69,6 @@ Coverage: pytest-cov for optional local reporting
 Metadata extractor: mutagen
 ```
 
-The SPA is bundled in the Python wheel and sdist and runs without Node.js in
-production. It is served on loopback by `omym2 settings`. Presentation is
-dark-only.
-
-Automatic MusicBrainz naming is enabled by default. OMYM2 deterministically
-limits new lookups to source names containing non-Latin letters; Latin-only
-names, including diacritics, remain unchanged. Provider unavailability falls
-back to local naming and never prevents reviewing or applying recorded local
-work.
-
-The Windows desktop ZIP is a PyInstaller 6.21.0 `onedir` application built from
-the audited wheel. It carries its frozen Python runtime and the same audited SPA
-but no Node.js or Chromium runtime; Windows supplies the shared Evergreen
-WebView2 runtime. Packaging and native-smoke commands are authoritative in
-[Windows Desktop Packaging](development/desktop-packaging.md).
-
-The implementation, route map, presentation tokens, and distribution contract
-are authoritative in
-[codebase/web-frontend.md](codebase/web-frontend.md). Test policy is
-authoritative in [development/testing.md](development/testing.md).
+* The SPA is bundled in the wheel/sdist, runs without Node.js in production, and is served on loopback by `omym2 settings`. Presentation is dark-only.
+* The Windows desktop ZIP is a PyInstaller 6.21.0 `onedir` build from the audited wheel: frozen Python runtime plus the audited SPA, no Node.js or Chromium; Windows supplies the shared Evergreen WebView2 runtime. Packaging and native-smoke commands: [Windows Desktop Packaging](development/desktop-packaging.md).
+* Implementation, route map, presentation tokens, distribution contract: [codebase/web-frontend.md](codebase/web-frontend.md). Test policy: [development/testing.md](development/testing.md).

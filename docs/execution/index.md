@@ -2,11 +2,11 @@
 
 Use this file as the execution router. Read the focused file for the task.
 
-* [Execution Model](model.md) - Defines Plan-centered audio, companion, and unprocessed-file execution, durable dependencies and FileEvents, shared exclusion, single-use Plans, and blocked-versus-failed behavior.
-* [Failure Policy](failure-policy.md) - Catalogs cross-cutting audio, companion, and unprocessed planning, source, collision, protected-path, Undo-content, interruption, and Library-root failures.
-* [Add Execution](add.md) - Defines Add planning for incoming audio, companions, and opt-in unprocessed leftovers, including claim precedence, rooted exclusions, full persistence, preview-only limits, and apply orchestration.
-* [Organize Execution](organize.md) - Defines Organize registration and reconciliation for audio and associated companions, reviewed dependencies, clean DB-only registration, and trust-stat rules.
-* [Refresh Execution](refresh.md) - Defines Refresh target re-evaluation for Tracks and associated companions, relocation dependencies, stable identities, metadata-only actions, and trust-stat rules.
-* [Apply Execution](apply.md) - Defines atomic Apply for audio, companion, unprocessed, and metadata actions, including recorded-config independence, retained-object verification, durable events, managed-state updates, and interruption.
-* [Undo Execution](undo.md) - Defines Undo eligibility and deduplication for audio, companions, and trackless unprocessed moves, including exact reverse provenance, changed-content blocks, and restore conflicts.
-* [Check Execution](check.md) - Defines diagnostic Check execution for Tracks, CompanionAssets, trackless unprocessed evidence, ready Plan sources, and pending events, including persisted findings and trust-stat scope.
+* [Execution Model](model.md) - Common Plan/Run/FileEvent model: shared exclusive lock, single-use Plans, blocked-vs-failed, durable mutation log.
+* [Failure Policy](failure-policy.md) - Cross-cutting failure case catalog mapping each planning, apply, undo, and interruption failure to its policy.
+* [Add Execution](add.md) - Add planning rules: incoming scan, companion claims, unprocessed leftovers, collision blocks, registered-Library gate.
+* [Organize Execution](organize.md) - Organize registration and reconciliation for audio and companions, clean DB-only registration, and trust-stat rules.
+* [Refresh Execution](refresh.md) - Refresh re-evaluation after tag correction, relocation and metadata-only actions, companion movement, and trust-stat rules.
+* [Apply Execution](apply.md) - Apply acceptance and execution flow, status transitions, precondition failures, and interruption reconciliation.
+* [Undo Execution](undo.md) - Undo eligibility, deduplication, reverse provenance, external restore targets, and companion/unprocessed reversal rules.
+* [Check Execution](check.md) - Diagnostic Check execution, CheckIssue scope, findings persistence, and trust-stat scope.
