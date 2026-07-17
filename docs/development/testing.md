@@ -3,7 +3,7 @@ type: Development Guide
 title: Testing
 description: Test policy per category, contract-change test requirements, fixture policy, Windows semantics, and CI gates.
 tags: [testing, pytest, vitest, playwright, desktop, windows, architecture-tests, fixtures, musicbrainz, companions, unprocessed, rollback]
-timestamp: 2026-07-18T12:00:00+09:00
+timestamp: 2026-07-18T03:18:00+09:00
 ---
 
 # Testing
@@ -126,7 +126,7 @@ Required independently diagnosable CI gates:
 6. wheel/sdist content audit, clean install, installed-package smoke, and sdist-to-wheel rebuild without Node
 7. native Windows retained-HANDLE observation and mutation, scanner containment, companion/unprocessed concrete adapter E2E, real multiprocess exclusive-lock contention/crash release, and desktop build, audit, and native-window smoke with JSON evidence
 
-Pull requests and protected branches run gates 1–6 on Linux; Windows CI runs the gate-7 native repository tests and packaged smoke. Native repository tests do not replace the packaged smoke or turn hosted-server evidence into release evidence. Completed product-flow gates must not be weakened or silently skipped. The hosted `windows-2025` job is a development proxy — a release candidate must run the same packaged smoke on Windows 11 x64 and retain its JSON evidence.
+Pull requests and protected branches run gates 1–6 on Linux; Windows CI runs gate-7 native repository tests and packaged smoke as independent jobs so the runtime suite can start before Linux package evidence is ready. The fast API/client job remains independently diagnosable, the Frontend job owns complete Web validation, and CI-only Playwright and performance commands avoid rebuilding those prerequisite gates or the audited wheel. Documentation and agent-surface-only changes run documentation conformance; every product, tooling, workflow, or unknown change remains on the full suite. Native repository tests do not replace the packaged smoke or turn hosted-server evidence into release evidence. Completed product-flow gates must not be weakened or silently skipped. Hosted `windows-2025` jobs are development proxies — a release candidate must run the same packaged smoke on Windows 11 x64 and retain its JSON evidence.
 
 ## Test Commands
 
