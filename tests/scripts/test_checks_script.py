@@ -159,7 +159,9 @@ def test_ci_only_modes_skip_gate_groups_owned_by_parallel_jobs(tmp_path: Path) -
 
 def test_ci_workflow_reuses_expensive_gate_outputs() -> None:
     """CI topology keeps full evidence while removing redundant aggregate work."""
-    workflow = (Path(__file__).parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow = (Path(__file__).parents[2] / ".github/workflows/ci.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert "api-client:" in workflow
     assert "scripts/checks.sh e2e-ci" in workflow
