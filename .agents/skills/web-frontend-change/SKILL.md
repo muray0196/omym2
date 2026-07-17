@@ -37,6 +37,9 @@ Locate headings first and read only the matching section:
 | Persisted or presented status/reason | The affected entity section plus Cross-Cutting Rules in `docs/contracts/status-reason-catalog.md` |
 | Unit, browser, accessibility, or fixture behavior | Matching test/fixture section in `docs/development/testing.md` |
 
+For an explicit external design/accessibility audit request, fetch and apply
+`https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md`.
+
 Do not preload all four documents. Do not read generated clients, OpenAPI JSON,
 lockfiles, `dist/`, or `static_dist/` in full; use targeted symbols, generation
 drift, or focused diffs.

@@ -9,12 +9,11 @@ Authoritative docs: `docs/contracts/path-identity-storage.md`, `docs/contracts/d
 
 ## Non-negotiable invariants
 
-1. Library identity is `library_id` (stable UUIDv7), never the root path. Relinking a Library updates `root_path` only; `library_id` and all Tracks are untouched.
+1. Relinking a Library updates `root_path` only; `library_id` and all Tracks are untouched.
 2. Track identity is path-independent: moving a file never changes its `track_id`.
-3. Every Library-managed stored path is Library-root-relative and normalized. Absolute paths are stored only for explicitly external locations (e.g. import sources).
+3. Stored paths are normalized. Absolute paths are stored only for explicitly external locations (e.g. import sources).
 4. No stored path may escape its root: reject `..` segments and absolute values at the boundary.
-5. `PathPolicy` is a pure domain service: no filesystem access, no config loading, deterministic output for the same input.
-6. Repositories store and restore path values verbatim; they never normalize, resolve, or judge paths (that is domain/usecase work).
+5. `PathPolicy` produces deterministic output for the same input.
 
 ## Procedure
 
@@ -30,9 +29,6 @@ Authoritative docs: `docs/contracts/path-identity-storage.md`, `docs/contracts/d
    If a field is not in this table, find its class in `docs/contracts/path-identity-storage.md` before continuing.
 2. For each field, verify the invariant that matches its class still holds after your change.
 3. Check the identity rules: does anything key on a path where it should key on `library_id` / `track_id`?
-4. If the DB schema changes, open `db-schema-change` and follow `docs/contracts/db-schema.md`. When both skills apply, follow `db-schema-change`'s procedure first and apply this skill's invariants throughout the work.
-5. If the change originates in AppConfig, `PathPolicyConfig`, or `ArtistIdConfig` shape, open `config-schema-change` first; when both skills apply, follow its procedure first and apply this skill's invariants throughout the work.
-6. Every PlanAction carries stored `source_path`/`target_path`, so this skill and `plan-apply-safety` always co-trigger together: follow `plan-apply-safety`'s execution-semantics checks first, then apply this skill's invariants throughout the work.
 
 ## Done means
 

@@ -7,8 +7,7 @@ description: Route OMYM2 implementation work to the applicable architecture, saf
 
 ## Procedure
 
-1. Read `ARCHITECTURE.md` if it has not been read in this session.
-2. Open every skill whose row matches the change before editing:
+1. Open every skill whose row matches the change before editing:
 
    | The change touches... | Open skill |
    | --- | --- |
@@ -20,13 +19,10 @@ description: Route OMYM2 implementation work to the applicable architecture, saf
    | Anything under `web/` or Web adapter routes | `web-frontend-change` |
    | Behavior documented under `docs/`, or any file under `docs/` | `update-docs` |
 
-3. Treat each matching skill as the operational safety cache. Follow its
-   conditional documentation routes and read only the relevant heading or
-   bounded section; do not open every referenced authoritative document.
-4. Use `docs/codebase/index.md` only for a placement or naming question the
+2. Use `docs/codebase/index.md` only for a placement or naming question the
    safety skill does not answer.
-5. Open `write-tests` when adding or changing tests. Open `update-docs` when behavior described under `docs/` changes.
-6. Use `validate` to select edit-loop and completion checks. Open the harness
+3. Open `write-tests` when adding or changing tests. Open `update-docs` when behavior described under `docs/` changes.
+4. Use `validate` to select edit-loop and completion checks. Open the harness
    only when changing it or when the skill does not answer a gate detail.
 
 ## Done means

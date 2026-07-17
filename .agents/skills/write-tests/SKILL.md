@@ -17,7 +17,7 @@ Test policy is authoritative in `docs/development/testing.md`. This skill is the
 | `features/*/usecases/` | `tests/features/` | unit tests through ports, using fakes |
 | `adapters/` (SQLite, fs, metadata, config, cli, web) | `tests/adapters/` | integration tests with real adapter |
 | `shared/` | `tests/shared/` | pure unit tests |
-| `scripts/*.py` | `tests/scripts/` (create on first use) | run the script via `subprocess`; anchor: `tests/docs/test_index_generation.py` |
+| `scripts/*.py` | `tests/scripts/` | run the script via `subprocess`; anchor: `tests/scripts/test_checks_script.py` |
 | Layer / naming rules | `tests/architecture/` | already exist; extend only for new rules |
 | `docs/` bundle shape | `tests/docs/` | already exist; do not duplicate |
 
@@ -28,13 +28,14 @@ Frontend unit/component tests live beside their feature or under
 
 ## Fixture rules
 
-- Usecase tests use in-memory repositories and fakes, never real SQLite or the filesystem.
-- Always use fixed `Clock` and `IdGenerator` ports so time and IDs are deterministic.
-- Filesystem fixtures: minimal and read-only, except when testing apply/undo (the only flows that move files).
-- Python tests use `pytest` and `pytest-mock` only.
-- Frontend unit/component tests use the contract-approved Vitest, React Testing
-  Library, `user-event`, and MSW stack. Browser tests use Playwright Chromium
-  and axe. Exact versions come from the frontend lockfile.
+- Fixture Policy in `docs/development/testing.md` is authoritative (in-memory
+  repositories for usecase tests, minimal read-only filesystem fixtures except
+  for apply/undo); it also requires fixed `Clock` and `IdGenerator` ports so
+  time and IDs stay deterministic.
+- Test-stack tooling (pytest/pytest-mock, Vitest/React Testing
+  Library/`user-event`/MSW, Playwright Chromium/axe) is pinned by the
+  Python and frontend lockfiles; see `docs/development/testing.md` for the
+  full stack.
 - When a canonical fixture is relevant, locate and read only its matching
   subsection in `docs/development/testing.md`.
 - For tests under `tests/adapters/fs/` or any test simulating filesystem
@@ -51,9 +52,8 @@ full testing document.
 
 ## Procedure
 
-1. Find the existing test file for the module (mirror path). Extend it; create a new file only if none exists.
-2. Match the naming and fixture style of a neighboring test; Python test functions use `test_<behavior>`.
-3. Test observable behavior and the contract boundary introduced by the change. Add error cases only when they protect a distinct behavior or invariant.
+1. Match the naming and fixture style of a neighboring test; Python test functions use `test_<behavior>`.
+2. Test observable behavior and the contract boundary introduced by the change.
 
 ## Done means
 

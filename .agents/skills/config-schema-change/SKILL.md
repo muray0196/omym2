@@ -10,12 +10,9 @@ Contract Change Test Requirements table, "Config contract" row.
 
 ## Non-negotiable invariants
 
-1. Domain and usecases never read TOML directly; `src/omym2/adapters/config/`
-   owns parsing, validation, defaulting, and saving.
-2. Config files stay under the application root
-   (`src/omym2/adapters/config/application_paths.py`), excluding user-selected
-   Library and Incoming paths.
-3. A key missing from an on-disk file silently fills its documented default at
+1. `src/omym2/adapters/config/` owns TOML parsing, validation, defaulting, and
+   saving.
+2. A key missing from an on-disk file silently fills its documented default at
    load with no error (`src/omym2/adapters/config/config_validator.py`). An
    unknown key — including one you removed or renamed — fails validation
    instead of being ignored, and bumping `CONFIG_VERSION`
@@ -23,15 +20,14 @@ Contract Change Test Requirements table, "Config contract" row.
    no version-based migration exists yet. Decide and test the exact
    existing-file rejection or defaulting behavior for every removed/renamed
    key or version bump. Do not add a compatibility layer.
-4. Verify allowed values and enums against the constants in
-   `src/omym2/config.py` (e.g. `ALLOWED_UI_THEMES`) rather than assuming
+3. Verify allowed values and enums against the constants in
+   `src/omym2/config.py` (e.g. `ALLOWED_LOGGING_LEVELS`) rather than assuming
    `docs/contracts/config.md` is exhaustive; when the doc lags the source,
    update the doc in the same change (open `update-docs`).
-5. `config_revision` is opaque raw-storage concurrency state, not an AppConfig
-   field or TOML key. Web and CLI saves acquire the shared exclusive lock,
-   recheck the expected revision, and use the Config adapter's atomic replace.
-   Never add last-write-wins or update SQLite Library status as part of the
-   Config file write; effective staleness is derived from fingerprints.
+4. Web and CLI saves acquire the shared exclusive lock, recheck the expected
+   revision, and use the Config adapter's atomic replace. Never add
+   last-write-wins or update SQLite Library status as part of the Config file
+   write; effective staleness is derived from fingerprints.
 
 ## Every changed or added key touches these surfaces
 
@@ -40,7 +36,7 @@ Contract Change Test Requirements table, "Config contract" row.
 | Section dataclass, defaults, `__post_init__` validation | `src/omym2/domain/models/app_config.py` |
 | TOML key allow-list, type/choice rule | `src/omym2/adapters/config/config_validator.py` |
 | TOML writer | `src/omym2/adapters/config/toml_config_store.py` |
-| Future typed Web settings boundary | Pydantic schemas under `src/omym2/adapters/web/schemas/` and routes under `src/omym2/adapters/web/routes/`; routes call Settings usecases and never import TOML validators or serializers |
+| Web settings boundary | Pydantic schemas under `src/omym2/adapters/web/schemas/` and routes under `src/omym2/adapters/web/routes/`; routes call Settings usecases and never import TOML validators or serializers |
 | Raw revision read/CAS DTO and ConfigStore port | `src/omym2/features/common_ports.py`, `src/omym2/features/settings/` |
 | Contract doc | `docs/contracts/config.md` (open `update-docs`) |
 | Plan/Library staleness fingerprint, only if the field can change generated paths | `src/omym2/domain/services/config_fingerprint.py` |
@@ -60,18 +56,14 @@ Libraries would not detect the settings change as stale.
 
 ## Procedure
 
-1. Confirm scope: AppConfig shape, TOML keys, defaults, allowed values,
-   validation, or serialization. Reading an already-defined value, or
-   changing an environment variable, is out of scope — see
-   `docs/development/harness.md`.
-2. Edit every surface in the table above in the same change.
+1. Edit every surface in the table above in the same change.
    If the change touches save/load concurrency rather than the TOML schema,
    edit only the raw-revision/CAS surfaces and do not invent a TOML key.
-3. Define and test the existing-file behavior from invariant 3 for the
+2. Define and test the existing-file behavior from invariant 2 for the
    specific key(s) touched, without adding compatibility handling.
-4. If the field affects generated paths or fingerprints, update
+3. If the field affects generated paths or fingerprints, update
    `config_fingerprint.py` per the table above.
-5. If PathPolicy, stored paths, or Library identity are affected, open
+4. If PathPolicy, stored paths, or Library identity are affected, open
    `path-identity-safety`. If already-created Plans could be affected, open
    `plan-apply-safety` instead of deciding that here.
 
@@ -79,9 +71,9 @@ Libraries would not detect the settings change as stale.
 
 - Tests cover load, save, validation, defaults, and existing-file rejection or
   defaulting behavior per `docs/development/testing.md`'s Contract Change Test
-  Requirements table. Anchors: `tests/adapters/config/test_toml_config_store.py`
-  and `tests/domain/test_app_config.py`; when the typed Web Settings slice
-  exists, its route-level Pydantic contract tests are required too.
+  Requirements table. Anchors: `tests/adapters/config/test_toml_config_store.py`,
+  `tests/domain/test_app_config.py`, and `tests/adapters/web/test_api_settings.py`
+  for the route-level Pydantic contract.
 - `docs/contracts/config.md` reflects the new shape in the same change.
 
 ## Stop and report when

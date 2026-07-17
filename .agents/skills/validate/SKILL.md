@@ -10,8 +10,8 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 | Situation | Command |
 | --- | --- |
 | After editing Python files (edit loop) | `scripts/checks.sh changed` |
-| Agent completion with the repo `Stop` hook available | No manual command; the hook runs `scripts/checks.sh completion` |
-| Completion when the repo `Stop` hook is unavailable or bypassed | `scripts/checks.sh completion` |
+| Agent completion in a Codex session (repo `Stop` hook available) | No manual command; the hook runs `scripts/checks.sh completion` |
+| Agent completion in any other session, or a Codex session where the `Stop` hook is unavailable or bypassed | `scripts/checks.sh completion` |
 | After a `Stop` hook failure | Use the smallest mode that reproduces the first failure |
 | Python-only full gates | `scripts/checks.sh py` |
 | OpenAPI/generated-client drift only | `scripts/checks.sh api` |
@@ -62,7 +62,7 @@ Fix the first failing gate before looking at later ones.
 | `npm ci` fails | lockfile out of sync | Report it; do not hand-edit `package-lock.json` |
 | `ModuleNotFoundError` for a dependency | env not synced | `uv sync` (Python) or `cd web && npm ci` (frontend) |
 | generated API check fails | Pydantic/OpenAPI or client drift | Run `cd web && npm run api:generate`, review, and commit the coordinated schema/client change |
-| static audit fails | stale or unsafe ignored output | Re-run `npm run build`, then `scripts/sync_web_static.py`; do not hand-edit `static_dist/` |
+| static audit fails | stale or unsafe ignored output | Re-run `npm run build`, then `scripts/web/sync_web_static.py`; do not hand-edit `static_dist/` |
 | package smoke imports `src/` | wrong interpreter or `PYTHONPATH` | Use the clean-install virtual-environment Python outside the checkout and clear `PYTHONPATH` |
 | `ruff check` errors | lint issue in changed code | Fix the code; suppress only per policy below |
 | `ruff format --check` fails | formatting | `uv run ruff format <files> -q` |

@@ -28,24 +28,18 @@ may be persisted.
 
 ## Non-negotiable invariants
 
-1. Every Library music file mutation flows through a Plan. There is no direct-mutation path. If the requested design mutates files without a Plan, stop and report.
-2. Apply executes the **recorded** PlanActions. It never recalculates target paths from the current AppConfig, and it resolves paths against `library_root_at_plan`.
-3. FileEvent ordering per mutation attempt:
+1. Apply resolves paths against `library_root_at_plan`.
+2. FileEvent ordering per mutation attempt:
    1. check preconditions
    2. persist FileEvent as pending — **before** the mutation
    3. perform the mutation
    4. update the FileEvent with the outcome
    5. update Track / PlanAction only after the confirmed result
-4. Failure classes are distinct and must stay distinct in code, statuses, and tests:
+3. Failure classes are distinct and must stay distinct in code, statuses, and tests:
    - blocked at plan time
    - failed before the mutation attempt
    - failed after the mutation attempt
-5. Blocked actions stay blocked; nothing "retries" a blocked action implicitly.
-6. Refresh updates Track / FileEvent / Plan state only through the documented contracts, never by ad-hoc reconciliation.
-7. Apply acceptance holds the shared exclusive lock and atomically commits the
-   `ready -> applying` compare-and-set, running Run, and queued Operation before
-   worker dispatch. No read-then-upsert start path is permitted.
-8. A crash or unobserved mutation outcome leaves its FileEvent `pending`.
+4. A crash or unobserved mutation outcome leaves its FileEvent `pending`.
    Reconciliation must not infer success/failure from filesystem state or
    rewrite the Plan to `ready`.
 
@@ -58,15 +52,7 @@ may be persisted.
 
 ## Done means
 
-- [ ] Can this change mutate a Library music file? If yes, is every mutation inside a Plan-centered flow?
 - [ ] Are all Plan / PlanAction / Run / FileEvent state transitions among those allowed in the status catalog?
-- [ ] Is the FileEvent written as pending before any mutation code runs?
-- [ ] Are the three failure classes handled and persisted differently?
-- [ ] Does apply read only recorded PlanActions (grep for AppConfig / PathPolicy usage inside apply)?
-- [ ] Does one transaction claim the Plan, create the Run, and reserve the
-  Operation before dispatch, while the shared lock remains held?
-- [ ] Can restart/dispatch reconciliation leave pending FileEvents pending and
-  derive Plan/Run state only from durable evidence?
 - [ ] Every changed contract edge has a test per `docs/development/testing.md`'s Contract Change Test Requirements table, Execution contract row.
 
 ## Stop and report when

@@ -19,11 +19,12 @@ Row = the file you are editing; column = what it wants to import.
 | `adapters/` | yes | yes | ports, dto, usecases | own subpackage | NO |
 | `platform/` | yes | yes | yes | yes | yes |
 
-Additional hard rules:
+Domain no-I/O, cross-feature import, and CLI/Web direct-filesystem rules are
+the Non-Negotiable Rules in `ARCHITECTURE.md`, detailed in
+`docs/codebase/dependency-boundaries.md`.
 
-- `domain/` performs no I/O: no sqlite3, no file reads/writes, no HTTP, no TOML, no mutagen, no FastAPI/Typer imports.
-- A feature never imports another feature's internals. Chaining usecases (e.g. `add --apply`) happens in CLI, Web, or platform.
-- CLI commands and Web routes never touch the filesystem directly; they translate input, call usecases, format output.
+Additional hard rules not on the table above:
+
 - Outbound adapters (`db`, `fs`, `metadata`, `config`) implement ports from `src/omym2/features/*/ports.py` or `src/omym2/features/common_ports.py`.
 - Inbound adapters (`adapters/cli/`, `adapters/web/`) must not import concrete
   outbound adapter subpackages (`adapters.db`, `adapters.fs`,
@@ -34,7 +35,6 @@ Additional hard rules:
   `omym2.adapters.config.toml_config_store`). Web schemas have no outbound-
   adapter exception; do not add a pair without updating that allowlist and
   this rule.
-- `platform/` is the composition root: it builds concrete adapters, wires them into each feature's `*Ports` dataclass, and assembles the CLI/Web entry points. New wiring/chaining code belongs there, not inside `adapters/cli/` or `adapters/web/`.
 - Durable Operation worker dispatch and feature chaining belong in `platform/`.
   `domain/` owns the pure Operation model, the DB adapter persists it, and the
   application-root lock adapter belongs with filesystem adapters. Web/CLI must
@@ -42,27 +42,21 @@ Additional hard rules:
 
 ## Business rule placement
 
-Adapters persist, restore, read, write, scan, move, render, parse. Adapters must NOT decide:
-
-- conflicts or duplicates
-- canonical / target paths
-- metadata validity
-- PlanAction / Run / FileEvent status
-
-If an adapter needs an `if` that encodes domain meaning, that decision belongs in a domain service or usecase; the adapter returns raw facts.
+Adapters must not decide business rules (conflicts/duplicates, canonical
+paths, metadata validity, PlanAction/Run/FileEvent status); authoritative in
+`ARCHITECTURE.md`'s Non-Negotiable Rules and the Business Rule Placement
+section of `docs/codebase/dependency-boundaries.md`.
 
 ## New file checklist
 
-- [ ] Placement matches the table in `implement-change` (or `docs/codebase/source-layout.md`).
-- [ ] Module name is `snake_case.py` and concrete. Banned names: `utils.py`, `helpers.py`, `manager.py`, `service.py`, `common.py`; no `_service.py` or `_dao.py` suffixes.
-- [ ] No `src/omym2/features/<feature>/domain/` or `src/omym2/features/<feature>/adapters/` directories.
+- [ ] Placement matches `docs/codebase/source-layout.md`.
 - [ ] `domain/` names are nouns; usecase names are `{verb}_{object}.py`.
 
 ## Procedure
 
 1. Consult the import decision table above for the layer you are editing and the layer you want to import.
-2. Check business rule placement above: if an adapter would need an `if` that encodes domain meaning, move that decision into a domain service or usecase instead.
-3. Work through the new file checklist above before adding any file.
+2. For adapter code, check against Business rule placement above; move any domain-meaning decision into a domain service or usecase.
+3. Work through the New file checklist above before adding any file.
 4. Verify: run the check mode `validate` selects for architecture boundary / naming rules.
 
 ## Done means
