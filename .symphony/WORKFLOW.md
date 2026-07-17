@@ -32,11 +32,11 @@ agent:
   max_concurrent_agents: 5
   max_turns: 20
 codex:
-  command: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=xhigh app-server
+  command: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.6-sol"' --config model_reasoning_effort=high app-server
   approval_policy: never
-  thread_sandbox: danger-full-access
+  thread_sandbox: workspace-write
   turn_sandbox_policy:
-    type: dangerFullAccess
+    type: workspaceWrite
     networkAccess: true
 ---
 
@@ -67,10 +67,9 @@ No description provided.
 
 Instructions:
 
-1. Use subagents effectively whenever appropriate.
-2. This is an unattended orchestration session. Never ask a human to perform follow-up actions.
-3. Only stop early for a true blocker (missing required auth/permissions/secrets). If blocked, record it in the workpad and move the issue according to workflow.
-4. Final message must report completed actions and blockers only. Do not include "next steps for user".
+1. This is an unattended orchestration session. Never ask a human to perform follow-up actions.
+2. Only stop early for a true blocker (missing required auth/permissions/secrets). If blocked, record it in the workpad and move the issue according to workflow.
+3. Final message must report completed actions and blockers only. Do not include "next steps for user".
 
 Work only in the provided repository copy. Do not touch any other path.
 
