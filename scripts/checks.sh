@@ -3,7 +3,7 @@
 # Why: Gives agents a single reliable entry point instead of re-deriving command groups.
 #
 # Usage:
-#   scripts/checks.sh <changed|completion|py|api|web|e2e|package|performance|all|docs|arch>
+#   scripts/checks.sh <changed|completion|py|api|web|e2e|e2e-ci|package|performance|performance-ci|all|docs|arch>
 #   scripts/checks.sh test <pytest-target>
 #
 # See docs/development/harness.md for canonical mode descriptions and gate policy.
@@ -15,7 +15,7 @@ check_output_script="$repository_root/scripts/check_output.py"
 cd "$repository_root"
 
 usage() {
-    echo "usage: scripts/checks.sh <changed|completion|py|api|web|e2e|package|performance|all|docs|arch> | scripts/checks.sh test <pytest-target>" >&2
+    echo "usage: scripts/checks.sh <changed|completion|py|api|web|e2e|e2e-ci|package|performance|performance-ci|all|docs|arch> | scripts/checks.sh test <pytest-target>" >&2
 }
 
 run_check() {
@@ -104,6 +104,11 @@ run_performance() {
     run_check "package performance" uv run python scripts/web/build_web_evidence.py --run-performance
 }
 
+run_performance_ci() {
+    local wheel="$1"
+    run_check "package performance" uv run python scripts/web/build_web_evidence.py --performance-wheel "$wheel"
+}
+
 run_docs() {
     run_check "docs bundle" uv run pytest tests/docs -q
 }
@@ -186,11 +191,18 @@ web)
 e2e)
     run_e2e
     ;;
+e2e-ci)
+    run_e2e_only
+    ;;
 package)
     run_package
     ;;
 performance)
     run_performance
+    ;;
+performance-ci)
+    wheel="${2:?usage: scripts/checks.sh performance-ci <wheel>}"
+    run_performance_ci "$wheel"
     ;;
 all)
     run_web
