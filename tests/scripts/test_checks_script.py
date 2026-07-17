@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts import config
 from scripts.config import CHECKS_FAILURE_DIAGNOSTIC_MAX_BYTES
 
 CHECKS_SCRIPT = Path(__file__).parents[2] / "scripts/checks.sh"
@@ -133,7 +134,7 @@ def test_ci_only_modes_skip_gate_groups_owned_by_parallel_jobs(tmp_path: Path) -
 
     assert e2e_result.returncode == SUCCESS_EXIT_CODE, e2e_result.stderr
     e2e_commands = command_log.read_text(encoding="utf-8")
-    assert e2e_commands.count("npm:run test:e2e") == 2
+    assert e2e_commands.count("npm:run test:e2e") == config.CI_E2E_PROFILE_COUNT
     assert "npm:run api:check" not in e2e_commands
     assert "npm:run build" not in e2e_commands
 
