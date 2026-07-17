@@ -96,7 +96,7 @@ The mode is required; there is no default. The wrapper does not install dependen
 * `api`: schema-only OpenAPI and generated-client drift gate
 * `web`: API drift, frontend format/lint/typecheck/unit/build, static sync, static audit
 * `e2e`: `web` plus two pinned-Chromium Playwright profiles against isolated source-checkout servers — the registered profile covers normal inspection/execution with deterministic state; the first-run profile starts without Config or a registered Library and proves Settings recovery, both Organize outcomes, Add review, Apply, blocked evidence, History, and filesystem state. Every browser context rejects non-loopback runtime requests.
-* `e2e-ci`: CI-only execution of the two Playwright profiles after the parallel Frontend job owns `web`; local callers use `e2e`
+* `e2e-ci`: CI-only static build/sync plus the two Playwright profiles; the parallel Frontend job owns API drift, formatting, lint, types, unit tests, and static audit; local callers use `e2e`
 * `package`: Vite build, complete static replacement/audit, wheel/sdist audit, Node-poisoned sdist rebuild, clean-install smoke
 * `performance`: `package` plus the installed-package frontend performance budget gate and measurement record
 * `performance-ci <wheel>`: CI-only performance measurement of the audited wheel downloaded from package evidence; local callers use `performance`

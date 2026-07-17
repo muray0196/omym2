@@ -96,6 +96,15 @@ run_e2e() {
     run_e2e_only
 }
 
+run_e2e_ci() {
+    (
+    cd web
+    run_check "frontend build for browser tests" npm run build
+    )
+    run_check "Web static synchronization for browser tests" uv run python scripts/web/sync_web_static.py
+    run_e2e_only
+}
+
 run_package() {
     run_check "package evidence" uv run python scripts/web/build_web_evidence.py
 }
@@ -192,7 +201,7 @@ e2e)
     run_e2e
     ;;
 e2e-ci)
-    run_e2e_only
+    run_e2e_ci
     ;;
 package)
     run_package

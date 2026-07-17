@@ -136,7 +136,9 @@ def test_ci_only_modes_skip_gate_groups_owned_by_parallel_jobs(tmp_path: Path) -
     e2e_commands = command_log.read_text(encoding="utf-8")
     assert e2e_commands.count("npm run test:e2e") == config.CI_E2E_PROFILE_COUNT
     assert "npm:run api:check" not in e2e_commands
-    assert "npm:run build" not in e2e_commands
+    assert "npm:run test:unit" not in e2e_commands
+    assert "npm:run build" in e2e_commands
+    assert "uv:run python scripts/web/sync_web_static.py" in e2e_commands
 
     command_log.unlink()
     performance_result = subprocess.run(  # noqa: S603 -- Fixed script runs with controlled fake tools.
