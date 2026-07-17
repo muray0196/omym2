@@ -3,7 +3,7 @@ type: Development Guide
 title: Development Harness
 description: Quality commands, validation gates, checks.sh modes, Codex completion hook, suppressions, and runtime configuration boundaries.
 tags: [development, tooling, quality-gates, validation, web, desktop]
-timestamp: 2026-07-18T12:00:00+09:00
+timestamp: 2026-07-18T03:18:00+09:00
 ---
 
 # Development Harness
@@ -84,7 +84,7 @@ Completion mode selects checks from paths changed relative to the merge base wit
 `scripts/checks.sh` wraps the command groups in this document:
 
 ```bash
-scripts/checks.sh <changed|completion|py|api|web|e2e|package|performance|all|docs|arch>
+scripts/checks.sh <changed|completion|py|api|web|e2e|e2e-ci|package|performance|performance-ci|all|docs|arch>
 scripts/checks.sh test <pytest-target>
 ```
 
@@ -96,8 +96,10 @@ The mode is required; there is no default. The wrapper does not install dependen
 * `api`: schema-only OpenAPI and generated-client drift gate
 * `web`: API drift, frontend format/lint/typecheck/unit/build, static sync, static audit
 * `e2e`: `web` plus two pinned-Chromium Playwright profiles against isolated source-checkout servers — the registered profile covers normal inspection/execution with deterministic state; the first-run profile starts without Config or a registered Library and proves Settings recovery, both Organize outcomes, Add review, Apply, blocked evidence, History, and filesystem state. Every browser context rejects non-loopback runtime requests.
+* `e2e-ci`: CI-only execution of the two Playwright profiles after the parallel Frontend job owns `web`; local callers use `e2e`
 * `package`: Vite build, complete static replacement/audit, wheel/sdist audit, Node-poisoned sdist rebuild, clean-install smoke
 * `performance`: `package` plus the installed-package frontend performance budget gate and measurement record
+* `performance-ci <wheel>`: CI-only performance measurement of the audited wheel downloaded from package evidence; local callers use `performance`
 * `all`: `web` + `py` + E2E + package/performance — the final local gate
 * `docs`: docs bundle conformance tests
 * `arch`: architecture tests
@@ -105,7 +107,7 @@ The mode is required; there is no default. The wrapper does not install dependen
 
 The command groups in this document remain authoritative; the script must stay in sync.
 
-Hosted CI runs independently diagnosable Python, API/client, frontend, Playwright, Linux package, Windows desktop package/native-smoke, and installed-package performance jobs. Linux measurement uses pinned `ubuntu-24.04`; Windows desktop smoke uses `windows-2025`. Frontend jobs install with `web/package-lock.json` and pinned Chromium. The Linux package job uploads short-lived audited wheel evidence for the Windows job, which freezes that wheel, audits and smoke-tests the native ZIP, emits JSON measurements, and runs the real multiprocess lock contention/crash-release test (authoritative Windows commands: [Windows Desktop Packaging](desktop-packaging.md)). The hosted Windows Server 2025 x64 job is a native development build/smoke proxy, not Windows 11 release evidence.
+Hosted CI first classifies changed paths. Changes limited to `docs/`, `.agents/`, `.codex/`, or root Markdown run only documentation conformance; empty, product, workflow, tooling, or unknown path sets conservatively run the full suite. Full CI keeps independently diagnosable Python, frontend, Playwright, Linux package, Windows runtime-boundary, Windows desktop package/native-smoke, and installed-package performance jobs. The fast API/client job remains independently diagnosable, the Frontend job owns the complete Web gates, and Playwright uses the CI-only E2E mode without repeating either group. Linux package evidence is built once, uploaded, then reused by both Windows packaging and the CI-only performance measurement. Windows runtime tests start independently while packaged smoke waits for the audited wheel. Linux measurement uses pinned `ubuntu-24.04`; both Windows jobs use `windows-2025` (authoritative commands: [Windows Desktop Packaging](desktop-packaging.md)). The hosted Windows Server 2025 x64 job is a native development build/smoke proxy, not Windows 11 release evidence.
 
 CI runs `git diff --exit-code` after tracked generators as a clean-checkout guard against validation tools mutating tracked files — intentionally CI-only, since a local worktree normally contains intended changes. Ignored `static_dist/` is protected instead by its explicit byte-for-byte audit.
 
