@@ -281,6 +281,7 @@ def _candidate_data(result: SettingsCandidateResult) -> SettingsCandidateData:
 
 def _settings_choices(choices: SettingsChoicesResult) -> SettingsChoices:
     return SettingsChoices(
+        autosave_delay_ms=choices.autosave_delay_ms,
         command_modes=choices.command_modes,
         disc_number_styles=choices.disc_number_styles,
         disc_number_conditions=choices.disc_number_conditions,

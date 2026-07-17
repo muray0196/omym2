@@ -76,6 +76,7 @@ export const settingsEnvelope = {
   data: {
     choices: {
       album_year_resolutions: ["latest", "oldest", "most_frequent"],
+      autosave_delay_ms: 600,
       command_modes: ["plan_first"],
       disc_number_conditions: ["always", "multiple_discs"],
       disc_number_styles: ["plain", "d_prefixed"],

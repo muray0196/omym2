@@ -97,9 +97,11 @@ test("has no detectable accessibility violations at 200% desktop zoom", async ({
   await expect(
     page.getByRole("heading", { level: 1, name: "Settings" }),
   ).toBeVisible();
-  const primaryAction = page.getByRole("button", { name: "Save Settings" });
-  await expect(primaryAction).toBeVisible();
-  const geometry = await primaryAction.evaluate((element) => {
+  const autosaveStatus = page.getByRole("status").filter({
+    has: page.getByRole("heading", { name: "Automatic save" }),
+  });
+  await expect(autosaveStatus).toBeVisible();
+  const geometry = await autosaveStatus.evaluate((element) => {
     const bounds = element.getBoundingClientRect();
     const viewport = globalThis.visualViewport;
     return {

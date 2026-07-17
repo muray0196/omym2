@@ -3760,6 +3760,10 @@
             "title": "Album Year Resolutions",
             "type": "array"
           },
+          "autosave_delay_ms": {
+            "title": "Autosave Delay Ms",
+            "type": "integer"
+          },
           "command_modes": {
             "items": {
               "type": "string"
@@ -3833,6 +3837,7 @@
           }
         },
         "required": [
+          "autosave_delay_ms",
           "command_modes",
           "disc_number_styles",
           "disc_number_conditions",

@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Defines the bundled desktop React and Vite Web frontend contract, including routes, artist-name settings and Plan diagnostics, design rules, API boundaries, browser and native-window serving, packaging, security, and performance gates.
 tags: [web-frontend, react, vite, static-spa, artist-names, desktop, windows, performance]
-timestamp: 2026-07-17T20:30:51+09:00
+timestamp: 2026-07-18T01:15:00+09:00
 ---
 
 # Web Frontend
@@ -118,14 +118,22 @@ Settings, dialogs, and notifications. Routine screens have one white primary
 action per context; risk is communicated with text, icons, and small status
 accents rather than a second competing primary treatment.
 
-Settings uses `Save Settings` as its primary action. One submission performs
-backend validation and revision-safe atomic replacement; `Review changes` is
-an optional, non-writing secondary action for inspecting validation and the
-before/after diff. A successful save appears as a top floating status
-notification without moving the form, while the returned diff remains in the
-normal page flow. Path preview is recalculated by the backend after a short
-editing debounce, keeps the last available result while updating, ignores
-superseded requests, and exposes a manual retry only after failure.
+Settings owns its immediate draft in React Hook Form and autosaves one complete
+Config candidate after the backend-provided idle delay. Autosave tracks the
+latest draft separately from the last acknowledged fingerprint and revision,
+allows one PUT in flight, and coalesces later edits into the latest candidate.
+Successful responses update the Settings query cache and show the returned
+change list without moving focus or replacing newer local edits.
+
+The visible and politely announced states are `Unsaved changes`, `Checking`,
+`Saving`, `Saved`, and `Needs attention`. Validation failures retain the draft
+until another edit. Revision conflicts pause autosave for explicit load-latest
+recovery; transport and server failures require explicit retry. Navigation and
+unload warnings remain only while the latest draft is not safely persisted,
+and unload never attempts a save. Path preview remains an independent,
+read-only backend request after its own short debounce, keeps the last
+available result while updating, ignores superseded requests, and exposes a
+manual retry only after failure.
 
 ## Command And Keyboard Contract
 
@@ -173,7 +181,7 @@ result.
 | `/health` | Latest persisted Check issues, facets, groups, and timestamp | Run Check |
 | `/history` | Run list with status filtering | None |
 | `/history/:runId` | Run, FileEvents, failures, and Undo eligibility | Create Undo Plan |
-| `/settings` | Paths, PathPolicy, editable romanized artist mappings, automatic artist-ID tunables, metadata, and collision policy | Save directly; review Config changes optionally |
+| `/settings` | Paths, PathPolicy, editable romanized artist mappings, automatic artist-ID tunables, metadata, and collision policy | Autosave Config after idle |
 
 Every unmatched browser route renders the React Not Found screen. It
 does not trigger a server-side route allowlist or return an API response.
