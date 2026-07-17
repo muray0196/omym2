@@ -3,7 +3,7 @@ type: Contract
 title: Config Contract
 description: Defines OMYM2's TOML config schema, atomic-save protocol, naming and path policy, runtime controls, companion processing, and unprocessed-file collection.
 tags: [config, toml, concurrency, atomic-save, path-policy, artist-names, musicbrainz, logging, companions, unprocessed]
-timestamp: 2026-07-17T22:43:57+09:00
+timestamp: 2026-07-18T01:15:00+09:00
 ---
 
 # Config Contract
@@ -25,6 +25,11 @@ or narrower config objects through ports.
 Missing config is not an error by itself. Config is created lazily when a command needs persisted settings.
 
 Config files must stay under the application root so OMYM2 remains portable, excluding user-selected Library and Incoming paths.
+
+`WEB_SETTINGS_AUTOSAVE_DELAY_MS` is a centralized Web interaction tunable, not
+a TOML key or `AppConfig` field. Its default is 600 milliseconds. The Settings
+resource exposes it through generated `SettingsChoices` so the frontend does
+not duplicate the delay.
 
 ## Raw Storage Revision And Atomic Save
 

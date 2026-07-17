@@ -1945,6 +1945,10 @@ export type SettingsChoices = {
      */
     album_year_resolutions: Array<string>;
     /**
+     * Autosave Delay Ms
+     */
+    autosave_delay_ms: number;
+    /**
      * Command Modes
      */
     command_modes: Array<string>;

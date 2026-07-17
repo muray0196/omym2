@@ -1,8 +1,15 @@
 /**
- * Summary: Covers Settings recovery, draft generation, optional review, direct save, concurrency, and CSRF behavior.
- * Why: Protects the revision-safe Config workflow at its generated API and accessible UI boundary.
+ * Summary: Covers Settings recovery, preview, debounced autosave, concurrency, and CSRF behavior.
+ * Why: Protects revision-safe Config persistence and accessible draft status at the generated API boundary.
  */
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
@@ -12,7 +19,7 @@ import {
   Outlet,
   RouterProvider,
 } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   ApiFailureEnvelope,
@@ -30,11 +37,10 @@ import {
   invalidPersistedSettingsEnvelope,
   previewEnvelope,
   savedSettingsEnvelope,
+  settingsEnvelope,
   settingsEnvelopeWithMusicBrainzMapping,
 } from "../../test/fixtures/settings";
 import { server } from "../../test/server";
-
-const UPDATED_UNPROCESSED_PREVIEW_LIMIT = 250;
 
 describe("Settings route", () => {
   it("renders the default preview and updates it once after sample editing pauses", async () => {
@@ -318,259 +324,497 @@ describe("Settings route", () => {
     expect(screen.queryByText("Slow Preview.flac")).not.toBeInTheDocument();
   });
 
-  it("reviews a deterministic diff without saving the draft", async () => {
-    const user = userEvent.setup();
-    let saveCount = 0;
-    server.use(
-      http.put("*/api/settings", () => {
-        saveCount += 1;
-        return HttpResponse.json(savedSettingsEnvelope);
-      }),
-    );
-    renderSettings();
-
-    const libraryPath = await screen.findByLabelText("Library path");
-    await user.clear(libraryPath);
-    await user.type(libraryPath, "/music/new-library");
-    await user.click(screen.getByRole("button", { name: "Review changes" }));
-
-    const diff = await screen.findByRole("table");
-    expect(within(diff).getByText("paths.library")).toBeInTheDocument();
-    expect(within(diff).getByText("/music/library")).toBeInTheDocument();
-    expect(within(diff).getByText("/music/new-library")).toBeInTheDocument();
-    expect(saveCount).toBe(0);
-  });
-
-  it("validates and saves the complete Config in one action with CSRF", async () => {
-    const user = userEvent.setup();
-    const captured: {
-      request?: SettingsCandidateRequest;
-      token?: string | null;
-    } = {};
-    server.use(
-      http.put("*/api/settings", async ({ request }) => {
-        captured.token = request.headers.get("X-OMYM2-CSRF-Token");
-        captured.request = (await request.json()) as SettingsCandidateRequest;
-        return HttpResponse.json({
-          ...savedSettingsEnvelope,
-          data: {
-            ...savedSettingsEnvelope.data,
-            config: captured.request.config,
-          },
-        });
-      }),
-    );
-    renderSettings();
-
-    const libraryPath = await screen.findByLabelText("Library path");
-    await user.clear(libraryPath);
-    await user.type(libraryPath, "/music/new-library");
-
-    const applicationName = screen.getByLabelText("Application name");
-    await user.clear(applicationName);
-    await user.type(applicationName, "OMYM2 Web Tests");
-    const timeout = screen.getByLabelText("Request timeout (seconds)");
-    await user.clear(timeout);
-    await user.type(timeout, "7.5");
-    const retryLimit = screen.getByLabelText("Retry limit");
-    await user.clear(retryLimit);
-    await user.type(retryLimit, "2");
-    const rateLimit = screen.getByLabelText("Rate limit (seconds)");
-    await user.clear(rateLimit);
-    await user.type(rateLimit, "1.25");
-
-    const chunkSize = screen.getByLabelText("Read chunk size (bytes)");
-    await user.clear(chunkSize);
-    await user.type(chunkSize, "2097152");
-
-    const destination = screen.getByLabelText("Relative log destination");
-    await user.type(destination, "logs/test.log");
-    await user.clear(destination);
-    await user.selectOptions(screen.getByLabelText("Log level"), "ERROR");
-    const rotationSize = screen.getByLabelText("Rotation size (bytes)");
-    await user.clear(rotationSize);
-    await user.type(rotationSize, "10485760");
-    const retainedFiles = screen.getByLabelText("Retained files");
-    await user.clear(retainedFiles);
-    await user.type(retainedFiles, "5");
-
-    await user.click(
-      screen.getByLabelText("Enable companion lyrics and artwork"),
-    );
-    await user.click(
-      screen.getByLabelText("Enable unprocessed-file collection"),
-    );
-    const unprocessedDirectory = screen.getByLabelText(
-      "Destination directory name",
-    );
-    await user.clear(unprocessedDirectory);
-    await user.type(unprocessedDirectory, "Review Later");
-    const resultPreviewLimit = screen.getByLabelText("Result preview limit");
-    await user.clear(resultPreviewLimit);
-    await user.type(
-      resultPreviewLimit,
-      String(UPDATED_UNPROCESSED_PREVIEW_LIMIT),
-    );
-
-    await user.click(screen.getByRole("button", { name: "Save Settings" }));
-    const savedHeading = await screen.findByRole("heading", {
-      name: "Settings saved.",
-    });
-    expect(savedHeading).toBeInTheDocument();
-    expect(savedHeading.closest('[role="status"]')).toHaveAttribute(
-      "aria-atomic",
-      "true",
-    );
-    expect(savedHeading.parentElement?.parentElement).toHaveFocus();
-    expect(captured.token).toBe("fixture-csrf-token");
-    expect(captured.request?.expected_config_revision).toBe(
-      "settings-revision-one",
-    );
-    expect(captured.request?.config.musicbrainz).toEqual({
-      application_name: "OMYM2 Web Tests",
-      cache_policy: "sticky_positive",
-      contact: "https://github.com/muray0196/omym2",
-      enabled: true,
-      rate_limit_seconds: 1.25,
-      retry_limit: 2,
-      timeout_seconds: 7.5,
-    });
-    expect(captured.request?.config.hashing).toEqual({
-      read_chunk_size_bytes: 2_097_152,
-    });
-    expect(captured.request?.config.logging).toEqual({
-      destination: null,
-      level: "ERROR",
-      retention_files: 5,
-      rotation_max_bytes: 10_485_760,
-    });
-    expect(captured.request?.config.companions).toEqual({ enabled: true });
-    expect(captured.request?.config.unprocessed).toEqual({
-      directory: "Review Later",
-      enabled: true,
-      result_preview_limit: UPDATED_UNPROCESSED_PREVIEW_LIMIT,
-    });
-    const diff = screen.getByRole("table");
-    expect(within(diff).getByText("paths.library")).toBeInTheDocument();
-    expect(within(diff).getByText("/music/library")).toBeInTheDocument();
-    expect(within(diff).getByText("/music/new-library")).toBeInTheDocument();
-  });
-
-  it("refreshes Bootstrap and retries the identical save exactly once only for csrf_invalid", async () => {
-    const user = userEvent.setup();
-    const requests: Array<{ body: string; token: string | null }> = [];
-    let saveAttempt = 0;
-    server.use(
-      http.get("*/api/bootstrap", () =>
-        HttpResponse.json({
-          ...normalBootstrap,
-          data: normalBootstrap.data
-            ? { ...normalBootstrap.data, csrf_token: "refreshed-csrf-token" }
-            : null,
+  it("debounces a burst into one canonical save and keeps focus in the edited field", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const requests: SettingsCandidateRequest[] = [];
+      let validateCount = 0;
+      let settingsReadCount = 0;
+      server.use(
+        http.get("*/api/settings", () => {
+          settingsReadCount += 1;
+          return HttpResponse.json(settingsEnvelope);
         }),
-      ),
-      http.put("*/api/settings", async ({ request }) => {
-        saveAttempt += 1;
-        requests.push({
-          body: await request.text(),
-          token: request.headers.get("X-OMYM2-CSRF-Token"),
-        });
-        return saveAttempt === 1
-          ? HttpResponse.json(csrfInvalidEnvelope, { status: 403 })
-          : HttpResponse.json(savedSettingsEnvelope);
-      }),
-    );
-    renderSettings();
+        http.post("*/api/settings/validate", () => {
+          validateCount += 1;
+          return HttpResponse.json(savedSettingsEnvelope);
+        }),
+        http.put("*/api/settings", async ({ request }) => {
+          const candidate = (await request.json()) as SettingsCandidateRequest;
+          requests.push(candidate);
+          return HttpResponse.json(
+            savedEnvelopeFor(candidate, "settings-revision-two"),
+          );
+        }),
+      );
+      renderSettings();
 
-    const libraryPath = await screen.findByLabelText("Library path");
-    await user.clear(libraryPath);
-    await user.type(libraryPath, "/music/new-library");
-    await user.click(screen.getByRole("button", { name: "Save Settings" }));
+      const libraryPath = await screen.findByLabelText("Library path");
+      libraryPath.focus();
+      fireEvent.change(libraryPath, { target: { value: "/music/a" } });
+      fireEvent.change(libraryPath, { target: { value: "/music/ab" } });
+      fireEvent.change(libraryPath, {
+        target: { value: "/music/new-library" },
+      });
+      fireEvent.click(screen.getByLabelText("Require album"));
+      fireEvent.change(screen.getByLabelText("Maximum artist ID length"), {
+        target: { value: "10" },
+      });
+      fireEvent.change(screen.getByLabelText("Sample year"), {
+        target: { value: "0" },
+      });
 
-    expect(
-      await screen.findByRole("heading", { name: "Settings saved." }),
-    ).toBeInTheDocument();
-    expect(requests).toHaveLength(2);
-    expect(requests[0]?.token).toBe("fixture-csrf-token");
-    expect(requests[1]?.token).toBe("refreshed-csrf-token");
-    expect(requests[1]?.body).toBe(requests[0]?.body);
-  });
+      expect(autosaveStatus()).toHaveTextContent("Unsaved changes");
+      expect(requests).toHaveLength(0);
+      await advanceAutosave();
 
-  it("supports invalid persisted recovery, linked validation focus, and revision conflict guidance", async () => {
-    const user = userEvent.setup();
-    const invalidSave = {
-      data: null,
-      errors: [
-        {
-          code: "validation_failed",
-          field: "body.config.path_policy.template",
-          message: "The path template must contain a title placeholder.",
-          retryable: false,
-        },
-      ],
-    } satisfies ApiFailureEnvelope;
-    let saveCount = 0;
-    server.use(
-      http.get("*/api/settings", () =>
-        HttpResponse.json(invalidPersistedSettingsEnvelope),
-      ),
-      http.put("*/api/settings", () => {
-        saveCount += 1;
-        return saveCount === 1
-          ? HttpResponse.json(invalidSave, { status: 422 })
-          : HttpResponse.json(configChangedEnvelope, { status: 409 });
-      }),
-    );
-    renderSettings();
-
-    expect(
-      await screen.findByRole("heading", { name: "Configuration recovery" }),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Save Settings" }));
-    const validationLink = await screen.findByRole("link", {
-      name: "The path template must contain a title placeholder.",
-    });
-    await user.click(validationLink);
-    expect(screen.getByLabelText("Path template")).toHaveFocus();
-
-    await user.click(screen.getByRole("button", { name: "Save Settings" }));
-    const conflictHeading = await screen.findByRole("heading", {
-      name: "Configuration changed elsewhere",
-    });
-    expect(conflictHeading).toBeInTheDocument();
-    expect(conflictHeading.parentElement?.parentElement).toHaveFocus();
-    expect(
-      screen.getByRole("button", { name: "Load latest Settings" }),
-    ).toBeInTheDocument();
-  });
-
-  it("clears persisted recovery diagnostics after a successful replacement save", async () => {
-    const user = userEvent.setup();
-    server.use(
-      http.get("*/api/settings", () =>
-        HttpResponse.json(invalidPersistedSettingsEnvelope),
-      ),
-      http.put("*/api/settings", () =>
-        HttpResponse.json(savedSettingsEnvelope),
-      ),
-    );
-    renderSettings();
-
-    expect(
-      await screen.findByRole("heading", { name: "Configuration recovery" }),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Save Settings" }));
-
-    expect(
-      await screen.findByRole("heading", { name: "Settings saved." }),
-    ).toBeInTheDocument();
-    await waitFor(() =>
+      await waitFor(() => expect(requests).toHaveLength(1));
+      expect(requests[0]?.expected_config_revision).toBe(
+        "settings-revision-one",
+      );
+      expect(requests[0]?.config.paths.library).toBe("/music/new-library");
+      expect(requests[0]?.config.metadata.require_album).toBe(true);
+      expect(requests[0]?.config.artist_ids.max_length).toBe(10);
+      expect(validateCount).toBe(0);
+      expect(settingsReadCount).toBe(1);
+      expect(autosaveStatus()).toHaveTextContent("Saved");
+      expect(screen.getAllByText("Saved")).toHaveLength(2);
+      expect(libraryPath).toHaveFocus();
       expect(
-        screen.queryByRole("heading", { name: "Configuration recovery" }),
-      ).not.toBeInTheDocument(),
-    );
+        screen.queryByRole("button", { name: "Save Settings" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Review changes" }),
+      ).not.toBeInTheDocument();
+      const diff = screen.getByRole("table");
+      expect(within(diff).getByText("paths.library")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels a returned-to-acknowledged draft and blocks navigation only until persistence", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let saveCount = 0;
+      server.use(
+        http.put("*/api/settings", async ({ request }) => {
+          saveCount += 1;
+          const candidate = (await request.json()) as SettingsCandidateRequest;
+          return HttpResponse.json(
+            savedEnvelopeFor(candidate, "settings-revision-two"),
+          );
+        }),
+      );
+      renderSettings();
+
+      const libraryPath = await screen.findByLabelText("Library path");
+      fireEvent.change(libraryPath, { target: { value: "/music/draft" } });
+      fireEvent.change(libraryPath, {
+        target: { value: "/music/library" },
+      });
+      await advanceAutosave();
+      expect(saveCount).toBe(0);
+      expect(autosaveStatus()).toHaveTextContent("Saved");
+
+      fireEvent.change(libraryPath, {
+        target: { value: "/music/persist-me" },
+      });
+      const pendingUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(pendingUnload);
+      expect(pendingUnload.defaultPrevented).toBe(true);
+      fireEvent.click(screen.getByRole("link", { name: "Next route" }));
+      expect(
+        await screen.findByRole("dialog", {
+          name: "Leave with unsaved Settings?",
+        }),
+      ).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+
+      await advanceAutosave();
+      await waitFor(() => expect(saveCount).toBe(1));
+      expect(autosaveStatus()).toHaveTextContent("Saved");
+      const savedUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(savedUnload);
+      expect(savedUnload.defaultPrevented).toBe(false);
+
+      fireEvent.click(screen.getByRole("link", { name: "Next route" }));
+      expect(
+        await screen.findByRole("heading", { name: "Next" }),
+      ).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("checks browser field constraints before saving and waits for another edit", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let saveCount = 0;
+      server.use(
+        http.put("*/api/settings", async ({ request }) => {
+          saveCount += 1;
+          const candidate = (await request.json()) as SettingsCandidateRequest;
+          return HttpResponse.json(
+            savedEnvelopeFor(candidate, "settings-revision-two"),
+          );
+        }),
+      );
+      renderSettings();
+
+      const maxLength = await screen.findByLabelText(
+        "Maximum artist ID length",
+      );
+      fireEvent.change(maxLength, { target: { value: "0" } });
+      expect(saveCount).toBe(0);
+      expect(autosaveStatus()).toHaveTextContent("Needs attention");
+      expect(
+        screen.getByText(/browser-visible constraint/),
+      ).toBeInTheDocument();
+      await advanceAutosave();
+      expect(saveCount).toBe(0);
+
+      fireEvent.change(maxLength, { target: { value: "9" } });
+      await advanceAutosave();
+      await waitFor(() => expect(saveCount).toBe(1));
+      expect(autosaveStatus()).toHaveTextContent("Saved");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("coalesces edits made during an in-flight save without overwriting them", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const requests: SettingsCandidateRequest[] = [];
+      let activeSaves = 0;
+      let maximumActiveSaves = 0;
+      let releaseFirstSave: () => void = () => undefined;
+      const firstSaveHeld = new Promise<void>((resolve) => {
+        releaseFirstSave = resolve;
+      });
+      server.use(
+        http.put("*/api/settings", async ({ request }) => {
+          const candidate = (await request.json()) as SettingsCandidateRequest;
+          requests.push(candidate);
+          activeSaves += 1;
+          maximumActiveSaves = Math.max(maximumActiveSaves, activeSaves);
+          if (requests.length === 1) {
+            await firstSaveHeld;
+          }
+          activeSaves -= 1;
+          return HttpResponse.json(
+            savedEnvelopeFor(
+              candidate,
+              requests.length === 1
+                ? "settings-revision-two"
+                : "settings-revision-three",
+            ),
+          );
+        }),
+      );
+      renderSettings();
+
+      const libraryPath = await screen.findByLabelText("Library path");
+      fireEvent.change(libraryPath, {
+        target: { value: "/music/first-candidate" },
+      });
+      await advanceAutosave();
+      await waitFor(() => expect(requests).toHaveLength(1));
+      expect(autosaveStatus()).toHaveTextContent("Saving");
+
+      fireEvent.change(libraryPath, {
+        target: { value: "/music/latest-candidate" },
+      });
+      await advanceAutosave();
+      expect(requests).toHaveLength(1);
+      expect(libraryPath).toHaveValue("/music/latest-candidate");
+
+      act(() => releaseFirstSave());
+      await waitFor(() => expect(requests).toHaveLength(2));
+      await waitFor(() => expect(autosaveStatus()).toHaveTextContent("Saved"));
+      expect(maximumActiveSaves).toBe(1);
+      expect(requests[0]?.expected_config_revision).toBe(
+        "settings-revision-one",
+      );
+      expect(requests[1]?.expected_config_revision).toBe(
+        "settings-revision-two",
+      );
+      expect(requests[1]?.config.paths.library).toBe("/music/latest-candidate");
+      expect(libraryPath).toHaveValue("/music/latest-candidate");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retains an invalid draft, links diagnostics, and does not resubmit it unchanged", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let saveCount = 0;
+      server.use(
+        http.put("*/api/settings", async ({ request }) => {
+          saveCount += 1;
+          const candidate = (await request.json()) as SettingsCandidateRequest;
+          if (saveCount === 1) {
+            return HttpResponse.json(
+              {
+                data: null,
+                errors: [
+                  {
+                    code: "validation_failed",
+                    field: "body.config.path_policy.template",
+                    message:
+                      "The path template must contain a title placeholder.",
+                    retryable: false,
+                  },
+                ],
+              } satisfies ApiFailureEnvelope,
+              { status: 422 },
+            );
+          }
+          return HttpResponse.json(
+            savedEnvelopeFor(candidate, "settings-revision-two"),
+          );
+        }),
+      );
+      renderSettings();
+
+      const template = await screen.findByLabelText("Path template");
+      template.focus();
+      fireEvent.change(template, { target: { value: "{artist}" } });
+      await advanceAutosave();
+      const validationLink = await screen.findByRole("link", {
+        name: "The path template must contain a title placeholder.",
+      });
+      expect(template).toHaveFocus();
+      expect(template).toHaveValue("{artist}");
+      expect(autosaveStatus()).toHaveTextContent("Needs attention");
+
+      await advanceAutosave();
+      expect(saveCount).toBe(1);
+      fireEvent.click(validationLink);
+      expect(template).toHaveFocus();
+      fireEvent.change(template, { target: { value: "{artist}/{title}" } });
+      await advanceAutosave();
+      await waitFor(() => expect(saveCount).toBe(2));
+      expect(autosaveStatus()).toHaveTextContent("Saved");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps invalid persisted recovery guarded until a valid autosave replaces it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      server.use(
+        http.get("*/api/settings", () =>
+          HttpResponse.json(invalidPersistedSettingsEnvelope),
+        ),
+        http.put("*/api/settings", async ({ request }) => {
+          const candidate = (await request.json()) as SettingsCandidateRequest;
+          return HttpResponse.json(
+            savedEnvelopeFor(candidate, "settings-revision-two"),
+          );
+        }),
+      );
+      renderSettings();
+
+      expect(
+        await screen.findByRole("heading", { name: "Configuration recovery" }),
+      ).toBeVisible();
+      expect(autosaveStatus()).toHaveTextContent("Needs attention");
+      const guardedUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(guardedUnload);
+      expect(guardedUnload.defaultPrevented).toBe(true);
+
+      fireEvent.change(screen.getByLabelText("Path template"), {
+        target: { value: "{artist}/{title}" },
+      });
+      await advanceAutosave();
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("heading", { name: "Configuration recovery" }),
+        ).not.toBeInTheDocument(),
+      );
+      expect(autosaveStatus()).toHaveTextContent("Saved");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pauses after a revision conflict until Load latest Settings is chosen", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let saveCount = 0;
+      server.use(
+        http.put("*/api/settings", () => {
+          saveCount += 1;
+          return HttpResponse.json(configChangedEnvelope, { status: 409 });
+        }),
+      );
+      renderSettings();
+
+      const libraryPath = await screen.findByLabelText("Library path");
+      fireEvent.change(libraryPath, {
+        target: { value: "/music/conflicted" },
+      });
+      await advanceAutosave();
+      expect(
+        await screen.findByRole("heading", {
+          name: "Configuration changed elsewhere",
+        }),
+      ).toBeVisible();
+
+      fireEvent.change(libraryPath, {
+        target: { value: "/music/still-conflicted" },
+      });
+      await advanceAutosave();
+      expect(saveCount).toBe(1);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Load latest Settings" }),
+      );
+      await waitFor(() =>
+        expect(screen.getByLabelText("Library path")).toHaveValue(
+          "/music/library",
+        ),
+      );
+      expect(autosaveStatus()).toHaveTextContent("Saved");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes CSRF and resends the identical candidate exactly once", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const requests: Array<{ body: string; token: string | null }> = [];
+      server.use(
+        http.get("*/api/bootstrap", () =>
+          HttpResponse.json({
+            ...normalBootstrap,
+            data:
+              normalBootstrap.data === null
+                ? null
+                : {
+                    ...normalBootstrap.data,
+                    csrf_token: "refreshed-csrf-token",
+                  },
+          }),
+        ),
+        http.put("*/api/settings", async ({ request }) => {
+          const body = await request.text();
+          requests.push({
+            body,
+            token: request.headers.get("X-OMYM2-CSRF-Token"),
+          });
+          if (requests.length === 1) {
+            return HttpResponse.json(csrfInvalidEnvelope, { status: 403 });
+          }
+          const candidate = JSON.parse(body) as SettingsCandidateRequest;
+          return HttpResponse.json(
+            savedEnvelopeFor(candidate, "settings-revision-two"),
+          );
+        }),
+      );
+      renderSettings();
+
+      fireEvent.change(await screen.findByLabelText("Library path"), {
+        target: { value: "/music/csrf-safe" },
+      });
+      await advanceAutosave();
+      await waitFor(() => expect(requests).toHaveLength(2));
+      expect(requests[0]?.token).toBe("fixture-csrf-token");
+      expect(requests[1]?.token).toBe("refreshed-csrf-token");
+      expect(requests[1]?.body).toBe(requests[0]?.body);
+      expect(autosaveStatus()).toHaveTextContent("Saved");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retry an uncertain failure until the explicit retry action", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let saveCount = 0;
+      server.use(
+        http.put("*/api/settings", async ({ request }) => {
+          saveCount += 1;
+          if (saveCount === 1) {
+            return HttpResponse.error();
+          }
+          const candidate = (await request.json()) as SettingsCandidateRequest;
+          return HttpResponse.json(
+            savedEnvelopeFor(candidate, "settings-revision-two"),
+          );
+        }),
+      );
+      renderSettings();
+
+      fireEvent.change(await screen.findByLabelText("Library path"), {
+        target: { value: "/music/retry-explicitly" },
+      });
+      await advanceAutosave();
+      const retry = await screen.findByRole("button", {
+        name: "Retry autosave",
+      });
+      expect(autosaveStatus()).toHaveTextContent("Needs attention");
+      await advanceAutosave(1_800);
+      expect(saveCount).toBe(1);
+
+      fireEvent.click(retry);
+      await advanceAutosave();
+      await waitFor(() => expect(saveCount).toBe(2));
+      expect(autosaveStatus()).toHaveTextContent("Saved");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
+
+async function advanceAutosave(milliseconds = autosaveDelay()) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(milliseconds);
+  });
+}
+
+function autosaveDelay(): number {
+  const delay = settingsEnvelope.data?.choices.autosave_delay_ms;
+  if (delay === undefined) {
+    throw new Error("Settings fixture is missing the autosave delay.");
+  }
+  return delay;
+}
+
+function autosaveStatus(): HTMLElement {
+  const status = screen
+    .getByRole("heading", { name: "Automatic save" })
+    .closest<HTMLElement>('[role="status"]');
+  if (status === null) {
+    throw new Error("Automatic save status region is missing.");
+  }
+  return status;
+}
+
+function savedEnvelopeFor(
+  request: SettingsCandidateRequest,
+  configRevision: string,
+) {
+  return {
+    ...savedSettingsEnvelope,
+    data: {
+      ...savedSettingsEnvelope.data,
+      changes: [
+        {
+          after: request.config.paths.library,
+          before: settingsEnvelope.data?.config.paths.library ?? null,
+          field: "paths.library",
+        },
+      ],
+      config: request.config,
+      config_revision: configRevision,
+    },
+  };
+}
 
 function renderSettings() {
   const bootstrap = normalBootstrap.data;

@@ -1,6 +1,6 @@
 /**
  * Summary: Centralizes English copy and sample values for the Settings workflow.
- * Why: Keeps recovery, review, conflict, and save language consistent across form states.
+ * Why: Keeps autosave, recovery, conflict, and preview language consistent across form states.
  */
 import type { PathPreviewRequest } from "../../api/generated";
 
@@ -8,12 +8,12 @@ export const settingsCopy = {
   eyebrow: "Configuration",
   title: "Settings",
   description:
-    "Edit paths, planning policy, integrations, and runtime controls. Save applies valid changes; Review changes previews the diff.",
+    "Edit paths, planning policy, integrations, and runtime controls. Valid changes save automatically after you pause.",
   loading: "Loading Settings…",
   loadError: "Settings could not be loaded",
   recoveryTitle: "Configuration recovery",
   recoveryBody:
-    "The saved configuration is invalid. Fix this draft and choose Save Settings; valid changes apply immediately.",
+    "The saved configuration is invalid. Fix this draft; valid changes save automatically after you pause.",
   revisionLabel: "Editing revision",
   pathsTitle: "Paths",
   libraryPath: "Library path",
@@ -122,13 +122,24 @@ export const settingsCopy = {
     "Path preview could not be updated. The last available result is still shown.",
   retryPreview: "Retry preview",
   previewUnavailable: "No path could be rendered.",
-  review: "Review changes",
-  reviewing: "Reviewing changes…",
-  reviewTitle: "Changes preview",
-  reviewNeeded:
-    "Review is optional. Save Settings validates and applies this draft in one action.",
-  reviewOutdated:
-    "The draft changed after this preview. Review again to refresh the changes shown here.",
+  autosaveTitle: "Automatic save",
+  autosaveUnsaved: "Unsaved changes",
+  autosaveUnsavedBody: "Waiting for you to pause before checking this draft.",
+  autosaveChecking: "Checking",
+  autosaveCheckingBody:
+    "Checking the current fields before sending one complete Config candidate.",
+  autosaveSaving: "Saving",
+  autosaveSavingBody:
+    "Validating and atomically replacing the Config at the expected revision.",
+  autosaveSaved: "Saved",
+  autosaveSavedBody: "The latest Settings draft is safely persisted.",
+  autosaveNeedsAttention: "Needs attention",
+  autosaveAttentionBody:
+    "The latest draft is not safely persisted. Review the details below or edit the draft to continue.",
+  clientValidationFailed:
+    "A field does not satisfy its browser-visible constraint. Correct it to resume autosave.",
+  lastSavedChanges: "Last saved changes",
+  retryAutosave: "Retry autosave",
   valid: "Backend validation passed.",
   invalid: "Backend validation found fields that need attention.",
   validationTitle: "Settings validation failed",
@@ -138,25 +149,21 @@ export const settingsCopy = {
   before: "Before",
   after: "After",
   validationErrors: "Validation errors",
-  save: "Save Settings",
-  saving: "Saving Settings…",
-  saved: "Settings saved.",
-  savedBody: "Your changes were validated and applied.",
   saveUnavailable:
-    "Saving is unavailable in the current runtime state. Change review and path preview remain available.",
+    "Autosave is unavailable in the current runtime state. Draft editing and path preview remain available.",
   conflictTitle: "Configuration changed elsewhere",
   conflictBody:
     "This draft was based on an older revision and was not saved. Load the latest Settings, then reapply your changes.",
   loadLatest: "Load latest Settings",
   lockTitle: "Another exclusive operation is active",
   lockBody:
-    "Settings were not saved. Wait for the active operation to finish, then save again.",
+    "Settings were not saved. Wait for the active operation to finish, then retry autosave.",
   ioTitle: "Configuration could not be written",
   ioBody:
     "The backend reported a configuration I/O failure. The current draft remains available.",
   disconnectedTitle: "The local service could not be reached",
   disconnectedBody:
-    "Nothing was automatically retried. Check the local service, then choose the action again.",
+    "Nothing was automatically retried. Check the local service, then retry autosave.",
   unexpectedTitle: "Settings could not be completed",
   csrfRefreshFailed:
     "The security token could not be refreshed. Reload the application before saving.",

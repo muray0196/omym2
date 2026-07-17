@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines the bundled local Web API's clean-slate typed envelopes, closed catalogs, generated client, operations, settings, and browsing semantics.
 tags: [web-api, openapi, artist-names, companions, unprocessed, operations, concurrency, pagination]
-timestamp: 2026-07-17T20:30:51+09:00
+timestamp: 2026-07-18T01:15:00+09:00
 ---
 
 # Web API Contract
@@ -438,6 +438,10 @@ type SettingsData = {
 }
 ```
 
+`choices.autosave_delay_ms` is the backend-owned trailing idle delay for Web
+Settings persistence. It is a runtime interaction value and is not persisted
+in TOML.
+
 For MusicBrainz rows, `selected_name_kind` identifies the exact selected field:
 an alias `name`, alias `sort-name`, artist `name`, or artist `sort-name`.
 Alias-derived rows also expose their locale, such as `ja-Latn`. User rows have
@@ -476,6 +480,15 @@ list, validation result, and preview. A mismatch returns
 TOML when it supplies the revision it read; invalid current Config does not by
 itself block this recovery save. Config I/O failure returns
 `500 config_io_failed`.
+
+The bundled Settings client sends this endpoint after the generated autosave
+delay and treats its response as the canonical validation-and-save result. The
+normal persistence path does not call `POST /api/settings/validate` immediately
+before the same PUT. At most one PUT is in flight; the client coalesces later
+edits, updates its Settings query cache from successful responses, and advances
+the next request to the returned revision without replacing a newer local
+draft. Only `csrf_invalid` permits one identical automatic resend after a
+Bootstrap token refresh.
 
 ### `PUT /api/settings/artist-names`
 

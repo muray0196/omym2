@@ -2,6 +2,7 @@
  * Summary: Defines the lazy Settings route and recovery-capable query boundary.
  * Why: Makes revision-safe Config editing available without coupling the route to storage.
  */
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { SettingsEditor } from "../../features/settings/settings-form";
@@ -15,6 +16,7 @@ import { InspectionErrorState } from "../../features/inspection/inspection-error
 import { PageHeader } from "../../ui/primitives/page-header";
 
 export function Component() {
+  const [editorVersion, setEditorVersion] = useState(0);
   const settingsQuery = useQuery({
     queryFn: readSettings,
     queryKey: settingsQueryKey,
@@ -45,9 +47,10 @@ export function Component() {
   return (
     <SettingsEditor
       initial={settingsQuery.data}
-      key={`${settingsQuery.data.config_revision}:${settingsQuery.data.artist_name_mappings.revision}`}
+      key={`${settingsQuery.data.artist_name_mappings.revision}:${editorVersion}`}
       onLoadLatest={async () => {
         await settingsQuery.refetch();
+        setEditorVersion((current) => current + 1);
       }}
     />
   );

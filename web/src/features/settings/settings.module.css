@@ -1,6 +1,6 @@
 /**
- * Summary: Styles the responsive Settings draft, review diff, recovery states, and saved notification.
- * Why: Keeps a dense Config workflow legible, keyboard accessible, and CSP safe.
+ * Summary: Styles the responsive Settings draft, autosave states, diffs, and recovery notices.
+ * Why: Keeps a dense Config workflow legible, accessible, and clear about persistence.
  */
 .page {
   display: grid;
@@ -30,6 +30,7 @@
 
 .section,
 .review,
+.autosaveStatus,
 .notice {
   background: var(--color-surface);
   border: 1px solid var(--color-hairline);
@@ -41,6 +42,7 @@
 
 .sectionHeader h2,
 .review h2,
+.autosaveStatus h2,
 .notice h2 {
   color: var(--color-ink);
   font-size: 15px;
@@ -239,13 +241,11 @@
   margin: 0;
 }
 
-.review:focus,
-.focusRegion:focus {
+.autosaveStatus:focus {
   outline: 2px solid var(--color-blue);
   outline-offset: 3px;
 }
 
-.reviewActions,
 .dialogActions {
   display: flex;
   flex-wrap: wrap;
@@ -323,46 +323,52 @@
   color: var(--color-red);
 }
 
-.savedNotificationRegion {
-  inset-inline-start: 50%;
-  max-width: calc(100vw - var(--space-32));
-  position: fixed;
-  top: max(var(--space-16), env(safe-area-inset-top));
-  transform: translateX(-50%);
-  width: max-content;
-  z-index: var(--layer-notification);
+.autosaveStatus {
+  align-items: center;
+  grid-template-columns: minmax(150px, auto) minmax(0, 1fr);
 }
 
-.savedNotificationRegion:focus {
-  outline: none;
-}
-
-.savedNotificationRegion:focus .savedNotification {
-  outline: 2px solid var(--color-blue);
-  outline-offset: 3px;
-}
-
-.savedNotification {
-  background: var(--color-surface-elevated);
-  border: 1px solid color-mix(in srgb, var(--color-green) 55%, transparent);
-  border-radius: var(--radius-10);
+.autosaveStatus > div {
   display: grid;
   gap: var(--space-4);
-  padding: var(--space-12) var(--space-16);
 }
 
-.savedNotification h2 {
-  color: var(--color-green);
-  font-size: 14px;
-  font-weight: 650;
-  margin: 0;
-}
-
-.savedNotification p {
+.autosaveStatus p {
   color: var(--color-body);
   font-size: 13px;
   margin: 0;
-  overflow-wrap: anywhere;
+}
+
+.autosaveStatus > div p {
+  font-weight: 650;
+}
+
+.autosaveStatus.saved {
+  border-color: color-mix(in srgb, var(--color-green) 45%, transparent);
+}
+
+.autosaveStatus.saved > div p {
+  color: var(--color-green);
+}
+
+.autosaveStatus.unsaved,
+.autosaveStatus.checking,
+.autosaveStatus.saving {
+  border-color: color-mix(in srgb, var(--color-blue) 45%, transparent);
+}
+
+.autosaveStatus.unsaved > div p,
+.autosaveStatus.checking > div p,
+.autosaveStatus.saving > div p {
+  color: var(--color-blue);
+}
+
+.autosaveStatus.attention {
+  border-color: color-mix(in srgb, var(--color-yellow) 50%, transparent);
+}
+
+.autosaveStatus.attention > div p {
+  color: var(--color-yellow);
 }
 
 .diagnostics {
@@ -379,8 +385,14 @@
 @media (max-width: 767px) {
   .section,
   .review,
+  .autosaveStatus,
   .notice {
     padding: var(--space-16);
+  }
+
+  .autosaveStatus {
+    align-items: start;
+    grid-template-columns: 1fr;
   }
 
   .entry,

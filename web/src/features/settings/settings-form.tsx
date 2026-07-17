@@ -1,6 +1,6 @@
 /**
- * Summary: Renders the recovery-capable Settings draft, preview, review, and atomic save flow.
- * Why: Gives users a revision-safe form without reimplementing backend Config or PathPolicy rules.
+ * Summary: Renders the recovery-capable Settings draft, preview, and revision-safe autosave flow.
+ * Why: Persists idle drafts without losing local edits or weakening backend Config guarantees.
  */
 import {
   useCallback,
@@ -41,12 +41,16 @@ import {
   settingsQueryKey,
   SettingsApiError,
   SettingsTransportError,
-  validateSettingsDraft,
 } from "./settings-api";
 import { defaultPreviewSample, settingsCopy } from "./settings-copy";
 import styles from "./settings.module.css";
 
 type PreviewSample = Pick<PathPreviewRequest, "file_extension" | "metadata">;
+type SaveStatus = "attention" | "checking" | "saved" | "saving" | "unsaved";
+type DraftCandidate = {
+  config: AppConfigResource;
+  fingerprint: string;
+};
 
 const PREVIEW_DEBOUNCE_MS = 250;
 
@@ -58,17 +62,37 @@ type SettingsEditorProps = {
 export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
   const bootstrap = useContext(BootstrapContext);
   const queryClient = useQueryClient();
-  const form = useForm<AppConfigResource>({ defaultValues: initial.config });
-  const { control, formState, handleSubmit, register, reset } = form;
-  const draft = useWatch({ control });
+  const form = useForm<AppConfigResource>({
+    defaultValues: initial.config,
+    mode: "onChange",
+  });
+  const { control, register, reset } = form;
+  const draft = useWatch({ control }) as AppConfigResource;
   const previewArtistIds = useWatch({ control, name: "artist_ids" });
   const previewPathPolicy = useWatch({ control, name: "path_policy" });
   const draftFingerprint = stableFingerprint(draft);
+  const initialFingerprint = useMemo(
+    () => stableFingerprint(initial.config),
+    [initial.config],
+  );
   const [baseRevision, setBaseRevision] = useState(initial.config_revision);
-  const [review, setReview] = useState<SettingsCandidateData | null>(null);
-  const [reviewedFingerprint, setReviewedFingerprint] = useState<string | null>(
+  const [acknowledgedFingerprint, setAcknowledgedFingerprint] =
+    useState(initialFingerprint);
+  const [lastSavedCandidate, setLastSavedCandidate] =
+    useState<SettingsCandidateData | null>(null);
+  const [saveActivity, setSaveActivity] = useState<
+    "checking" | "saving" | null
+  >(null);
+  const [inFlightCandidate, setInFlightCandidate] =
+    useState<DraftCandidate | null>(null);
+  const [failedFingerprint, setFailedFingerprint] = useState<string | null>(
     null,
   );
+  const [autosavePaused, setAutosavePaused] = useState<
+    "conflict" | "failure" | null
+  >(null);
+  const [clientDraftValid, setClientDraftValid] = useState(true);
+  const [retryAvailable, setRetryAvailable] = useState(false);
   const [previewSample, setPreviewSample] =
     useState<PreviewSample>(defaultPreviewSample);
   const [englishArtistNames, setEnglishArtistNames] = useState<
@@ -87,23 +111,43 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
     stableFingerprint(artistNameMappingEntries(initial.artist_name_mappings)),
   );
   const [actionError, setActionError] = useState<unknown>(null);
-  const [savedRevision, setSavedRevision] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [persistedValidation, setPersistedValidation] = useState(
     initial.validation,
   );
-  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const stayButtonRef = useRef<HTMLButtonElement>(null);
-  const reviewRegionRef = useRef<HTMLElement>(null);
-  const errorRegionRef = useRef<HTMLDivElement>(null);
-  const savedNotificationRef = useRef<HTMLDivElement>(null);
+  const saveStatusRef = useRef<HTMLElement>(null);
+  const latestCandidateRef = useRef<DraftCandidate>({
+    config: initial.config,
+    fingerprint: initialFingerprint,
+  });
+  const acknowledgedFingerprintRef = useRef(initialFingerprint);
+  const baseRevisionRef = useRef(initial.config_revision);
+  const inFlightCandidateRef = useRef<DraftCandidate | null>(null);
+  const pendingCandidateRef = useRef<DraftCandidate | null>(null);
+  const autosavePausedRef = useRef<"conflict" | "failure" | null>(null);
+  const bootstrapRefreshTimerRef = useRef<number | null>(null);
   const artistNameMappingsFingerprint = stableFingerprint(englishArtistNames);
   const artistNameMappingsDirty =
     artistNameMappingsFingerprint !== savedArtistNameMappingsFingerprint;
-  const blocker = useBlocker(formState.isDirty || artistNameMappingsDirty);
-  const reviewIsCurrent =
-    review !== null && reviewedFingerprint === draftFingerprint;
   const canSave = bootstrap?.runtime_capabilities.can_change_settings ?? false;
+  const saveStatus = resolveSaveStatus({
+    acknowledgedFingerprint,
+    autosavePaused,
+    canSave,
+    clientDraftValid,
+    draftFingerprint,
+    failedFingerprint,
+    inFlightCandidate,
+    persistedConfigValid: persistedValidation.valid,
+    saveActivity,
+  });
+  const configDraftUnsafe =
+    draftFingerprint !== acknowledgedFingerprint ||
+    inFlightCandidate !== null ||
+    saveStatus === "attention";
+  const blocker = useBlocker(configDraftUnsafe || artistNameMappingsDirty);
   const previewRequest = useMemo(
     () => ({
       artist_ids: previewArtistIds,
@@ -141,21 +185,11 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
   });
   const preview = previewQuery.data ?? initial.preview;
 
-  useBeforeUnload(
-    useCallback(
-      (event) => {
-        if (formState.isDirty || artistNameMappingsDirty) {
-          event.preventDefault();
-          event.returnValue = "";
-        }
-      },
-      [artistNameMappingsDirty, formState.isDirty],
-    ),
-  );
-
-  const validateMutation = useMutation({
-    mutationFn: validateSettingsDraft,
-    retry: false,
+  useBeforeUnload((event) => {
+    if (configDraftUnsafe || artistNameMappingsDirty) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
   });
   const artistNameMappingsMutation = useMutation({
     mutationFn: async (request: {
@@ -186,7 +220,20 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
     },
     retry: false,
   });
-  const saveMutation = useMutation({
+
+  const scheduleBootstrapRefresh = useCallback(() => {
+    if (bootstrapRefreshTimerRef.current !== null) {
+      globalThis.clearTimeout(bootstrapRefreshTimerRef.current);
+    }
+    bootstrapRefreshTimerRef.current = globalThis.setTimeout(() => {
+      bootstrapRefreshTimerRef.current = null;
+      void queryClient.invalidateQueries({
+        queryKey: bootstrapQuery.queryKey,
+      });
+    }, initial.choices.autosave_delay_ms);
+  }, [initial.choices.autosave_delay_ms, queryClient]);
+
+  const { mutateAsync: saveSettings } = useMutation({
     mutationFn: async (request: {
       config: AppConfigResource;
       expected_config_revision: string;
@@ -216,24 +263,153 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
     retry: false,
   });
 
-  async function handleReview(config: AppConfigResource) {
-    setActionError(null);
-    setSavedRevision(null);
-    const fingerprint = stableFingerprint(config);
-    try {
-      const result = await validateMutation.mutateAsync({
-        config,
-        expected_config_revision: baseRevision,
-      });
-      setReview(result);
-      setReviewedFingerprint(fingerprint);
-      setAnnouncement(
-        result.validation.valid ? settingsCopy.valid : settingsCopy.invalid,
-      );
-      reviewRegionRef.current?.focus();
-    } catch (error) {
-      presentActionError(error);
+  const persistCandidate = useCallback(
+    async function persist(candidate: DraftCandidate) {
+      if (
+        inFlightCandidateRef.current !== null ||
+        autosavePausedRef.current !== null ||
+        candidate.fingerprint !== latestCandidateRef.current.fingerprint
+      ) {
+        return;
+      }
+      if (!configFieldsAreValid(formRef.current)) {
+        setFailedFingerprint(candidate.fingerprint);
+        setSaveActivity(null);
+        return;
+      }
+
+      inFlightCandidateRef.current = candidate;
+      setInFlightCandidate(candidate);
+      setSaveActivity("saving");
+      setActionError(null);
+      setRetryAvailable(false);
+      try {
+        const result = await saveSettings({
+          config: candidate.config,
+          expected_config_revision: baseRevisionRef.current,
+        });
+        const savedFingerprint = stableFingerprint(result.config);
+        baseRevisionRef.current = result.config_revision;
+        acknowledgedFingerprintRef.current = savedFingerprint;
+        setBaseRevision(result.config_revision);
+        setAcknowledgedFingerprint(savedFingerprint);
+        setLastSavedCandidate(result);
+        setPersistedValidation(result.validation);
+        setActionError(null);
+        setFailedFingerprint(null);
+        setRetryAvailable(false);
+        queryClient.setQueryData<SettingsData>(settingsQueryKey, (current) =>
+          current === undefined
+            ? current
+            : {
+                ...current,
+                config: result.config,
+                config_revision: result.config_revision,
+                preview: result.preview,
+                validation: result.validation,
+              },
+        );
+        if (latestCandidateRef.current.fingerprint === candidate.fingerprint) {
+          reset(result.config);
+        }
+        scheduleBootstrapRefresh();
+      } catch (error: unknown) {
+        pendingCandidateRef.current = null;
+        setFailedFingerprint(latestCandidateRef.current.fingerprint);
+        setActionError(error);
+        setAnnouncement(actionErrorAnnouncement(error));
+        if (hasSettingsErrorCode(error, "config_changed")) {
+          autosavePausedRef.current = "conflict";
+          setAutosavePaused("conflict");
+          setRetryAvailable(false);
+        } else if (
+          !hasSettingsErrorCode(error, "validation_failed") &&
+          !hasSettingsErrorCode(error, "config_invalid")
+        ) {
+          autosavePausedRef.current = "failure";
+          setAutosavePaused("failure");
+          setRetryAvailable(true);
+        } else {
+          setRetryAvailable(false);
+        }
+      } finally {
+        inFlightCandidateRef.current = null;
+        setInFlightCandidate(null);
+        setSaveActivity(null);
+        const pending = pendingCandidateRef.current;
+        pendingCandidateRef.current = null;
+        if (
+          pending !== null &&
+          autosavePausedRef.current === null &&
+          pending.fingerprint === latestCandidateRef.current.fingerprint &&
+          pending.fingerprint !== acknowledgedFingerprintRef.current
+        ) {
+          void persist(pending);
+        }
+      }
+    },
+    [queryClient, reset, saveSettings, scheduleBootstrapRefresh],
+  );
+
+  useEffect(() => {
+    const candidate = { config: draft, fingerprint: draftFingerprint };
+    latestCandidateRef.current = candidate;
+    pendingCandidateRef.current = null;
+
+    if (
+      draftFingerprint === acknowledgedFingerprint ||
+      inFlightCandidate?.fingerprint === draftFingerprint ||
+      !clientDraftValid ||
+      !canSave ||
+      autosavePaused !== null ||
+      failedFingerprint === draftFingerprint
+    ) {
+      return;
     }
+
+    const timer = globalThis.setTimeout(() => {
+      if (candidate.fingerprint !== latestCandidateRef.current.fingerprint) {
+        return;
+      }
+      setSaveActivity("checking");
+      if (inFlightCandidateRef.current !== null) {
+        pendingCandidateRef.current = candidate;
+        return;
+      }
+      void persistCandidate(candidate);
+    }, initial.choices.autosave_delay_ms);
+    return () => globalThis.clearTimeout(timer);
+  }, [
+    acknowledgedFingerprint,
+    autosavePaused,
+    canSave,
+    clientDraftValid,
+    draft,
+    draftFingerprint,
+    failedFingerprint,
+    inFlightCandidate,
+    initial.choices.autosave_delay_ms,
+    persistCandidate,
+  ]);
+
+  useEffect(
+    () => () => {
+      if (bootstrapRefreshTimerRef.current !== null) {
+        globalThis.clearTimeout(bootstrapRefreshTimerRef.current);
+        void queryClient.invalidateQueries({
+          queryKey: bootstrapQuery.queryKey,
+        });
+      }
+    },
+    [queryClient],
+  );
+
+  function retryAutosave() {
+    autosavePausedRef.current = null;
+    setAutosavePaused(null);
+    setFailedFingerprint(null);
+    setActionError(null);
+    setRetryAvailable(false);
   }
 
   async function handleSaveArtistNameMappings() {
@@ -258,65 +434,14 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
     setSavedArtistNameMappingsFingerprint(stableFingerprint(entries));
   }
 
-  async function handleSave(config: AppConfigResource) {
-    setActionError(null);
-    setSavedRevision(null);
-    try {
-      const result = await saveMutation.mutateAsync({
-        config,
-        expected_config_revision: baseRevision,
-      });
-      setBaseRevision(result.config_revision);
-      setReview(result);
-      const savedFingerprint = stableFingerprint(result.config);
-      setReviewedFingerprint(savedFingerprint);
-      setSavedRevision(result.config_revision);
-      setPersistedValidation({ errors: [], valid: true });
-      reset(result.config);
-      setAnnouncement(settingsCopy.saved);
-      savedNotificationRef.current?.focus();
-      void Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: settingsQueryKey,
-          refetchType: "none",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: bootstrapQuery.queryKey,
-        }),
-      ]);
-    } catch (error) {
-      presentActionError(error);
-    }
-  }
-
   function presentActionError(error: unknown) {
     setActionError(error);
+    setRetryAvailable(false);
     setAnnouncement(actionErrorAnnouncement(error));
-    errorRegionRef.current?.focus();
   }
 
   return (
     <article className={styles.page}>
-      <div
-        className={styles.savedNotificationRegion}
-        ref={savedNotificationRef}
-        tabIndex={-1}
-      >
-        {savedRevision === null ? null : (
-          <section
-            aria-atomic="true"
-            className={styles.savedNotification}
-            role="status"
-          >
-            <h2>{settingsCopy.saved}</h2>
-            <p>{settingsCopy.savedBody}</p>
-            <p className={styles.revision}>
-              {settingsCopy.revisionLabel}: <code>{savedRevision}</code>
-            </p>
-          </section>
-        )}
-      </div>
-
       <PageHeader
         description={settingsCopy.description}
         eyebrow={settingsCopy.eyebrow}
@@ -327,6 +452,25 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
         }
         title={settingsCopy.title}
       />
+
+      <section
+        aria-atomic="true"
+        className={`${styles.autosaveStatus} ${styles[saveStatus]}`}
+        ref={saveStatusRef}
+        role="status"
+        tabIndex={-1}
+      >
+        <div>
+          <h2>{settingsCopy.autosaveTitle}</h2>
+          <p>{saveStatusLabel(saveStatus)}</p>
+        </div>
+        <p>{saveStatusDescription(saveStatus)}</p>
+        {!clientDraftValid ? (
+          <p className={styles.warningText}>
+            {settingsCopy.clientValidationFailed}
+          </p>
+        ) : null}
+      </section>
 
       {!persistedValidation.valid ? (
         <ValidationPanel
@@ -348,7 +492,11 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
 
       <form
         className={styles.form}
-        onSubmit={(event) => void handleSubmit(handleSave)(event)}
+        onChange={() =>
+          setClientDraftValid(configFieldsAreValid(formRef.current))
+        }
+        onSubmit={(event) => event.preventDefault()}
+        ref={formRef}
       >
         <SettingsSection
           description={settingsCopy.pathHelp}
@@ -385,6 +533,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
             <input
               className={styles.monoInput}
               id="settings-path-policy-template"
+              required
               {...register("path_policy.template")}
             />
           </label>
@@ -403,6 +552,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
               {settingsCopy.unknownArtist}
               <input
                 id="settings-unknown-artist"
+                required
                 {...register("path_policy.unknown_artist")}
               />
             </label>
@@ -410,6 +560,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
               {settingsCopy.unknownAlbum}
               <input
                 id="settings-unknown-album"
+                required
                 {...register("path_policy.unknown_album")}
               />
             </label>
@@ -418,6 +569,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
               <input
                 id="settings-max-filename"
                 min="1"
+                required
                 type="number"
                 {...register("path_policy.max_filename_length", {
                   setValueAs: requiredNumber,
@@ -486,6 +638,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
               <input
                 id="settings-artist-max-length"
                 min="1"
+                required
                 type="number"
                 {...register("artist_ids.max_length", {
                   setValueAs: requiredNumber,
@@ -497,6 +650,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
               <input
                 className={styles.monoInput}
                 id="settings-artist-fallback"
+                required
                 {...register("artist_ids.fallback_id")}
               />
             </label>
@@ -595,6 +749,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
               <input
                 id="settings-musicbrainz-timeout"
                 min="0.001"
+                required
                 step="any"
                 type="number"
                 {...register("musicbrainz.timeout_seconds", {
@@ -610,6 +765,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
               <input
                 id="settings-musicbrainz-retry-limit"
                 min="0"
+                required
                 step="1"
                 type="number"
                 {...register("musicbrainz.retry_limit", {
@@ -625,6 +781,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
               <input
                 id="settings-musicbrainz-rate-limit"
                 min="1"
+                required
                 step="any"
                 type="number"
                 {...register("musicbrainz.rate_limit_seconds", {
@@ -650,6 +807,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
             <input
               id="settings-hashing-chunk-size"
               min="1"
+              required
               step="1"
               type="number"
               {...register("hashing.read_chunk_size_bytes", {
@@ -698,6 +856,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
                 aria-describedby="settings-logging-restart"
                 id="settings-logging-rotation"
                 min="1"
+                required
                 step="1"
                 type="number"
                 {...register("logging.rotation_max_bytes", {
@@ -714,6 +873,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
                 aria-describedby="settings-logging-restart"
                 id="settings-logging-retention"
                 min="1"
+                required
                 step="1"
                 type="number"
                 {...register("logging.retention_files", {
@@ -897,47 +1057,24 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
             </div>
           ) : null}
         </SettingsSection>
-
-        <section className={styles.review} ref={reviewRegionRef} tabIndex={-1}>
-          <h2>{settingsCopy.reviewTitle}</h2>
-          {review === null ? <p>{settingsCopy.reviewNeeded}</p> : null}
-          {review !== null && !reviewIsCurrent ? (
-            <p className={styles.warningText}>{settingsCopy.reviewOutdated}</p>
-          ) : null}
-          {review !== null && reviewIsCurrent ? (
-            <ReviewResult result={review} />
-          ) : null}
-          <div className={styles.reviewActions}>
-            <Button
-              disabled={validateMutation.isPending || saveMutation.isPending}
-              onClick={() => void handleSubmit(handleReview)()}
-              type="button"
-              variant="secondary"
-            >
-              {validateMutation.isPending
-                ? settingsCopy.reviewing
-                : settingsCopy.review}
-            </Button>
-            <Button
-              disabled={
-                !canSave || saveMutation.isPending || validateMutation.isPending
-              }
-              ref={saveButtonRef}
-              type="submit"
-              variant="primary"
-            >
-              {saveMutation.isPending ? settingsCopy.saving : settingsCopy.save}
-            </Button>
-          </div>
-        </section>
       </form>
 
-      <div className={styles.focusRegion} ref={errorRegionRef} tabIndex={-1}>
-        {actionError === null ? null : (
-          <ActionError error={actionError} onLoadLatest={onLoadLatest} />
-        )}
-      </div>
+      {lastSavedCandidate === null ? null : (
+        <section className={styles.review}>
+          <h2>{settingsCopy.lastSavedChanges}</h2>
+          <ReviewResult result={lastSavedCandidate} />
+        </section>
+      )}
 
+      {actionError === null ? null : (
+        <ActionError
+          error={actionError}
+          onLoadLatest={onLoadLatest}
+          onRetry={retryAvailable ? retryAutosave : undefined}
+        />
+      )}
+
+      <LiveRegion>{saveStatusLabel(saveStatus)}</LiveRegion>
       <LiveRegion>{announcement}</LiveRegion>
 
       <Dialog
@@ -946,7 +1083,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
         label={settingsCopy.unsavedTitle}
         onRequestClose={() => blocker.reset?.()}
         open={blocker.state === "blocked"}
-        returnFocusRef={saveButtonRef}
+        returnFocusRef={saveStatusRef}
       >
         <p>{settingsCopy.unsavedBody}</p>
         <div className={styles.dialogActions}>
@@ -1279,6 +1416,82 @@ function useDebouncedValue<Value>(value: Value, delayMs: number): Value {
   return debouncedValue;
 }
 
+function saveStatusLabel(status: SaveStatus): string {
+  switch (status) {
+    case "attention":
+      return settingsCopy.autosaveNeedsAttention;
+    case "checking":
+      return settingsCopy.autosaveChecking;
+    case "saved":
+      return settingsCopy.autosaveSaved;
+    case "saving":
+      return settingsCopy.autosaveSaving;
+    case "unsaved":
+      return settingsCopy.autosaveUnsaved;
+  }
+}
+
+function resolveSaveStatus({
+  acknowledgedFingerprint,
+  autosavePaused,
+  canSave,
+  clientDraftValid,
+  draftFingerprint,
+  failedFingerprint,
+  inFlightCandidate,
+  persistedConfigValid,
+  saveActivity,
+}: {
+  acknowledgedFingerprint: string;
+  autosavePaused: "conflict" | "failure" | null;
+  canSave: boolean;
+  clientDraftValid: boolean;
+  draftFingerprint: string;
+  failedFingerprint: string | null;
+  inFlightCandidate: DraftCandidate | null;
+  persistedConfigValid: boolean;
+  saveActivity: "checking" | "saving" | null;
+}): SaveStatus {
+  if (
+    !clientDraftValid ||
+    autosavePaused !== null ||
+    failedFingerprint === draftFingerprint
+  ) {
+    return "attention";
+  }
+  if (draftFingerprint === acknowledgedFingerprint) {
+    if (inFlightCandidate !== null) {
+      return "saving";
+    }
+    return persistedConfigValid ? "saved" : "attention";
+  }
+  if (!canSave) {
+    return "attention";
+  }
+  if (saveActivity === "checking") {
+    return "checking";
+  }
+  if (inFlightCandidate?.fingerprint === draftFingerprint) {
+    return "saving";
+  }
+  return "unsaved";
+}
+
+function saveStatusDescription(status: SaveStatus): string {
+  switch (status) {
+    case "attention":
+      return settingsCopy.autosaveAttentionBody;
+    case "checking":
+      return settingsCopy.autosaveCheckingBody;
+    case "saved":
+      return settingsCopy.autosaveSavedBody;
+    case "saving":
+      return settingsCopy.autosaveSavingBody;
+    case "unsaved":
+      return settingsCopy.autosaveUnsavedBody;
+  }
+}
+
 function ReviewResult({ result }: { result: SettingsCandidateData }) {
   return (
     <div className={styles.reviewResult}>
@@ -1323,9 +1536,11 @@ function ReviewResult({ result }: { result: SettingsCandidateData }) {
 function ActionError({
   error,
   onLoadLatest,
+  onRetry,
 }: {
   error: unknown;
   onLoadLatest: () => Promise<void>;
+  onRetry?: () => void;
 }) {
   if (
     hasSettingsErrorCode(error, "config_changed") ||
@@ -1351,7 +1566,9 @@ function ActionError({
         diagnostics={settingsDiagnostics(error)}
         title={settingsCopy.lockTitle}
         variant="warning"
-      />
+      >
+        <RetryAutosaveButton onRetry={onRetry} />
+      </ValidationPanel>
     );
   }
   if (hasSettingsErrorCode(error, "config_io_failed")) {
@@ -1361,7 +1578,9 @@ function ActionError({
         diagnostics={settingsDiagnostics(error)}
         title={settingsCopy.ioTitle}
         variant="error"
-      />
+      >
+        <RetryAutosaveButton onRetry={onRetry} />
+      </ValidationPanel>
     );
   }
   if (
@@ -1384,7 +1603,9 @@ function ActionError({
         diagnostics={[]}
         title={settingsCopy.disconnectedTitle}
         variant="error"
-      />
+      >
+        <RetryAutosaveButton onRetry={onRetry} />
+      </ValidationPanel>
     );
   }
   if (error instanceof SettingsCsrfRefreshError) {
@@ -1394,7 +1615,9 @@ function ActionError({
         diagnostics={[]}
         title={settingsCopy.unexpectedTitle}
         variant="error"
-      />
+      >
+        <RetryAutosaveButton onRetry={onRetry} />
+      </ValidationPanel>
     );
   }
   return (
@@ -1405,7 +1628,17 @@ function ActionError({
       diagnostics={settingsDiagnostics(error)}
       title={settingsCopy.unexpectedTitle}
       variant="error"
-    />
+    >
+      <RetryAutosaveButton onRetry={onRetry} />
+    </ValidationPanel>
+  );
+}
+
+function RetryAutosaveButton({ onRetry }: { onRetry?: () => void }) {
+  return onRetry === undefined ? null : (
+    <Button onClick={onRetry} variant="secondary">
+      {settingsCopy.retryAutosave}
+    </Button>
   );
 }
 
@@ -1633,6 +1866,22 @@ function errorFieldTarget(field: string | undefined): string | null {
 
 function stableFingerprint(value: unknown): string {
   return JSON.stringify(sortFingerprintValue(value));
+}
+
+function configFieldsAreValid(form: HTMLFormElement | null): boolean {
+  if (form === null) {
+    return true;
+  }
+  return Array.from(form.elements).every(
+    (element) =>
+      !(
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLSelectElement ||
+        element instanceof HTMLTextAreaElement
+      ) ||
+      element.name.length === 0 ||
+      element.validity.valid,
+  );
 }
 
 function sortFingerprintValue(value: unknown): unknown {

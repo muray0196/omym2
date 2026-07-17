@@ -29,10 +29,19 @@ import { snapshotIsolatedLibrary } from "./library-snapshot";
 
 test.describe.configure({ mode: "serial", retries: 0 });
 
-test("saves Settings directly and shows applied changes by keyboard", async ({
+test("autosaves Settings once after idle and persists them across reload", async ({
   page,
 }) => {
   const libraryBefore = await snapshotIsolatedLibrary();
+  const settingsSaveRequests: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "PUT" &&
+      new URL(request.url()).pathname === "/api/settings"
+    ) {
+      settingsSaveRequests.push(request.postData() ?? "");
+    }
+  });
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeFocused();
 
@@ -58,24 +67,28 @@ test("saves Settings directly and shows applied changes by keyboard", async ({
   const requireAlbum = page.getByRole("checkbox", { name: "Require album" });
   const originalRequireAlbum = await requireAlbum.isChecked();
   await requireAlbum.focus();
+  const saveResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PUT" &&
+      new URL(response.url()).pathname === "/api/settings" &&
+      response.status() === 200,
+  );
   await page.keyboard.press("Space");
   expect(await requireAlbum.isChecked()).toBe(!originalRequireAlbum);
-
-  const save = page.getByRole("button", { name: "Save Settings" });
-  await save.focus();
-  await page.keyboard.press("Enter");
-  const savedHeading = page.getByRole("heading", { name: "Settings saved." });
-  await expect(savedHeading).toBeVisible();
-  const savedNotification = page.getByRole("status").filter({
-    has: savedHeading,
+  await saveResponse;
+  const autosaveStatus = page.getByRole("status").filter({
+    has: page.getByRole("heading", { name: "Automatic save" }),
   });
-  const savedNotificationRegion = savedNotification.locator("..");
-  await expect(savedNotificationRegion).toHaveCSS("position", "fixed");
-  const notificationBox = await savedNotification.boundingBox();
-  expect(notificationBox).not.toBeNull();
-  expect(notificationBox?.y).toBeLessThan(notificationBox?.height ?? 0);
+  await expect(autosaveStatus).toContainText("Saved");
+  await expect(requireAlbum).toBeFocused();
+  expect(settingsSaveRequests).toHaveLength(1);
   await expect(page.getByRole("table")).toContainText("metadata.require_album");
 
+  await page.reload();
+  await expect(
+    page.getByRole("checkbox", { name: "Require album" }),
+  ).toBeChecked({ checked: !originalRequireAlbum });
+  expect(settingsSaveRequests).toHaveLength(1);
   expect(await snapshotIsolatedLibrary()).toEqual(libraryBefore);
 });
 
