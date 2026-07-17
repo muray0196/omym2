@@ -2,6 +2,7 @@
 Summary: Classifies changed repository paths for conservative CI routing.
 Why: Documentation-only changes should not consume full cross-platform validation.
 """
+# ruff: noqa: INP001, T201 -- Standalone CI routing reports one machine-readable scope.
 
 from __future__ import annotations
 
