@@ -8,14 +8,16 @@ from __future__ import annotations
 from pydantic import field_validator
 
 from omym2.adapters.web.schemas.api_errors import ApiError, ApiModel
+from omym2.domain.models.accepted_artist_name import (
+    ArtistNameProvider,  # noqa: TC001  # Pydantic resolves this enum at runtime.
+    SelectedArtistNameKind,  # noqa: TC001  # Pydantic resolves this enum at runtime.
+)
 from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
-    ArtistNameConfig,
     CollisionConfig,
     CommandConfig,
     CompanionsConfig,
-    FastTextConfig,
     HashingConfig,
     LoggingConfig,
     MetadataConfig,
@@ -69,29 +71,17 @@ class PathPolicyConfigResource(ApiModel):
 
 
 class ArtistIdConfigResource(ApiModel):
-    """Editable artist-ID generation settings and entries."""
+    """Tunables for automatic internal artist-ID generation."""
 
     max_length: int
     fallback_id: str
-    entries: dict[str, str]
 
     def to_domain(self) -> ArtistIdConfig:
         """Validate and convert the self-contained artist-ID draft."""
         return ArtistIdConfig(
             max_length=self.max_length,
             fallback_id=self.fallback_id,
-            entries=self.entries,
         )
-
-
-class ArtistNameConfigResource(ApiModel):
-    """Editable full artist display-name preferences."""
-
-    preferences: dict[str, str]
-
-    def to_domain(self) -> ArtistNameConfig:
-        """Validate and convert the self-contained display-name draft."""
-        return ArtistNameConfig(preferences=self.preferences)
 
 
 class MetadataConfigResource(ApiModel):
@@ -134,17 +124,6 @@ class MusicBrainzConfigResource(ApiModel):
             rate_limit_seconds=self.rate_limit_seconds,
             cache_policy=self.cache_policy,
         )
-
-
-class FastTextConfigResource(ApiModel):
-    """Persisted fastText model and confidence controls."""
-
-    model_path: str | None
-    minimum_confidence: float
-
-    def to_domain(self) -> FastTextConfig:
-        """Validate and convert the complete fastText settings draft."""
-        return FastTextConfig(model_path=self.model_path, minimum_confidence=self.minimum_confidence)
 
 
 class HashingConfigResource(ApiModel):
@@ -211,11 +190,9 @@ class AppConfigResource(ApiModel):
     refresh: CommandConfigResource
     path_policy: PathPolicyConfigResource
     artist_ids: ArtistIdConfigResource
-    artist_names: ArtistNameConfigResource
     metadata: MetadataConfigResource
     collision: CollisionConfigResource
     musicbrainz: MusicBrainzConfigResource
-    fasttext: FastTextConfigResource
     hashing: HashingConfigResource
     logging: LoggingConfigResource
     companions: CompanionsConfigResource
@@ -242,10 +219,6 @@ class AppConfigResource(ApiModel):
             artist_ids=ArtistIdConfigResource(
                 max_length=config.artist_ids.max_length,
                 fallback_id=config.artist_ids.fallback_id,
-                entries=dict(config.artist_ids.entries or {}),
-            ),
-            artist_names=ArtistNameConfigResource(
-                preferences=dict(config.artist_names.preferences or {}),
             ),
             metadata=MetadataConfigResource(
                 prefer_album_artist=config.metadata.prefer_album_artist,
@@ -267,10 +240,6 @@ class AppConfigResource(ApiModel):
                 retry_limit=config.musicbrainz.retry_limit,
                 rate_limit_seconds=config.musicbrainz.rate_limit_seconds,
                 cache_policy=config.musicbrainz.cache_policy,
-            ),
-            fasttext=FastTextConfigResource(
-                model_path=config.fasttext.model_path,
-                minimum_confidence=config.fasttext.minimum_confidence,
             ),
             hashing=HashingConfigResource(read_chunk_size_bytes=config.hashing.read_chunk_size_bytes),
             logging=LoggingConfigResource(
@@ -303,7 +272,6 @@ class AppConfigResource(ApiModel):
             ),
             path_policy=self.path_policy.to_domain(),
             artist_ids=self.artist_ids.to_domain(),
-            artist_names=self.artist_names.to_domain(),
             metadata=MetadataConfig(
                 prefer_album_artist=self.metadata.prefer_album_artist,
                 require_title=self.metadata.require_title,
@@ -317,7 +285,6 @@ class AppConfigResource(ApiModel):
                 on_missing_metadata=self.collision.on_missing_metadata,
             ),
             musicbrainz=self.musicbrainz.to_domain(),
-            fasttext=self.fasttext.to_domain(),
             hashing=self.hashing.to_domain(),
             logging=self.logging.to_domain(),
             companions=self.companions.to_domain(),
@@ -367,6 +334,23 @@ class SettingsChange(ApiModel):
     after: SettingsChangeValue
 
 
+class ArtistNameMappingEntry(ApiModel):
+    """One editable original-to-English artist-name mapping."""
+
+    source_name: str
+    english_name: str
+    source: ArtistNameProvider
+    selected_name_kind: SelectedArtistNameKind | None
+    selected_locale: str | None
+
+
+class ArtistNameMappingsData(ApiModel):
+    """Revisioned complete artist-name mapping snapshot."""
+
+    entries: tuple[ArtistNameMappingEntry, ...]
+    revision: str
+
+
 class SettingsData(ApiModel):
     """Current recovery-capable Settings edit state."""
 
@@ -375,6 +359,22 @@ class SettingsData(ApiModel):
     choices: SettingsChoices
     validation: SettingsValidation
     preview: PathPreview
+    artist_name_mappings: ArtistNameMappingsData
+
+
+class SaveArtistNameMappingsRequestResource(ApiModel):
+    """Complete mapping candidate tied to the snapshot the user edited."""
+
+    entries: dict[str, str]
+    expected_revision: str
+
+    @field_validator("expected_revision")
+    @classmethod
+    def validate_revision(cls, value: str) -> str:
+        """Reject an empty mapping compare-and-set identity."""
+        if value.strip() == "":
+            raise ValueError(EMPTY_CONFIG_REVISION_MESSAGE)
+        return value
 
 
 class SettingsCandidateRequest(ApiModel):
@@ -437,32 +437,8 @@ class PathPreviewRequest(ApiModel):
 
     path_policy: PathPolicyConfigResource
     artist_ids: ArtistIdConfigResource
-    artist_names: ArtistNameConfigResource
     metadata: TrackMetadataResource
     file_extension: str
-
-
-class ArtistIdDraftRequest(ApiModel):
-    """Draft-only artist-ID generation input."""
-
-    artist_names: tuple[str, ...]
-    overwrite: bool
-    artist_ids: ArtistIdConfigResource
-
-
-class ArtistIdDraftEntry(ApiModel):
-    """One generated or preserved artist-ID draft entry."""
-
-    source_artist: str
-    generation_artist: str
-    artist_id: str
-    overwritten: bool
-
-
-class ArtistIdDraftData(ApiModel):
-    """Generated entries for merging into the local form draft."""
-
-    entries: tuple[ArtistIdDraftEntry, ...]
 
 
 def _command_resource(config: CommandConfig) -> CommandConfigResource:

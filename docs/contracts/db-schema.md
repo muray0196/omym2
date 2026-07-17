@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: Defines OMYM2's SQLite tables, clean baseline migration, reset policy, indexes, constraints, JSON, timestamps, and persisted companion and unprocessed evidence.
+description: Defines OMYM2's SQLite tables, migration history, reset policy, indexes, constraints, JSON, timestamps, and persisted companion and unprocessed evidence.
 tags: [database, sqlite, schema, migrations, artist-names, musicbrainz, companions, unprocessed, provenance]
-timestamp: 2026-07-16T22:15:00+09:00
+timestamp: 2026-07-17T19:43:10+09:00
 ---
 
 # DB Schema Contract
@@ -134,35 +134,45 @@ listing order is `current_path, companion_asset_id`.
 
 ### accepted_artist_names
 
-Stores positive external-provider artist display names that the naming feature
-has accepted, including the provider identity and selected-field provenance.
-This is a global provider cache rather than a Library-managed record, so it has
-no `library_id` and does not duplicate the editable preference mapping stored
-in TOML.
+Stores the one editable mapping from original artist text to an English artist
+name. MusicBrainz populates positive rows automatically; users can add, edit,
+or delete the same rows through Settings to correct provider mistakes. This is
+global feature data rather than a Library-managed record, so it has no
+`library_id`.
 
 Fields:
 
 * `source_key`, the non-empty derived lookup key and primary key
 * `source_name`, the non-empty original metadata text associated with that key
-* `resolved_name`, the non-empty accepted display name
-* `provider`, currently `musicbrainz`
-* `provider_artist_id`, the canonical UUID MusicBrainz artist identity
-* `selected_name_kind`, either `alias` or `name`
-* `selected_locale`, nullable and permitted only for an alias selection
-* `accepted_at`, the UTC acceptance timestamp
+* `resolved_name`, the non-empty English display name
+* `provider`, either `musicbrainz` or `user`, identifying the last writer
+* `provider_artist_id`, the canonical MusicBrainz UUID for automatic rows and null for user rows
+* `selected_name_kind`, `alias`, `alias_sort_name`, `name`, or `sort_name` for automatic rows and null for user rows
+* `selected_locale`, nullable and permitted only for an alias or alias-sort-name selection
+* `accepted_at`, the UTC timestamp of automatic acceptance or the latest user edit
+
+The selected-name kind records the exact MusicBrainz field used:
+
+* `alias` means an alias object's `name`
+* `alias_sort_name` means an alias object's `sort-name`
+* `name` means the artist object's `name`
+* `sort_name` means the artist object's `sort-name`
+
+Alias selections retain their MusicBrainz locale, such as `ja-Latn`, so the
+Settings projection can distinguish a Japanese Latin alias field from the
+artist-level fallback fields.
 
 The naming feature derives every lookup and insertion key with the pure
 [ArtistNameSourceKey](../DOMAIN.md#artistnamesourcekey) contract before
 repository access; the repository compares the supplied key exactly. Missing
 or whitespace-only source text produces no key and must not reach the
-repository. The stored `source_name` preserves the exact source text from the
-first accepted insertion even when another canonically equivalent or
-whitespace-equivalent value derives the same key. Insertion is sticky:
-`insert_if_absent` does nothing and returns false when `source_key` already
-exists. Ordinary Plan creation must not overwrite an accepted row merely
-because MusicBrainz later returns different data. More than one source key may
-refer to the same provider artist identity, so `provider_artist_id` is not
-unique.
+repository. Automatic insertion is sticky: `insert_if_absent` does nothing and
+returns false when `source_key` already exists, so ordinary Plan creation never
+overwrites an accepted row merely because MusicBrainz later returns different
+data. Revision-checked Settings saves may upsert user rows or delete mappings;
+an edited automatic row becomes a `user` row and clears its provider-specific
+fields. More than one source key may refer to the same provider artist identity,
+so `provider_artist_id` is not unique.
 
 ### provider_request_cadence
 
@@ -445,13 +455,16 @@ Minimum representative fields:
 
 ## Migrations
 
-OMYM2 performed a pre-release clean-slate schema cutover on 2026-07-16. The
-packaged history contains exactly one current baseline:
-`202607160001_baseline.sql`. It creates every table, index, trigger, foreign
-key, check constraint, and closed-value constraint described by this contract.
-There are no backfills, table-rebuild upgrades, or inferred Undo provenance.
+OMYM2 performed a pre-release clean-slate schema cutover on 2026-07-16.
+`202607160001_baseline.sql` creates that baseline. The forward migration
+`202607170001_editable_artist_name_mappings.sql` preserves existing automatic
+rows while allowing user-supplied mappings with nullable provider provenance.
+`202607170002_artist_sort_name_mapping.sql` preserves those rows while adding
+`sort_name` to the closed automatic-selection provenance catalog.
+`202607170003_artist_alias_sort_name_provenance.sql` preserves those rows while
+separating an alias object's `sort-name` from its `name`.
 
-A fresh database file is the only supported starting point. The runner rejects
+The runner rejects
 an existing database when it finds application tables without migration
 metadata, application tables with no applied migration, or applied migration
 names that are not an exact prefix of the packaged history. The error instructs

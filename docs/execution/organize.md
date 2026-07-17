@@ -3,7 +3,7 @@ type: Execution Spec
 title: Organize Execution
 description: Defines Organize registration and reconciliation for audio and associated companions, reviewed dependencies, clean DB-only registration, and trust-stat rules.
 tags: [organize, library-registration, plan-creation, artist-names, companions, path-policy]
-timestamp: 2026-07-16T03:44:47+09:00
+timestamp: 2026-07-17T03:34:29+09:00
 ---
 
 # Organize Execution
@@ -51,8 +51,8 @@ Relink rules are defined in [../contracts/path-identity-storage.md](../contracts
 For every otherwise valid snapshot, organize batches raw artist and
 album-artist values through the shared `ArtistNameResolutionReader` before
 canonical path generation. This lets organize reconcile paths after either an
-exact preference or accepted provider name changes without rewriting stored
-Track metadata. Library selection and Track reads finish before resolver work;
+original-to-English mapping changes without rewriting stored Track metadata.
+Library selection and Track reads finish before resolver work;
 result persistence begins only after resolver work has completed.
 
 When a resolved candidate becomes a PlanAction, Organize records its aligned

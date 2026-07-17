@@ -69,5 +69,4 @@ def _is_path_policy_current(library: Library, config_snapshot: ConfigSnapshot) -
         config.path_policy,
         config.artist_ids,
         config.metadata.album_year_resolution,
-        config.artist_names,
     )

@@ -648,7 +648,6 @@ def _register_library(setup: CompanionAdapterSetup) -> None:
                     config.path_policy,
                     config.artist_ids,
                     config.metadata.album_year_resolution,
-                    config.artist_names,
                 ),
                 registered_at=PLAN_TIME,
                 status=LibraryStatus.REGISTERED,

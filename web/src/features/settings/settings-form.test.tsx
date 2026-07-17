@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 import type {
   ApiFailureEnvelope,
   PathPreviewRequest,
+  SaveArtistNameMappingsRequestResource,
   SettingsCandidateRequest,
 } from "../../api/generated";
 import { createQueryClient } from "../../app/query-client";
@@ -29,6 +30,7 @@ import {
   invalidPersistedSettingsEnvelope,
   previewEnvelope,
   savedSettingsEnvelope,
+  settingsEnvelopeWithMusicBrainzMapping,
 } from "../../test/fixtures/settings";
 import { server } from "../../test/server";
 
@@ -64,11 +66,26 @@ describe("Settings route", () => {
     );
     expect(screen.getByLabelText("Maximum artist ID length")).toHaveValue(8);
     expect(
-      screen.getByRole("heading", { name: "Artist display names" }),
+      screen.getByRole("heading", { name: "Romanized artist names" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("No artist display-name preferences are in this draft."),
+      screen.getByText("No romanized artist-name mappings have been saved."),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Automatic artist IDs" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "OMYM2 generates {artist_id} automatically from source artist metadata when planning a path. Per-artist IDs are not edited or generated in Settings.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Saved artist ID entries"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Artist names to generate"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("NORTH")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Require title")).toBeChecked();
     expect(screen.getByLabelText("When a target exists")).toHaveValue(
       "conflict",
@@ -76,12 +93,8 @@ describe("Settings route", () => {
     expect(
       screen.getByRole("heading", { name: "MusicBrainz" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByLabelText("Enable MusicBrainz lookup"),
-    ).not.toBeChecked();
+    expect(screen.getByLabelText("Enable MusicBrainz lookup")).toBeChecked();
     expect(screen.getByLabelText("Request timeout (seconds)")).toHaveValue(5);
-    expect(screen.getByLabelText("Model path")).toHaveValue("");
-    expect(screen.getByLabelText("Minimum confidence")).toHaveValue(0.8);
     expect(screen.getByLabelText("Read chunk size (bytes)")).toHaveValue(
       1_048_576,
     );
@@ -134,7 +147,6 @@ describe("Settings route", () => {
     expect(captured).toHaveLength(1);
     expect(captured[0]).toMatchObject({
       artist_ids: { fallback_id: "NOART", max_length: 8 },
-      artist_names: { preferences: {} },
       file_extension: ".FLAC",
       metadata: { artist: "Aimer", title: "Live Preview" },
       path_policy: {
@@ -144,53 +156,80 @@ describe("Settings route", () => {
     expect(captured[0]).not.toHaveProperty("expected_config_revision");
   });
 
-  it("edits full display-name preferences independently from compact artist IDs", async () => {
+  it("saves editable romanized-name mappings without exposing compact artist IDs", async () => {
     const user = userEvent.setup();
-    const captured: PathPreviewRequest[] = [];
+    let captured: SaveArtistNameMappingsRequestResource | undefined;
     server.use(
-      http.post("*/api/settings/preview", async ({ request }) => {
-        captured.push((await request.json()) as PathPreviewRequest);
-        return HttpResponse.json(previewEnvelope);
+      http.put("*/api/settings/artist-names", async ({ request }) => {
+        captured =
+          (await request.json()) as SaveArtistNameMappingsRequestResource;
+        return HttpResponse.json({
+          data: {
+            entries: [
+              {
+                english_name: "Hikaru Utada",
+                selected_locale: null,
+                selected_name_kind: null,
+                source: "user",
+                source_name: "宇多田ヒカル",
+              },
+            ],
+            revision: "artist-name-mappings-revision-two",
+          },
+          errors: [],
+        });
       }),
     );
     renderSettings();
 
     await user.type(
-      await screen.findByLabelText("New display-name source artist"),
+      await screen.findByLabelText("New original artist name"),
       "宇多田ヒカル",
     );
     await user.type(
-      screen.getByLabelText("New full display name"),
+      screen.getByLabelText("New romanized artist name"),
       "Hikaru Utada",
     );
-    await user.click(screen.getByRole("button", { name: "Add display name" }));
+    await user.click(screen.getByRole("button", { name: "Add mapping" }));
 
-    const displayName = await screen.findByDisplayValue("Hikaru Utada");
-    expect(screen.getByDisplayValue("NORTH")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(captured.at(-1)?.artist_names.preferences).toEqual({
-        宇多田ヒカル: "Hikaru Utada",
-      }),
-    );
-
-    await user.clear(displayName);
-    await user.type(displayName, "Utada Hikaru");
-    await waitFor(() =>
-      expect(captured.at(-1)?.artist_names.preferences).toEqual({
-        宇多田ヒカル: "Utada Hikaru",
-      }),
-    );
-
-    const preferenceRow = displayName.closest("li");
-    expect(preferenceRow).not.toBeNull();
+    expect(await screen.findByDisplayValue("Hikaru Utada")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("NORTH")).not.toBeInTheDocument();
     await user.click(
-      within(preferenceRow as HTMLElement).getByRole("button", {
-        name: "Remove",
-      }),
+      screen.getByRole("button", { name: "Save artist-name mappings" }),
     );
+
+    expect(captured).toEqual({
+      entries: { 宇多田ヒカル: "Hikaru Utada" },
+      expected_revision: "artist-name-mappings-revision-one",
+    });
     expect(
-      screen.getByText("No artist display-name preferences are in this draft."),
+      await screen.findByText("Artist-name mappings saved."),
     ).toBeInTheDocument();
+  });
+
+  it("shows the exact MusicBrainz fields used for saved artist names", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("*/api/settings", () =>
+        HttpResponse.json(settingsEnvelopeWithMusicBrainzMapping),
+      ),
+    );
+
+    renderSettings();
+
+    expect(
+      await screen.findByText("MusicBrainz · ja-Latn alias sort-name"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("MusicBrainz · artist sort-name"),
+    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Sakamoto Ryuichi")).toBeInTheDocument();
+
+    const japaneseLatinName = screen.getByDisplayValue("Sakamoto Ryuichi");
+    await user.clear(japaneseLatinName);
+    await user.type(japaneseLatinName, "Ryuichi Sakamoto");
+
+    expect(screen.getByText("User-edited")).toBeInTheDocument();
   });
 
   it("keeps the last preview and offers an explicit retry after automatic failure", async () => {
@@ -323,20 +362,10 @@ describe("Settings route", () => {
     );
     renderSettings();
 
-    await user.type(
-      await screen.findByLabelText("New display-name source artist"),
-      "宇多田ヒカル",
-    );
-    await user.type(
-      screen.getByLabelText("New full display name"),
-      "Hikaru Utada",
-    );
-    await user.click(screen.getByRole("button", { name: "Add display name" }));
     const libraryPath = await screen.findByLabelText("Library path");
     await user.clear(libraryPath);
     await user.type(libraryPath, "/music/new-library");
 
-    await user.click(screen.getByLabelText("Enable MusicBrainz lookup"));
     const applicationName = screen.getByLabelText("Application name");
     await user.clear(applicationName);
     await user.type(applicationName, "OMYM2 Web Tests");
@@ -349,13 +378,6 @@ describe("Settings route", () => {
     const rateLimit = screen.getByLabelText("Rate limit (seconds)");
     await user.clear(rateLimit);
     await user.type(rateLimit, "1.25");
-
-    const modelPath = screen.getByLabelText("Model path");
-    await user.type(modelPath, "/models/lid.176.bin");
-    await user.clear(modelPath);
-    const confidence = screen.getByLabelText("Minimum confidence");
-    await user.clear(confidence);
-    await user.type(confidence, "0.91");
 
     const chunkSize = screen.getByLabelText("Read chunk size (bytes)");
     await user.clear(chunkSize);
@@ -404,9 +426,6 @@ describe("Settings route", () => {
     expect(captured.request?.expected_config_revision).toBe(
       "settings-revision-one",
     );
-    expect(captured.request?.config.artist_names.preferences).toEqual({
-      宇多田ヒカル: "Hikaru Utada",
-    });
     expect(captured.request?.config.musicbrainz).toEqual({
       application_name: "OMYM2 Web Tests",
       cache_policy: "sticky_positive",
@@ -415,10 +434,6 @@ describe("Settings route", () => {
       rate_limit_seconds: 1.25,
       retry_limit: 2,
       timeout_seconds: 7.5,
-    });
-    expect(captured.request?.config.fasttext).toEqual({
-      minimum_confidence: 0.91,
-      model_path: null,
     });
     expect(captured.request?.config.hashing).toEqual({
       read_chunk_size_bytes: 2_097_152,
@@ -529,36 +544,31 @@ describe("Settings route", () => {
     ).toBeInTheDocument();
   });
 
-  it("merges generated artist IDs into the draft and protects unsaved navigation", async () => {
+  it("clears persisted recovery diagnostics after a successful replacement save", async () => {
     const user = userEvent.setup();
-    const { router } = renderSettings();
-
-    const names = await screen.findByLabelText("Artist names to generate");
-    await user.type(names, "Glass Harbor");
-    await user.click(
-      screen.getByRole("button", { name: "Generate and merge into draft" }),
+    server.use(
+      http.get("*/api/settings", () =>
+        HttpResponse.json(invalidPersistedSettingsEnvelope),
+      ),
+      http.put("*/api/settings", () =>
+        HttpResponse.json(savedSettingsEnvelope),
+      ),
     );
-    expect(await screen.findByDisplayValue("GLASS")).toBeInTheDocument();
+    renderSettings();
 
-    await user.click(screen.getByRole("link", { name: "Next route" }));
     expect(
-      await screen.findByRole("heading", {
-        name: "Leave with unsaved Settings?",
-      }),
+      await screen.findByRole("heading", { name: "Configuration recovery" }),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Keep editing" }));
-    expect(router.state.location.pathname).toBe("/settings");
-    expect(screen.getByRole("button", { name: "Save Settings" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Save Settings" }));
 
-    await user.click(screen.getByRole("link", { name: "Next route" }));
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Discard draft and leave",
-      }),
+    expect(
+      await screen.findByRole("heading", { name: "Settings saved." }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "Configuration recovery" }),
+      ).not.toBeInTheDocument(),
     );
-    expect(
-      await screen.findByRole("heading", { name: "Next" }),
-    ).toBeInTheDocument();
   });
 });
 

@@ -3,7 +3,7 @@ type: Execution Spec
 title: Add Execution
 description: Defines Add planning for incoming audio, companions, and opt-in unprocessed leftovers, including claim precedence, rooted exclusions, full persistence, preview-only limits, and apply orchestration.
 tags: [add, plan-creation, library-registration, artist-names, companions, unprocessed, apply]
-timestamp: 2026-07-16T04:51:16+09:00
+timestamp: 2026-07-17T22:43:57+09:00
 ---
 
 # Add Execution
@@ -27,8 +27,8 @@ In the MVP, `add` targets the sole registered Library. If no registered Library 
 Add does perform one narrow artist-name reconciliation guard. When an
 otherwise executable incoming move uses a changed resolved source key, Add
 recalculates the affected active Library Tracks from their already-loaded raw
-metadata, honoring exact display-name preferences before shared accepted-name
-results. Album-year and disc inference use active Library Tracks plus otherwise
+metadata using the shared original-to-English mapping. Album-year and disc
+inference use active Library Tracks plus otherwise
 executable incoming moves; duplicate skips and blocked actions do not influence
 this reconciliation context. If the resolved name would change an existing
 Track's canonical path and that Track has not already been reconciled to the
@@ -88,9 +88,9 @@ sent as one ordered batch through the shared `ArtistNameResolutionReader`.
 PathPolicy receives the aligned resolved projection; raw snapshot metadata and
 artist-ID lookup keys remain unchanged. The Library/Track read transaction is
 closed before resolution begins, and the Plan is persisted in a later
-transaction, so fastText or provider work cannot extend a Plan DB transaction.
-A positive accepted-name cache write may commit before the reconciliation guard
-refuses Add; that sticky provider state is intentional, and the required
+transaction, so provider work cannot extend a Plan DB transaction.
+A positive automatic mapping write may commit before the reconciliation guard
+refuses Add; that reusable provider result is intentional, and the required
 Organize run consumes it when calculating the Library-wide reconciliation.
 
 Every Add action whose candidate reached this resolution step records the

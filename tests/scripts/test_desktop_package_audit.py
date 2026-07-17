@@ -42,6 +42,8 @@ PE_COFF_HEADER_BYTES = 20
 PE_OPTIONAL_SUBSYSTEM_OFFSET = 68
 PE_FIXTURE_BYTES = 256
 EXPECTED_TEST_ICON_PIXELS = 32
+EXPECTED_RUNTIME_DISTRIBUTION_COUNT = 1
+EXPECTED_RUNTIME_LICENSE_FILE_COUNT = 1
 ROOT = f"{config.DESKTOP_APPLICATION_NAME}/{config.DESKTOP_PYINSTALLER_CONTENTS_DIRECTORY_NAME}"
 STATIC_INDEX = "omym2/adapters/web/static_dist/index.html"
 STATIC_SCRIPT = "omym2/adapters/web/static_dist/assets/app-abcdefgh.js"
@@ -76,8 +78,8 @@ def test_windows_archive_audit_accepts_exact_wheel_resources_and_native_identity
     assert len(audit.artifact_payload_sha256) == hashlib.sha256().digest_size * 2
     assert audit.pe_machine == "x86_64"
     assert audit.pe_subsystem == "windows_gui"
-    assert audit.runtime_distribution_count == 1
-    assert audit.runtime_license_file_count == 1
+    assert audit.runtime_distribution_count == EXPECTED_RUNTIME_DISTRIBUTION_COUNT
+    assert audit.runtime_license_file_count == EXPECTED_RUNTIME_LICENSE_FILE_COUNT
     assert audit.webview_dll_count == len(config.DESKTOP_WINDOWS_REQUIRED_WEBVIEW_DLL_RELATIVE_PATHS)
     assert audit.webview_modules == config.DESKTOP_PYINSTALLER_REQUIRED_WEBVIEW_MODULES
 
@@ -103,7 +105,6 @@ def test_windows_archive_audit_rejects_traversal_before_extraction(tmp_path: Pat
         f"{ROOT}/node.exe",
         f"{ROOT}/PySide6/Qt6WebEngineCore.dll",
         f"{ROOT}/cefpython/libcef.dll",
-        f"{ROOT}/fasttext.cp314-win_amd64.pyd",
         f"{ROOT}/models/lid.176.bin",
         f"{ROOT}/models/lid.176.ftz",
         f"{ROOT}/src/omym2/config.py",
@@ -118,7 +119,7 @@ def test_windows_archive_audit_rejects_runtime_and_source_leaks(
     wheel = _write_wheel(tmp_path)
     archive = _write_archive(tmp_path, extra_files={forbidden_member: b"forbidden"})
 
-    with pytest.raises(WindowsPackageAuditError, match=r"forbidden|prohibited|source-tree"):
+    with pytest.raises(WindowsPackageAuditError, match=r"forbidden|prohibited|source-tree|unexpected"):
         _ = audit_windows_package(
             archive,
             wheel,
@@ -134,36 +135,6 @@ def test_windows_archive_audit_rejects_wheel_resource_drift(tmp_path: Path) -> N
     archive = _write_archive(tmp_path, replacements={f"{ROOT}/{STATIC_INDEX}": b"changed"})
 
     with pytest.raises(WindowsPackageAuditError, match="resource differs"):
-        _ = audit_windows_package(
-            archive,
-            wheel,
-            _icon_path(),
-            _version_info_path(),
-            metadata_reader=_matching_metadata_reader,
-        )
-
-
-def test_windows_archive_audit_rejects_fasttext_runtime_inventory(tmp_path: Path) -> None:
-    """A frozen fastText distribution fails even without a plainly named runtime archive member."""
-    wheel = _write_wheel(tmp_path)
-    inventory = _runtime_inventory()
-    third_party = cast("list[object]", inventory["third_party"])
-    third_party.append(
-        {
-            "license_files": [],
-            "metadata_directory": "opaque-runtime-1.0.dist-info",
-            "name": "fasttext-wheel",
-            "version": "1.0",
-        }
-    )
-    archive = _write_archive(
-        tmp_path,
-        replacements={
-            f"{ROOT}/{config.DESKTOP_RUNTIME_INVENTORY_FILE_NAME}": json.dumps(inventory).encode(),
-        },
-    )
-
-    with pytest.raises(WindowsPackageAuditError, match="forbidden artist-naming runtime"):
         _ = audit_windows_package(
             archive,
             wheel,
@@ -412,7 +383,7 @@ def _runtime_inventory() -> dict[str, object]:
                 "metadata_directory": MUTAGEN_METADATA_DIRECTORY,
                 "name": "mutagen",
                 "version": "1.47.0",
-            }
+            },
         ],
     }
 

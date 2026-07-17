@@ -13,7 +13,7 @@ from omym2.config import (
     PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS,
     PATH_POLICY_DISC_NUMBER_STYLE_D_PREFIXED,
 )
-from omym2.domain.models.app_config import AppConfig, ArtistNameConfig, PathPolicyConfig
+from omym2.domain.models.app_config import AppConfig, PathPolicyConfig
 from omym2.domain.models.file_snapshot import FileSnapshot
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.metadata_fingerprint import calculate_metadata_fingerprint
@@ -22,6 +22,7 @@ from omym2.features.inspect.dto import InspectFileRequest
 from omym2.features.inspect.ports import InspectFilePorts
 from omym2.features.inspect.usecases.inspect_file import InspectFileUseCase
 from tests.fakes.content_fingerprint import calculate_content_fingerprint
+from tests.fakes.runtime import MappingArtistNameResolver
 
 if TYPE_CHECKING:
     from omym2.domain.models.file_scan_entry import FileScanEntry
@@ -62,9 +63,9 @@ def test_inspect_file_usecase_returns_snapshot_and_canonical_path() -> None:
     snapshot = _snapshot(METADATA)
     snapshot_reader = StaticSnapshotReader(snapshot)
 
-    result = InspectFileUseCase(InspectFilePorts(snapshot_reader, StaticConfigStore())).execute(
-        InspectFileRequest(FILE_PATH)
-    )
+    result = InspectFileUseCase(
+        InspectFilePorts(snapshot_reader, StaticConfigStore(), MappingArtistNameResolver())
+    ).execute(InspectFileRequest(FILE_PATH))
 
     assert snapshot_reader.captured_path == FILE_PATH
     assert result.snapshot == snapshot
@@ -72,14 +73,18 @@ def test_inspect_file_usecase_returns_snapshot_and_canonical_path() -> None:
     assert result.canonical_path_error is None
 
 
-def test_inspect_file_usecase_projects_artist_preferences_without_changing_snapshot() -> None:
-    """Inspect reports the preferred canonical path and returns raw metadata."""
+def test_inspect_file_usecase_projects_saved_artist_mapping_without_changing_snapshot() -> None:
+    """Inspect reports the mapped canonical path and returns raw metadata."""
     snapshot = _snapshot(METADATA)
-    config = AppConfig(artist_names=ArtistNameConfig(preferences={"Artist": "Preferred Artist"}))
+    config = AppConfig()
 
-    result = InspectFileUseCase(InspectFilePorts(StaticSnapshotReader(snapshot), StaticConfigStore(config))).execute(
-        InspectFileRequest(FILE_PATH)
-    )
+    result = InspectFileUseCase(
+        InspectFilePorts(
+            StaticSnapshotReader(snapshot),
+            StaticConfigStore(config),
+            MappingArtistNameResolver({"Artist": "Preferred Artist"}),
+        )
+    ).execute(InspectFileRequest(FILE_PATH))
 
     assert result.canonical_path == EXPECTED_PREFERRED_ARTIST_PATH
     assert result.snapshot.metadata == METADATA
@@ -103,9 +108,9 @@ def test_inspect_file_usecase_uses_metadata_disc_total_for_multiple_disc_paths()
         collision=config.collision,
     )
 
-    result = InspectFileUseCase(InspectFilePorts(StaticSnapshotReader(snapshot), StaticConfigStore(config))).execute(
-        InspectFileRequest(FILE_PATH)
-    )
+    result = InspectFileUseCase(
+        InspectFilePorts(StaticSnapshotReader(snapshot), StaticConfigStore(config), MappingArtistNameResolver())
+    ).execute(InspectFileRequest(FILE_PATH))
 
     assert result.canonical_path == EXPECTED_D_PREFIXED_CANONICAL_PATH
     assert result.canonical_path_error is None
@@ -115,9 +120,9 @@ def test_inspect_file_usecase_reports_canonical_path_errors() -> None:
     """Inspect keeps the snapshot when metadata cannot produce a canonical path."""
     snapshot = _snapshot(MISSING_TITLE_METADATA)
 
-    result = InspectFileUseCase(InspectFilePorts(StaticSnapshotReader(snapshot), StaticConfigStore())).execute(
-        InspectFileRequest(FILE_PATH)
-    )
+    result = InspectFileUseCase(
+        InspectFilePorts(StaticSnapshotReader(snapshot), StaticConfigStore(), MappingArtistNameResolver())
+    ).execute(InspectFileRequest(FILE_PATH))
 
     assert result.snapshot == snapshot
     assert result.canonical_path is None

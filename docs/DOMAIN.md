@@ -3,7 +3,7 @@ type: Domain Model
 title: Domain
 description: Defines OMYM2's core entities, including metadata, companion identity, trackless unprocessed-file evidence, Plan dependencies, durable mutations, snapshots, and UUIDv7 identity policy.
 tags: [domain-model, entities, invariants, artist-names, companions, unprocessed, operations, id-design]
-timestamp: 2026-07-16T22:15:00+09:00
+timestamp: 2026-07-17T22:43:57+09:00
 ---
 
 # Domain
@@ -22,13 +22,15 @@ Usecases may receive AppConfig. Pure domain services should receive narrow confi
 
 The config schema and defaults are authoritative in [contracts/config.md](contracts/config.md).
 
-Artist IDs are user-facing config/path values inside AppConfig. They are
-editable TOML settings and must not be modeled as internal OMYM2 identity in
-the way `track_id` and `library_id` are.
+Artist IDs are compact internal path values generated only when PathPolicy
+renders `{artist_id}`. AppConfig contains only generation tunables; per-artist
+IDs are not user-editable settings and are not entity identities like
+`track_id` or `library_id`.
 
-Full artist display-name preferences are also user-facing AppConfig values,
-but are independent from artist IDs. They replace only the display text used
-by artist path placeholders; they do not rewrite compact IDs.
+Editable romanized artist-name mappings are feature data in SQLite,
+not AppConfig. They replace only display text used by artist path placeholders
+and supply the string passed to automatic compact-ID generation; they do not
+rewrite raw tags.
 
 ## FileScanEntry
 
@@ -99,13 +101,13 @@ Missing, empty, malformed, or inconsistent tag values are allowed at this layer.
 
 Raw TrackMetadata is never overwritten by a derived artist display name.
 Metadata hashes, Track persistence, album grouping, and artist-ID lookup keep
-using the raw tag values even when a preference, accepted provider result, or
-new provider result supplies different display text.
+using the raw tag values even when a user-edited or automatic mapping supplies
+different display text.
 
 ## ArtistNameSourceKey
 
-`derive_artist_name_source_key` produces the sole lookup key used for accepted
-provider artist names. It treats the complete source artist or album-artist
+`derive_artist_name_source_key` produces the sole lookup key used for editable
+artist-name mappings. It treats the complete source artist or album-artist
 value as one opaque string and applies these rules in order:
 
 1. Missing input produces no key.
@@ -129,10 +131,10 @@ the accepted record's `source_name`; deriving a key never changes TrackMetadata.
 An immutable derived value containing the effective `artist` and
 `album_artist` display strings for one raw TrackMetadata value.
 
-The current projection is a pure, exact lookup in the configured full-name
-preferences. Missing entries preserve the original strings, and a composite
-multi-artist string is treated as one opaque key. It does not load accepted
-cache state, run a language model, or contact a provider.
+The projection is assembled from resolver output before PathPolicy receives it.
+Missing mappings preserve the original strings, and a composite multi-artist
+string is treated as one opaque key. PathPolicy itself does not load mapping
+state, run a language model, or contact a provider.
 
 The shared resolver below returns `ArtistNameResolution` values for explicit
 consumers. Any consumer that turns those results into an
@@ -146,18 +148,12 @@ The shared artist-name resolver accepts artist and album-artist source values
 as one batch and resolves each complete value with this precedence:
 
 ```text
-exact configured display-name preference
--> accepted provider result by ArtistNameSourceKey
+saved original-to-English mapping by ArtistNameSourceKey
 -> newly accepted MusicBrainz result when eligible
 -> original source value
 ```
 
-Preference lookup compares the complete raw source string exactly. It does not
-apply ArtistNameSourceKey normalization. An exact preference ends resolution
-for that occurrence and does not require a cache read, language-model call, or
-provider request.
-
-For remaining values, the resolver derives the whole-string source key and
+The resolver derives the whole-string source key and
 deduplicates the batch by that key. It performs at most one accepted-cache
 lookup and, on an eligible miss, at most one provider lookup for each distinct
 key. The resulting display value is reused for every occurrence of that key;
@@ -170,13 +166,16 @@ Each result retains `source_name` and `source_key`, supplies the effective
 `accepted_musicbrainz`, `new_musicbrainz`, or `original`. A result that keeps
 the original may also carry a stable issue describing ineligibility,
 unavailability, low confidence, no confident match, or ambiguity. Provider
-provenance is carried by the associated immutable `AcceptedArtistName`; it does
-not modify TrackMetadata.
+provenance is carried by the associated `AcceptedArtistName` mapping; it does
+not modify TrackMetadata. `user_preference` means the saved mapping was added or
+last corrected by the user, not that a second TOML preference layer exists.
 
-Only positive provider results are accepted and persisted. Accepted results
-are sticky: a later lookup cannot replace the row selected for the same source
-key. If another writer wins an insert race, the persisted winner supplies the
-resolved value. Misses, ambiguity, ineligibility, model or provider
+Only positive provider results are accepted automatically. Automatic insertion
+is sticky: a later lookup cannot replace the row selected for the same source
+key. Users may add, edit, or delete any mapping in Settings; an edit marks that
+row as user-supplied and removes provider provenance. If another writer wins an
+automatic insert race, the persisted winner supplies the resolved value.
+Misses, ambiguity, ineligibility, model or provider
 unavailability, malformed responses, timeouts, and other provider failures are
 not negative cache entries and preserve the original source value. These
 fallbacks are normal resolution outcomes rather than errors for the caller.
@@ -192,8 +191,7 @@ outcome inside the pair.
 
 Candidates blocked before artist-name resolution and Undo actions record no
 artist-name diagnostic pair. Plan review reads only this recorded snapshot; it
-does not reload preferences, consult the accepted-name cache, run fastText, or
-contact MusicBrainz. Apply preserves the snapshot while changing action status
+does not reload mappings or contact MusicBrainz. Apply preserves the snapshot while changing action status
 and continues to execute only the recorded paths.
 
 ### Automatic lookup eligibility
@@ -202,20 +200,20 @@ A cache miss is eligible for a new MusicBrainz lookup only when all of these
 conditions hold:
 
 * persisted automatic lookup is enabled
-* the complete source contains at least one alphabetic code point and every
-  alphabetic code point is non-Latin
 * the source does not contain the ASCII comma (`U+002C`); comma-composite
   values remain unresolved by automatic lookup
-* fastText returns the exact label `__label__ja` with finite confidence in the
-  inclusive range from the persisted `fasttext.minimum_confidence` through
-  `1.0`; the default minimum is `0.8`
+* the source contains at least one alphabetic character outside the Unicode
+  Latin script
 
-Preferences and accepted cache entries still apply to comma-composite or
-otherwise ineligible values. Persisted opt-out records
-`automatic_lookup_disabled`; an absent runtime/model or unusable prediction
-records `detector_unavailable`; confidence below the threshold records
-`low_language_confidence`. Each disables only the new provider lookup and does
-not disable preference or cache resolution.
+Latin-only names, including names with diacritics, and values without
+alphabetic characters do not need romanization and do not contact MusicBrainz.
+Japanese, Chinese, Korean, Cyrillic, and mixed-script sources are eligible.
+
+Saved mappings still apply to comma-composite or otherwise ineligible values.
+Persisted opt-out records `automatic_lookup_disabled`; an otherwise eligible
+source that does not require romanization records
+`romanization_not_required`. Each disables only the new provider lookup and
+does not disable mapping resolution.
 
 ### Deterministic MusicBrainz acceptance
 
@@ -231,17 +229,19 @@ treated as one unordered set.
 An accepted candidate must carry a valid MusicBrainz artist identity and a
 usable Latin display name. Name selection uses these tiers in order:
 
-1. an English-locale Latin alias
-2. another Latin alias
-3. the Latin canonical artist name
+1. a primary `ja-Latn` alias, using its Latin `sort-name` before its Latin
+   `name`
+2. the Latin artist `sort-name`
 
 Aliases are an unordered set; provider response order is never a tie-breaker.
-Within one tier, duplicate aliases are removed and the lexicographically first
-`(name, locale-or-empty)` pair by Unicode code-point order is selected. An
-English locale is matched case-insensitively by primary language subtag `en`.
+For the first tier, `ja-Latn` matching is case-insensitive and accepts a hyphen
+or underscore separator. Commas in an alias or artist `sort-name` are
+normalized to spaces, preserving family-name order such as `Sakamoto, Ryuichi`
+→ `Sakamoto Ryuichi`. Duplicate aliases preserve primary status from any
+duplicate observation. English and other aliases do not outrank the artist
+`sort-name`.
 A usable Latin display name is nonblank, contains at least one Latin-script
 alphabetic code point, and contains no non-Latin alphabetic code point.
-`sort-name` is not a fallback tier.
 
 ## PathPolicy
 
@@ -282,11 +282,13 @@ without recalculating it.
 
 Allowed placeholders, initial template, preview behavior, and config validation rules are authoritative in [contracts/config.md](contracts/config.md#pathpolicyconfig).
 
-When the template includes `{artist_id}`, PathPolicy resolves it from
-already-loaded config and raw metadata only. The optional display-name
-projection cannot change its source key. Language detection, fastText model
-loading, and MusicBrainz HTTP lookup are feature/adapter concerns and must not
-run during canonical path generation.
+When the template includes `{artist_id}`, PathPolicy first checks an
+already-loaded internal ID by the raw metadata source key. On a miss, it passes
+the already-derived Latin display name to the pure ID generator, falling back
+to the raw source text. MusicBrainz HTTP lookup remains a feature/adapter
+concern and must not run during canonical path generation. The ID generator
+compatibility-decomposes Latin diacritics before retaining ASCII letters and
+digits, so accented letters keep their base character instead of disappearing.
 
 Planning usecases check generated targets through filesystem ports and
 CollisionPolicy. If a target is occupied, the usecase records the PlanAction

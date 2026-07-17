@@ -27,7 +27,6 @@ if TYPE_CHECKING:
 class _PlannedArtistNameChanges:
     """Resolved names that can affect matching existing raw values."""
 
-    exact_names: Mapping[str, str]
     names_by_source_key: Mapping[str, str]
 
 
@@ -40,8 +39,8 @@ def artist_name_reconciliation_required(
     path_policy: PathPolicy,
 ) -> bool:
     """Return whether planned naming would leave an active Track at an obsolete path."""
-    changes = _planned_artist_name_changes(planned_resolutions, config.artist_names.preferences)
-    if not changes.exact_names and not changes.names_by_source_key:
+    changes = _planned_artist_name_changes(planned_resolutions)
+    if not changes.names_by_source_key:
         return False
 
     resolved_years = resolve_album_years(
@@ -66,12 +65,8 @@ def artist_name_reconciliation_required(
             album_artist=metadata.album_artist,
         )
         resolved_projection = ArtistNameProjection(
-            artist=_resolved_artist_name(metadata.artist, config.artist_names.preferences, changes),
-            album_artist=_resolved_artist_name(
-                metadata.album_artist,
-                config.artist_names.preferences,
-                changes,
-            ),
+            artist=_resolved_artist_name(metadata.artist, changes),
+            album_artist=_resolved_artist_name(metadata.album_artist, changes),
         )
         if resolved_projection == original_projection:
             continue
@@ -107,9 +102,7 @@ def artist_name_reconciliation_required(
 
 def _planned_artist_name_changes(
     resolutions: Sequence[ArtistNameResolution],
-    preferences: Mapping[str, str] | None,
 ) -> _PlannedArtistNameChanges:
-    exact_names: dict[str, str] = {}
     names_by_source_key: dict[str, str] = {}
     for resolution in resolutions:
         source_name = resolution.source_name
@@ -117,29 +110,18 @@ def _planned_artist_name_changes(
         resolved_name = resolution.resolved_name
         if resolved_name is None or resolved_name == source_name:
             continue
-        if source_name is not None and preferences is not None and source_name in preferences:
-            _ = exact_names.setdefault(source_name, resolved_name)
-        elif source_key is not None:
+        if source_key is not None:
             _ = names_by_source_key.setdefault(source_key, resolved_name)
-    return _PlannedArtistNameChanges(
-        exact_names=exact_names,
-        names_by_source_key=names_by_source_key,
-    )
+    return _PlannedArtistNameChanges(names_by_source_key=names_by_source_key)
 
 
 def _resolved_artist_name(
     source_name: str | None,
-    preferences: Mapping[str, str] | None,
     changes: _PlannedArtistNameChanges,
 ) -> str | None:
     if source_name is None:
         return None
-    exact_name = changes.exact_names.get(source_name)
-    if exact_name is not None:
-        return exact_name
     source_key = derive_artist_name_source_key(source_name)
     if source_key is None or source_key not in changes.names_by_source_key:
         return source_name
-    if preferences is not None and source_name in preferences:
-        return preferences[source_name]
     return changes.names_by_source_key[source_key]

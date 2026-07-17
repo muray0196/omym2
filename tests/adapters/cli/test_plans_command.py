@@ -334,7 +334,7 @@ def test_plans_detail_shows_recorded_artist_name_diagnostics(tmp_path: Path) -> 
     assert "source_name: 宇多田ヒカル" in output
     assert "resolved_name: Hikaru Utada" in output
     assert "provenance: accepted_musicbrainz" in output
-    assert "issue: detector_unavailable" in output
+    assert "issue: romanization_not_required" in output
 
 
 def test_plans_detail_text_exposes_companion_ownership_and_durable_dependencies(tmp_path: Path) -> None:
@@ -679,7 +679,7 @@ def test_plans_detail_json_emits_full_payload_with_null_fields(tmp_path: Path) -
                         "source_name": "椎名林檎",
                         "resolved_name": "椎名林檎",
                         "provenance": "original",
-                        "issue": "detector_unavailable",
+                        "issue": "romanization_not_required",
                     },
                 },
             },
@@ -968,6 +968,6 @@ def _artist_name_diagnostics() -> ArtistNameDiagnostics:
             source_name="椎名林檎",
             resolved_name="椎名林檎",
             provenance=ArtistNameResolutionProvenance.ORIGINAL,
-            issue=ArtistNameResolutionIssue.DETECTOR_UNAVAILABLE,
+            issue=ArtistNameResolutionIssue.ROMANIZATION_NOT_REQUIRED,
         ),
     )

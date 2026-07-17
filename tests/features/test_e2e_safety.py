@@ -99,9 +99,9 @@ def test_inspect_plan_apply_and_history_use_recorded_paths_with_concrete_adapter
     """Recorded add actions drive apply even after current config changes."""
     setup = _setup_mixed_incoming_library(tmp_path)
 
-    inspected = InspectFileUseCase(InspectFilePorts(setup.snapshot_reader, setup.config_store)).execute(
-        InspectFileRequest(str(setup.success_file))
-    )
+    inspected = InspectFileUseCase(
+        InspectFilePorts(setup.snapshot_reader, setup.config_store, MappingArtistNameResolver())
+    ).execute(InspectFileRequest(str(setup.success_file)))
     assert inspected.canonical_path == SUCCESS_TARGET_PATH
 
     plan = _create_mixed_plan(setup)

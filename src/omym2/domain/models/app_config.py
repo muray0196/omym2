@@ -10,8 +10,6 @@ from dataclasses import dataclass, field
 from math import isfinite
 from pathlib import PurePosixPath, PureWindowsPath
 from string import Formatter
-from types import MappingProxyType
-from typing import TYPE_CHECKING
 
 from omym2.config import (
     ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS,
@@ -19,7 +17,7 @@ from omym2.config import (
     ALLOWED_MUSICBRAINZ_CACHE_POLICIES,
     ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
-    ARTIST_ID_ENTRY_VALUE_PATTERN,
+    ARTIST_ID_VALUE_PATTERN,
     CONFIG_VERSION,
     CURRENT_DIRECTORY_REFERENCE,
     DEFAULT_ADD_AUTO_APPLY,
@@ -31,8 +29,6 @@ from omym2.config import (
     DEFAULT_COLLISION_ON_TARGET_EXISTS,
     DEFAULT_COMMAND_MODE,
     DEFAULT_COMPANIONS_ENABLED,
-    DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE,
-    DEFAULT_FASTTEXT_MODEL_PATH,
     DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES,
     DEFAULT_LOGGING_DESTINATION,
     DEFAULT_LOGGING_LEVEL,
@@ -61,8 +57,6 @@ from omym2.config import (
     DEFAULT_UNPROCESSED_DIRECTORY,
     DEFAULT_UNPROCESSED_ENABLED,
     DEFAULT_UNPROCESSED_RESULT_PREVIEW_LIMIT,
-    FASTTEXT_MINIMUM_CONFIDENCE_MAX,
-    FASTTEXT_MINIMUM_CONFIDENCE_MIN,
     LOGICAL_PATH_SEPARATOR,
     PARENT_DIRECTORY_REFERENCE,
     PATH_EXTENSION_PREFIX,
@@ -74,22 +68,14 @@ from omym2.config import (
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
 )
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
 INVALID_CONFIG_VERSION_MESSAGE = (
     "Unsupported pre-release config version. Reset .config/config.toml and recreate Settings."
-)
-INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE = (
-    "ArtistIdConfig entries values must be non-empty ASCII letters, digits, or underscores "
-    "with optional single internal hyphens."
 )
 INVALID_ARTIST_ID_FALLBACK_MESSAGE = (
     "ArtistIdConfig fallback_id must be non-empty ASCII letters, digits, or underscores "
     "with optional single internal hyphens."
 )
 INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE = "ArtistIdConfig max_length must be positive."
-INVALID_ARTIST_NAME_PREFERENCE_MESSAGE = "ArtistNameConfig preference keys and values must not be empty."
 INVALID_MAX_FILENAME_LENGTH_MESSAGE = "PathPolicy max_filename_length must be positive."
 INVALID_PATH_POLICY_DISC_NUMBER_CONDITION_MESSAGE = "PathPolicy disc_number_condition is not supported."
 INVALID_PATH_POLICY_DISC_NUMBER_STYLE_MESSAGE = "PathPolicy disc_number_style is not supported."
@@ -105,8 +91,6 @@ INVALID_MUSICBRAINZ_TIMEOUT_MESSAGE = "MusicBrainzConfig timeout_seconds must be
 INVALID_MUSICBRAINZ_RETRY_LIMIT_MESSAGE = "MusicBrainzConfig retry_limit must not be negative."
 INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE = "MusicBrainzConfig rate_limit_seconds must be finite and at least 1.0."
 INVALID_MUSICBRAINZ_CACHE_POLICY_MESSAGE = "MusicBrainzConfig cache_policy is not supported."
-INVALID_FASTTEXT_MODEL_PATH_MESSAGE = "FastTextConfig model_path must not be blank when set."
-INVALID_FASTTEXT_MINIMUM_CONFIDENCE_MESSAGE = "FastTextConfig minimum_confidence must be finite and between 0 and 1."
 INVALID_HASHING_READ_CHUNK_SIZE_MESSAGE = "HashingConfig read_chunk_size_bytes must be positive."
 INVALID_LOGGING_DESTINATION_MESSAGE = (
     "LoggingConfig destination must be a normalized application-root-relative logical path."
@@ -122,7 +106,7 @@ INVALID_UNPROCESSED_RESULT_PREVIEW_LIMIT_MESSAGE = (
     f"{UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN} and {UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX}."
 )
 
-_ARTIST_ID_ENTRY_VALUE_PATTERN = re.compile(ARTIST_ID_ENTRY_VALUE_PATTERN)
+_ARTIST_ID_VALUE_PATTERN = re.compile(ARTIST_ID_VALUE_PATTERN)
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,39 +165,17 @@ class PathPolicyConfig:
 
 @dataclass(frozen=True, slots=True)
 class ArtistIdConfig:
-    """Editable artist ID settings stored in TOML config."""
+    """Tunables for automatic internal artist-ID generation."""
 
     max_length: int = DEFAULT_ARTIST_ID_MAX_LENGTH
     fallback_id: str = DEFAULT_ARTIST_ID_FALLBACK
-    entries: Mapping[str, str] | None = None
 
     def __post_init__(self) -> None:
-        """Validate artist ID tunables and freeze user-editable entries."""
+        """Validate automatic artist-ID generation tunables."""
         if self.max_length <= 0:
             raise ValueError(INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE)
-        # fallback_id can flow into generated IDs and saved entries (see
-        # generate_artist_id's no-usable-characters branch), so it must be
-        # sanitizer-stable by the same rule as entries values, not merely
-        # non-empty.
-        if _ARTIST_ID_ENTRY_VALUE_PATTERN.fullmatch(self.fallback_id) is None:
+        if _ARTIST_ID_VALUE_PATTERN.fullmatch(self.fallback_id) is None:
             raise ValueError(INVALID_ARTIST_ID_FALLBACK_MESSAGE)
-        normalized_entries = dict(self.entries or {})
-        _validate_artist_id_entries(normalized_entries)
-        # Read-only entries keep cached AppConfig instances safe to reuse.
-        object.__setattr__(self, "entries", MappingProxyType(normalized_entries))
-
-
-@dataclass(frozen=True, slots=True)
-class ArtistNameConfig:
-    """Editable full artist display-name preferences stored in TOML config."""
-
-    preferences: Mapping[str, str] | None = None
-
-    def __post_init__(self) -> None:
-        """Validate and freeze exact source-to-display-name preferences."""
-        normalized_preferences = dict(self.preferences or {})
-        _validate_artist_name_preferences(normalized_preferences)
-        object.__setattr__(self, "preferences", MappingProxyType(normalized_preferences))
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,23 +234,6 @@ class MusicBrainzConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class FastTextConfig:
-    """Persisted model selection and confidence controls for fastText."""
-
-    model_path: str | None = DEFAULT_FASTTEXT_MODEL_PATH
-    minimum_confidence: float = DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE
-
-    def __post_init__(self) -> None:
-        """Validate optional model selection and the finite confidence range."""
-        if self.model_path is not None and self.model_path.strip() == "":
-            raise ValueError(INVALID_FASTTEXT_MODEL_PATH_MESSAGE)
-        if not isfinite(self.minimum_confidence) or not (
-            FASTTEXT_MINIMUM_CONFIDENCE_MIN <= self.minimum_confidence <= FASTTEXT_MINIMUM_CONFIDENCE_MAX
-        ):
-            raise ValueError(INVALID_FASTTEXT_MINIMUM_CONFIDENCE_MESSAGE)
-
-
-@dataclass(frozen=True, slots=True)
 class HashingConfig:
     """Persisted operational controls for streaming content hashes."""
 
@@ -344,14 +289,6 @@ class UnprocessedConfig:
             raise ValueError(INVALID_UNPROCESSED_RESULT_PREVIEW_LIMIT_MESSAGE)
 
 
-def _validate_artist_id_entries(entries: dict[str, str]) -> None:
-    # Entry keys are free-form source artist text; only saved ID values feed
-    # PathPolicy path rendering, so only values must be sanitizer-stable.
-    for value in entries.values():
-        if _ARTIST_ID_ENTRY_VALUE_PATTERN.fullmatch(value) is None:
-            raise ValueError(INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE)
-
-
 def _is_normalized_application_relative_path(value: str) -> bool:
     if value.strip() == "" or value == "." or "\\" in value:
         return False
@@ -388,12 +325,6 @@ def _is_valid_unprocessed_result_preview_limit(value: object) -> bool:
     )
 
 
-def _validate_artist_name_preferences(preferences: dict[str, str]) -> None:
-    for source_name, display_name in preferences.items():
-        if source_name.strip() == "" or display_name.strip() == "":
-            raise ValueError(INVALID_ARTIST_NAME_PREFERENCE_MESSAGE)
-
-
 def _validate_template_placeholders(template: str) -> None:
     allowed_placeholders = set(PATH_POLICY_ALLOWED_PLACEHOLDERS)
     for _, field_name, format_spec, conversion in Formatter().parse(template):
@@ -422,11 +353,9 @@ class AppConfig:
     refresh: CommandConfig = CommandConfig(auto_apply=DEFAULT_REFRESH_AUTO_APPLY)
     path_policy: PathPolicyConfig = PathPolicyConfig()
     artist_ids: ArtistIdConfig = field(default_factory=ArtistIdConfig)
-    artist_names: ArtistNameConfig = field(default_factory=ArtistNameConfig)
     metadata: MetadataConfig = MetadataConfig()
     collision: CollisionConfig = CollisionConfig()
     musicbrainz: MusicBrainzConfig = MusicBrainzConfig()
-    fasttext: FastTextConfig = FastTextConfig()
     hashing: HashingConfig = HashingConfig()
     logging: LoggingConfig = LoggingConfig()
     companions: CompanionsConfig = CompanionsConfig()

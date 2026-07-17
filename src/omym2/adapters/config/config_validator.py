@@ -29,7 +29,6 @@ from omym2.config import (
     DEFAULT_COLLISION_ON_TARGET_EXISTS,
     DEFAULT_COMMAND_MODE,
     DEFAULT_COMPANIONS_ENABLED,
-    DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE,
     DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES,
     DEFAULT_LOGGING_LEVEL,
     DEFAULT_LOGGING_RETENTION_FILES,
@@ -61,11 +60,9 @@ from omym2.config import (
 from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
-    ArtistNameConfig,
     CollisionConfig,
     CommandConfig,
     CompanionsConfig,
-    FastTextConfig,
     HashingConfig,
     LoggingConfig,
     MetadataConfig,
@@ -94,7 +91,6 @@ ADD_SECTION = "add"
 ALBUM_YEAR_RESOLUTION_KEY = "album_year_resolution"
 APPLICATION_NAME_KEY = "application_name"
 ARTIST_IDS_SECTION = "artist_ids"
-ARTIST_NAMES_SECTION = "artist_names"
 AUTO_APPLY_KEY = "auto_apply"
 CACHE_POLICY_KEY = "cache_policy"
 COLLISION_SECTION = "collision"
@@ -106,10 +102,8 @@ DISC_NUMBER_CONDITION_KEY = "disc_number_condition"
 DISC_NUMBER_STYLE_KEY = "disc_number_style"
 DIRECTORY_KEY = "directory"
 ENABLED_KEY = "enabled"
-FASTTEXT_SECTION = "fasttext"
 HASHING_SECTION = "hashing"
 INCOMING_KEY = "incoming"
-ENTRIES_KEY = "entries"
 FALLBACK_ID_KEY = "fallback_id"
 LIBRARY_KEY = "library"
 LEVEL_KEY = "level"
@@ -117,8 +111,6 @@ LOGGING_SECTION = "logging"
 MAX_LENGTH_KEY = "max_length"
 MAX_FILENAME_LENGTH_KEY = "max_filename_length"
 METADATA_SECTION = "metadata"
-MINIMUM_CONFIDENCE_KEY = "minimum_confidence"
-MODEL_PATH_KEY = "model_path"
 MUSICBRAINZ_SECTION = "musicbrainz"
 ON_DUPLICATE_HASH_KEY = "on_duplicate_hash"
 ON_MISSING_METADATA_KEY = "on_missing_metadata"
@@ -127,7 +119,6 @@ ORGANIZE_SECTION = "organize"
 PATH_POLICY_SECTION = "path_policy"
 PATHS_SECTION = "paths"
 PREFER_ALBUM_ARTIST_KEY = "prefer_album_artist"
-PREFERENCES_KEY = "preferences"
 RATE_LIMIT_SECONDS_KEY = "rate_limit_seconds"
 READ_CHUNK_SIZE_BYTES_KEY = "read_chunk_size_bytes"
 REFRESH_SECTION = "refresh"
@@ -155,11 +146,9 @@ ROOT_KEYS = frozenset(
         REFRESH_SECTION,
         PATH_POLICY_SECTION,
         ARTIST_IDS_SECTION,
-        ARTIST_NAMES_SECTION,
         METADATA_SECTION,
         COLLISION_SECTION,
         MUSICBRAINZ_SECTION,
-        FASTTEXT_SECTION,
         HASHING_SECTION,
         LOGGING_SECTION,
         COMPANIONS_SECTION,
@@ -167,8 +156,7 @@ ROOT_KEYS = frozenset(
     }
 )
 PATHS_KEYS = frozenset({LIBRARY_KEY, INCOMING_KEY})
-ARTIST_IDS_KEYS = frozenset({MAX_LENGTH_KEY, FALLBACK_ID_KEY, ENTRIES_KEY})
-ARTIST_NAMES_KEYS = frozenset({PREFERENCES_KEY})
+ARTIST_IDS_KEYS = frozenset({MAX_LENGTH_KEY, FALLBACK_ID_KEY})
 COMMAND_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY})
 ORGANIZE_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY})
 PATH_POLICY_KEYS = frozenset(
@@ -197,7 +185,6 @@ MUSICBRAINZ_KEYS = frozenset(
         CACHE_POLICY_KEY,
     }
 )
-FASTTEXT_KEYS = frozenset({MODEL_PATH_KEY, MINIMUM_CONFIDENCE_KEY})
 HASHING_KEYS = frozenset({READ_CHUNK_SIZE_BYTES_KEY})
 LOGGING_KEYS = frozenset({DESTINATION_KEY, LEVEL_KEY, ROTATION_MAX_BYTES_KEY, RETENTION_FILES_KEY})
 COMPANIONS_KEYS = frozenset({ENABLED_KEY})
@@ -242,11 +229,6 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
     except ValueError as exc:
         errors.append(str(exc))
         artist_id_config = ArtistIdConfig()
-    try:
-        artist_name_config = _artist_name_config(_section(raw_config, ARTIST_NAMES_SECTION, errors), errors)
-    except ValueError as exc:
-        errors.append(str(exc))
-        artist_name_config = ArtistNameConfig()
     metadata_config = _metadata_config(_section(raw_config, METADATA_SECTION, errors), errors)
     collision_config = _collision_config(_section(raw_config, COLLISION_SECTION, errors), errors)
     try:
@@ -254,11 +236,6 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
     except ValueError as exc:
         errors.append(str(exc))
         musicbrainz_config = MusicBrainzConfig()
-    try:
-        fasttext_config = _fasttext_config(_section(raw_config, FASTTEXT_SECTION, errors), errors)
-    except ValueError as exc:
-        errors.append(str(exc))
-        fasttext_config = FastTextConfig()
     try:
         hashing_config = _hashing_config(_section(raw_config, HASHING_SECTION, errors), errors)
     except ValueError as exc:
@@ -278,11 +255,9 @@ def validate_config_data(raw_config: ConfigTable) -> AppConfig:
             refresh=refresh_config,
             path_policy=path_policy_config,
             artist_ids=artist_id_config,
-            artist_names=artist_name_config,
             metadata=metadata_config,
             collision=collision_config,
             musicbrainz=musicbrainz_config,
-            fasttext=fasttext_config,
             hashing=hashing_config,
             logging=logging_config,
             companions=companions_config,
@@ -422,22 +397,6 @@ def _artist_id_config(table: ConfigTable, errors: list[str]) -> ArtistIdConfig:
             DEFAULT_ARTIST_ID_FALLBACK,
             errors,
         ),
-        entries=_string_mapping(
-            _section(table, ENTRIES_KEY, errors, parent_section=ARTIST_IDS_SECTION),
-            _path(ARTIST_IDS_SECTION, ENTRIES_KEY),
-            errors,
-        ),
-    )
-
-
-def _artist_name_config(table: ConfigTable, errors: list[str]) -> ArtistNameConfig:
-    _reject_unknown_keys(table, ARTIST_NAMES_KEYS, ARTIST_NAMES_SECTION, errors)
-    return ArtistNameConfig(
-        preferences=_string_mapping(
-            _section(table, PREFERENCES_KEY, errors, parent_section=ARTIST_NAMES_SECTION),
-            _path(ARTIST_NAMES_SECTION, PREFERENCES_KEY),
-            errors,
-        )
     )
 
 
@@ -571,20 +530,6 @@ def _musicbrainz_config(table: ConfigTable, errors: list[str]) -> MusicBrainzCon
     )
 
 
-def _fasttext_config(table: ConfigTable, errors: list[str]) -> FastTextConfig:
-    _reject_unknown_keys(table, FASTTEXT_KEYS, FASTTEXT_SECTION, errors)
-    return FastTextConfig(
-        model_path=_optional_string(table, MODEL_PATH_KEY, FASTTEXT_SECTION, errors),
-        minimum_confidence=_float(
-            table,
-            MINIMUM_CONFIDENCE_KEY,
-            FASTTEXT_SECTION,
-            DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE,
-            errors,
-        ),
-    )
-
-
 def _hashing_config(table: ConfigTable, errors: list[str]) -> HashingConfig:
     _reject_unknown_keys(table, HASHING_KEYS, HASHING_SECTION, errors)
     return HashingConfig(
@@ -683,20 +628,6 @@ def _section(
         return cast("ConfigTable", value)
     errors.append(_type_error(_path(parent_section, section), TABLE_TYPE_NAME))
     return {}
-
-
-def _string_mapping(table: ConfigTable, mapping_path: str, errors: list[str]) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for key, value in table.items():
-        path = _path(mapping_path, key)
-        if not isinstance(value, str):
-            errors.append(_type_error(path, STRING_TYPE_NAME))
-            continue
-        if key.strip() == "" or value.strip() == "":
-            errors.append(f"Config key {path} must not be empty.")
-            continue
-        values[key] = value
-    return values
 
 
 def _required_int(table: ConfigTable, key: str, default: int, errors: list[str]) -> int:

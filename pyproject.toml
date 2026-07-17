@@ -75,6 +75,8 @@ testpaths = ["tests"]
 
 [tool.basedpyright]
 pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
 include = ["src", "tests", "scripts"]
 exclude = ["**/__pycache__"]
 stubPath = ""

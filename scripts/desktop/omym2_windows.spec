@@ -51,6 +51,11 @@ datas += collect_data_files(
     include_py_files=False,
     includes=["*.sql"],
 )
+datas += collect_data_files(
+    "omym2.adapters.artist_ids",
+    include_py_files=False,
+    includes=["models/*"],
+)
 datas += copy_metadata("omym2")
 for distribution_name in runtime_distributions:
     datas += copy_metadata(distribution_name)

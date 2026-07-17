@@ -84,8 +84,8 @@ def _package_audit(
         package_version=package_version,
         pe_machine="x86_64",
         pe_subsystem="windows_gui",
-        runtime_distribution_count=1,
-        runtime_license_file_count=1,
+        runtime_distribution_count=2,
+        runtime_license_file_count=2,
         verified_resource_count=1,
         webview_dll_count=0,
         webview_modules=("webview.platforms.edgechromium",),
@@ -462,7 +462,9 @@ def test_packaged_api_probe_creates_non_destructive_add_plan(tmp_path: Path) -> 
     database_file = tmp_path / "state.sqlite3"
     library_root.mkdir()
     _write_tagged_smoke_flac(source_file)
-    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", database_file))
+    config_file = tmp_path / "config.toml"
+    _ = config_file.write_text(config.DESKTOP_WINDOWS_SMOKE_CONFIG_MARKER, encoding="utf-8")
+    server = UvicornDesktopServer(build_web_app(config_file, database_file))
     base_url = server.start()
     try:
         evidence = _create_safe_add_plan(base_url, library_root, incoming_root, source_file, database_file)
@@ -475,7 +477,6 @@ def test_packaged_api_probe_creates_non_destructive_add_plan(tmp_path: Path) -> 
     assert evidence["filesystem_mutation_performed"] is False
     local_only = cast("dict[str, object]", evidence["local_only"])
     assert local_only == {
-        "fasttext_model_path": None,
         "musicbrainz_enabled": False,
         "provider_request_count": 0,
         "provider_request_performed": False,
@@ -509,7 +510,9 @@ def test_packaged_api_plan_evidence_rejects_disposable_tree_mutation(
     database_file = tmp_path / "state.sqlite3"
     library_root.mkdir()
     _write_tagged_smoke_flac(source_file)
-    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", database_file))
+    config_file = tmp_path / "config.toml"
+    _ = config_file.write_text(config.DESKTOP_WINDOWS_SMOKE_CONFIG_MARKER, encoding="utf-8")
+    server = UvicornDesktopServer(build_web_app(config_file, database_file))
     base_url = server.start()
     original_start = _start_and_poll_operation
 
@@ -639,7 +642,9 @@ def test_native_ui_plan_evidence_requires_one_new_ready_plan(
     database_file = tmp_path / "state.sqlite3"
     library_root.mkdir()
     _write_tagged_smoke_flac(source_file)
-    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", database_file))
+    config_file = tmp_path / "config.toml"
+    _ = config_file.write_text(config.DESKTOP_WINDOWS_SMOKE_CONFIG_MARKER, encoding="utf-8")
+    server = UvicornDesktopServer(build_web_app(config_file, database_file))
     base_url = server.start()
     try:
         persisted = _create_safe_add_plan(base_url, library_root, incoming_root, source_file, database_file)
@@ -702,7 +707,9 @@ def test_native_ui_plan_evidence_rejects_disposable_tree_mutation(
     database_file = tmp_path / "state.sqlite3"
     library_root.mkdir()
     _write_tagged_smoke_flac(source_file)
-    server = UvicornDesktopServer(build_web_app(tmp_path / "config.toml", database_file))
+    config_file = tmp_path / "config.toml"
+    _ = config_file.write_text(config.DESKTOP_WINDOWS_SMOKE_CONFIG_MARKER, encoding="utf-8")
+    server = UvicornDesktopServer(build_web_app(config_file, database_file))
     base_url = server.start()
     try:
         persisted = _create_safe_add_plan(base_url, library_root, incoming_root, source_file, database_file)

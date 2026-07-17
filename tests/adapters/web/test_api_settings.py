@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -22,19 +23,21 @@ from omym2.config import (
     HTTP_UNPROCESSABLE_CONTENT_STATUS,
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
-    WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
+    WEB_API_SETTINGS_ARTIST_NAMES_ROUTE,
     WEB_API_SETTINGS_PREVIEW_ROUTE,
     WEB_API_SETTINGS_ROUTE,
     WEB_API_SETTINGS_VALIDATE_ROUTE,
     WEB_CSRF_HEADER_NAME,
 )
+from omym2.domain.models.accepted_artist_name import (
+    AcceptedArtistName,
+    ArtistNameProvider,
+    SelectedArtistNameKind,
+)
 from omym2.domain.models.app_config import (
     AppConfig,
-    ArtistIdConfig,
-    ArtistNameConfig,
     CommandConfig,
     CompanionsConfig,
-    FastTextConfig,
     HashingConfig,
     LoggingConfig,
     MusicBrainzConfig,
@@ -42,13 +45,16 @@ from omym2.domain.models.app_config import (
     PathsConfig,
     UnprocessedConfig,
 )
-from omym2.features.artist_ids.usecases.generate_artist_id_draft import GenerateArtistIdDraftUseCase
+from omym2.features.artist_names.usecases.get_artist_name_mappings import GetArtistNameMappingsUseCase
+from omym2.features.artist_names.usecases.save_artist_name_mappings import SaveArtistNameMappingsUseCase
 from omym2.features.common_ports import ConfigRevisionMismatchError, ConfigSnapshot, ConfigSnapshotState
 from omym2.features.settings.ports import SettingsPorts
 from omym2.features.settings.usecases.get_settings_edit import GetSettingsEditUseCase
 from omym2.features.settings.usecases.preview_path_policy import PreviewPathPolicyUseCase
 from omym2.features.settings.usecases.save_settings_candidate import SaveSettingsCandidateUseCase
 from omym2.features.settings.usecases.validate_settings_candidate import ValidateSettingsCandidateUseCase
+from tests.fakes.in_memory_repositories import InMemoryUnitOfWork
+from tests.fakes.runtime import FixedClock, MappingArtistNameResolver
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -66,6 +72,8 @@ SOURCE_ARTIST = "Existing Artist"
 SOURCE_ARTIST_ID = "EXST"
 PREFERRED_ARTIST = "Preferred Artist"
 NEW_ARTIST = "New Artist"
+JAPANESE_ARTIST = "宇多田ヒカル"
+PREFERRED_JAPANESE_ARTIST = "Hikaru Utada"
 UNRELATED_BOOTSTRAP_EXECUTION_MESSAGE = "Unrelated Bootstrap handler must not execute."
 WEB_MUSICBRAINZ_TIMEOUT_SECONDS = 2.5
 WEB_HASH_READ_CHUNK_SIZE_BYTES = 8_192
@@ -92,13 +100,13 @@ def test_get_settings_returns_invalid_recovery_data_choices_and_preview(tmp_path
     assert _object(data, "choices")["unprocessed_result_preview_limit_min"] == (UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN)
     assert _object(data, "choices")["unprocessed_result_preview_limit_max"] == (UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX)
     assert _object(data, "preview")["path"] == "Aimer/2024_Example-Album/1-03_Example-Song.flac"
+    assert _list(_object(data, "artist_name_mappings"), "entries") == []
 
 
 def test_app_config_resource_round_trips_complete_config() -> None:
     """Settings serialization retains every supported Config field."""
     config = AppConfig(
         paths=PathsConfig(library=LIBRARY_PATH),
-        artist_names=ArtistNameConfig(preferences={SOURCE_ARTIST: PREFERRED_ARTIST}),
         musicbrainz=MusicBrainzConfig(
             enabled=True,
             application_name="OMYM2 Web",
@@ -107,7 +115,6 @@ def test_app_config_resource_round_trips_complete_config() -> None:
             retry_limit=2,
             rate_limit_seconds=1.5,
         ),
-        fasttext=FastTextConfig(model_path="models/lid.176.ftz", minimum_confidence=0.7),
         hashing=HashingConfig(read_chunk_size_bytes=WEB_HASH_READ_CHUNK_SIZE_BYTES),
         logging=LoggingConfig(
             destination="logs/web.log",
@@ -127,7 +134,6 @@ def test_app_config_resource_round_trips_complete_config() -> None:
 
     serialized = resource.model_dump(mode="json")
     assert serialized["musicbrainz"]["timeout_seconds"] == WEB_MUSICBRAINZ_TIMEOUT_SECONDS
-    assert serialized["fasttext"]["model_path"] == "models/lid.176.ftz"
     assert serialized["hashing"]["read_chunk_size_bytes"] == WEB_HASH_READ_CHUNK_SIZE_BYTES
     assert serialized["logging"]["destination"] == "logs/web.log"
     assert serialized["companions"] == {"enabled": True}
@@ -182,7 +188,6 @@ def test_preview_returns_domain_errors_as_data_without_config_writes(tmp_path: P
         json={
             "path_policy": path_policy,
             "artist_ids": config_resource["artist_ids"],
-            "artist_names": config_resource["artist_names"],
             "metadata": {"title": "Song", "artist": "Artist"},
             "file_extension": ".flac",
         },
@@ -195,14 +200,11 @@ def test_preview_returns_domain_errors_as_data_without_config_writes(tmp_path: P
     assert store.save_count == 0
 
 
-def test_preview_applies_artist_display_name_preferences_without_config_writes(tmp_path: Path) -> None:
-    """Self-contained preview uses the supplied display-name draft and never reads or writes Config."""
+def test_preview_applies_saved_artist_name_mapping_without_config_writes(tmp_path: Path) -> None:
+    """Preview uses the saved mapping and never writes Config."""
     store = FakeConfigStore()
-    client = _client(tmp_path, store)
-    config = AppConfig(
-        path_policy=PathPolicyConfig(template="{artist}/{title}"),
-        artist_names=ArtistNameConfig(preferences={SOURCE_ARTIST: PREFERRED_ARTIST}),
-    )
+    client = _client(tmp_path, store, artist_names={SOURCE_ARTIST: PREFERRED_ARTIST})
+    config = AppConfig(path_policy=PathPolicyConfig(template="{artist}/{title}"))
     config_resource = AppConfigResource.from_domain(config).model_dump(mode="json")
 
     response = client.post(
@@ -210,7 +212,6 @@ def test_preview_applies_artist_display_name_preferences_without_config_writes(t
         json={
             "path_policy": config_resource["path_policy"],
             "artist_ids": config_resource["artist_ids"],
-            "artist_names": config_resource["artist_names"],
             "metadata": {"title": "Song", "artist": SOURCE_ARTIST},
             "file_extension": ".flac",
         },
@@ -227,7 +228,6 @@ def test_save_settings_returns_new_revision_and_rejects_invalid_or_stale_candida
     client = _client(tmp_path, store)
     valid = AppConfig(
         paths=PathsConfig(library=LIBRARY_PATH),
-        artist_names=ArtistNameConfig(preferences={SOURCE_ARTIST: PREFERRED_ARTIST}),
     )
 
     saved = client.put(
@@ -253,7 +253,6 @@ def test_save_settings_returns_new_revision_and_rejects_invalid_or_stale_candida
     assert _data(saved)["config_revision"] == SAVED_CONFIG_REVISION
     assert [change["field"] for change in _list(_data(saved), "changes")] == [
         "paths.library",
-        f"artist_names.preferences.{SOURCE_ARTIST}",
     ]
     assert invalid.status_code == HTTP_UNPROCESSABLE_CONTENT_STATUS
     assert _first_error(_response_object(invalid))["field"] == "add.default_mode"
@@ -355,39 +354,92 @@ def test_save_settings_rejects_invalid_unprocessed_controls_without_writing(
     assert store.save_count == 0
 
 
-def test_artist_id_generation_uses_form_draft_without_saving_config(tmp_path: Path) -> None:
-    """Draft generation preserves existing entries and returns new values without persistence."""
+def test_save_artist_name_mappings_is_revision_checked_and_csrf_protected(tmp_path: Path) -> None:
+    """Settings can add and edit the shared mapping without writing Config."""
     store = FakeConfigStore()
     client = _client(tmp_path, store)
-    artist_ids = AppConfigResource.from_domain(
-        AppConfig(artist_ids=ArtistIdConfig(entries={SOURCE_ARTIST: SOURCE_ARTIST_ID}))
-    ).artist_ids
+    snapshot = _object(_data(client.get(WEB_API_SETTINGS_ROUTE)), "artist_name_mappings")
+    body = {
+        "entries": {JAPANESE_ARTIST: PREFERRED_JAPANESE_ARTIST},
+        "expected_revision": snapshot["revision"],
+    }
 
-    response = client.post(
-        WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
-        json={
-            "artist_names": [SOURCE_ARTIST, NEW_ARTIST, NEW_ARTIST],
-            "overwrite": False,
-            "artist_ids": artist_ids.model_dump(mode="json"),
-        },
+    unauthorized = client.put(WEB_API_SETTINGS_ARTIST_NAMES_ROUTE, json=body)
+    saved = client.put(
+        WEB_API_SETTINGS_ARTIST_NAMES_ROUTE,
+        json=body,
+        headers={WEB_CSRF_HEADER_NAME: CSRF_TOKEN},
+    )
+    stale = client.put(
+        WEB_API_SETTINGS_ARTIST_NAMES_ROUTE,
+        json=body,
+        headers={WEB_CSRF_HEADER_NAME: CSRF_TOKEN},
     )
 
-    assert response.status_code == HTTP_OK_STATUS
-    entries = _list(_data(response), "entries")
-    assert [entry["source_artist"] for entry in entries] == [SOURCE_ARTIST, NEW_ARTIST]
-    assert entries[0]["artist_id"] == SOURCE_ARTIST_ID
-    assert entries[0]["overwritten"] is False
+    assert unauthorized.status_code == HTTP_FORBIDDEN_STATUS
+    assert saved.status_code == HTTP_OK_STATUS
+    assert _list(_data(saved), "entries")[0] == {
+        "source_name": JAPANESE_ARTIST,
+        "english_name": PREFERRED_JAPANESE_ARTIST,
+        "source": "user",
+        "selected_name_kind": None,
+        "selected_locale": None,
+    }
+    assert stale.status_code == HTTP_CONFLICT_STATUS
+    assert _first_error(_response_object(stale))["code"] == "artist_name_mappings_changed"
     assert store.save_count == 0
 
 
-def _client(tmp_path: Path, store: FakeConfigStore) -> TestClient:
-    ports = SettingsPorts(config_store=store)
+def test_get_settings_exposes_musicbrainz_name_selection_provenance(tmp_path: Path) -> None:
+    """Settings identifies the exact MusicBrainz field and locale used for a mapping."""
+    store = FakeConfigStore()
+    mapping = AcceptedArtistName(
+        source_key=JAPANESE_ARTIST,
+        source_name=JAPANESE_ARTIST,
+        resolved_name="Utada Hikaru",
+        provider=ArtistNameProvider.MUSICBRAINZ,
+        provider_artist_id="db2f4f3a-f0c2-4c96-bea3-636f4b44f57b",
+        selected_name_kind=SelectedArtistNameKind.ALIAS_SORT_NAME,
+        selected_locale="ja-Latn",
+        accepted_at=datetime(2026, 7, 17, 12, tzinfo=UTC),
+    )
+    client = _client(tmp_path, store, accepted_artist_names=(mapping,))
+
+    response = client.get(WEB_API_SETTINGS_ROUTE)
+
+    assert _list(_object(_data(response), "artist_name_mappings"), "entries") == [
+        {
+            "source_name": JAPANESE_ARTIST,
+            "english_name": "Utada Hikaru",
+            "source": "musicbrainz",
+            "selected_name_kind": "alias_sort_name",
+            "selected_locale": "ja-Latn",
+        }
+    ]
+
+
+def _client(
+    tmp_path: Path,
+    store: FakeConfigStore,
+    *,
+    accepted_artist_names: tuple[AcceptedArtistName, ...] = (),
+    artist_names: dict[str, str] | None = None,
+) -> TestClient:
+    resolver = MappingArtistNameResolver(artist_names or {})
+    ports = SettingsPorts(config_store=store, artist_name_resolver=resolver)
+    uow = InMemoryUnitOfWork()
+    uow.accepted_artist_names.records = {mapping.source_key: mapping for mapping in accepted_artist_names}
+    mapping_result = GetArtistNameMappingsUseCase(uow).execute
+    save_mappings = SaveArtistNameMappingsUseCase(
+        uow,
+        FixedClock(datetime(2026, 7, 17, 12, tzinfo=UTC)),
+    ).execute
     context = SettingsRouteContext(
-        get_settings=GetSettingsEditUseCase(ports).execute,
+        get_settings=lambda: (GetSettingsEditUseCase(ports).execute(), mapping_result()),
         validate_settings=ValidateSettingsCandidateUseCase(ports).execute,
-        preview_path_policy=PreviewPathPolicyUseCase().execute,
+        preview_path_policy=PreviewPathPolicyUseCase(resolver).execute,
         save_settings=SaveSettingsCandidateUseCase(ports).execute,
-        generate_artist_id_draft=GenerateArtistIdDraftUseCase().execute,
+        save_artist_name_mappings=save_mappings,
     )
     app = create_web_app(
         ApiRouteContext(

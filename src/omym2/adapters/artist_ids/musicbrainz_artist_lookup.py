@@ -166,13 +166,22 @@ def _parse_artist_candidate(value: object) -> ArtistNameProviderCandidate | None
     provider_artist_id = _canonical_uuid(artist.get("id"))
     score = _parse_score(artist.get("score"))
     name = _non_empty_text(artist.get("name"))
+    raw_sort_name = artist.get("sort-name")
+    sort_name = None if raw_sort_name is None else _non_empty_text(raw_sort_name)
     aliases = _parse_aliases(artist.get("aliases"))
-    if provider_artist_id is None or score is None or name is None or aliases is None:
+    if (
+        provider_artist_id is None
+        or score is None
+        or name is None
+        or (raw_sort_name is not None and sort_name is None)
+        or aliases is None
+    ):
         return None
     return ArtistNameProviderCandidate(
         provider_artist_id=provider_artist_id,
         score=score,
         name=name,
+        sort_name=sort_name,
         aliases=aliases,
     )
 
@@ -197,15 +206,23 @@ def _parse_alias(value: object) -> ArtistNameAliasCandidate | None:
         return None
     alias = cast("dict[str, object]", value)
     name = _non_empty_text(alias.get("name"))
+    raw_sort_name = alias.get("sort-name")
+    sort_name = None if raw_sort_name is None else _non_empty_text(raw_sort_name)
     locale = alias.get("locale")
     raw_primary = alias.get("primary", False)
     if (
         name is None
+        or (raw_sort_name is not None and sort_name is None)
         or (locale is not None and not isinstance(locale, str))
         or (raw_primary is not None and not isinstance(raw_primary, bool))
     ):
         return None
-    return ArtistNameAliasCandidate(name=name, locale=locale, primary=raw_primary is True)
+    return ArtistNameAliasCandidate(
+        name=name,
+        locale=locale,
+        sort_name=sort_name,
+        primary=raw_primary is True,
+    )
 
 
 def _canonical_uuid(value: object) -> str | None:

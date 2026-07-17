@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Web Frontend
 description: Defines the bundled desktop React and Vite Web frontend contract, including routes, artist-name settings and Plan diagnostics, design rules, API boundaries, browser and native-window serving, packaging, security, and performance gates.
 tags: [web-frontend, react, vite, static-spa, artist-names, desktop, windows, performance]
-timestamp: 2026-07-16T22:15:00+09:00
+timestamp: 2026-07-17T20:30:51+09:00
 ---
 
 # Web Frontend
@@ -173,7 +173,7 @@ result.
 | `/health` | Latest persisted Check issues, facets, groups, and timestamp | Run Check |
 | `/history` | Run list with status filtering | None |
 | `/history/:runId` | Run, FileEvents, failures, and Undo eligibility | Create Undo Plan |
-| `/settings` | Paths, PathPolicy, full artist display-name preferences, artist IDs, metadata, and collision policy | Save directly; review changes optionally |
+| `/settings` | Paths, PathPolicy, editable romanized artist mappings, automatic artist-ID tunables, metadata, and collision policy | Save directly; review Config changes optionally |
 
 Every unmatched browser route renders the React Not Found screen. It
 does not trigger a server-side route allowlist or return an API response.

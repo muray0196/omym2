@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Self, override
 
 import pytest
 
-from omym2.config import ARTIST_NAME_LANGUAGE_CONFIDENCE_MIN
 from omym2.domain.models.accepted_artist_name import (
     AcceptedArtistName,
     ArtistNameProvider,
@@ -22,7 +21,6 @@ from omym2.domain.models.artist_name_resolution import (
     ArtistNameResolutionProvenance,
 )
 from omym2.features.artist_names.dto import (
-    ArtistLanguagePrediction,
     ArtistNameAliasCandidate,
     ArtistNameProviderCandidate,
     ArtistNameSearchResult,
@@ -38,16 +36,11 @@ if TYPE_CHECKING:
 
 SOURCE_NAME = "宇多田ヒカル"
 SECOND_SOURCE_NAME = "椎名林檎"
-RESOLVED_NAME = "Hikaru Utada"
+RESOLVED_NAME = "Utada Hikaru"
 MUSICBRAINZ_ARTIST_ID = "db2f4f3a-f0c2-4c96-bea3-636f4b44f57b"
 SECOND_MUSICBRAINZ_ARTIST_ID = "4d9c88b7-8a31-4b77-a6a5-7fbd7dc58829"
 BASE_TIME = datetime(2026, 7, 15, 12, tzinfo=UTC)
 CACHE_AND_PERSIST_TRANSACTION_COUNT = 2
-JAPANESE_PREDICTION = ArtistLanguagePrediction(
-    label="__label__ja",
-    confidence=0.8,
-    available=True,
-)
 DEFAULT_ALIAS_CANDIDATES = (ArtistNameAliasCandidate(name=RESOLVED_NAME, locale="en"),)
 
 
@@ -74,18 +67,6 @@ class _ObservedUnitOfWork(InMemoryUnitOfWork):
             return super().__exit__(exc_type, exc, tb)
         finally:
             self.transaction_depth -= 1
-
-
-@dataclass(slots=True)
-class _Predictor:
-    prediction: ArtistLanguagePrediction
-    uow: _ObservedUnitOfWork
-    calls: list[str]
-
-    def predict_language(self, text: str) -> ArtistLanguagePrediction:
-        assert self.uow.transaction_depth == 0
-        self.calls.append(text)
-        return self.prediction
 
 
 @dataclass(slots=True)
@@ -116,12 +97,14 @@ def _candidate(
     provider_artist_id: str = MUSICBRAINZ_ARTIST_ID,
     score: int = 100,
     name: str = SOURCE_NAME,
+    sort_name: str | None = RESOLVED_NAME,
     aliases: tuple[ArtistNameAliasCandidate, ...] = DEFAULT_ALIAS_CANDIDATES,
 ) -> ArtistNameProviderCandidate:
     return ArtistNameProviderCandidate(
         provider_artist_id=provider_artist_id,
         score=score,
         name=name,
+        sort_name=sort_name,
         aliases=aliases,
     )
 
@@ -143,20 +126,36 @@ def _accepted_name(
     )
 
 
-def test_resolver_applies_preferences_before_cache_and_automatic_work() -> None:
-    """An exact raw preference wins without consulting an accepted row or model."""
-    uow = _ObservedUnitOfWork()
-    uow.accepted_artist_names.records[SOURCE_NAME] = _accepted_name()
-    usecase, predictor, provider = _usecase(uow)
+def _user_mapping(
+    *,
+    source_name: str = SOURCE_NAME,
+    resolved_name: str = "Utada Hikaru",
+) -> AcceptedArtistName:
+    return AcceptedArtistName(
+        source_key=source_name,
+        source_name=source_name,
+        resolved_name=resolved_name,
+        provider=ArtistNameProvider.USER,
+        provider_artist_id=None,
+        selected_name_kind=None,
+        selected_locale=None,
+        accepted_at=BASE_TIME,
+    )
 
-    result = usecase.execute(ResolveArtistNamesRequest((SOURCE_NAME,), preferences={SOURCE_NAME: "Utada Hikaru"}))
+
+def test_resolver_uses_user_mapping_before_automatic_work() -> None:
+    """A user-corrected mapping wins without model or provider work."""
+    uow = _ObservedUnitOfWork()
+    uow.accepted_artist_names.records[SOURCE_NAME] = _user_mapping()
+    usecase, provider = _usecase(uow)
+
+    result = usecase.execute(ResolveArtistNamesRequest((SOURCE_NAME,)))
 
     assert result[0].resolved_name == "Utada Hikaru"
     assert result[0].provenance is ArtistNameResolutionProvenance.USER_PREFERENCE
-    assert predictor.calls == []
     assert provider.calls == []
-    assert uow.usecase_scope_enter_count == 0
-    assert uow.transaction_entries == 0
+    assert uow.usecase_scope_enter_count == 1
+    assert uow.transaction_entries == 1
 
 
 def test_resolver_uses_accepted_cache_before_eligibility() -> None:
@@ -165,13 +164,12 @@ def test_resolver_uses_accepted_cache_before_eligibility() -> None:
     accepted_name = _accepted_name(source_name=composite)
     uow = _ObservedUnitOfWork()
     uow.accepted_artist_names.records[composite] = accepted_name
-    usecase, predictor, provider = _usecase(uow)
+    usecase, provider = _usecase(uow)
 
     result = usecase.resolve_many((composite,))
 
     assert result[0].accepted_name == accepted_name
     assert result[0].provenance is ArtistNameResolutionProvenance.ACCEPTED_MUSICBRAINZ
-    assert predictor.calls == []
     assert provider.calls == []
     assert uow.transaction_entries == 1
 
@@ -181,39 +179,53 @@ def test_resolver_uses_accepted_cache_when_automatic_lookup_is_disabled() -> Non
     accepted_name = _accepted_name()
     uow = _ObservedUnitOfWork()
     uow.accepted_artist_names.records[SOURCE_NAME] = accepted_name
-    usecase, predictor, provider = _usecase(uow, automatic_lookup_enabled=False)
+    usecase, provider = _usecase(uow, automatic_lookup_enabled=False)
 
     resolution = usecase.resolve_many((SOURCE_NAME,))[0]
 
     assert resolution.accepted_name == accepted_name
     assert resolution.provenance is ArtistNameResolutionProvenance.ACCEPTED_MUSICBRAINZ
-    assert predictor.calls == []
     assert provider.calls == []
 
 
-def test_resolver_disables_uncached_automatic_lookup_before_model_work() -> None:
-    """Persisted opt-out preserves original metadata without model or provider I/O."""
+def test_resolver_keeps_user_mapping_for_latin_source() -> None:
+    """Explicit user edits remain authoritative even when romanization is unnecessary."""
+    source_name = "MOTTO MUSIC"
+    accepted_name = _user_mapping(source_name=source_name, resolved_name="Motto Music")
     uow = _ObservedUnitOfWork()
-    usecase, predictor, provider = _usecase(uow, automatic_lookup_enabled=False)
+    uow.accepted_artist_names.records[source_name] = accepted_name
+    usecase, provider = _usecase(uow)
+
+    resolution = usecase.resolve_many((source_name,))[0]
+
+    assert resolution.resolved_name == "Motto Music"
+    assert resolution.accepted_name == accepted_name
+    assert resolution.provenance is ArtistNameResolutionProvenance.USER_PREFERENCE
+    assert provider.calls == []
+
+
+def test_resolver_disables_uncached_automatic_lookup_before_provider_work() -> None:
+    """Persisted opt-out preserves original metadata without provider I/O."""
+    uow = _ObservedUnitOfWork()
+    usecase, provider = _usecase(uow, automatic_lookup_enabled=False)
 
     resolution = usecase.resolve_many((SOURCE_NAME,))[0]
 
     assert resolution.resolved_name == SOURCE_NAME
     assert resolution.issue is ArtistNameResolutionIssue.AUTOMATIC_LOOKUP_DISABLED
-    assert predictor.calls == []
     assert provider.calls == []
 
 
-def test_resolver_uses_configured_minimum_language_confidence() -> None:
-    """A configured confidence threshold controls provider eligibility."""
-    prediction = ArtistLanguagePrediction(label="__label__ja", confidence=0.89, available=True)
+@pytest.mark.parametrize("source_name", ["IOSYS", "MORE MORE JUMP!", "MOTTO MUSIC", "YOASOBI", "Beyoncé"])
+def test_resolver_preserves_latin_source_without_provider_work(source_name: str) -> None:
+    """Already-Latin names do not need MusicBrainz romanization."""
     uow = _ObservedUnitOfWork()
-    usecase, predictor, provider = _usecase(uow, prediction=prediction, minimum_confidence=0.9)
+    usecase, provider = _usecase(uow)
 
-    resolution = usecase.resolve_many((SOURCE_NAME,))[0]
+    resolution = usecase.resolve_many((source_name,))[0]
 
-    assert resolution.issue is ArtistNameResolutionIssue.LOW_LANGUAGE_CONFIDENCE
-    assert predictor.calls == [SOURCE_NAME]
+    assert resolution.resolved_name == source_name
+    assert resolution.issue is ArtistNameResolutionIssue.ROMANIZATION_NOT_REQUIRED
     assert provider.calls == []
 
 
@@ -222,13 +234,12 @@ def test_resolver_preserves_input_cardinality_and_deduplicates_source_key_io() -
     first_source = "\t宇多田  ヒカル\n"
     second_source = "宇多田 ヒカル"
     uow = _ObservedUnitOfWork()
-    usecase, predictor, provider = _usecase(uow)
+    usecase, provider = _usecase(uow)
 
     result = usecase.resolve_many((first_source, second_source))
 
     assert tuple(item.source_name for item in result) == (first_source, second_source)
     assert tuple(item.resolved_name for item in result) == (RESOLVED_NAME, RESOLVED_NAME)
-    assert predictor.calls == [second_source]
     assert provider.calls == [second_source]
     assert uow.usecase_scope_enter_count == 1
     assert uow.usecase_scope_exit_count == 1
@@ -236,67 +247,21 @@ def test_resolver_preserves_input_cardinality_and_deduplicates_source_key_io() -
     assert uow.commit_count == 1
 
 
-def test_resolver_applies_later_raw_preference_before_source_key_deduplication() -> None:
-    """Equivalent keys do not hide an exact preference on a later raw occurrence."""
-    first_source = "宇多田  ヒカル"
-    second_source = "宇多田 ヒカル"
-    uow = _ObservedUnitOfWork()
-    usecase, predictor, provider = _usecase(uow)
-
-    result = usecase.resolve_many(
-        (first_source, second_source),
-        preferences={second_source: "Manual Name"},
-    )
-
-    assert result[0].provenance is ArtistNameResolutionProvenance.NEW_MUSICBRAINZ
-    assert result[1].provenance is ArtistNameResolutionProvenance.USER_PREFERENCE
-    assert result[1].resolved_name == "Manual Name"
-    assert predictor.calls == [second_source]
-    assert provider.calls == [second_source]
-
-
 @pytest.mark.parametrize(
-    ("source_name", "prediction", "expected_issue"),
+    ("source_name", "expected_issue"),
     [
-        (None, JAPANESE_PREDICTION, ArtistNameResolutionIssue.MISSING_SOURCE),
-        (f"{SOURCE_NAME},{SECOND_SOURCE_NAME}", JAPANESE_PREDICTION, ArtistNameResolutionIssue.COMPOSITE_UNSUPPORTED),
-        ("Artist", JAPANESE_PREDICTION, ArtistNameResolutionIssue.NON_LATIN_REQUIRED),
-        ("A宇多田", JAPANESE_PREDICTION, ArtistNameResolutionIssue.NON_LATIN_REQUIRED),
-        (
-            SOURCE_NAME,
-            ArtistLanguagePrediction(label=None, confidence=None, available=False),
-            ArtistNameResolutionIssue.DETECTOR_UNAVAILABLE,
-        ),
-        (
-            SOURCE_NAME,
-            ArtistLanguagePrediction(label="__label__en", confidence=0.99, available=True),
-            ArtistNameResolutionIssue.NOT_JAPANESE,
-        ),
-        (
-            SOURCE_NAME,
-            ArtistLanguagePrediction(label="__label__ja", confidence=0.79, available=True),
-            ArtistNameResolutionIssue.LOW_LANGUAGE_CONFIDENCE,
-        ),
-        (
-            SOURCE_NAME,
-            ArtistLanguagePrediction(label="__label__ja", confidence=float("nan"), available=True),
-            ArtistNameResolutionIssue.LOW_LANGUAGE_CONFIDENCE,
-        ),
-        (
-            SOURCE_NAME,
-            ArtistLanguagePrediction(label="__label__ja", confidence=float("inf"), available=True),
-            ArtistNameResolutionIssue.LOW_LANGUAGE_CONFIDENCE,
-        ),
+        (None, ArtistNameResolutionIssue.MISSING_SOURCE),
+        (f"{SOURCE_NAME},{SECOND_SOURCE_NAME}", ArtistNameResolutionIssue.COMPOSITE_UNSUPPORTED),
+        ("!!!", ArtistNameResolutionIssue.ROMANIZATION_NOT_REQUIRED),
     ],
 )
 def test_resolver_reports_automatic_eligibility_issue(
     source_name: str | None,
-    prediction: ArtistLanguagePrediction,
     expected_issue: ArtistNameResolutionIssue,
 ) -> None:
     """Each rejected automatic gate preserves the exact original value."""
     uow = _ObservedUnitOfWork()
-    usecase, _predictor, provider = _usecase(uow, prediction=prediction)
+    usecase, provider = _usecase(uow)
 
     resolution = usecase.resolve_many((source_name,))[0]
 
@@ -304,6 +269,40 @@ def test_resolver_reports_automatic_eligibility_issue(
     assert resolution.provenance is ArtistNameResolutionProvenance.ORIGINAL
     assert resolution.issue is expected_issue
     assert provider.calls == []
+
+
+@pytest.mark.parametrize("source_name", [SOURCE_NAME, "아이유", "Молчат Дома", "Aimer 宇多田"])
+def test_resolver_looks_up_names_with_non_latin_letters(source_name: str) -> None:
+    """Any non-Latin alphabetic script may populate a Latin MusicBrainz mapping."""
+    uow = _ObservedUnitOfWork()
+    usecase, provider = _usecase(uow)
+
+    resolution = usecase.resolve_many((source_name,))[0]
+
+    assert resolution.resolved_name == RESOLVED_NAME
+    assert resolution.provenance is ArtistNameResolutionProvenance.NEW_MUSICBRAINZ
+    assert provider.calls == [source_name]
+
+
+def test_resolver_looks_up_short_kanji_without_language_detection() -> None:
+    """Short CJK names are eligible without a probabilistic language label."""
+    source_name = "秦谷美鈴"
+    candidate = _candidate(
+        name=source_name,
+        sort_name="Hataya, Misuzu",
+        aliases=(),
+    )
+    uow = _ObservedUnitOfWork()
+    usecase, provider = _usecase(
+        uow,
+        search_result=ArtistNameSearchResult(available=True, candidates=(candidate,)),
+    )
+
+    resolution = usecase.resolve_many((source_name,))[0]
+
+    assert resolution.resolved_name == "Hataya Misuzu"
+    assert resolution.issue is None
+    assert provider.calls == [source_name]
 
 
 @pytest.mark.parametrize(
@@ -333,7 +332,7 @@ def test_resolver_reports_provider_match_issue(
 ) -> None:
     """Unavailable, weak, missing, and inclusively close matches fall back safely."""
     uow = _ObservedUnitOfWork()
-    usecase, _predictor, _provider = _usecase(uow, search_result=search_result)
+    usecase, _provider = _usecase(uow, search_result=search_result)
 
     resolution = usecase.resolve_many((SOURCE_NAME,))[0]
 
@@ -349,29 +348,58 @@ def test_resolver_reports_provider_match_issue(
                 aliases=(
                     ArtistNameAliasCandidate(name="Zeta Name", locale="en", primary=True),
                     ArtistNameAliasCandidate(name="Alpha Name", locale="en", primary=False),
-                    ArtistNameAliasCandidate(name="Alpha Name", locale="en", primary=True),
-                    ArtistNameAliasCandidate(name="Earlier Other", locale="ja-Latn", primary=True),
+                    ArtistNameAliasCandidate(
+                        name="Ryuichi Sakamoto",
+                        locale="ja-Latn",
+                        sort_name="Sakamoto, Ryuichi",
+                        primary=True,
+                    ),
                 )
             ),
-            "Alpha Name",
-            SelectedArtistNameKind.ALIAS,
-            "en",
+            "Sakamoto Ryuichi",
+            SelectedArtistNameKind.ALIAS_SORT_NAME,
+            "ja-Latn",
+        ),
+        (
+            _candidate(
+                name="煮ル果実",
+                sort_name="Niru Kajitsu",
+                aliases=(ArtistNameAliasCandidate(name="NILFRUITS", locale="en", primary=True),),
+            ),
+            "Niru Kajitsu",
+            SelectedArtistNameKind.SORT_NAME,
+            None,
+        ),
+        (
+            _candidate(
+                name="宇多田ヒカル",
+                sort_name="Utada, Hikaru",
+                aliases=(ArtistNameAliasCandidate(name="Hikaru Utada", locale="en", primary=True),),
+            ),
+            "Utada Hikaru",
+            SelectedArtistNameKind.SORT_NAME,
+            None,
         ),
         (
             _candidate(
                 aliases=(
-                    ArtistNameAliasCandidate(name="Zeta Latin", locale="ja-Latn"),
-                    ArtistNameAliasCandidate(name="Álpha Latin", locale=None),
-                )
+                    ArtistNameAliasCandidate(
+                        name="Kenshi Yonezu",
+                        locale="JA_LATN",
+                        sort_name="Yonezu, Kenshi",
+                        primary=True,
+                    ),
+                    ArtistNameAliasCandidate(name="Yonezu Kenshi", locale="en", primary=True),
+                ),
             ),
-            "Zeta Latin",
-            SelectedArtistNameKind.ALIAS,
-            "ja-Latn",
+            "Yonezu Kenshi",
+            SelectedArtistNameKind.ALIAS_SORT_NAME,
+            "JA_LATN",
         ),
         (
-            _candidate(name="Beyoncé", aliases=()),
-            "Beyoncé",
-            SelectedArtistNameKind.NAME,
+            _candidate(name="秦谷美鈴", sort_name="Hataya, Misuzu", aliases=()),
+            "Hataya Misuzu",
+            SelectedArtistNameKind.SORT_NAME,
             None,
         ),
     ],
@@ -382,9 +410,9 @@ def test_resolver_selects_latin_name_by_deterministic_tiers(
     expected_kind: SelectedArtistNameKind,
     expected_locale: str | None,
 ) -> None:
-    """English, other-Latin, then canonical names use lexical alias ordering."""
+    """OMYM tiers use a primary ja-Latn alias, then the artist sort-name."""
     uow = _ObservedUnitOfWork()
-    usecase, _predictor, _provider = _usecase(
+    usecase, _provider = _usecase(
         uow,
         search_result=ArtistNameSearchResult(available=True, candidates=(candidate,)),
     )
@@ -397,23 +425,58 @@ def test_resolver_selects_latin_name_by_deterministic_tiers(
     assert resolution.accepted_name.selected_locale == expected_locale
 
 
+def test_resolver_rejects_aliases_and_canonical_name_without_omym_selection() -> None:
+    """English aliases and canonical names do not replace a missing OMYM sort-name."""
+    candidate = _candidate(
+        name="Beyoncé",
+        sort_name=None,
+        aliases=(ArtistNameAliasCandidate(name="NILFRUITS", locale="en", primary=True),),
+    )
+    uow = _ObservedUnitOfWork()
+    usecase, _provider = _usecase(
+        uow,
+        search_result=ArtistNameSearchResult(available=True, candidates=(candidate,)),
+    )
+
+    resolution = usecase.resolve_many((SOURCE_NAME,))[0]
+
+    assert resolution.resolved_name == SOURCE_NAME
+    assert resolution.accepted_name is None
+    assert resolution.provenance is ArtistNameResolutionProvenance.ORIGINAL
+    assert resolution.issue is ArtistNameResolutionIssue.NO_CONFIDENT_MATCH
+
+
 def test_resolver_coalesces_repeated_identity_independent_of_response_order() -> None:
     """Duplicate rows for one MBID merge alias facts without creating ambiguity."""
+    alias = ArtistNameAliasCandidate(
+        name="Ryuichi Sakamoto",
+        locale="ja-Latn",
+        sort_name="Sakamoto, Ryuichi",
+    )
     candidates = (
-        _candidate(aliases=(ArtistNameAliasCandidate(name="Zeta Name", locale="en"),)),
-        _candidate(aliases=(ArtistNameAliasCandidate(name="Alpha Name", locale="en"),)),
+        _candidate(aliases=(alias,)),
+        _candidate(
+            aliases=(
+                ArtistNameAliasCandidate(
+                    name=alias.name,
+                    locale=alias.locale,
+                    sort_name=alias.sort_name,
+                    primary=True,
+                ),
+            )
+        ),
     )
     resolved_names: list[str | None] = []
 
     for ordered_candidates in (candidates, tuple(reversed(candidates))):
         uow = _ObservedUnitOfWork()
-        usecase, _predictor, _provider = _usecase(
+        usecase, _provider = _usecase(
             uow,
             search_result=ArtistNameSearchResult(available=True, candidates=ordered_candidates),
         )
         resolved_names.append(usecase.resolve_many((SOURCE_NAME,))[0].resolved_name)
 
-    assert resolved_names == ["Alpha Name", "Alpha Name"]
+    assert resolved_names == ["Sakamoto Ryuichi", "Sakamoto Ryuichi"]
 
 
 def test_resolver_rereads_sticky_winner_after_insert_race() -> None:
@@ -421,7 +484,7 @@ def test_resolver_rereads_sticky_winner_after_insert_race() -> None:
     winner = _accepted_name(resolved_name="Sticky Winner")
     uow = _ObservedUnitOfWork()
     uow.accepted_artist_names = _RacingAcceptedNameRepository(winner)
-    usecase, _predictor, _provider = _usecase(uow)
+    usecase, _provider = _usecase(uow)
 
     resolution = usecase.resolve_many((SOURCE_NAME,))[0]
 
@@ -433,12 +496,9 @@ def test_resolver_rereads_sticky_winner_after_insert_race() -> None:
 def _usecase(
     uow: _ObservedUnitOfWork,
     *,
-    prediction: ArtistLanguagePrediction = JAPANESE_PREDICTION,
     search_result: ArtistNameSearchResult | None = None,
     automatic_lookup_enabled: bool = True,
-    minimum_confidence: float = ARTIST_NAME_LANGUAGE_CONFIDENCE_MIN,
-) -> tuple[ResolveArtistNamesUseCase, _Predictor, _Provider]:
-    predictor = _Predictor(prediction, uow, [])
+) -> tuple[ResolveArtistNamesUseCase, _Provider]:
     provider = _Provider(
         search_result or ArtistNameSearchResult(available=True, candidates=(_candidate(),)),
         uow,
@@ -447,11 +507,9 @@ def _usecase(
     usecase = ResolveArtistNamesUseCase(
         ResolveArtistNamesPorts(
             uow=uow,
-            language_predictor=predictor,
             artist_name_provider=provider,
             clock=FixedClock(BASE_TIME),
             automatic_lookup_enabled=automatic_lookup_enabled,
-            minimum_confidence=minimum_confidence,
         )
     )
-    return usecase, predictor, provider
+    return usecase, provider

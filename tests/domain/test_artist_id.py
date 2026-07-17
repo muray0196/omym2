@@ -68,3 +68,16 @@ class TestGenerateArtistId:
         assert abc_id == "ABC"
         assert all(char in abc_id for char in "ABC")
         assert len(abc_id) <= DEFAULT_ARTIST_ID_MAX_LENGTH
+
+    def test_generate_restores_vowels_without_dropping_prioritized_consonants(self) -> None:
+        """OMYM refill preserves selected consonants instead of taking word prefixes."""
+        assert generate_artist_id("Utada Hikaru") == "UTADHIKR"
+        assert generate_artist_id("Yonezu Kenshi") == "YONZKNSH"
+        assert generate_artist_id("Niru Kajitsu") == "NIRKAJTS"
+
+    def test_generate_folds_latin_diacritics_instead_of_dropping_letters(self) -> None:
+        """Accented Latin letters retain their ASCII base in generated IDs."""
+        assert generate_artist_id("Beyoncé") == "BEYONCE"
+        assert generate_artist_id("Mötley Crüe") == "MOTLYCRU"
+        assert generate_artist_id("Sigur Rós") == "SIGURROS"
+        assert generate_artist_id("A\u030angström") == "ANGSTROM"

@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 from omym2.adapters.cli.commands.add import run_add_command
 from omym2.adapters.cli.commands.apply import run_apply_command
-from omym2.adapters.cli.commands.artist_ids import run_artist_ids_command
 from omym2.adapters.cli.commands.check import run_check_command
 from omym2.adapters.cli.commands.config import run_config_command
 from omym2.adapters.cli.commands.history import run_history_command
@@ -29,7 +28,6 @@ if TYPE_CHECKING:
 
     from omym2.adapters.cli.commands.add import AddCommandDependencies
     from omym2.adapters.cli.commands.apply import ApplyCommandDependencies
-    from omym2.adapters.cli.commands.artist_ids import ArtistIdsCommandPorts
     from omym2.adapters.cli.commands.check import CheckCommandDependencies
     from omym2.adapters.cli.commands.organize import OrganizeCommandDependencies
     from omym2.adapters.cli.commands.refresh import RefreshCommandDependencies
@@ -41,7 +39,6 @@ if TYPE_CHECKING:
     from omym2.features.settings.ports import SettingsPorts
 
 ADD_COMMAND = "add"
-ARTIST_IDS_COMMAND = "artist-ids"
 APPLY_COMMAND = "apply"
 CHECK_COMMAND = "check"
 CONFIG_COMMAND = "config"
@@ -63,7 +60,6 @@ class CommandDependencies:
 
     add: AddCommandDependencies
     apply: ApplyCommandDependencies
-    artist_ids: ArtistIdsCommandPorts
     check: CheckCommandDependencies
     config: SettingsPorts
     history: HistoryPorts
@@ -93,7 +89,6 @@ def main(
     command, *command_args = args
     command_runners: dict[str, CommandCallback] = {
         ADD_COMMAND: lambda: run_add_command(command_args, output, error_output, dependencies.add),
-        ARTIST_IDS_COMMAND: lambda: run_artist_ids_command(command_args, output, error_output, dependencies.artist_ids),
         APPLY_COMMAND: lambda: run_apply_command(command_args, output, error_output, dependencies.apply),
         CHECK_COMMAND: lambda: run_check_command(command_args, output, error_output, dependencies.check),
         CONFIG_COMMAND: lambda: run_config_command(command_args, output, error_output, dependencies.config),

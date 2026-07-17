@@ -1,6 +1,6 @@
 """
-Summary: Tests accepted provider artist-name provenance.
-Why: Keeps sticky cache records complete and timezone-stable before persistence.
+Summary: Tests editable artist-name mapping provenance.
+Why: Keeps MusicBrainz and user mappings complete and timezone-stable before persistence.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import pytest
 from omym2.domain.models.accepted_artist_name import (
     EMPTY_ACCEPTED_ARTIST_NAME_FIELD_MESSAGE,
     INVALID_PROVIDER_ARTIST_ID_MESSAGE,
+    INVALID_PROVIDER_PROVENANCE_MESSAGE,
     INVALID_SELECTED_LOCALE_MESSAGE,
     AcceptedArtistName,
     ArtistNameProvider,
@@ -47,11 +48,33 @@ def test_accepted_artist_name_rejects_invalid_musicbrainz_identity() -> None:
         _ = replace(_accepted_name(), provider_artist_id="not-a-mbid")
 
 
-@pytest.mark.parametrize("field", ["source_key", "source_name", "resolved_name", "provider_artist_id"])
+@pytest.mark.parametrize("field", ["source_key", "source_name", "resolved_name"])
 def test_accepted_artist_name_rejects_blank_required_text(field: str) -> None:
     """Every lookup and provenance text field must contain visible text."""
     with pytest.raises(ValueError, match=EMPTY_ACCEPTED_ARTIST_NAME_FIELD_MESSAGE):
         _ = replace(_accepted_name(), **{field: "   "})
+
+
+def test_user_artist_name_mapping_has_no_provider_provenance() -> None:
+    """A manual correction is represented in the same mapping without fake MusicBrainz data."""
+    mapping = AcceptedArtistName(
+        source_key=SOURCE_NAME,
+        source_name=SOURCE_NAME,
+        resolved_name=RESOLVED_NAME,
+        provider=ArtistNameProvider.USER,
+        provider_artist_id=None,
+        selected_name_kind=None,
+        selected_locale=None,
+        accepted_at=datetime(2026, 7, 15, 11, tzinfo=UTC),
+    )
+
+    assert mapping.provider is ArtistNameProvider.USER
+
+
+def test_user_artist_name_mapping_rejects_provider_provenance() -> None:
+    """Manual mappings cannot pretend to carry MusicBrainz evidence."""
+    with pytest.raises(ValueError, match=INVALID_PROVIDER_PROVENANCE_MESSAGE):
+        _ = replace(_accepted_name(), provider=ArtistNameProvider.USER)
 
 
 @pytest.mark.parametrize(
@@ -69,6 +92,17 @@ def test_accepted_artist_name_rejects_invalid_locale_provenance(
             selected_name_kind=selected_name_kind,
             selected_locale=selected_locale,
         )
+
+
+def test_alias_sort_name_accepts_alias_locale_provenance() -> None:
+    """Alias sort-name provenance retains the locale that selected the alias."""
+    accepted_name = replace(
+        _accepted_name(),
+        selected_name_kind=SelectedArtistNameKind.ALIAS_SORT_NAME,
+        selected_locale="ja-Latn",
+    )
+
+    assert accepted_name.selected_locale == "ja-Latn"
 
 
 def _accepted_name(*, accepted_at: datetime | None = None) -> AcceptedArtistName:

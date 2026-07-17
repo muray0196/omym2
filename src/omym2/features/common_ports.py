@@ -183,7 +183,7 @@ class CheckRunRepository(Protocol):
 
 
 class AcceptedArtistNameRepository(Protocol):
-    """Persistence contract for sticky accepted provider artist names."""
+    """Persistence contract for editable original-to-English artist-name mappings."""
 
     def find_by_source_key(self, source_key: str) -> AcceptedArtistName | None:
         """Return the accepted name for one already-derived source key, if any."""
@@ -193,6 +193,18 @@ class AcceptedArtistNameRepository(Protocol):
         """Insert one accepted name without replacing an existing sticky result."""
         ...
 
+    def list_all(self) -> tuple[AcceptedArtistName, ...]:
+        """Return every mapping in deterministic source-key order."""
+        ...
+
+    def save(self, accepted_name: AcceptedArtistName) -> None:
+        """Insert or replace one user-edited mapping."""
+        ...
+
+    def delete_by_source_key(self, source_key: str) -> None:
+        """Delete one mapping by its already-derived source key."""
+        ...
+
 
 class ArtistNameResolutionReader(Protocol):
     """Resolve artist display names through the shared naming feature."""
@@ -200,8 +212,6 @@ class ArtistNameResolutionReader(Protocol):
     def resolve_many(
         self,
         source_names: Sequence[str | None],
-        *,
-        preferences: Mapping[str, str] | None = None,
     ) -> tuple[ArtistNameResolution, ...]:
         """Resolve one ordered batch without changing source metadata."""
         ...

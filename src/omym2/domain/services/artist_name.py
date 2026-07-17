@@ -8,7 +8,6 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass
 from itertools import batched
-from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from omym2.domain.models.artist_name_resolution import (
@@ -18,7 +17,7 @@ from omym2.domain.models.artist_name_resolution import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from omym2.domain.models.track_metadata import TrackMetadata
 
@@ -36,38 +35,23 @@ def derive_artist_name_source_key(source_name: str | None) -> str | None:
     return source_key or None
 
 
+def is_usable_english_artist_name(name: str) -> bool:
+    """Return whether text contains only Latin-script alphabetic characters."""
+    alphabetic = tuple(character for character in name if character.isalpha())
+    return bool(alphabetic) and all("LATIN" in unicodedata.name(character, "") for character in alphabetic)
+
+
+def contains_non_latin_artist_name_letters(name: str) -> bool:
+    """Return whether a source name contains an alphabetic character outside Latin script."""
+    return any("LATIN" not in unicodedata.name(character, "") for character in name if character.isalpha())
+
+
 @dataclass(frozen=True, slots=True)
 class ArtistNameProjection:
-    """Artist fields after exact preference lookup."""
+    """Artist fields after shared mapping resolution."""
 
     artist: str | None
     album_artist: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class ArtistNameProjector:
-    """Apply immutable exact-match display preferences to raw artist text."""
-
-    preferences: Mapping[str, str] | None = None
-
-    def __post_init__(self) -> None:
-        """Freeze the preference snapshot used for deterministic projection."""
-        object.__setattr__(self, "preferences", MappingProxyType(dict(self.preferences or {})))
-
-    def project(self, metadata: TrackMetadata) -> ArtistNameProjection:
-        """Return display artist values without modifying raw metadata."""
-        return ArtistNameProjection(
-            artist=self._preferred_name(metadata.artist),
-            album_artist=self._preferred_name(metadata.album_artist),
-        )
-
-    def _preferred_name(self, source_name: str | None) -> str | None:
-        if source_name is None:
-            return None
-        preferences = self.preferences
-        if preferences is None:
-            return source_name
-        return preferences.get(source_name, source_name)
 
 
 def artist_name_sources(metadata_batch: Sequence[TrackMetadata]) -> tuple[str | None, ...]:

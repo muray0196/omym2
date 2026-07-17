@@ -33,14 +33,15 @@ from omym2.domain.models.plan import PlanStatus
 from omym2.features.add.usecases.create_add_plan import CreateAddPlanUseCase
 from omym2.features.apply.dto import ApplyOptions, ApplyPlanRequest
 from omym2.features.apply.usecases.apply_plan import ApplyPlanUseCase
-from omym2.features.artist_ids.usecases.generate_artist_id_draft import GenerateArtistIdDraftUseCase
+from omym2.features.artist_names.usecases.get_artist_name_mappings import GetArtistNameMappingsUseCase
+from omym2.features.artist_names.usecases.save_artist_name_mappings import SaveArtistNameMappingsUseCase
 from omym2.features.bootstrap.ports import BootstrapPorts
 from omym2.features.bootstrap.usecases.get_bootstrap import GetBootstrapUseCase
 from omym2.features.check.usecases.check_library import CheckLibraryUseCase
 from omym2.features.check.usecases.get_check_issue_facets import GetCheckIssueFacetsUseCase
 from omym2.features.check.usecases.group_check_issues import GroupCheckIssuesUseCase
 from omym2.features.check.usecases.list_check_issues import ListCheckIssuesUseCase
-from omym2.features.common_ports import ExclusiveOperationBusyError
+from omym2.features.common_ports import ExclusiveOperationBusyError, SystemClock
 from omym2.features.history.usecases.get_file_event_status_facets import GetFileEventStatusFacetsUseCase
 from omym2.features.history.usecases.get_run_detail import GetRunDetailUseCase
 from omym2.features.history.usecases.get_run_status_facets import GetRunStatusFacetsUseCase
@@ -100,12 +101,13 @@ if TYPE_CHECKING:
 
     from omym2.domain.models.plan import Plan
     from omym2.features.add.dto import CreateAddPlanRequest
+    from omym2.features.artist_names.dto import ArtistNameMappingsResult, SaveArtistNameMappingsRequest
     from omym2.features.check.dto import CheckLibraryRequest
     from omym2.features.operations.dto import ReserveOperationResult
     from omym2.features.organize.dto import CreateOrganizePlanRequest, OrganizeLibraryResult
     from omym2.features.plans.dto import CancelPlanRequest
     from omym2.features.refresh.dto import CreateRefreshPlanRequest
-    from omym2.features.settings.dto import SaveSettingsRequest, SettingsCandidateResult
+    from omym2.features.settings.dto import SaveSettingsRequest, SettingsCandidateResult, SettingsEditResult
     from omym2.features.undo.dto import CreateUndoPlanRequest
     from omym2.platform.runtime_context import RuntimeContext
     from omym2.shared.ids import OperationId, PlanId
@@ -185,11 +187,11 @@ def build_api_route_context(config_path: Path | None = None, database_path: Path
             ),
         ),
         settings=SettingsRouteContext(
-            get_settings=GetSettingsEditUseCase(build_settings_ports(runtime)).execute,
+            get_settings=lambda: _get_settings(runtime),
             validate_settings=ValidateSettingsCandidateUseCase(build_settings_ports(runtime)).execute,
-            preview_path_policy=PreviewPathPolicyUseCase().execute,
+            preview_path_policy=PreviewPathPolicyUseCase(build_settings_ports(runtime).artist_name_resolver).execute,
             save_settings=lambda request: _save_settings(runtime, operation_runtime, request),
-            generate_artist_id_draft=GenerateArtistIdDraftUseCase().execute,
+            save_artist_name_mappings=lambda request: _save_artist_name_mappings(runtime, operation_runtime, request),
         ),
         operations=OperationsRouteContext(
             get_operation=operation_runtime.get,
@@ -226,6 +228,24 @@ def _save_settings(
     return operations.execute_exclusive(
         "save_settings",
         lambda: SaveSettingsCandidateUseCase(build_settings_ports(runtime)).execute(request),
+    )
+
+
+def _get_settings(runtime: RuntimeContext) -> tuple[SettingsEditResult, ArtistNameMappingsResult]:
+    return (
+        GetSettingsEditUseCase(build_settings_ports(runtime)).execute(),
+        GetArtistNameMappingsUseCase(build_uow(runtime)).execute(),
+    )
+
+
+def _save_artist_name_mappings(
+    runtime: RuntimeContext,
+    operations: OperationRuntime,
+    request: SaveArtistNameMappingsRequest,
+) -> ArtistNameMappingsResult:
+    return operations.execute_exclusive(
+        "save_artist_name_mappings",
+        lambda: SaveArtistNameMappingsUseCase(build_uow(runtime), SystemClock()).execute(request),
     )
 
 

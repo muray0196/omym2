@@ -121,11 +121,10 @@ def test_runtime_context_for_constructs_one_shared_config_store_and_metadata_rea
 
 
 def test_runtime_context_for_constructs_one_persisted_artist_name_runtime(tmp_path: Path) -> None:
-    """Composition owns one reusable model/provider cache keyed by persisted controls."""
+    """Composition owns one reusable provider runtime."""
     database_path = tmp_path / "omym2.sqlite3"
 
     runtime = runtime_context_for(tmp_path / "config.toml", database_path)
 
     assert isinstance(runtime.artist_name_runtime, ArtistNameRuntime)
     assert runtime.artist_name_runtime.database_file == database_path
-    assert runtime.artist_name_runtime.application_root == tmp_path

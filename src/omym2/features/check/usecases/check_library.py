@@ -79,7 +79,6 @@ class CheckLibraryUseCase:
             config.path_policy,
             config.artist_ids,
             config.metadata.album_year_resolution,
-            config.artist_names,
         )
         checked_at = self.ports.clock.now()
         snapshot_memo = _SnapshotMemo(self.ports.file_snapshot_reader)

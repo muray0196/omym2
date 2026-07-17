@@ -118,7 +118,6 @@ class CreateAddPlanUseCase:
             config.path_policy,
             config.artist_ids,
             config.metadata.album_year_resolution,
-            config.artist_names,
         )
         path_policy = PathPolicy.from_app_config(config)
         timestamp = self.ports.clock.now()
@@ -368,10 +367,7 @@ class CreateAddPlanUseCase:
             if candidate.snapshot is not None and candidate.reason is None
         )
         metadata_batch = active_library_metadata + candidate_metadata
-        resolutions = self.ports.artist_name_resolver.resolve_many(
-            artist_name_sources(candidate_metadata),
-            preferences=config.artist_names.preferences,
-        )
+        resolutions = self.ports.artist_name_resolver.resolve_many(artist_name_sources(candidate_metadata))
         projections = iter(
             artist_name_projections(candidate_metadata, tuple(resolution.resolved_name for resolution in resolutions))
         )

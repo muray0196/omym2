@@ -71,6 +71,9 @@ ACCEPTED_ARTIST_SOURCE_NAME = "宇多田ヒカル"
 ACCEPTED_ARTIST_RESOLVED_NAME = "Hikaru Utada"
 MUSICBRAINZ_ARTIST_ID = "db2f4f3a-f0c2-4c96-bea3-636f4b44f57b"
 BASELINE_MIGRATION_NAME = "202607160001_baseline.sql"
+EDITABLE_ARTIST_NAMES_MIGRATION_NAME = "202607170001_editable_artist_name_mappings.sql"
+ARTIST_SORT_NAME_MIGRATION_NAME = "202607170002_artist_sort_name_mapping.sql"
+ARTIST_ALIAS_SORT_NAME_MIGRATION_NAME = "202607170003_artist_alias_sort_name_provenance.sql"
 CHECK_ISSUE_COUNT = 1
 CHECK_RUN_ID = CheckRunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345684"))
 COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345689"))
@@ -169,11 +172,16 @@ UNDO_PROVENANCE_INDEX_FLAGS = {
 }
 
 
-def test_packaged_migrations_are_one_clean_baseline() -> None:
-    """Pre-release migration history is replaced by one current schema baseline."""
+def test_packaged_migrations_keep_artist_name_rebuilds_after_baseline() -> None:
+    """Artist-name forward migrations remain strictly ordered after the baseline."""
     migrations = migration_runner.load_packaged_migrations()
 
-    assert tuple(migration.name for migration in migrations) == (BASELINE_MIGRATION_NAME,)
+    assert tuple(migration.name for migration in migrations) == (
+        BASELINE_MIGRATION_NAME,
+        EDITABLE_ARTIST_NAMES_MIGRATION_NAME,
+        ARTIST_SORT_NAME_MIGRATION_NAME,
+        ARTIST_ALIAS_SORT_NAME_MIGRATION_NAME,
+    )
     assert "ALTER TABLE" not in migrations[0].sql.upper()
 
 
@@ -184,7 +192,116 @@ def test_sqlite_baseline_creates_exact_table_set(tmp_path: Path) -> None:
     migrate_database(database_file)
 
     assert _table_names(database_file) == REQUIRED_TABLES
-    assert _applied_migrations(database_file) == {BASELINE_MIGRATION_NAME}
+    assert _applied_migrations(database_file) == {
+        BASELINE_MIGRATION_NAME,
+        EDITABLE_ARTIST_NAMES_MIGRATION_NAME,
+        ARTIST_SORT_NAME_MIGRATION_NAME,
+        ARTIST_ALIAS_SORT_NAME_MIGRATION_NAME,
+    }
+
+
+def test_editable_artist_name_migration_preserves_automatic_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The forward table rebuild retains every existing MusicBrainz mapping."""
+    database_file = default_application_paths(tmp_path).database_file
+    migrations = migration_runner.load_packaged_migrations()
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations[:1])
+    migrate_database(database_file)
+    accepted_name = _accepted_artist_name()
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute(
+            """
+            INSERT INTO accepted_artist_names (
+                source_key, source_name, resolved_name, provider,
+                provider_artist_id, selected_name_kind, selected_locale, accepted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                accepted_name.source_key,
+                accepted_name.source_name,
+                accepted_name.resolved_name,
+                accepted_name.provider.value,
+                accepted_name.provider_artist_id,
+                SelectedArtistNameKind.ALIAS.value,
+                accepted_name.selected_locale,
+                accepted_name.accepted_at.isoformat(),
+            ),
+        )
+
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations[:3])
+    migrate_database(database_file)
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.list_all() == (accepted_name,)
+
+
+def test_artist_sort_name_migration_preserves_rows_and_round_trips_new_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The forward rebuild preserves prior rows and accepts sort-name provenance."""
+    database_file = default_application_paths(tmp_path).database_file
+    migrations = migration_runner.load_packaged_migrations()
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations[:2])
+    migrate_database(database_file)
+    accepted_name = _accepted_artist_name()
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.insert_if_absent(accepted_name)
+        uow.commit()
+
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations)
+    migrate_database(database_file)
+    sort_name = replace(
+        accepted_name,
+        source_key="秦谷美鈴",
+        source_name="秦谷美鈴",
+        resolved_name="Hataya Misuzu",
+        selected_name_kind=SelectedArtistNameKind.SORT_NAME,
+        selected_locale=None,
+    )
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.list_all() == (accepted_name,)
+        assert uow.accepted_artist_names.insert_if_absent(sort_name)
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.list_all() == (accepted_name, sort_name)
+
+
+def test_alias_sort_name_migration_preserves_rows_and_round_trips_new_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The forward rebuild preserves rows and accepts alias sort-name provenance."""
+    database_file = default_application_paths(tmp_path).database_file
+    migrations = migration_runner.load_packaged_migrations()
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations[:3])
+    migrate_database(database_file)
+    accepted_name = _accepted_artist_name()
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.insert_if_absent(accepted_name)
+        uow.commit()
+
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations)
+    migrate_database(database_file)
+    alias_sort_name = replace(
+        accepted_name,
+        source_key="坂本龍一",
+        source_name="坂本龍一",
+        resolved_name="Sakamoto Ryuichi",
+        selected_name_kind=SelectedArtistNameKind.ALIAS_SORT_NAME,
+        selected_locale="ja-Latn",
+    )
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.list_all() == (accepted_name,)
+        assert uow.accepted_artist_names.insert_if_absent(alias_sort_name)
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.list_all() == (alias_sort_name, accepted_name)
 
 
 def test_pre_release_database_requires_explicit_reset(tmp_path: Path) -> None:
@@ -452,15 +569,43 @@ def test_sqlite_accepted_artist_names_allow_multiple_sources_for_one_provider_id
         assert uow.accepted_artist_names.find_by_source_key(second.source_key) == second
 
 
+def test_sqlite_artist_name_mappings_support_user_edit_list_and_delete(tmp_path: Path) -> None:
+    """The migrated table is the one editable mapping store for automatic and manual rows."""
+    database_file = default_application_paths(tmp_path).database_file
+    automatic = _accepted_artist_name()
+    manual = replace(
+        automatic,
+        resolved_name="Utada Hikaru",
+        provider=ArtistNameProvider.USER,
+        provider_artist_id=None,
+        selected_name_kind=None,
+        selected_locale=None,
+    )
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.insert_if_absent(automatic)
+        uow.accepted_artist_names.save(manual)
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.list_all() == (manual,)
+        uow.accepted_artist_names.delete_by_source_key(manual.source_key)
+        uow.commit()
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.list_all() == ()
+
+
 @pytest.mark.parametrize(
     ("provider", "selected_name_kind", "selected_locale"),
     [
         ("other", "alias", "en"),
+        ("user", "alias", "en"),
         ("musicbrainz", "unsupported", None),
-        ("musicbrainz", "sort_name", None),
+        ("musicbrainz", "sort_name", "en"),
         ("musicbrainz", "name", "en"),
     ],
-    ids=["provider", "selection-kind", "sort-name", "non-alias-locale"],
+    ids=["provider", "user-provenance", "selection-kind", "sort-name-locale", "non-alias-locale"],
 )
 def test_sqlite_accepted_artist_name_schema_rejects_invalid_provenance(
     tmp_path: Path,

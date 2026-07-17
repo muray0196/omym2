@@ -38,10 +38,10 @@ export type AddPlanRequest = {
 };
 
 /**
- * ApiEnvelope[ArtistIdDraftData]
+ * ApiEnvelope[ArtistNameMappingsData]
  */
-export type ApiEnvelopeArtistIdDraftData = {
-    data: ArtistIdDraftData | null;
+export type ApiEnvelopeArtistNameMappingsData = {
+    data: ArtistNameMappingsData | null;
     /**
      * Errors
      */
@@ -364,7 +364,7 @@ export type ApiError = {
  *
  * Closed top-level Web API error catalog.
  */
-export type ApiErrorCode = 'invalid_json' | 'csrf_invalid' | 'api_not_found' | 'library_not_found' | 'track_not_found' | 'plan_not_found' | 'run_not_found' | 'operation_not_found' | 'method_not_allowed' | 'config_invalid' | 'config_changed' | 'operation_in_progress' | 'idempotency_key_reused' | 'library_selection_ambiguous' | 'library_unregistered' | 'library_stale' | 'library_blocked' | 'plan_not_ready' | 'library_root_changed' | 'run_not_terminal' | 'nothing_to_undo' | 'undo_refresh_metadata_unsupported' | 'already_undone_or_in_progress' | 'pending_file_event_requires_review' | 'operation_expired' | 'validation_failed' | 'storage_unavailable' | 'config_io_failed' | 'internal_error' | 'operation_interrupted' | 'metadata_read_failed' | 'operation_failed';
+export type ApiErrorCode = 'invalid_json' | 'csrf_invalid' | 'api_not_found' | 'library_not_found' | 'track_not_found' | 'plan_not_found' | 'run_not_found' | 'operation_not_found' | 'method_not_allowed' | 'config_invalid' | 'config_changed' | 'artist_name_mappings_changed' | 'operation_in_progress' | 'idempotency_key_reused' | 'library_selection_ambiguous' | 'library_unregistered' | 'library_stale' | 'library_blocked' | 'plan_not_ready' | 'library_root_changed' | 'run_not_terminal' | 'nothing_to_undo' | 'undo_refresh_metadata_unsupported' | 'already_undone_or_in_progress' | 'pending_file_event_requires_review' | 'operation_expired' | 'validation_failed' | 'storage_unavailable' | 'config_io_failed' | 'internal_error' | 'operation_interrupted' | 'metadata_read_failed' | 'operation_failed';
 
 /**
  * ApiFailureEnvelope
@@ -410,10 +410,8 @@ export type ApiRemediation = {
 export type AppConfigResource = {
     add: CommandConfigResource;
     artist_ids: ArtistIdConfigResource;
-    artist_names: ArtistNameConfigResource;
     collision: CollisionConfigResource;
     companions: CompanionsConfigResource;
-    fasttext: FastTextConfigResource;
     hashing: HashingConfigResource;
     logging: LoggingConfigResource;
     metadata: MetadataConfigResource;
@@ -432,15 +430,9 @@ export type AppConfigResource = {
 /**
  * ArtistIdConfigResource
  *
- * Editable artist-ID generation settings and entries.
+ * Tunables for automatic internal artist-ID generation.
  */
 export type ArtistIdConfigResource = {
-    /**
-     * Entries
-     */
-    entries: {
-        [key: string]: string;
-    };
     /**
      * Fallback Id
      */
@@ -452,73 +444,6 @@ export type ArtistIdConfigResource = {
 };
 
 /**
- * ArtistIdDraftData
- *
- * Generated entries for merging into the local form draft.
- */
-export type ArtistIdDraftData = {
-    /**
-     * Entries
-     */
-    entries: Array<ArtistIdDraftEntry>;
-};
-
-/**
- * ArtistIdDraftEntry
- *
- * One generated or preserved artist-ID draft entry.
- */
-export type ArtistIdDraftEntry = {
-    /**
-     * Artist Id
-     */
-    artist_id: string;
-    /**
-     * Generation Artist
-     */
-    generation_artist: string;
-    /**
-     * Overwritten
-     */
-    overwritten: boolean;
-    /**
-     * Source Artist
-     */
-    source_artist: string;
-};
-
-/**
- * ArtistIdDraftRequest
- *
- * Draft-only artist-ID generation input.
- */
-export type ArtistIdDraftRequest = {
-    artist_ids: ArtistIdConfigResource;
-    /**
-     * Artist Names
-     */
-    artist_names: Array<string>;
-    /**
-     * Overwrite
-     */
-    overwrite: boolean;
-};
-
-/**
- * ArtistNameConfigResource
- *
- * Editable full artist display-name preferences.
- */
-export type ArtistNameConfigResource = {
-    /**
-     * Preferences
-     */
-    preferences: {
-        [key: string]: string;
-    };
-};
-
-/**
  * ArtistNameDiagnosticsResource
  *
  * Artist and album-artist naming evidence recorded for one action.
@@ -527,6 +452,51 @@ export type ArtistNameDiagnosticsResource = {
     album_artist: ArtistNameResolutionDiagnosticResource;
     artist: ArtistNameResolutionDiagnosticResource;
 };
+
+/**
+ * ArtistNameMappingEntry
+ *
+ * One editable original-to-English artist-name mapping.
+ */
+export type ArtistNameMappingEntry = {
+    /**
+     * English Name
+     */
+    english_name: string;
+    /**
+     * Selected Locale
+     */
+    selected_locale: string | null;
+    selected_name_kind: SelectedArtistNameKind | null;
+    source: ArtistNameProvider;
+    /**
+     * Source Name
+     */
+    source_name: string;
+};
+
+/**
+ * ArtistNameMappingsData
+ *
+ * Revisioned complete artist-name mapping snapshot.
+ */
+export type ArtistNameMappingsData = {
+    /**
+     * Entries
+     */
+    entries: Array<ArtistNameMappingEntry>;
+    /**
+     * Revision
+     */
+    revision: string;
+};
+
+/**
+ * ArtistNameProvider
+ *
+ * Source that last supplied an editable artist-name mapping.
+ */
+export type ArtistNameProvider = 'musicbrainz' | 'user';
 
 /**
  * ArtistNameResolutionDiagnosticResource
@@ -551,7 +521,7 @@ export type ArtistNameResolutionDiagnosticResource = {
  *
  * Reason automatic artist-name resolution preserved the original value.
  */
-export type ArtistNameResolutionIssue = 'missing_source' | 'composite_unsupported' | 'non_latin_required' | 'automatic_lookup_disabled' | 'detector_unavailable' | 'not_japanese' | 'low_language_confidence' | 'provider_unavailable' | 'no_confident_match' | 'ambiguous_match';
+export type ArtistNameResolutionIssue = 'missing_source' | 'composite_unsupported' | 'automatic_lookup_disabled' | 'romanization_not_required' | 'provider_unavailable' | 'no_confident_match' | 'ambiguous_match';
 
 /**
  * ArtistNameResolutionProvenance
@@ -863,22 +833,6 @@ export type FacetValueResourceRunStatus = {
 export type FacetValueResourceTrackStatus = {
     count: NonNegativeCount;
     value: TrackStatus;
-};
-
-/**
- * FastTextConfigResource
- *
- * Persisted fastText model and confidence controls.
- */
-export type FastTextConfigResource = {
-    /**
-     * Minimum Confidence
-     */
-    minimum_confidence: number;
-    /**
-     * Model Path
-     */
-    model_path: string | null;
 };
 
 /**
@@ -1411,7 +1365,6 @@ export type PathPreview = {
  */
 export type PathPreviewRequest = {
     artist_ids: ArtistIdConfigResource;
-    artist_names: ArtistNameConfigResource;
     /**
      * File Extension
      */
@@ -1909,6 +1862,31 @@ export type RuntimeCapabilities = {
 };
 
 /**
+ * SaveArtistNameMappingsRequestResource
+ *
+ * Complete mapping candidate tied to the snapshot the user edited.
+ */
+export type SaveArtistNameMappingsRequestResource = {
+    /**
+     * Entries
+     */
+    entries: {
+        [key: string]: string;
+    };
+    /**
+     * Expected Revision
+     */
+    expected_revision: string;
+};
+
+/**
+ * SelectedArtistNameKind
+ *
+ * MusicBrainz field that supplied the accepted artist name.
+ */
+export type SelectedArtistNameKind = 'alias' | 'alias_sort_name' | 'name' | 'sort_name';
+
+/**
  * SettingsCandidateData
  *
  * Validation or save result for one Settings candidate.
@@ -2018,6 +1996,7 @@ export type SettingsChoices = {
  * Current recovery-capable Settings edit state.
  */
 export type SettingsData = {
+    artist_name_mappings: ArtistNameMappingsData;
     choices: SettingsChoices;
     config: AppConfigResource;
     /**
@@ -3574,14 +3553,28 @@ export type SaveSettingsResponses = {
 
 export type SaveSettingsResponse = SaveSettingsResponses[keyof SaveSettingsResponses];
 
-export type GenerateArtistIdDraftData = {
-    body: ArtistIdDraftRequest;
+export type SaveArtistNameMappingsData = {
+    body: SaveArtistNameMappingsRequestResource;
+    headers: {
+        /**
+         * X-Omym2-Csrf-Token
+         */
+        'X-OMYM2-CSRF-Token': string;
+    };
     path?: never;
     query?: never;
-    url: '/api/settings/artist-ids/generate';
+    url: '/api/settings/artist-names';
 };
 
-export type GenerateArtistIdDraftErrors = {
+export type SaveArtistNameMappingsErrors = {
+    /**
+     * Forbidden
+     */
+    403: ApiFailureEnvelope;
+    /**
+     * Conflict
+     */
+    409: ApiFailureEnvelope;
     /**
      * Unprocessable Content
      */
@@ -3592,16 +3585,16 @@ export type GenerateArtistIdDraftErrors = {
     500: ApiFailureEnvelope;
 };
 
-export type GenerateArtistIdDraftError = GenerateArtistIdDraftErrors[keyof GenerateArtistIdDraftErrors];
+export type SaveArtistNameMappingsError = SaveArtistNameMappingsErrors[keyof SaveArtistNameMappingsErrors];
 
-export type GenerateArtistIdDraftResponses = {
+export type SaveArtistNameMappingsResponses = {
     /**
      * Successful Response
      */
-    200: ApiEnvelopeArtistIdDraftData;
+    200: ApiEnvelopeArtistNameMappingsData;
 };
 
-export type GenerateArtistIdDraftResponse = GenerateArtistIdDraftResponses[keyof GenerateArtistIdDraftResponses];
+export type SaveArtistNameMappingsResponse = SaveArtistNameMappingsResponses[keyof SaveArtistNameMappingsResponses];
 
 export type PreviewSettingsPathData = {
     body: PathPreviewRequest;

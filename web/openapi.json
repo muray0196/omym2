@@ -56,13 +56,13 @@
         "title": "AddPlanRequest",
         "type": "object"
       },
-      "ApiEnvelope_ArtistIdDraftData_": {
+      "ApiEnvelope_ArtistNameMappingsData_": {
         "additionalProperties": false,
         "properties": {
           "data": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ArtistIdDraftData"
+                "$ref": "#/components/schemas/ArtistNameMappingsData"
               },
               {
                 "type": "null"
@@ -81,7 +81,7 @@
           "data",
           "errors"
         ],
-        "title": "ApiEnvelope[ArtistIdDraftData]",
+        "title": "ApiEnvelope[ArtistNameMappingsData]",
         "type": "object"
       },
       "ApiEnvelope_BootstrapData_": {
@@ -858,6 +858,7 @@
           "method_not_allowed",
           "config_invalid",
           "config_changed",
+          "artist_name_mappings_changed",
           "operation_in_progress",
           "idempotency_key_reused",
           "library_selection_ambiguous",
@@ -940,17 +941,11 @@
           "artist_ids": {
             "$ref": "#/components/schemas/ArtistIdConfigResource"
           },
-          "artist_names": {
-            "$ref": "#/components/schemas/ArtistNameConfigResource"
-          },
           "collision": {
             "$ref": "#/components/schemas/CollisionConfigResource"
           },
           "companions": {
             "$ref": "#/components/schemas/CompanionsConfigResource"
-          },
-          "fasttext": {
-            "$ref": "#/components/schemas/FastTextConfigResource"
           },
           "hashing": {
             "$ref": "#/components/schemas/HashingConfigResource"
@@ -992,11 +987,9 @@
           "refresh",
           "path_policy",
           "artist_ids",
-          "artist_names",
           "metadata",
           "collision",
           "musicbrainz",
-          "fasttext",
           "hashing",
           "logging",
           "companions",
@@ -1007,15 +1000,8 @@
       },
       "ArtistIdConfigResource": {
         "additionalProperties": false,
-        "description": "Editable artist-ID generation settings and entries.",
+        "description": "Tunables for automatic internal artist-ID generation.",
         "properties": {
-          "entries": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Entries",
-            "type": "object"
-          },
           "fallback_id": {
             "title": "Fallback Id",
             "type": "string"
@@ -1027,103 +1013,9 @@
         },
         "required": [
           "max_length",
-          "fallback_id",
-          "entries"
+          "fallback_id"
         ],
         "title": "ArtistIdConfigResource",
-        "type": "object"
-      },
-      "ArtistIdDraftData": {
-        "additionalProperties": false,
-        "description": "Generated entries for merging into the local form draft.",
-        "properties": {
-          "entries": {
-            "items": {
-              "$ref": "#/components/schemas/ArtistIdDraftEntry"
-            },
-            "title": "Entries",
-            "type": "array"
-          }
-        },
-        "required": [
-          "entries"
-        ],
-        "title": "ArtistIdDraftData",
-        "type": "object"
-      },
-      "ArtistIdDraftEntry": {
-        "additionalProperties": false,
-        "description": "One generated or preserved artist-ID draft entry.",
-        "properties": {
-          "artist_id": {
-            "title": "Artist Id",
-            "type": "string"
-          },
-          "generation_artist": {
-            "title": "Generation Artist",
-            "type": "string"
-          },
-          "overwritten": {
-            "title": "Overwritten",
-            "type": "boolean"
-          },
-          "source_artist": {
-            "title": "Source Artist",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source_artist",
-          "generation_artist",
-          "artist_id",
-          "overwritten"
-        ],
-        "title": "ArtistIdDraftEntry",
-        "type": "object"
-      },
-      "ArtistIdDraftRequest": {
-        "additionalProperties": false,
-        "description": "Draft-only artist-ID generation input.",
-        "properties": {
-          "artist_ids": {
-            "$ref": "#/components/schemas/ArtistIdConfigResource"
-          },
-          "artist_names": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Artist Names",
-            "type": "array"
-          },
-          "overwrite": {
-            "title": "Overwrite",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "artist_names",
-          "overwrite",
-          "artist_ids"
-        ],
-        "title": "ArtistIdDraftRequest",
-        "type": "object"
-      },
-      "ArtistNameConfigResource": {
-        "additionalProperties": false,
-        "description": "Editable full artist display-name preferences.",
-        "properties": {
-          "preferences": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Preferences",
-            "type": "object"
-          }
-        },
-        "required": [
-          "preferences"
-        ],
-        "title": "ArtistNameConfigResource",
         "type": "object"
       },
       "ArtistNameDiagnosticsResource": {
@@ -1143,6 +1035,85 @@
         ],
         "title": "ArtistNameDiagnosticsResource",
         "type": "object"
+      },
+      "ArtistNameMappingEntry": {
+        "additionalProperties": false,
+        "description": "One editable original-to-English artist-name mapping.",
+        "properties": {
+          "english_name": {
+            "title": "English Name",
+            "type": "string"
+          },
+          "selected_locale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Locale"
+          },
+          "selected_name_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectedArtistNameKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/ArtistNameProvider"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_name",
+          "english_name",
+          "source",
+          "selected_name_kind",
+          "selected_locale"
+        ],
+        "title": "ArtistNameMappingEntry",
+        "type": "object"
+      },
+      "ArtistNameMappingsData": {
+        "additionalProperties": false,
+        "description": "Revisioned complete artist-name mapping snapshot.",
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ArtistNameMappingEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries",
+          "revision"
+        ],
+        "title": "ArtistNameMappingsData",
+        "type": "object"
+      },
+      "ArtistNameProvider": {
+        "description": "Source that last supplied an editable artist-name mapping.",
+        "enum": [
+          "musicbrainz",
+          "user"
+        ],
+        "title": "ArtistNameProvider",
+        "type": "string"
       },
       "ArtistNameResolutionDiagnosticResource": {
         "additionalProperties": false,
@@ -1198,11 +1169,8 @@
         "enum": [
           "missing_source",
           "composite_unsupported",
-          "non_latin_required",
           "automatic_lookup_disabled",
-          "detector_unavailable",
-          "not_japanese",
-          "low_language_confidence",
+          "romanization_not_required",
           "provider_unavailable",
           "no_confident_match",
           "ambiguous_match"
@@ -1812,33 +1780,6 @@
           "count"
         ],
         "title": "FacetValueResource[TrackStatus]",
-        "type": "object"
-      },
-      "FastTextConfigResource": {
-        "additionalProperties": false,
-        "description": "Persisted fastText model and confidence controls.",
-        "properties": {
-          "minimum_confidence": {
-            "title": "Minimum Confidence",
-            "type": "number"
-          },
-          "model_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Path"
-          }
-        },
-        "required": [
-          "model_path",
-          "minimum_confidence"
-        ],
-        "title": "FastTextConfigResource",
         "type": "object"
       },
       "FileEventFacetSets": {
@@ -2745,9 +2686,6 @@
           "artist_ids": {
             "$ref": "#/components/schemas/ArtistIdConfigResource"
           },
-          "artist_names": {
-            "$ref": "#/components/schemas/ArtistNameConfigResource"
-          },
           "file_extension": {
             "title": "File Extension",
             "type": "string"
@@ -2762,7 +2700,6 @@
         "required": [
           "path_policy",
           "artist_ids",
-          "artist_names",
           "metadata",
           "file_extension"
         ],
@@ -3682,6 +3619,40 @@
         "title": "RuntimeCapabilities",
         "type": "object"
       },
+      "SaveArtistNameMappingsRequestResource": {
+        "additionalProperties": false,
+        "description": "Complete mapping candidate tied to the snapshot the user edited.",
+        "properties": {
+          "entries": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Entries",
+            "type": "object"
+          },
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries",
+          "expected_revision"
+        ],
+        "title": "SaveArtistNameMappingsRequestResource",
+        "type": "object"
+      },
+      "SelectedArtistNameKind": {
+        "description": "MusicBrainz field that supplied the accepted artist name.",
+        "enum": [
+          "alias",
+          "alias_sort_name",
+          "name",
+          "sort_name"
+        ],
+        "title": "SelectedArtistNameKind",
+        "type": "string"
+      },
       "SettingsCandidateData": {
         "additionalProperties": false,
         "description": "Validation or save result for one Settings candidate.",
@@ -3882,6 +3853,9 @@
         "additionalProperties": false,
         "description": "Current recovery-capable Settings edit state.",
         "properties": {
+          "artist_name_mappings": {
+            "$ref": "#/components/schemas/ArtistNameMappingsData"
+          },
           "choices": {
             "$ref": "#/components/schemas/SettingsChoices"
           },
@@ -3904,7 +3878,8 @@
           "config_revision",
           "choices",
           "validation",
-          "preview"
+          "preview",
+          "artist_name_mappings"
         ],
         "title": "SettingsData",
         "type": "object"
@@ -7881,14 +7856,26 @@
         "summary": "Save Settings"
       }
     },
-    "/api/settings/artist-ids/generate": {
-      "post": {
-        "operationId": "generateArtistIdDraft",
+    "/api/settings/artist-names": {
+      "put": {
+        "operationId": "saveArtistNameMappings",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-OMYM2-CSRF-Token",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Omym2-Csrf-Token",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ArtistIdDraftRequest"
+                "$ref": "#/components/schemas/SaveArtistNameMappingsRequestResource"
               }
             }
           },
@@ -7899,7 +7886,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiEnvelope_ArtistIdDraftData_"
+                  "$ref": "#/components/schemas/ApiEnvelope_ArtistNameMappingsData_"
                 }
               }
             },
@@ -7912,6 +7899,26 @@
                 }
               }
             }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailureEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -7934,7 +7941,7 @@
             "description": "Internal Server Error"
           }
         },
-        "summary": "Generate Artist Id Draft"
+        "summary": "Save Artist Name Mappings"
       }
     },
     "/api/settings/preview": {

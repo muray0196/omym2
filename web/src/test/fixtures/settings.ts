@@ -1,9 +1,8 @@
 /**
  * Summary: Defines deterministic Settings envelopes from committed generated API types.
- * Why: Makes Config recovery, review, preview, generation, and save tests drift with OpenAPI.
+ * Why: Makes Config recovery, review, preview, and save tests drift with OpenAPI.
  */
 import type {
-  ApiEnvelopeArtistIdDraftData,
   ApiEnvelopePathPreview,
   ApiEnvelopeSettingsCandidateData,
   ApiEnvelopeSettingsData,
@@ -14,11 +13,9 @@ import type {
 export const settingsConfig = {
   add: { auto_apply: false, default_mode: "plan_first" },
   artist_ids: {
-    entries: { "North Harbor": "NORTH" },
     fallback_id: "NOART",
     max_length: 8,
   },
-  artist_names: { preferences: {} },
   collision: {
     on_duplicate_hash: "skip",
     on_missing_metadata: "block",
@@ -26,10 +23,6 @@ export const settingsConfig = {
   },
   companions: {
     enabled: false,
-  },
-  fasttext: {
-    minimum_confidence: 0.8,
-    model_path: null,
   },
   hashing: {
     read_chunk_size_bytes: 1_048_576,
@@ -51,7 +44,7 @@ export const settingsConfig = {
     application_name: "OMYM2",
     cache_policy: "sticky_positive",
     contact: "https://github.com/muray0196/omym2",
-    enabled: false,
+    enabled: true,
     rate_limit_seconds: 1,
     retry_limit: 1,
     timeout_seconds: 5,
@@ -106,6 +99,10 @@ export const settingsEnvelope = {
     },
     config: settingsConfig,
     config_revision: "settings-revision-one",
+    artist_name_mappings: {
+      entries: [],
+      revision: "artist-name-mappings-revision-one",
+    },
     preview: {
       errors: [],
       path: "Aimer/2024_Example-Album/1-03_Example-Song.flac",
@@ -113,6 +110,32 @@ export const settingsEnvelope = {
     validation: { errors: [], valid: true },
   },
   errors: [],
+} satisfies ApiEnvelopeSettingsData;
+
+export const settingsEnvelopeWithMusicBrainzMapping = {
+  ...settingsEnvelope,
+  data: {
+    ...settingsEnvelope.data,
+    artist_name_mappings: {
+      entries: [
+        {
+          english_name: "Sakamoto Ryuichi",
+          selected_locale: "ja-Latn",
+          selected_name_kind: "alias_sort_name",
+          source: "musicbrainz",
+          source_name: "坂本龍一",
+        },
+        {
+          english_name: "Hataya Misuzu",
+          selected_locale: null,
+          selected_name_kind: "sort_name",
+          source: "musicbrainz",
+          source_name: "秦谷美鈴",
+        },
+      ],
+      revision: "artist-name-mappings-revision-musicbrainz",
+    },
+  },
 } satisfies ApiEnvelopeSettingsData;
 
 export const reviewedSettingsEnvelope = {
@@ -150,20 +173,6 @@ export const previewEnvelope = {
   },
   errors: [],
 } satisfies ApiEnvelopePathPreview;
-
-export const artistIdDraftEnvelope = {
-  data: {
-    entries: [
-      {
-        artist_id: "GLASS",
-        generation_artist: "Glass Harbor",
-        overwritten: false,
-        source_artist: "Glass Harbor",
-      },
-    ],
-  },
-  errors: [],
-} satisfies ApiEnvelopeArtistIdDraftData;
 
 export const invalidPersistedSettingsEnvelope = {
   data: {

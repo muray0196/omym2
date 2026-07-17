@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Defines the bundled local Web API's clean-slate typed envelopes, closed catalogs, generated client, operations, settings, and browsing semantics.
 tags: [web-api, openapi, artist-names, companions, unprocessed, operations, concurrency, pagination]
-timestamp: 2026-07-16T22:15:00+09:00
+timestamp: 2026-07-17T20:30:51+09:00
 ---
 
 # Web API Contract
@@ -124,7 +124,7 @@ envelopes is:
 | `403` | `csrf_invalid` |
 | `404` | `api_not_found`, `library_not_found`, `track_not_found`, `plan_not_found`, `run_not_found`, `operation_not_found` |
 | `405` | `method_not_allowed` |
-| `409` | `config_invalid`, `config_changed`, `operation_in_progress`, `idempotency_key_reused`, `library_selection_ambiguous`, `library_unregistered`, `library_stale`, `library_blocked`, `plan_not_ready`, `library_root_changed`, `run_not_terminal`, `nothing_to_undo`, `undo_refresh_metadata_unsupported`, `already_undone_or_in_progress`, `pending_file_event_requires_review` |
+| `409` | `config_invalid`, `config_changed`, `artist_name_mappings_changed`, `operation_in_progress`, `idempotency_key_reused`, `library_selection_ambiguous`, `library_unregistered`, `library_stale`, `library_blocked`, `plan_not_ready`, `library_root_changed`, `run_not_terminal`, `nothing_to_undo`, `undo_refresh_metadata_unsupported`, `already_undone_or_in_progress`, `pending_file_event_requires_review` |
 | `410` | `operation_expired` |
 | `422` | `validation_failed` |
 | `500` | `storage_unavailable`, `config_io_failed`, `internal_error` |
@@ -394,9 +394,10 @@ The Config schema and revision algorithm are authoritative in
 [config.md](config.md). The Web API never reads or writes TOML directly; it
 calls Settings usecases through ports.
 
-`AppConfigResource` contains `artist_names.preferences`, an object mapping
-exact source artist strings to full display names. It is distinct from
-`artist_ids.entries`; editing one does not rewrite the other.
+`AppConfigResource` does not contain artist display-name preferences. The
+editable romanized-name mapping is SQLite feature data returned alongside
+Config as `artist_name_mappings`. Per-artist compact IDs are not part of the
+Settings API.
 
 It also exposes `companions.enabled` and the typed `unprocessed` object
 (`enabled`, `directory`, and `result_preview_limit`) from the Config contract.
@@ -419,8 +420,29 @@ type SettingsData = {
     errors: ApiError[]
   }
   preview: PathPreview
+  artist_name_mappings: {
+    entries: Array<{
+      source_name: string
+      english_name: string
+      source: string // currently "musicbrainz" or "user"
+      selected_name_kind:
+        | "alias"
+        | "alias_sort_name"
+        | "name"
+        | "sort_name"
+        | null
+      selected_locale: string | null
+    }>
+    revision: string
+  }
 }
 ```
+
+For MusicBrainz rows, `selected_name_kind` identifies the exact selected field:
+an alias `name`, alias `sort-name`, artist `name`, or artist `sort-name`.
+Alias-derived rows also expose their locale, such as `ja-Latn`. User rows have
+null selection fields. The Settings UI presents this provenance alongside the
+editable English name.
 
 Invalid persisted TOML is represented by `validation.valid = false` and
 resource-local validation errors while the top-level envelope remains a normal
@@ -437,10 +459,9 @@ result, not an unexpected server error.
 
 ### `POST /api/settings/preview`
 
-Accepts a self-contained PathPolicy/Artist-ID/artist-display-name draft, sample
-Track metadata, and file extension. It returns `200` with `PathPreview`. It performs no Config
-or DB write and requires no revision because every input affecting the preview
-is in the request.
+Accepts a self-contained PathPolicy/Artist-ID draft, sample Track metadata, and
+file extension. It reads the current saved artist-name mapping, returns `200`
+with `PathPreview`, and performs no Config or DB write.
 
 ### `PUT /api/settings`
 
@@ -456,13 +477,18 @@ TOML when it supplies the revision it read; invalid current Config does not by
 itself block this recovery save. Config I/O failure returns
 `500 config_io_failed`.
 
-### `POST /api/settings/artist-ids/generate`
+### `PUT /api/settings/artist-names`
 
-Accepts artist names, overwrite intent, and the Artist-ID settings from the
-current form draft. It returns generated draft entries and performs no Config
-write. The client merges the result into its local Settings draft; only
-`PUT /api/settings` persists it. This draft-only endpoint is not a mutation and
-does not require CSRF or an idempotency key.
+Accepts the complete `original name -> English name` mapping and the
+`expected_revision` returned by `GET /api/settings`. Under the shared exclusive
+lock it compares the mapping revision, then applies additions, corrections, and
+deletions in one SQLite transaction. New or changed rows become user-supplied;
+unchanged MusicBrainz rows retain provider provenance.
+
+Success returns the saved mapping and new revision. Stale input returns
+`409 artist_name_mappings_changed`; lock contention returns
+`409 operation_in_progress`; invalid or non-Latin English names return
+`422 validation_failed`. The request requires CSRF.
 
 ## Capabilities
 

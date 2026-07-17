@@ -19,11 +19,11 @@ from omym2.adapters.web.schemas.api_envelopes import ApiEnvelope, ApiFailureEnve
 from omym2.adapters.web.schemas.api_errors import ApiError, ApiErrorCode
 from omym2.adapters.web.schemas.settings import (
     AppConfigResource,
-    ArtistIdDraftData,
-    ArtistIdDraftEntry,
-    ArtistIdDraftRequest,
+    ArtistNameMappingEntry,
+    ArtistNameMappingsData,
     PathPreview,
     PathPreviewRequest,
+    SaveArtistNameMappingsRequestResource,
     SettingsCandidateData,
     SettingsCandidateRequest,
     SettingsChange,
@@ -37,14 +37,17 @@ from omym2.config import (
     HTTP_INTERNAL_ERROR_STATUS,
     HTTP_OK_STATUS,
     HTTP_UNPROCESSABLE_CONTENT_STATUS,
-    WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
+    WEB_API_SETTINGS_ARTIST_NAMES_ROUTE,
     WEB_API_SETTINGS_PREVIEW_ROUTE,
     WEB_API_SETTINGS_ROUTE,
     WEB_API_SETTINGS_VALIDATE_ROUTE,
     WEB_CORRELATION_HEADER_NAME,
     WEB_CSRF_HEADER_NAME,
 )
-from omym2.features.artist_ids.dto import GenerateArtistIdDraftRequest
+from omym2.features.artist_names.dto import SaveArtistNameMappingsRequest
+from omym2.features.artist_names.usecases.save_artist_name_mappings import (
+    ArtistNameMappingsRevisionMismatchError,
+)
 from omym2.features.common_ports import (
     ConfigRevisionMismatchError,
     ConfigStoreIoError,
@@ -61,7 +64,7 @@ from omym2.features.settings.dto import (
 from omym2.features.settings.usecases.save_settings_candidate import SettingsCandidateValidationError
 
 if TYPE_CHECKING:
-    from omym2.features.artist_ids.dto import GenerateArtistIdDraftResult
+    from omym2.features.artist_names.dto import ArtistNameMappingsResult
     from omym2.features.settings.dto import (
         SettingsCandidateResult,
         SettingsChoicesResult,
@@ -71,6 +74,7 @@ if TYPE_CHECKING:
 
 SETTINGS_HANDLERS_UNAVAILABLE_MESSAGE = "Settings route handlers are unavailable."
 CONFIG_CHANGED_MESSAGE = "Configuration changed after this edit began."
+ARTIST_NAME_MAPPINGS_CHANGED_MESSAGE = "Artist-name mappings changed after this edit began."
 CONFIG_IO_FAILED_MESSAGE = "Configuration storage could not complete the request."
 OPERATION_IN_PROGRESS_MESSAGE = "Another state-changing operation is already in progress."
 SETTINGS_VALIDATION_FAILED_MESSAGE = "Settings candidate validation failed."
@@ -78,7 +82,7 @@ GET_SETTINGS_OPERATION_ID = "getSettings"
 VALIDATE_SETTINGS_OPERATION_ID = "validateSettings"
 PREVIEW_SETTINGS_OPERATION_ID = "previewSettingsPath"
 SAVE_SETTINGS_OPERATION_ID = "saveSettings"
-GENERATE_ARTIST_ID_DRAFT_OPERATION_ID = "generateArtistIdDraft"
+SAVE_ARTIST_NAME_MAPPINGS_OPERATION_ID = "saveArtistNameMappings"
 
 
 def get_settings_route_context(context: ApiContext) -> SettingsRouteContext:
@@ -92,7 +96,7 @@ type SettingsContext = Annotated[SettingsRouteContext, Depends(get_settings_rout
 type CsrfToken = Annotated[str, Header(alias=WEB_CSRF_HEADER_NAME, min_length=1)]
 
 
-def create_settings_router() -> APIRouter:  # noqa: C901  # One schema router registers all five Settings endpoints.
+def create_settings_router() -> APIRouter:  # noqa: C901  # One schema router registers the Settings endpoints.
     """Create Settings routes without resolving Config or draft collaborators."""
     router = APIRouter()
 
@@ -109,10 +113,10 @@ def create_settings_router() -> APIRouter:  # noqa: C901  # One schema router re
         context: SettingsContext,
     ) -> ApiEnvelope[SettingsData] | JSONResponse:
         try:
-            result = context.get_settings()
+            result, artist_name_mappings = context.get_settings()
         except ConfigStoreIoError:
             return _config_io_failure()
-        return ApiEnvelope(data=_settings_data(result), errors=())
+        return ApiEnvelope(data=_settings_data(result, artist_name_mappings), errors=())
 
     @router.post(
         WEB_API_SETTINGS_VALIDATE_ROUTE,
@@ -205,35 +209,48 @@ def create_settings_router() -> APIRouter:  # noqa: C901  # One schema router re
             return _save_exception_response(exc)
         return ApiEnvelope(data=_candidate_data(result), errors=())
 
-    @router.post(
-        WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
-        operation_id=GENERATE_ARTIST_ID_DRAFT_OPERATION_ID,
-        response_model=ApiEnvelope[ArtistIdDraftData],
+    @router.put(
+        WEB_API_SETTINGS_ARTIST_NAMES_ROUTE,
+        operation_id=SAVE_ARTIST_NAME_MAPPINGS_OPERATION_ID,
+        response_model=ApiEnvelope[ArtistNameMappingsData],
         responses={
             HTTP_OK_STATUS: {"headers": {WEB_CORRELATION_HEADER_NAME: CORRELATION_HEADER_SCHEMA}},
+            HTTP_FORBIDDEN_STATUS: {"model": ApiFailureEnvelope},
+            HTTP_CONFLICT_STATUS: {"model": ApiFailureEnvelope},
             HTTP_UNPROCESSABLE_CONTENT_STATUS: {"model": ApiFailureEnvelope},
             HTTP_INTERNAL_ERROR_STATUS: {"model": ApiFailureEnvelope},
         },
     )
-    def generate_artist_id_draft(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered routes.
-        body: ArtistIdDraftRequest,
+    def save_artist_name_mappings(  # pyright: ignore[reportUnusedFunction]  # FastAPI calls decorator-registered routes.
+        body: SaveArtistNameMappingsRequestResource,
         context: SettingsContext,
-    ) -> ApiEnvelope[ArtistIdDraftData] | JSONResponse:
+        csrf_token: CsrfToken,
+    ) -> ApiEnvelope[ArtistNameMappingsData] | JSONResponse:
+        _ = csrf_token
         try:
-            request = GenerateArtistIdDraftRequest(
-                artist_names=body.artist_names,
-                overwrite=body.overwrite,
-                artist_ids=body.artist_ids.to_domain(),
+            result = context.save_artist_name_mappings(
+                SaveArtistNameMappingsRequest(
+                    entries=body.entries,
+                    expected_revision=body.expected_revision,
+                )
             )
-            result = context.generate_artist_id_draft(request)
+        except ArtistNameMappingsRevisionMismatchError:
+            return _artist_name_mappings_changed_failure()
+        except ExclusiveOperationBusyError:
+            return _operation_in_progress_failure()
         except ValueError as exc:
-            return _settings_validation_failure((SettingsValidationIssue(field="artist_ids", message=str(exc)),))
-        return ApiEnvelope(data=_artist_id_draft_data(result), errors=())
+            return _settings_validation_failure(
+                (SettingsValidationIssue(field="artist_name_mappings", message=str(exc)),)
+            )
+        return ApiEnvelope(data=_artist_name_mappings_data(result), errors=())
 
     return router
 
 
-def _settings_data(result: SettingsEditResult) -> SettingsData:
+def _settings_data(
+    result: SettingsEditResult,
+    artist_name_mappings: ArtistNameMappingsResult,
+) -> SettingsData:
     return SettingsData(
         config=AppConfigResource.from_domain(result.config),
         config_revision=result.config_revision,
@@ -244,6 +261,7 @@ def _settings_data(result: SettingsEditResult) -> SettingsData:
             code=ApiErrorCode.CONFIG_INVALID,
         ),
         preview=_path_preview(result.preview),
+        artist_name_mappings=_artist_name_mappings_data(artist_name_mappings),
     )
 
 
@@ -308,7 +326,6 @@ def _preview_request(body: PathPreviewRequest) -> PathPolicyPreviewRequest:
     return PathPolicyPreviewRequest(
         path_policy=body.path_policy.to_domain(),
         artist_ids=body.artist_ids.to_domain(),
-        artist_names=body.artist_names.to_domain(),
         metadata=body.metadata.to_domain(),
         file_extension=body.file_extension,
     )
@@ -324,7 +341,7 @@ def _invalid_candidate_validation(
     message: str,
 ) -> ApiEnvelope[SettingsCandidateData] | JSONResponse:
     try:
-        current = context.get_settings()
+        current, _ = context.get_settings()
     except ConfigStoreIoError:
         return _config_io_failure()
     if current.config_revision != body.expected_config_revision:
@@ -346,17 +363,19 @@ def _invalid_candidate_validation(
     )
 
 
-def _artist_id_draft_data(result: GenerateArtistIdDraftResult) -> ArtistIdDraftData:
-    return ArtistIdDraftData(
+def _artist_name_mappings_data(result: ArtistNameMappingsResult) -> ArtistNameMappingsData:
+    return ArtistNameMappingsData(
         entries=tuple(
-            ArtistIdDraftEntry(
-                source_artist=entry.source_artist,
-                generation_artist=entry.generation_artist,
-                artist_id=entry.artist_id,
-                overwritten=entry.overwritten,
+            ArtistNameMappingEntry(
+                source_name=mapping.source_name,
+                english_name=mapping.resolved_name,
+                source=mapping.provider,
+                selected_name_kind=mapping.selected_name_kind,
+                selected_locale=mapping.selected_locale,
             )
-            for entry in result.entries
-        )
+            for mapping in result.mappings
+        ),
+        revision=result.revision,
     )
 
 
@@ -373,6 +392,19 @@ def _config_changed_failure() -> JSONResponse:
     return _failure_response(
         HTTP_CONFLICT_STATUS,
         (ApiError(code=ApiErrorCode.CONFIG_CHANGED, message=CONFIG_CHANGED_MESSAGE, retryable=False),),
+    )
+
+
+def _artist_name_mappings_changed_failure() -> JSONResponse:
+    return _failure_response(
+        HTTP_CONFLICT_STATUS,
+        (
+            ApiError(
+                code=ApiErrorCode.ARTIST_NAME_MAPPINGS_CHANGED,
+                message=ARTIST_NAME_MAPPINGS_CHANGED_MESSAGE,
+                retryable=False,
+            ),
+        ),
     )
 
 

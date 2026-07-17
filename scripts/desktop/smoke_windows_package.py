@@ -1609,15 +1609,10 @@ def _verify_local_only_settings(base_url: str) -> dict[str, object]:
         raise WindowsPackageSmokeError(msg)
     app_config = _required_mapping(settings_data, "config", context="Settings read")
     musicbrainz = _required_mapping(app_config, "musicbrainz", context="Settings Config")
-    fasttext = _required_mapping(app_config, "fasttext", context="Settings Config")
     if musicbrainz.get("enabled") is not False:
         msg = f"Packaged smoke requires disabled MusicBrainz lookup: {musicbrainz}"
         raise WindowsPackageSmokeError(msg)
-    if fasttext.get("model_path") is not None:
-        msg = f"Packaged smoke requires no configured fastText model: {fasttext}"
-        raise WindowsPackageSmokeError(msg)
     return {
-        "fasttext_model_path": None,
         "musicbrainz_enabled": False,
     }
 

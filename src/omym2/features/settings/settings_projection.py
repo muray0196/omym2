@@ -42,8 +42,6 @@ from omym2.features.settings.usecases.preview_path_policy import PreviewPathPoli
 
 EMPTY_PATH_MESSAGE = "Configured paths must be non-empty when present."
 EMPTY_PATH_POLICY_TEMPLATE_MESSAGE = "PathPolicy template must be non-empty."
-EMPTY_ARTIST_NAME_MESSAGE = "Artist ID entry names must be non-empty."
-EMPTY_ARTIST_DISPLAY_NAME_MESSAGE = "Artist display-name preference keys and values must be non-empty."
 UNSUPPORTED_CHOICE_MESSAGE = "Value is not one of the backend-supported choices."
 
 
@@ -123,16 +121,6 @@ def validate_settings_config(config: AppConfig) -> tuple[SettingsValidationIssue
         issues,
     )
     _validate_choice(config.logging.level, ALLOWED_LOGGING_LEVELS, "logging.level", issues)
-    issues.extend(
-        SettingsValidationIssue(field="artist_ids.entries", message=EMPTY_ARTIST_NAME_MESSAGE)
-        for source_artist in sorted(config.artist_ids.entries or {})
-        if source_artist.strip() == ""
-    )
-    issues.extend(
-        SettingsValidationIssue(field="artist_names.preferences", message=EMPTY_ARTIST_DISPLAY_NAME_MESSAGE)
-        for source_artist, display_name in sorted((config.artist_names.preferences or {}).items())
-        if source_artist.strip() == "" or display_name.strip() == ""
-    )
     return tuple(issues)
 
 
@@ -216,12 +204,6 @@ def settings_field_changes(before: AppConfig, after: AppConfig) -> tuple[Setting
             after.musicbrainz.rate_limit_seconds,
         ),
         ("musicbrainz.cache_policy", before.musicbrainz.cache_policy, after.musicbrainz.cache_policy),
-        ("fasttext.model_path", before.fasttext.model_path, after.fasttext.model_path),
-        (
-            "fasttext.minimum_confidence",
-            before.fasttext.minimum_confidence,
-            after.fasttext.minimum_confidence,
-        ),
         (
             "hashing.read_chunk_size_bytes",
             before.hashing.read_chunk_size_bytes,
@@ -244,47 +226,22 @@ def settings_field_changes(before: AppConfig, after: AppConfig) -> tuple[Setting
             after.unprocessed.result_preview_limit,
         ),
     )
-    changes = [
+    return tuple(
         SettingsFieldChange(field=field, before=before_value, after=after_value)
         for field, before_value, after_value in fields
         if before_value != after_value
-    ]
-    before_entries = before.artist_ids.entries or {}
-    after_entries = after.artist_ids.entries or {}
-    for source_artist in sorted(set(before_entries) | set(after_entries)):
-        before_value = before_entries.get(source_artist)
-        after_value = after_entries.get(source_artist)
-        if before_value != after_value:
-            changes.append(
-                SettingsFieldChange(
-                    field=f"artist_ids.entries.{source_artist}",
-                    before=before_value,
-                    after=after_value,
-                )
-            )
-    before_preferences = before.artist_names.preferences or {}
-    after_preferences = after.artist_names.preferences or {}
-    for source_artist in sorted(set(before_preferences) | set(after_preferences)):
-        before_value = before_preferences.get(source_artist)
-        after_value = after_preferences.get(source_artist)
-        if before_value != after_value:
-            changes.append(
-                SettingsFieldChange(
-                    field=f"artist_names.preferences.{source_artist}",
-                    before=before_value,
-                    after=after_value,
-                )
-            )
-    return tuple(changes)
+    )
 
 
-def default_settings_preview(config: AppConfig) -> PathPolicyPreviewResult:
+def default_settings_preview(
+    config: AppConfig,
+    artist_name_resolver: ArtistNameResolutionReader,
+) -> PathPolicyPreviewResult:
     """Render the backend-owned Settings sample using one complete Config draft."""
-    return PreviewPathPolicyUseCase().execute(
+    return PreviewPathPolicyUseCase(artist_name_resolver).execute(
         PathPolicyPreviewRequest(
             path_policy=config.path_policy,
             artist_ids=config.artist_ids,
-            artist_names=config.artist_names,
             metadata=TrackMetadata(
                 title=PATH_POLICY_PREVIEW_TITLE,
                 artist=PATH_POLICY_PREVIEW_ARTIST,
@@ -321,4 +278,5 @@ def _validate_choice(
 
 if TYPE_CHECKING:
     from omym2.domain.models.app_config import AppConfig
+    from omym2.features.common_ports import ArtistNameResolutionReader
     from omym2.features.settings.dto import SettingsChangeValue

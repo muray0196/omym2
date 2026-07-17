@@ -12,26 +12,34 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from omym2.domain.models.accepted_artist_name import AcceptedArtistName
+
 
 @dataclass(frozen=True, slots=True)
 class ResolveArtistNamesRequest:
-    """Batch of source names and an exact preference snapshot to resolve."""
+    """Batch of source names to resolve through the editable mapping cache."""
 
     source_names: tuple[str | None, ...]
-    preferences: Mapping[str, str] | None = None
-
-    def __post_init__(self) -> None:
-        """Freeze preferences so one batch cannot change during resolution."""
-        object.__setattr__(self, "preferences", MappingProxyType(dict(self.preferences or {})))
 
 
 @dataclass(frozen=True, slots=True)
-class ArtistLanguagePrediction:
-    """Top fastText language prediction, including detector availability."""
+class ArtistNameMappingsResult:
+    """One revisioned snapshot of editable artist-name mappings."""
 
-    label: str | None
-    confidence: float | None
-    available: bool
+    mappings: tuple[AcceptedArtistName, ...]
+    revision: str
+
+
+@dataclass(frozen=True, slots=True)
+class SaveArtistNameMappingsRequest:
+    """Complete editable mapping candidate tied to the snapshot the user saw."""
+
+    entries: Mapping[str, str]
+    expected_revision: str
+
+    def __post_init__(self) -> None:
+        """Freeze the complete browser candidate for deterministic validation."""
+        object.__setattr__(self, "entries", MappingProxyType(dict(self.entries)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +48,7 @@ class ArtistNameAliasCandidate:
 
     name: str
     locale: str | None
+    sort_name: str | None = None
     primary: bool = False
 
 
@@ -50,6 +59,7 @@ class ArtistNameProviderCandidate:
     provider_artist_id: str
     score: int
     name: str
+    sort_name: str | None = None
     aliases: tuple[ArtistNameAliasCandidate, ...] = ()
 
 

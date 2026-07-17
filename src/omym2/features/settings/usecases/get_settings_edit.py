@@ -39,5 +39,5 @@ class GetSettingsEditUseCase:
             choices=settings_choices(),
             valid=not issues,
             validation_issues=issues,
-            preview=default_settings_preview(snapshot.config),
+            preview=default_settings_preview(snapshot.config, self.ports.artist_name_resolver),
         )

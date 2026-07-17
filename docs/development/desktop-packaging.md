@@ -2,8 +2,8 @@
 type: Development Guide
 title: Windows Desktop Packaging
 description: Defines the Windows x64 desktop build, renderer and artist-naming distribution boundaries, native filesystem and package-smoke CI evidence, data lifecycle, licensing, and signing.
-tags: [development, desktop, windows, packaging, pyinstaller, fasttext, smoke-test]
-timestamp: 2026-07-16T06:02:32+09:00
+tags: [development, desktop, windows, packaging, pyinstaller, musicbrainz, smoke-test]
+timestamp: 2026-07-17T22:43:57+09:00
 ---
 
 # Windows Desktop Packaging
@@ -67,28 +67,16 @@ nor a packaged runtime.
 
 ## Artist-Naming Distribution Boundary
 
-The audited wheel and Windows ZIP do not contain a fastText prediction runtime
-or a language-identification model. Neither is a core, desktop-extra, or frozen
-runtime dependency, and no `.bin` or `.ftz` model is package data. The packaged
-default therefore remains `musicbrainz.enabled = false` with no model path and
-supports preferences, accepted positive cache rows, and original metadata
-without model or network work.
+The audited wheel and Windows ZIP use deterministic Unicode-script eligibility
+and contain no artist language-model runtime or data. The packaged default is
+`musicbrainz.enabled = true`; users can disable new provider work while
+retaining saved original-to-Latin mappings and original metadata fallback
+without network work.
 
-This is an explicit local-only distribution decision, not a claim that native
-automatic lookup has passed. No candidate runtime has yet been qualified for
-CPython 3.14 and Windows x64 freezing, and no model candidate has an approved
-redistribution record covering its exact bytes, digest, compressed and
-installed size, license, notices, and source obligations. A local development
-model is not a packaging input. Setting a model path in a package that lacks a
-compatible predictor records detector unavailability, preserves the original
-name, and does not contact MusicBrainz.
-
-Bundled automatic lookup may be proposed only after one exact runtime wheel and
-one exact model artifact pass all of those provenance checks, package audit,
-Windows 11 x64 load/prediction smoke, startup and memory measurements, and the
-repository's complete licensing gate. Until then, packaging metadata and tests
-must continue to exclude both artifacts and automatic lookup must not be
-enabled by default.
+Package audit prohibits arbitrary `.bin` or `.ftz` model files. Windows 11 x64
+package smoke and startup/memory measurements remain release evidence
+requirements, including proof that disabled MusicBrainz lookup performs no
+provider request.
 
 ## Build And Audit
 
@@ -253,7 +241,7 @@ artifact has passed:
 | --- | --- |
 | Supported target | The candidate ZIP passes the complete packaged HTTP and UI Automation smoke on Windows 11 x64, its smoke JSON is retained, and a native-window visual review confirms unchanged rendering. Hosted Windows Server or HTTP/API-only evidence is insufficient. |
 | Artifact integrity | ZIP, `.zip.sha256`, package-audit JSON, and smoke JSON agree on version, archive identity, and canonical payload identity; frozen provenance binds the archive to the exact audited wheel and all required resources. |
-| Artist naming | The artifact inventory proves no fastText runtime/model is bundled and native smoke preserves the disabled local-only fallback; any future bundled enablement instead requires exact runtime/model provenance, size and license evidence, and a successful Windows 11 x64 load/prediction smoke. |
+| Artist naming | The artifact inventory proves no artist language model is bundled, wheel resources match byte-for-byte, and disabled MusicBrainz lookup preserves the local-only provider boundary. |
 | Licensing | The repository contains an owner-approved project license and a complete, verified third-party notice/source-obligation set for every bundled component. |
 | Signing | An authorized Windows identity signs the candidate through an approved secret-handling workflow, and an independent gate verifies its signature and expected publisher. |
 | Extract, upgrade, remove | Clean extract, payload-distinct cross-build replacement, and application-directory removal all leave `%LOCALAPPDATA%\OMYM2` Config, SQLite state, and logs intact; the retained smoke JSON identifies both artifacts, and deleting user data remains a separate explicit action. |

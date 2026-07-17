@@ -3,7 +3,7 @@ type: Storage Design
 title: Storage
 description: Defines application-root selection, TOML ownership, provider cadence, managed companion state, trackless unprocessed-file evidence, durable file mutations, and path responsibilities.
 tags: [storage, sqlite, toml, persistence, artist-names, musicbrainz, companions, unprocessed, desktop]
-timestamp: 2026-07-16T22:15:00+09:00
+timestamp: 2026-07-17T22:43:57+09:00
 ---
 
 # Storage
@@ -29,8 +29,8 @@ and persisted check diagnostics.
 | Concern | Store |
 | --- | --- |
 | Editable settings | TOML |
-| Editable artist ID entries | TOML |
-| Editable full artist display-name preferences | TOML |
+| Automatic artist-ID generation tunables | TOML |
+| Editable romanized artist-name mappings | SQLite |
 | Config defaults and validation results | Config adapter / AppConfig |
 | Raw Config revision and atomic replacement | Config adapter / TOML file |
 | Managed Library, Track, and CompanionAsset state | SQLite |
@@ -38,7 +38,7 @@ and persisted check diagnostics.
 | Runs and FileEvents | SQLite |
 | Durable background Operations | SQLite |
 | CheckRuns and CheckIssues | SQLite |
-| Accepted provider artist names and provenance | SQLite |
+| Artist-name mappings and optional provider provenance | SQLite |
 | Provider request cadence reservations | SQLite |
 | Actual audio, companion, and unprocessed files | Filesystem, not DB |
 
@@ -96,15 +96,13 @@ or SQLite state. The authoritative protocol is
 its shared lock is recorded in
 [ADR 0003](decisions/0003-cross-process-exclusive-operation-lock.md).
 
-Artist ID entries are application config. They are stored in TOML because they
-are user-editable path/config values, not managed Library state.
+Per-artist compact IDs are not application config or user-editable data.
+PathPolicy generates them internally when `{artist_id}` is needed.
 
-Full artist display-name preferences are also application config and remain
-separate from compact artist IDs. Preference keys are complete raw source
-strings and are compared exactly by the naming feature. Positive automatic
-provider results are not editable config: accepted names and their provenance
-are stored in SQLite so the same derived source key resolves deterministically
-for later resolver calls.
+Romanized artist-name mappings are not application config. Automatic
+MusicBrainz results and user additions or corrections share the SQLite
+`accepted_artist_names` table so one derived source key resolves
+deterministically without a second preference layer.
 
 ## SQLite Responsibility
 
@@ -140,13 +138,13 @@ accepted_artist_names
 provider_request_cadence
 ```
 
-`accepted_artist_names` is a global sticky provider cache rather than a
-Library-managed table. It does not carry `library_id`, does not replace raw
-Track metadata, and does not authorize a repository to recalculate paths.
-Only accepted positive results are stored. Ineligible values, misses,
-ambiguous matches, and provider failures do not create rows. A row may be
-created by an explicit naming consumer such as `artist-ids generate`; its
-existence does not imply that a Plan, Track, or file mutation was created.
+`accepted_artist_names` is the global editable romanized-name mapping,
+not a Library-managed table. It does not carry `library_id`, does not replace
+raw Track metadata, and does not authorize a repository to recalculate paths.
+Only accepted positive automatic results and explicit user mappings are
+stored. Ineligible values, misses, ambiguous matches, and provider failures do
+not create rows. A row may be created during path planning; its existence does
+not imply that a Track or file mutation was created.
 
 PlanActions separately store the artist and album-artist resolution diagnostics
 that were actually observed while calculating their reviewed targets. These
@@ -194,27 +192,30 @@ The DB adapter persists and restores domain models. It must not contain business
 
 Repositories must preserve `library_id` on Library-managed records and restore path fields according to [contracts/path-identity-storage.md](contracts/path-identity-storage.md).
 
-Accepted artist-name persistence exposes exact lookup by an already-derived
-source key and insert-if-absent semantics. Key derivation, batch deduplication,
+Artist-name persistence exposes lookup by an already-derived source key,
+automatic insert-if-absent, deterministic listing, user upsert, and deletion.
+Key derivation, batch deduplication,
 lookup eligibility, provider matching, precedence over raw metadata, and any
 decision to surface an ambiguous result remain naming-feature rules above the
 repository. Those rules are authoritative in
 [Artist Name Batch Resolution](DOMAIN.md#artist-name-batch-resolution).
 
-## Accepted Artist-Name Cache Transactions
+## Artist-Name Mapping Transactions
 
-No SQLite transaction remains open while fastText runs or MusicBrainz is
-contacted. A resolver call reads accepted rows for its distinct unresolved
+No SQLite transaction remains open while MusicBrainz is contacted. A resolver
+call reads accepted rows for its distinct unresolved
 source keys in a short transaction and closes that transaction before any
-model or provider work. It performs a later short transaction only for newly
+provider work. It performs a later short transaction only for newly
 accepted positive results.
 
-Final persistence uses `insert_if_absent`. If another writer has already
+Automatic persistence uses `insert_if_absent`. If another writer has already
 accepted the same source key, the resolver reads and uses that persisted winner
 instead of its newer provider response. Misses and ambiguous or failed lookups
-need no final transaction because negative outcomes are not cached. The exact
+need no final transaction because negative outcomes are not cached. A Settings
+save compares the complete mapping revision, then applies additions, edits, and
+deletions in one short transaction under the shared exclusive lock. The exact
 UnitOfWork choreography is defined in
-[Ports And UnitOfWork](codebase/ports-uow.md#artist-name-cache-coordination).
+[Ports And UnitOfWork](codebase/ports-uow.md#artist-name-mapping-coordination).
 
 ## Provider Request Cadence
 
@@ -226,7 +227,7 @@ back with the remaining delay. It closes the connection before sleeping and
 retries the reservation afterward. No transaction or exclusive-operation lock
 is held during the wait or HTTP request.
 
-The reservation is deliberately separate from accepted-name cache state. It
+The reservation is deliberately separate from artist-name mapping state. It
 limits attempts, including retries, but does not claim a request succeeded and
 does not create negative cache entries. Unavailable cadence storage fails the
 provider call closed to the resolver's ordinary local fallback.

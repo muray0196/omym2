@@ -69,7 +69,7 @@ class EmptySourceInventoryReader:
 
 @dataclass(slots=True)
 class MappingArtistNameResolver:
-    """Resolve names from a deterministic mapping while honoring exact preferences."""
+    """Resolve names from one deterministic editable mapping."""
 
     names: Mapping[str, str] = field(default_factory=_empty_artist_name_mapping)
     calls: list[tuple[str | None, ...]] = field(default_factory=list)
@@ -77,24 +77,17 @@ class MappingArtistNameResolver:
     def resolve_many(
         self,
         source_names: Sequence[str | None],
-        *,
-        preferences: Mapping[str, str] | None = None,
     ) -> tuple[ArtistNameResolution, ...]:
         """Return one aligned resolution for every supplied source value."""
-        exact_preferences = preferences or {}
         self.calls.append(tuple(source_names))
         return tuple(
             ArtistNameResolution(
                 source_name=source_name,
                 source_key=derive_artist_name_source_key(source_name),
-                resolved_name=(
-                    None
-                    if source_name is None
-                    else exact_preferences.get(source_name, self.names.get(source_name, source_name))
-                ),
+                resolved_name=(None if source_name is None else self.names.get(source_name, source_name)),
                 provenance=(
                     ArtistNameResolutionProvenance.USER_PREFERENCE
-                    if source_name is not None and source_name in exact_preferences
+                    if source_name is not None and source_name in self.names
                     else ArtistNameResolutionProvenance.ORIGINAL
                 ),
             )

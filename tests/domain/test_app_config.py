@@ -5,8 +5,6 @@ Why: Ensures defaults match the documented initial configuration shape.
 
 from __future__ import annotations
 
-from typing import cast
-
 import pytest
 
 from omym2.config import (
@@ -14,7 +12,6 @@ from omym2.config import (
     CONFIG_VERSION,
     DEFAULT_ALBUM_YEAR_RESOLUTION,
     DEFAULT_COMPANIONS_ENABLED,
-    DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE,
     DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES,
     DEFAULT_LOGGING_LEVEL,
     DEFAULT_LOGGING_RETENTION_FILES,
@@ -37,12 +34,8 @@ from omym2.config import (
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
 )
 from omym2.domain.models.app_config import (
-    INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE,
     INVALID_ARTIST_ID_FALLBACK_MESSAGE,
-    INVALID_ARTIST_NAME_PREFERENCE_MESSAGE,
     INVALID_CONFIG_VERSION_MESSAGE,
-    INVALID_FASTTEXT_MINIMUM_CONFIDENCE_MESSAGE,
-    INVALID_FASTTEXT_MODEL_PATH_MESSAGE,
     INVALID_HASHING_READ_CHUNK_SIZE_MESSAGE,
     INVALID_LOGGING_DESTINATION_MESSAGE,
     INVALID_LOGGING_LEVEL_MESSAGE,
@@ -66,9 +59,7 @@ from omym2.domain.models.app_config import (
     INVALID_UNPROCESSED_RESULT_PREVIEW_LIMIT_MESSAGE,
     AppConfig,
     ArtistIdConfig,
-    ArtistNameConfig,
     CompanionsConfig,
-    FastTextConfig,
     HashingConfig,
     LoggingConfig,
     MetadataConfig,
@@ -84,8 +75,6 @@ PATH_POLICY_TEMPLATE_WITH_EXTENSION_PLACEHOLDER = "{album_artist}/{album}/{title
 PATH_POLICY_TEMPLATE_WITH_SPLIT_DISC_TRACK = "{album_artist}/{album}/{disc}-{track}_{title}"
 PATH_POLICY_TEMPLATE_WITH_LITERAL_EXTENSION = "{album_artist}/{title}.mp3"
 PATH_POLICY_TEMPLATE_WITH_UNKNOWN_PLACEHOLDER = "{album_artist}/{bitrate}/{title}"
-UNSAFE_ARTIST_ID_ENTRY_VALUES = ("a/b", "..", "", "../escape", "a\\b")
-GENERATED_STYLE_ARTIST_ID_ENTRY_VALUES = ("SOMEID", "NOART", "artist_id-1")
 UNSAFE_ARTIST_ID_FALLBACK_IDS = ("N/A", "..", "", "-LEAD", "TRAIL-", "a b")
 
 
@@ -102,7 +91,7 @@ def test_config_loads_default() -> None:
     assert config.path_policy.disc_number_style == DEFAULT_PATH_POLICY_DISC_NUMBER_STYLE
     assert config.path_policy.disc_number_condition == DEFAULT_PATH_POLICY_DISC_NUMBER_CONDITION
     assert config.musicbrainz == MusicBrainzConfig(
-        enabled=False,
+        enabled=True,
         application_name=DEFAULT_MUSICBRAINZ_APPLICATION_NAME,
         contact=DEFAULT_MUSICBRAINZ_CONTACT,
         timeout_seconds=DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS,
@@ -110,7 +99,6 @@ def test_config_loads_default() -> None:
         rate_limit_seconds=DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS,
         cache_policy=DEFAULT_MUSICBRAINZ_CACHE_POLICY,
     )
-    assert config.fasttext == FastTextConfig(model_path=None, minimum_confidence=DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE)
     assert config.hashing == HashingConfig(read_chunk_size_bytes=DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES)
     assert config.logging == LoggingConfig(
         destination=None,
@@ -145,19 +133,6 @@ def test_musicbrainz_config_rejects_invalid_controls(keywords: dict[str, object]
     """MusicBrainz settings enforce identity, bounds, and the closed cache policy."""
     with pytest.raises(ValueError, match=message):
         _ = MusicBrainzConfig(**keywords)  # pyright: ignore[reportArgumentType]  # Parameterized invalid values.
-
-
-@pytest.mark.parametrize("minimum_confidence", [float("nan"), -0.1, 1.1])
-def test_fasttext_config_rejects_invalid_confidence(minimum_confidence: float) -> None:
-    """fastText confidence is finite and bounded to the prediction probability range."""
-    with pytest.raises(ValueError, match=INVALID_FASTTEXT_MINIMUM_CONFIDENCE_MESSAGE):
-        _ = FastTextConfig(minimum_confidence=minimum_confidence)
-
-
-def test_fasttext_config_rejects_blank_optional_model_path() -> None:
-    """An explicitly configured model path cannot be blank."""
-    with pytest.raises(ValueError, match=INVALID_FASTTEXT_MODEL_PATH_MESSAGE):
-        _ = FastTextConfig(model_path="   ")
 
 
 def test_hashing_config_rejects_nonpositive_chunk_size() -> None:
@@ -249,34 +224,6 @@ def test_unprocessed_config_accepts_portable_directory_components_and_preview_bo
     assert UnprocessedConfig(directory="レビュー待ち", result_preview_limit=UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX)
 
 
-def test_config_default_artist_id_entries_are_immutable_and_per_instance() -> None:
-    """Default AppConfig entries cannot be mutated or shared across instances."""
-    first_config = AppConfig()
-    second_config = AppConfig()
-
-    first_entries = first_config.artist_ids.entries
-    assert first_entries is not None
-    with pytest.raises(TypeError):
-        cast("dict[str, str]", first_entries)["Aimer"] = "AIMR"
-
-    assert first_config.artist_ids == ArtistIdConfig()
-    assert second_config.artist_ids == ArtistIdConfig()
-
-
-def test_config_default_artist_name_preferences_are_immutable_and_per_instance() -> None:
-    """Default display-name preferences cannot mutate cached or separate configs."""
-    first_config = AppConfig()
-    second_config = AppConfig()
-
-    first_preferences = first_config.artist_names.preferences
-    assert first_preferences is not None
-    with pytest.raises(TypeError):
-        cast("dict[str, str]", first_preferences)["宇多田ヒカル"] = "Hikaru Utada"
-
-    assert first_config.artist_names == ArtistNameConfig()
-    assert second_config.artist_names == ArtistNameConfig()
-
-
 def test_config_validation_fails_invalid_version() -> None:
     """Unknown config versions are rejected by the domain config model."""
     with pytest.raises(ValueError, match=INVALID_CONFIG_VERSION_MESSAGE):
@@ -349,21 +296,6 @@ def test_path_policy_config_rejects_unsupported_disc_settings() -> None:
         _ = PathPolicyConfig(disc_number_condition="sometimes")
 
 
-@pytest.mark.parametrize("entry_value", UNSAFE_ARTIST_ID_ENTRY_VALUES)
-def test_artist_id_config_rejects_unsafe_entry_values(entry_value: str) -> None:
-    """ArtistIdConfig rejects saved entry values that are not sanitizer-stable."""
-    with pytest.raises(ValueError, match=INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE):
-        _ = ArtistIdConfig(entries={"X": entry_value})
-
-
-@pytest.mark.parametrize("entry_value", GENERATED_STYLE_ARTIST_ID_ENTRY_VALUES)
-def test_artist_id_config_accepts_generated_style_values(entry_value: str) -> None:
-    """ArtistIdConfig accepts saved entry values matching generator/config style output."""
-    config = ArtistIdConfig(entries={"X": entry_value})
-
-    assert config.entries == {"X": entry_value}
-
-
 @pytest.mark.parametrize("fallback_id", UNSAFE_ARTIST_ID_FALLBACK_IDS)
 def test_artist_id_config_rejects_unsafe_fallback_id(fallback_id: str) -> None:
     """ArtistIdConfig rejects fallback_id values that are not sanitizer-stable.
@@ -381,13 +313,3 @@ def test_artist_id_config_accepts_default_fallback_id() -> None:
     config = ArtistIdConfig()
 
     assert config.fallback_id == "NOART"
-
-
-@pytest.mark.parametrize(
-    ("source_name", "display_name"),
-    [("", "Hikaru Utada"), ("   ", "Hikaru Utada"), ("宇多田ヒカル", ""), ("宇多田ヒカル", "   ")],
-)
-def test_artist_name_config_rejects_blank_preferences(source_name: str, display_name: str) -> None:
-    """ArtistNameConfig rejects preference keys and values with no visible text."""
-    with pytest.raises(ValueError, match=INVALID_ARTIST_NAME_PREFERENCE_MESSAGE):
-        _ = ArtistNameConfig(preferences={source_name: display_name})

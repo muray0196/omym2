@@ -33,11 +33,7 @@ from omym2.features.add.usecases.create_add_plan import (
     SUMMARY_MOVE_ACTIONS_KEY,
     SUMMARY_UNPROCESSED_PREVIEW_LIMIT_KEY,
 )
-from omym2.features.artist_names.dto import (
-    ArtistLanguagePrediction,
-    ArtistNameProviderCandidate,
-    ArtistNameSearchResult,
-)
+from omym2.features.artist_names.dto import ArtistNameProviderCandidate, ArtistNameSearchResult
 from omym2.platform.cli_entry_point import run_cli as main
 from omym2.shared.ids import ActionId, LibraryId, PlanId
 
@@ -57,12 +53,11 @@ ACTION_IDS = tuple(
         "018f6a4f-3c2d-7b8a-9abc-def01234567c",
     )
 )
-APPLY_MODEL_LOAD_MESSAGE = "Apply must not load the automatic artist-name model."
 APPLY_PROVIDER_LOOKUP_MESSAGE = "Apply must not contact the artist-name provider."
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 CONFIG_HASH = "config-hash"
 EXPECTED_CANONICAL_PATH = "Artist/2026_Album/1-02_Title.flac"
-EXPECTED_RESOLVED_CANONICAL_PATH = "Hikaru-Utada/2026_Album/1-02_Title.flac"
+EXPECTED_RESOLVED_CANONICAL_PATH = "Utada-Hikaru/2026_Album/1-02_Title.flac"
 ERROR_EXIT_CODE = 1
 JAPANESE_ARTIST = "宇多田ヒカル"
 LIBRARY_ID = LibraryId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345678"))
@@ -75,7 +70,7 @@ TITLE = "Title"
 TRACK_ALBUM = "Album"
 TRACK_ARTIST = "Artist"
 MUSICBRAINZ_ARTIST_ID = "4a9af2f1-e4b7-4b7b-a0be-7f3d2e6f8f21"
-RESOLVED_ARTIST = "Hikaru Utada"
+RESOLVED_ARTIST = "Utada Hikaru"
 UNEXPECTED_STDIN_READ_MESSAGE = "stdin should not be read"
 YEAR = 2026
 
@@ -307,16 +302,15 @@ def test_add_command_creates_plan_and_plans_command_displays_it(
     assert detail_stderr.getvalue() == ""
 
 
-def test_add_command_persisted_opt_in_records_new_musicbrainz_target_and_cache(
+def test_add_command_enabled_lookup_records_new_musicbrainz_target_and_cache(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Normal CLI Add uses the shared lazy model/provider path after persisted opt-in."""
+    """Normal CLI Add uses the shared lazy model/provider path when lookup is enabled."""
     app_paths = default_application_paths(tmp_path)
     library_root = tmp_path / "library"
     incoming_root = tmp_path / "incoming"
     audio_path = incoming_root / "Title.flac"
-    model_path = tmp_path / "lid.176.ftz"
     library_root.mkdir()
     incoming_root.mkdir()
     _ = audio_path.write_bytes(AUDIO_CONTENT)
@@ -335,10 +329,6 @@ def test_add_command_persisted_opt_in_records_new_musicbrainz_target_and_cache(
             disc_number=1,
         )
 
-    def build_predictor(*, model_path: Path | None = None) -> _JapanesePredictor:
-        assert model_path == tmp_path / "lid.176.ftz"
-        return _JapanesePredictor()
-
     def search_artists(_self: MusicBrainzArtistLookup, source_name: str) -> ArtistNameSearchResult:
         provider_calls.append(source_name)
         return ArtistNameSearchResult(
@@ -347,18 +337,15 @@ def test_add_command_persisted_opt_in_records_new_musicbrainz_target_and_cache(
                 ArtistNameProviderCandidate(
                     provider_artist_id=MUSICBRAINZ_ARTIST_ID,
                     score=100,
-                    name=RESOLVED_ARTIST,
+                    name=JAPANESE_ARTIST,
+                    sort_name="Utada, Hikaru",
                 ),
             ),
         )
 
     monkeypatch.setattr(MutagenMetadataReader, "read", read)
-    monkeypatch.setattr(
-        "omym2.adapters.artist_ids.fasttext_language_detector.FastTextLanguageDetector",
-        build_predictor,
-    )
     monkeypatch.setattr(MusicBrainzArtistLookup, "search_artists", search_artists)
-    _enable_automatic_artist_name_lookup(app_paths.config_file, model_path)
+    _enable_automatic_artist_name_lookup(app_paths.config_file)
 
     exit_code = main(
         ["add", str(incoming_root)],
@@ -427,7 +414,6 @@ def test_apply_command_applies_existing_plan(
     _forbid_automatic_artist_name_lookup(
         monkeypatch,
         app_paths.config_file,
-        tmp_path / "apply-must-not-load.ftz",
     )
     apply_stdout = StringIO()
     apply_stderr = StringIO()
@@ -642,22 +628,13 @@ def _register_library(database_file: Path, library_root: str) -> None:
         uow.commit()
 
 
-class _JapanesePredictor:
-    """Return the deterministic eligible observation used by composition tests."""
-
-    def predict_language(self, text: str) -> ArtistLanguagePrediction:
-        assert text == JAPANESE_ARTIST
-        return ArtistLanguagePrediction(label="__label__ja", confidence=0.99, available=True)
-
-
-def _enable_automatic_artist_name_lookup(config_path: Path, model_path: Path) -> None:
+def _enable_automatic_artist_name_lookup(config_path: Path) -> None:
     """Persist the Stage 3 controls used by composition-level naming tests."""
     store = TomlConfigStore(config_path)
     snapshot = store.read_snapshot()
     configured = replace(
         snapshot.config,
         musicbrainz=replace(snapshot.config.musicbrainz, enabled=True),
-        fasttext=replace(snapshot.config.fasttext, model_path=str(model_path)),
     )
     _ = store.save(configured, expected_config_revision=snapshot.config_revision)
 
@@ -665,21 +642,12 @@ def _enable_automatic_artist_name_lookup(config_path: Path, model_path: Path) ->
 def _forbid_automatic_artist_name_lookup(
     monkeypatch: pytest.MonkeyPatch,
     config_path: Path,
-    model_path: Path,
 ) -> None:
-    """Make any model load or provider request fail the current Apply test."""
-
-    def fail_model_load(*, model_path: Path | None = None) -> Never:
-        del model_path
-        raise AssertionError(APPLY_MODEL_LOAD_MESSAGE)
+    """Make any provider request fail the current Apply test."""
 
     def fail_provider_lookup(_self: MusicBrainzArtistLookup, source_name: str) -> Never:
         del source_name
         raise AssertionError(APPLY_PROVIDER_LOOKUP_MESSAGE)
 
-    _enable_automatic_artist_name_lookup(config_path, model_path)
-    monkeypatch.setattr(
-        "omym2.adapters.artist_ids.fasttext_language_detector.FastTextLanguageDetector",
-        fail_model_load,
-    )
+    _enable_automatic_artist_name_lookup(config_path)
     monkeypatch.setattr(MusicBrainzArtistLookup, "search_artists", fail_provider_lookup)

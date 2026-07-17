@@ -101,7 +101,6 @@ def sensitive_log_values(paths: ApplicationPaths, config: AppConfig) -> tuple[st
         str(paths.database_file),
         config.paths.library,
         config.paths.incoming,
-        config.fasttext.model_path,
         config.logging.destination,
         config.musicbrainz.contact,
     ]

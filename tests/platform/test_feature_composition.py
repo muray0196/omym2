@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from omym2.adapters.artist_ids.fasttext_language_detector import OptionalFastTextLanguageDetector
 from omym2.adapters.artist_ids.musicbrainz_artist_lookup import MusicBrainzArtistLookup
 from omym2.adapters.config.application_paths import ApplicationPaths
 from omym2.adapters.config.default_config import default_app_config
@@ -97,7 +96,7 @@ def test_build_create_add_plan_ports_matches_add_command_recipe(runtime: Runtime
     assert isinstance(ports.file_presence, FilesystemFilePresence)
     assert ports.config_store is runtime.config_store
     assert isinstance(ports.artist_name_resolver, ResolveArtistNamesUseCase)
-    assert ports.artist_name_resolver.ports.automatic_lookup_enabled is False
+    assert ports.artist_name_resolver.ports.automatic_lookup_enabled is True
     assert isinstance(ports.path_resolver, FilesystemPathResolver)
     assert isinstance(ports.clock, SystemClock)
     assert isinstance(ports.id_generator, Uuid7IdGenerator)
@@ -219,7 +218,7 @@ def test_build_create_organize_plan_ports_matches_organize_command_recipe(runtim
     assert isinstance(ports.file_presence, FilesystemFilePresence)
     assert ports.config_store is runtime.config_store
     assert isinstance(ports.artist_name_resolver, ResolveArtistNamesUseCase)
-    assert ports.artist_name_resolver.ports.automatic_lookup_enabled is False
+    assert ports.artist_name_resolver.ports.automatic_lookup_enabled is True
     assert isinstance(ports.path_resolver, FilesystemPathResolver)
     assert isinstance(ports.clock, SystemClock)
     assert isinstance(ports.id_generator, Uuid7IdGenerator)
@@ -250,7 +249,7 @@ def test_build_create_refresh_plan_ports_matches_refresh_command_recipe(runtime:
     assert isinstance(ports.file_presence, FilesystemFilePresence)
     assert ports.config_store is runtime.config_store
     assert isinstance(ports.artist_name_resolver, ResolveArtistNamesUseCase)
-    assert ports.artist_name_resolver.ports.automatic_lookup_enabled is False
+    assert ports.artist_name_resolver.ports.automatic_lookup_enabled is True
     assert isinstance(ports.path_resolver, FilesystemPathResolver)
     assert isinstance(ports.clock, SystemClock)
     assert isinstance(ports.id_generator, Uuid7IdGenerator)
@@ -292,7 +291,6 @@ def test_build_create_undo_plan_ports_matches_undo_command_recipe(runtime: Runti
 def test_plan_composition_reloads_and_reuses_persisted_naming_controls(runtime: RuntimeContext) -> None:
     """Saved settings affect the next Plan builder and reuse unchanged stateful adapters."""
     initial = runtime.config_store.read_snapshot()
-    model_path = runtime.application_root / "lid.176.ftz"
     configured = replace(
         initial.config,
         musicbrainz=replace(
@@ -303,11 +301,6 @@ def test_plan_composition_reloads_and_reuses_persisted_naming_controls(runtime: 
             timeout_seconds=2.5,
             retry_limit=CONFIGURED_RETRY_LIMIT,
             rate_limit_seconds=1.25,
-        ),
-        fasttext=replace(
-            initial.config.fasttext,
-            model_path=str(model_path),
-            minimum_confidence=0.91,
         ),
     )
     _ = runtime.config_store.save(configured, expected_config_revision=initial.config_revision)
@@ -324,10 +317,6 @@ def test_plan_composition_reloads_and_reuses_persisted_naming_controls(runtime: 
     second = second_resolver.ports
 
     assert first.automatic_lookup_enabled is True
-    assert first.minimum_confidence == pytest.approx(0.91)
-    assert isinstance(first.language_predictor, OptionalFastTextLanguageDetector)
-    assert first.language_predictor.model_path == model_path
-    assert first.language_predictor is second.language_predictor
     assert isinstance(first.artist_name_provider, MusicBrainzArtistLookup)
     assert first.artist_name_provider is second.artist_name_provider
     assert first.artist_name_provider.user_agent == "Library Tool/0.1.0 (ops@example.test)"

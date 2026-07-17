@@ -19,7 +19,6 @@ from omym2.adapters.config.config_validator import (
     ALBUM_YEAR_RESOLUTION_KEY,
     APPLICATION_NAME_KEY,
     ARTIST_IDS_SECTION,
-    ARTIST_NAMES_SECTION,
     AUTO_APPLY_KEY,
     CACHE_POLICY_KEY,
     COLLISION_SECTION,
@@ -31,9 +30,7 @@ from omym2.adapters.config.config_validator import (
     DISC_NUMBER_CONDITION_KEY,
     DISC_NUMBER_STYLE_KEY,
     ENABLED_KEY,
-    ENTRIES_KEY,
     FALLBACK_ID_KEY,
-    FASTTEXT_SECTION,
     HASHING_SECTION,
     INCOMING_KEY,
     LEVEL_KEY,
@@ -42,8 +39,6 @@ from omym2.adapters.config.config_validator import (
     MAX_FILENAME_LENGTH_KEY,
     MAX_LENGTH_KEY,
     METADATA_SECTION,
-    MINIMUM_CONFIDENCE_KEY,
-    MODEL_PATH_KEY,
     MUSICBRAINZ_SECTION,
     ON_DUPLICATE_HASH_KEY,
     ON_MISSING_METADATA_KEY,
@@ -52,7 +47,6 @@ from omym2.adapters.config.config_validator import (
     PATH_POLICY_SECTION,
     PATHS_SECTION,
     PREFER_ALBUM_ARTIST_KEY,
-    PREFERENCES_KEY,
     RATE_LIMIT_SECONDS_KEY,
     READ_CHUNK_SIZE_BYTES_KEY,
     REFRESH_SECTION,
@@ -361,16 +355,6 @@ def dump_config_toml(config: AppConfig) -> str:
     )
     _append_section(
         lines,
-        f"{ARTIST_IDS_SECTION}.{ENTRIES_KEY}",
-        tuple((key, value) for key, value in sorted((config.artist_ids.entries or {}).items())),
-    )
-    _append_section(
-        lines,
-        f"{ARTIST_NAMES_SECTION}.{PREFERENCES_KEY}",
-        tuple((key, value) for key, value in sorted((config.artist_names.preferences or {}).items())),
-    )
-    _append_section(
-        lines,
         METADATA_SECTION,
         (
             (PREFER_ALBUM_ARTIST_KEY, config.metadata.prefer_album_artist),
@@ -400,14 +384,6 @@ def dump_config_toml(config: AppConfig) -> str:
             (RETRY_LIMIT_KEY, config.musicbrainz.retry_limit),
             (RATE_LIMIT_SECONDS_KEY, config.musicbrainz.rate_limit_seconds),
             (CACHE_POLICY_KEY, config.musicbrainz.cache_policy),
-        ),
-    )
-    _append_section(
-        lines,
-        FASTTEXT_SECTION,
-        (
-            (MODEL_PATH_KEY, config.fasttext.model_path),
-            (MINIMUM_CONFIDENCE_KEY, config.fasttext.minimum_confidence),
         ),
     )
     _append_section(

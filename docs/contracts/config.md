@@ -3,7 +3,7 @@ type: Contract
 title: Config Contract
 description: Defines OMYM2's TOML config schema, atomic-save protocol, naming and path policy, runtime controls, companion processing, and unprocessed-file collection.
 tags: [config, toml, concurrency, atomic-save, path-policy, artist-names, musicbrainz, logging, companions, unprocessed]
-timestamp: 2026-07-16T22:15:00+09:00
+timestamp: 2026-07-17T22:43:57+09:00
 ---
 
 # Config Contract
@@ -113,8 +113,7 @@ The `.config/` directory is reserved for OMYM2 internal data under the applicati
 ## TOML Schema, Defaults, And Validation
 
 The table below is the complete schema for the persisted config. Every table
-except `[artist_ids.entries]` and `[artist_names.preferences]` has a fixed key
-set.
+has a fixed key set.
 
 | TOML path | Accepted value | Default when omitted |
 | --- | --- | --- |
@@ -135,18 +134,14 @@ set.
 | `path_policy.disc_number_style` | `"plain"` or `"d_prefixed"` | `"plain"` |
 | `path_policy.disc_number_condition` | `"always"` or `"multiple_discs"` | `"always"` |
 | `artist_ids.max_length` | positive integer | `8` |
-| `artist_ids.fallback_id` | value matching the saved artist-ID pattern below | `"NOART"` |
-| `artist_ids.entries` | table mapping non-empty source-artist strings to valid saved artist-ID values | empty mapping |
-| `artist_names.preferences` | table mapping non-empty source-artist strings to non-empty full display names | empty mapping |
-| `musicbrainz.enabled` | boolean | `false` |
+| `artist_ids.fallback_id` | valid compact ID used when generation has no usable characters | `"NOART"` |
+| `musicbrainz.enabled` | boolean | `true` |
 | `musicbrainz.application_name` | non-empty string | `"OMYM2"` |
 | `musicbrainz.contact` | non-empty string | `"https://github.com/muray0196/omym2"` |
 | `musicbrainz.timeout_seconds` | finite number greater than `0` | `5.0` |
 | `musicbrainz.retry_limit` | non-negative integer | `1` |
 | `musicbrainz.rate_limit_seconds` | finite number at least `1.0` | `1.0` |
 | `musicbrainz.cache_policy` | `"sticky_positive"` | `"sticky_positive"` |
-| `fasttext.model_path` | non-empty string path | unset (`null` in `AppConfig`) |
-| `fasttext.minimum_confidence` | finite number from `0.0` through `1.0` | `0.8` |
 | `hashing.read_chunk_size_bytes` | positive integer | `1048576` |
 | `logging.destination` | normalized application-root-relative logical path | unset (the application-data log default) |
 | `logging.level` | `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`, or `"CRITICAL"` | `"INFO"` |
@@ -168,17 +163,13 @@ set.
 Every named section is optional. A missing section, or a missing key in a
 present section, uses the table's default; `version` is the sole exception.
 `TomlConfigStore.save` serializes a deterministic configuration containing every
-non-null setting and both open-ended mapping tables, even when the mappings are
-empty.
+non-null setting.
 
 Unknown top-level keys and unknown keys in a fixed section are validation
-errors. The two open-ended tables use user-provided source artist names as
-keys, so any non-empty string key is allowed. Artist-ID values must satisfy the
-saved-ID rule below. Artist display-name values may contain arbitrary Unicode
-text but must be non-empty strings. All ordinary string settings must be
-non-empty when present; integers reject booleans; booleans must be TOML
-booleans. TOML validation checks configured paths only for string type and
-non-emptiness, not filesystem existence or accessibility.
+errors. All ordinary string settings must be non-empty when present; integers
+reject booleans; booleans must be TOML booleans. TOML validation checks
+configured paths only for string type and non-emptiness, not filesystem
+existence or accessibility.
 
 ## Versioning And Reset
 
@@ -186,8 +177,10 @@ Only config version `2` is supported. Missing, non-integer, or unsupported
 versions are validation errors. No version-based migration exists. The
 2026-07-16 pre-release clean-slate cutover intentionally made older Config
 files unsupported; delete `.config/config.toml` and recreate Settings with the
-current binary. Removed, renamed, and unknown keys are rejected rather than
-translated.
+current binary. The former `[artist_names.preferences]` table is removed;
+artist-name mappings now live in SQLite, so a Config file that still contains
+that table is rejected as unknown rather than translated. Other removed,
+renamed, and unknown keys follow the same rule.
 
 Any future version cutover and its reset policy belong in this contract. Do not
 add an implicit adapter migration or a separate migration document.
@@ -272,63 +265,45 @@ group. Missing, zero, and negative disc values are ignored. PathPolicy and this
 inference are pure domain logic and must not read the filesystem, SQLite,
 TOML, Mutagen, or adapter state.
 
-`{artist_id}` is a user-facing path/config value. It is resolved from the
-already-loaded `artist_ids.entries` mapping using the source artist name from
-metadata. When no saved entry exists, PathPolicy may use the pure deterministic
-artist ID generator with `artist_ids.max_length` and `artist_ids.fallback_id`.
-It must not load fastText models or call MusicBrainz during path rendering.
+`{artist_id}` is an internally generated path value. PathPolicy passes the
+already-derived Latin display name to the pure deterministic artist ID
+generator, falling back to the original source text, and applies
+`artist_ids.max_length` and `artist_ids.fallback_id`.
+It must not call MusicBrainz during path rendering.
 Artist ID settings participate in the Library registration path-policy
 fingerprint only when the active template contains the `{artist_id}`
 placeholder.
 
-`{artist}` and `{album_artist}` use the already-derived display-name projection
-when one is supplied. `{artist_id}` always uses the original metadata value as
-its lookup/generation key, so changing a full display-name preference never
-silently changes a saved or generated compact artist ID.
+`{artist}` and `{album_artist}` use the already-derived Latin-name projection
+when one is supplied. `{artist_id}` uses the original metadata value only as
+its internal memoization key; the Latin projection is the generation input.
+Original-to-Latin mappings are SQLite feature data, not
+AppConfig; their contract is in
+[DB Schema](db-schema.md#accepted_artist_names). Mapping contents therefore do
+not participate in `config_hash` or the Config-derived Library path-policy
+fingerprint. Plans record the resolved-name diagnostics and target paths they
+actually used; Add and partial Refresh keep their whole-Library reconciliation
+guard, and Apply executes only those recorded targets.
 
-## ArtistNameConfig
+## MusicBrainz Runtime Controls
 
-Full artist display names are editable preferences stored in TOML separately
-from compact `artist_ids` path values. `preferences` is an exact mapping from
-one complete source metadata string to its preferred display string. Stage 1
-treats a multi-artist value as one opaque key; it does not split on commas or
-other guessed separators.
-
-An empty mapping is the disabled, no-behavior-change default. No fastText model
-or network provider is required to use preferences. During Plan creation and
-read-only path projection, the pure naming projection uses the preferred value
-when an exact entry exists and otherwise preserves the original value. Raw
-`TrackMetadata` and embedded tags remain unchanged.
-
-The complete mapping participates in `config_hash`. It participates in the
-Library path-policy fingerprint only when it is non-empty and the active
-template contains `{artist}` or `{album_artist}`. Empty preferences, and
-preferences used with artist-free or `{artist_id}`-only templates, preserve the
-existing path-policy fingerprint.
-
-## MusicBrainz And fastText Runtime Controls
-
-`musicbrainz.enabled` is the persisted opt-in for new automatic provider work.
-Preferences and accepted positive cache rows remain available when it is
-disabled. An eligible uncached source records `automatic_lookup_disabled`, not
-a detector failure, and no model or network call occurs.
+`musicbrainz.enabled` controls new automatic provider work and defaults to
+enabled. A saved artist-name mapping remains available when it is disabled. An
+eligible uncached source records `automatic_lookup_disabled`, and no network
+call occurs.
 
 The application identity and contact form the MusicBrainz User-Agent. One
 initial request plus at most `retry_limit` retries uses `timeout_seconds` for
 each attempt. `rate_limit_seconds` cannot be below the provider minimum of one
 second. SQLite coordinates that cadence across processes and restarts without
 holding a transaction while sleeping. The only cache policy is
-`sticky_positive`: accepted results persist insert-if-absent, while misses and
-failures do not become negative cache entries.
+`sticky_positive`: automatic results persist insert-if-absent, while misses and
+failures do not become negative cache entries. Users may subsequently edit or
+delete positive mappings through Settings.
 
-`fasttext.model_path` selects a user-supplied language-identification model. A
-relative path is anchored beneath the stable application root; an absolute
-path remains explicit. The predictor loads lazily on the first eligible
-uncached source and remembers load failure for the process. Missing runtime or
-model support preserves the original metadata with `detector_unavailable` and
-does not contact MusicBrainz. `minimum_confidence` is inclusive at both ends.
-
-Changing provider, model, timeout, retry, cadence, or confidence controls
+Eligibility is deterministic: Latin-only sources, including diacritics, remain
+unchanged, while any alphabetic character outside the Unicode Latin script
+permits provider lookup. Changing provider, timeout, retry, or cadence controls
 changes the full Plan audit `config_hash`, but it does not change the Library
 path-policy fingerprint. Apply never reloads these controls or rewrites an
 already-reviewed target.
@@ -383,22 +358,18 @@ interpreting already-recorded evidence.
 
 ## ArtistIdConfig
 
-Artist IDs are editable settings stored in TOML, not internal OMYM2 identities.
-They are not Track, Library, or Artist entity IDs.
+Artist IDs are automatic internal path values, not Track, Library, or Artist
+entity IDs. TOML stores only general generation tunables.
 
 Fields:
 
 * `max_length`: positive maximum generated ID length
 * `fallback_id`: non-empty ID used when source text has no usable characters
-* `entries`: editable mapping from source artist name to saved artist ID
 
-Normal generation saves only missing entries. Existing entries are preserved
-unless the user explicitly requests regeneration/overwrite.
-
-Entry values must be non-empty ASCII letters, digits, or underscores with
+`fallback_id` must be non-empty ASCII letters, digits, or underscores with
 optional single internal hyphens (no leading/trailing hyphen, no repeated
-hyphens); invalid values are rejected at load/save time. `fallback_id` shares
-this same rule, since it can flow into generated IDs and saved entries.
+hyphens); invalid values are rejected at load/save time because it can flow
+directly into generated paths.
 
 ## Metadata And Collision Policy
 

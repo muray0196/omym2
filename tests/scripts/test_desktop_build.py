@@ -134,6 +134,7 @@ def test_pyinstaller_spec_forces_desktop_resources_and_gui_mode() -> None:
 
     assert 'collect_data_files(\n    "omym2.adapters.web"' in source
     assert 'collect_data_files(\n    "omym2.adapters.db.sqlite.migrations"' in source
+    assert 'collect_data_files(\n    "omym2.adapters.artist_ids"' in source
     assert 'copy_metadata("omym2")' in source
     assert 'collect_submodules("webview")' not in source
     assert 'collect_dynamic_libs("webview")' in source

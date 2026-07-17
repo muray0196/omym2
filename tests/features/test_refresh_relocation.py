@@ -197,7 +197,6 @@ def test_refresh_projects_shared_artist_name_resolution_without_updating_raw_tra
         config.path_policy,
         config.artist_ids,
         config.metadata.album_year_resolution,
-        config.artist_names,
     )
     track = _track()
     uow = InMemoryUnitOfWork()

@@ -45,7 +45,7 @@ export function Component() {
   return (
     <SettingsEditor
       initial={settingsQuery.data}
-      key={settingsQuery.data.config_revision}
+      key={`${settingsQuery.data.config_revision}:${settingsQuery.data.artist_name_mappings.revision}`}
       onLoadLatest={async () => {
         await settingsQuery.refetch();
       }}

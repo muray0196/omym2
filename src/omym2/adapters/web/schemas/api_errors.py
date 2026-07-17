@@ -32,6 +32,7 @@ class ApiErrorCode(StrEnum):
     METHOD_NOT_ALLOWED = "method_not_allowed"
     CONFIG_INVALID = "config_invalid"
     CONFIG_CHANGED = "config_changed"
+    ARTIST_NAME_MAPPINGS_CHANGED = "artist_name_mappings_changed"
     OPERATION_IN_PROGRESS = "operation_in_progress"
     IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused"
     LIBRARY_SELECTION_AMBIGUOUS = "library_selection_ambiguous"

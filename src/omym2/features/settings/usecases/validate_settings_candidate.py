@@ -39,5 +39,5 @@ class ValidateSettingsCandidateUseCase:
             changes=settings_field_changes(snapshot.config, request.config),
             valid=not issues,
             validation_issues=issues,
-            preview=default_settings_preview(request.config),
+            preview=default_settings_preview(request.config, self.ports.artist_name_resolver),
         )

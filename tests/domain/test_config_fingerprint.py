@@ -23,9 +23,7 @@ from omym2.config import (
 from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
-    ArtistNameConfig,
     CompanionsConfig,
-    FastTextConfig,
     HashingConfig,
     LoggingConfig,
     MusicBrainzConfig,
@@ -55,21 +53,10 @@ def test_config_fingerprint_changes_when_config_changes() -> None:
     assert changed_hash != default_hash
 
 
-def test_config_fingerprint_changes_when_artist_name_preferences_change() -> None:
-    """Full config identity includes editable display-name preferences."""
-    default_hash = calculate_config_fingerprint(AppConfig())
-    changed_hash = calculate_config_fingerprint(
-        AppConfig(artist_names=ArtistNameConfig(preferences={"宇多田ヒカル": "Hikaru Utada"}))
-    )
-
-    assert changed_hash != default_hash
-
-
 @pytest.mark.parametrize(
     "changed_config",
     [
-        AppConfig(musicbrainz=MusicBrainzConfig(enabled=True)),
-        AppConfig(fasttext=FastTextConfig(model_path="models/lid.176.ftz")),
+        AppConfig(musicbrainz=MusicBrainzConfig(enabled=False)),
         AppConfig(hashing=HashingConfig(read_chunk_size_bytes=2_048)),
         AppConfig(logging=LoggingConfig(destination="logs/omym2.log")),
         AppConfig(companions=CompanionsConfig(enabled=True)),
@@ -105,7 +92,7 @@ def test_path_policy_fingerprint_ignores_artist_ids_when_template_cannot_use_the
     default_hash = calculate_path_policy_fingerprint(AppConfig().path_policy, AppConfig().artist_ids)
     changed_hash = calculate_path_policy_fingerprint(
         AppConfig().path_policy,
-        ArtistIdConfig(entries={"Aimer": "AIMR"}),
+        ArtistIdConfig(max_length=10),
     )
 
     assert changed_hash == default_hash
@@ -117,44 +104,10 @@ def test_path_policy_fingerprint_changes_when_used_artist_ids_change() -> None:
     default_hash = calculate_path_policy_fingerprint(path_policy, AppConfig().artist_ids)
     changed_hash = calculate_path_policy_fingerprint(
         path_policy,
-        ArtistIdConfig(entries={"Aimer": "AIMR"}),
+        ArtistIdConfig(max_length=10),
     )
 
     assert changed_hash != default_hash
-
-
-def test_path_policy_fingerprint_changes_when_used_artist_name_preferences_change() -> None:
-    """Display-name preferences stale registration for artist placeholders."""
-    path_policy = PathPolicyConfig(template="{album_artist}/{title}")
-    default_hash = calculate_path_policy_fingerprint(path_policy, artist_name_config=ArtistNameConfig())
-    changed_hash = calculate_path_policy_fingerprint(
-        path_policy,
-        artist_name_config=ArtistNameConfig(preferences={"宇多田ヒカル": "Hikaru Utada"}),
-    )
-
-    assert changed_hash != default_hash
-
-
-def test_path_policy_fingerprint_ignores_artist_name_preferences_when_template_cannot_use_them() -> None:
-    """Display-name preferences do not stale templates without artist text."""
-    path_policy = PathPolicyConfig(template="{album}/{title}")
-    default_hash = calculate_path_policy_fingerprint(path_policy, artist_name_config=ArtistNameConfig())
-    changed_hash = calculate_path_policy_fingerprint(
-        path_policy,
-        artist_name_config=ArtistNameConfig(preferences={"宇多田ヒカル": "Hikaru Utada"}),
-    )
-
-    assert changed_hash == default_hash
-
-
-def test_path_policy_fingerprint_ignores_empty_artist_name_preferences() -> None:
-    """The optional empty preference mapping preserves the existing path identity."""
-    path_policy = PathPolicyConfig(template="{artist}/{title}")
-
-    assert calculate_path_policy_fingerprint(path_policy) == calculate_path_policy_fingerprint(
-        path_policy,
-        artist_name_config=ArtistNameConfig(),
-    )
 
 
 def test_path_policy_fingerprint_changes_when_used_album_year_resolution_changes() -> None:
@@ -216,5 +169,4 @@ def _library_path_policy_fingerprint(config: AppConfig) -> str:
         config.path_policy,
         config.artist_ids,
         config.metadata.album_year_resolution,
-        config.artist_names,
     )

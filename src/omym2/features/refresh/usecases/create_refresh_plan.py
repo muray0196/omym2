@@ -118,7 +118,6 @@ class CreateRefreshPlanUseCase:
             config.path_policy,
             config.artist_ids,
             config.metadata.album_year_resolution,
-            config.artist_names,
         )
         path_policy = PathPolicy.from_app_config(config)
         timestamp = self.ports.clock.now()
@@ -311,10 +310,7 @@ class CreateRefreshPlanUseCase:
     ) -> tuple[_RefreshCandidate, ...]:
         candidate_metadata = _candidate_metadata(candidates)
         metadata_batch = _effective_metadata_batch(candidates, active_tracks)
-        resolutions = self.ports.artist_name_resolver.resolve_many(
-            artist_name_sources(candidate_metadata),
-            preferences=config.artist_names.preferences,
-        )
+        resolutions = self.ports.artist_name_resolver.resolve_many(artist_name_sources(candidate_metadata))
         resolution_pairs = iter(batched(resolutions, ARTIST_NAME_FIELD_COUNT, strict=True))
         projections = iter(
             artist_name_projections(candidate_metadata, tuple(resolution.resolved_name for resolution in resolutions))

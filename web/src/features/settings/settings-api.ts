@@ -3,19 +3,19 @@
  * Why: Keeps Config drafts on the generated boundary while distinguishing API and transport states.
  */
 import {
-  generateArtistIdDraft,
   getSettings,
   previewSettingsPath,
   saveSettings,
+  saveArtistNameMappings,
   validateSettings,
   type ApiFailureEnvelope,
-  type ArtistIdDraftData,
-  type ArtistIdDraftRequest,
+  type ArtistNameMappingsData,
   type PathPreview,
   type PathPreviewRequest,
   type SettingsCandidateData,
   type SettingsCandidateRequest,
   type SettingsData,
+  type SaveArtistNameMappingsRequestResource,
 } from "../../api/generated";
 
 export const settingsQueryKey = ["settings"] as const;
@@ -99,22 +99,24 @@ export async function previewSettingsDraft(
   return response.data.data;
 }
 
-export async function generateArtistIds(
-  request: ArtistIdDraftRequest,
-): Promise<ArtistIdDraftData> {
-  const response = await generateArtistIdDraft({
+export async function saveEnglishArtistNames(
+  request: SaveArtistNameMappingsRequestResource,
+  csrfToken: string,
+): Promise<ArtistNameMappingsData> {
+  const response = await saveArtistNameMappings({
     baseUrl: globalThis.location.origin,
     body: request,
+    headers: { "X-OMYM2-CSRF-Token": csrfToken },
   });
   if (response.error !== undefined) {
     throwSettingsResponseError(
-      "Artist ID generation",
+      "Artist-name mapping save",
       response.error,
       response.response,
     );
   }
   if (response.data.data === null) {
-    throw new SettingsUnexpectedDataError("Artist ID generation");
+    throw new SettingsUnexpectedDataError("Artist-name mapping save");
   }
   return response.data.data;
 }

@@ -83,6 +83,18 @@ class InMemoryAcceptedArtistNameRepository:
         self.records[accepted_name.source_key] = accepted_name
         return True
 
+    def list_all(self) -> tuple[AcceptedArtistName, ...]:
+        """Return every mapping in source-key order."""
+        return tuple(self.records[key] for key in sorted(self.records))
+
+    def save(self, accepted_name: AcceptedArtistName) -> None:
+        """Insert or replace one mapping."""
+        self.records[accepted_name.source_key] = accepted_name
+
+    def delete_by_source_key(self, source_key: str) -> None:
+        """Delete one mapping when present."""
+        _ = self.records.pop(source_key, None)
+
 
 @dataclass(slots=True)
 class InMemoryLibraryRepository:

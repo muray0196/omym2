@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omym2.features.common_ports import ConfigStore
+    from omym2.features.common_ports import ArtistNameResolutionReader, ConfigStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,3 +17,4 @@ class SettingsPorts:
     """Ports required for settings load, save, and validation usecases."""
 
     config_store: ConfigStore
+    artist_name_resolver: ArtistNameResolutionReader

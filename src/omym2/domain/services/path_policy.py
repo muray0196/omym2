@@ -128,7 +128,7 @@ class PathPolicy:
         if "artist" in self._used_placeholders:
             values["artist"] = self._artist(metadata, artist_names)
         if "artist_id" in self._used_placeholders:
-            values["artist_id"] = self._artist_id(metadata)
+            values["artist_id"] = self._artist_id(metadata, artist_names)
         return self.config.template.format(**values)
 
     def _album_artist(self, metadata: TrackMetadata, artist_names: ArtistNameProjection | None) -> str:
@@ -153,26 +153,18 @@ class PathPolicy:
             or self.config.unknown_artist
         )
 
-    def _artist_id(self, metadata: TrackMetadata) -> str:
+    def _artist_id(self, metadata: TrackMetadata, artist_names: ArtistNameProjection | None) -> str:
         source_artist = metadata.artist or metadata.album_artist or self.config.unknown_artist
         cached_artist_id = self._generated_artist_id_cache.get(source_artist)
         if cached_artist_id is not None:
             return cached_artist_id
 
-        saved_artist_id = self.artist_ids.entries.get(source_artist) if self.artist_ids.entries is not None else None
-        if saved_artist_id is not None:
-            sanitized_saved_artist_id = self._artist_id_component(saved_artist_id)
-            # A saved entry is normally validated as sanitizer-stable at config
-            # construction (ArtistIdConfig.__post_init__), so sanitizing here is
-            # defense-in-depth. If sanitizing still collapses it to nothing,
-            # fall through to the generated ID instead of returning an empty
-            # component, which would otherwise silently drop a path directory
-            # level.
-            if sanitized_saved_artist_id != "":
-                self._generated_artist_id_cache[source_artist] = sanitized_saved_artist_id
-                return sanitized_saved_artist_id
+        projected_artist = None
+        if artist_names is not None:
+            projected_artist = artist_names.artist if metadata.artist else artist_names.album_artist
+        generation_artist = projected_artist or source_artist
         generated_artist_id = generate_artist_id(
-            source_artist,
+            generation_artist,
             max_length=self.artist_ids.max_length,
             fallback_id=self.artist_ids.fallback_id,
         )

@@ -3,7 +3,7 @@ type: Command Reference
 title: Commands
 description: Lists the OMYM2 CLI surface, including persisted controls, companion and unprocessed Add review, deterministic result previews, diagnostics, recovery, and trust-stat flags.
 tags: [cli, commands, reference, artist-names, musicbrainz, companions, unprocessed]
-timestamp: 2026-07-16T05:23:14+09:00
+timestamp: 2026-07-17T22:43:57+09:00
 ---
 
 # Commands
@@ -23,7 +23,6 @@ The current CLI surface includes:
 omym2 settings
 omym2 config show
 omym2 config validate
-omym2 artist-ids generate [--overwrite] [--fasttext-model <path>] <artist>...
 
 # Register or organize existing Library
 omym2 organize --library <path>
@@ -82,16 +81,16 @@ mutation evidence.
 
 ## Persisted Runtime, Companion, And Unprocessed Controls
 
-`omym2 settings` edits the persisted MusicBrainz, fastText, hashing, logging,
+`omym2 settings` edits the persisted MusicBrainz, hashing, logging,
 companion, and unprocessed-file controls. `omym2 config show` displays them and
 `omym2 config validate` validates them; the exact keys and defaults are in the
 [Config Contract](contracts/config.md).
 
 Normal Add, Organize, and Refresh Plan creation may perform automatic artist
-naming only when MusicBrainz is enabled and a usable fastText model is
-configured. Preferences and accepted cached names remain available without
-new provider work. Apply, Undo, Check, History, and Plan inspection never load
-the model or contact MusicBrainz.
+naming only when MusicBrainz is enabled and a source contains non-Latin
+letters. Saved original-to-Latin mappings remain available without new
+provider work. Apply, Undo, Check, History, and Plan inspection never contact
+MusicBrainz.
 
 The hashing chunk size changes read throughput, not content-hash identity.
 Logging destination, level, rotation, and retention changes take effect after
@@ -258,37 +257,11 @@ Config storage is defined in [contracts/config.md](contracts/config.md).
 
 Config validation is implemented through the config adapter and settings usecase boundaries defined in [contracts/config.md](contracts/config.md).
 
-## artist-ids generate
-
-`artist-ids generate` creates editable artist ID entries in TOML config. It
-uses the shared whole-string artist-name resolver defined in
-[DOMAIN.md](DOMAIN.md#artist-name-batch-resolution) without making the display
-name and compact artist ID the same setting.
-
-Without `--overwrite`, existing saved artist ID entries are preserved. The
-flag permits replacing only those compact config entries; it does not replace
-an exact display-name preference or a sticky accepted provider result.
-
-Without `--fasttext-model`, each name is generated from its exact configured
-display-name preference, then an accepted cached provider name, then the
-original source value. The command does not load fastText or contact
-MusicBrainz in this mode.
-
-An explicit `--fasttext-model <path>` additionally permits eligible unresolved
-names to use the shared fastText gate and deterministic MusicBrainz acceptance
-rules. A newly accepted positive result is inserted into the SQLite
-`accepted_artist_names` cache before its display value is used for artist ID
-generation. Lookup misses, ambiguity, ineligibility, and provider failure fall
-back to the original source value and do not prevent local generation.
-
-The artist-ID generation work writes only editable artist ID config entries
-and positive accepted-name cache rows. It does not create internal Artist
-identities or directly mutate Tracks, Plans, PlanActions, Runs, FileEvents, or
-music files.
-
 ## settings
 
-`settings` opens the local Web UI in a browser. The Settings surface edits full
-artist display-name preferences separately from compact artist IDs, exposes
-the persisted naming/runtime, companion, and unprocessed controls above, and
-saves the full draft through the same revision-safe Config boundary.
+`settings` opens the local Web UI in a browser. The Settings surface lists the
+shared romanized-name mappings populated by MusicBrainz and lets users add,
+correct, or delete them. Mapping saves use their own revision-checked SQLite
+boundary; ordinary settings continue to use the Config revision boundary.
+Compact artist IDs are generated internally only when a path template uses
+`{artist_id}` and are not editable Settings data.

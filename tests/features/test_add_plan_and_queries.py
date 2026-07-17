@@ -28,7 +28,6 @@ from omym2.config import (
 from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
-    ArtistNameConfig,
     CompanionsConfig,
     PathPolicyConfig,
     PathsConfig,
@@ -289,20 +288,20 @@ def test_add_refuses_stale_path_policy_registration() -> None:
     assert uow.plans.records == {}
 
 
-def test_add_refuses_registration_stale_after_artist_id_entries_change() -> None:
-    """A real artist_ids.entries change makes the registered fingerprint stale.
+def test_add_refuses_registration_stale_after_artist_id_settings_change() -> None:
+    """A real artist_ids tunable change makes the registered fingerprint stale.
 
     Unlike test_add_refuses_stale_path_policy_registration (which injects a
     fake literal hash), this proves the real fingerprint wiring: a Library
-    registered under one ArtistIdConfig is rejected once artist_ids.entries
-    changes, because the template renders {artist_id}.
+    registered under one ArtistIdConfig is rejected once max_length changes,
+    because the template renders {artist_id}.
     """
     path_policy = PathPolicyConfig(template="{artist_id}/{title}")
-    registered_artist_ids = ArtistIdConfig(entries={"Artist": "ART1"})
+    registered_artist_ids = ArtistIdConfig(max_length=8)
     registered_hash = calculate_path_policy_fingerprint(path_policy, registered_artist_ids)
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=registered_hash))
-    changed_artist_ids = ArtistIdConfig(entries={"Artist": "ART2"})
+    changed_artist_ids = ArtistIdConfig(max_length=10)
     config = AppConfig(path_policy=path_policy, artist_ids=changed_artist_ids)
     ports, _, _ = _ports(uow, (), {}, SequenceIdGenerator(), options=PortOptions(config=config))
 
@@ -313,18 +312,18 @@ def test_add_refuses_registration_stale_after_artist_id_entries_change() -> None
 
 
 def test_add_registration_survives_artist_id_change_when_template_unused() -> None:
-    """artist_ids.entries changes do not stale a Library whose template ignores {artist_id}.
+    """Artist-ID tunable changes do not stale a Library whose template ignores {artist_id}.
 
     Positive control for test_add_refuses_registration_stale_after_artist_id_entries_change:
     the path policy fingerprint intentionally omits artist_ids when the
     template never renders {artist_id}, so registration must still succeed.
     """
     path_policy = PathPolicyConfig(template="{artist}/{title}")
-    registered_artist_ids = ArtistIdConfig(entries={"Artist": "ART1"})
+    registered_artist_ids = ArtistIdConfig(max_length=8)
     registered_hash = calculate_path_policy_fingerprint(path_policy, registered_artist_ids)
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=registered_hash))
-    changed_artist_ids = ArtistIdConfig(entries={"Artist": "ART2"})
+    changed_artist_ids = ArtistIdConfig(max_length=10)
     config = AppConfig(path_policy=path_policy, artist_ids=changed_artist_ids)
     ports, _, _ = _ports(
         uow,
@@ -385,7 +384,6 @@ def test_add_projects_shared_artist_name_resolution_only_into_the_recorded_targe
         config.path_policy,
         config.artist_ids,
         config.metadata.album_year_resolution,
-        config.artist_names,
     )
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=path_policy_hash))
@@ -483,91 +481,6 @@ def test_add_allows_resolved_artist_name_after_existing_tracks_are_reconciled() 
     assert plan.actions[0].target_path == EXPECTED_PREFERRED_ARTIST_PATH
 
 
-def test_add_honors_an_existing_tracks_exact_artist_name_preference() -> None:
-    """An exact preference outranks a provider result shared by normalized source key."""
-    existing_metadata = TrackMetadata(
-        title="Existing",
-        artist=" Artist ",
-        album="Album",
-        year=2026,
-        track_number=1,
-        disc_number=1,
-    )
-    config = AppConfig(
-        artist_names=ArtistNameConfig(preferences={" Artist ": "Existing Preferred"}),
-    )
-    path_policy_hash = calculate_path_policy_fingerprint(
-        config.path_policy,
-        config.artist_ids,
-        config.metadata.album_year_resolution,
-        config.artist_names,
-    )
-    uow = InMemoryUnitOfWork()
-    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=path_policy_hash))
-    uow.tracks.save(
-        _track(
-            OTHER_CONTENT_HASH,
-            "Existing-Preferred/2026_Album/1-01_Existing.flac",
-            metadata=existing_metadata,
-        )
-    )
-    ports, _, _ = _ports(
-        uow,
-        (_entry(INCOMING_FILE),),
-        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
-        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
-        options=PortOptions(
-            config=config,
-            resolved_names={"Artist": "Provider Preferred"},
-        ),
-    )
-
-    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
-
-    assert plan.actions[0].target_path == "Provider-Preferred/2026_Album/1-02_Title.flac"
-
-
-def test_add_does_not_spread_an_incoming_exact_preference_across_a_normalized_key() -> None:
-    """An exact incoming preference does not rename a distinct existing raw value."""
-    existing_metadata = TrackMetadata(
-        title="Existing",
-        artist=" Artist ",
-        album="Album",
-        year=2026,
-        track_number=1,
-        disc_number=1,
-    )
-    config = AppConfig(
-        artist_names=ArtistNameConfig(preferences={"Artist": "Incoming Preferred"}),
-    )
-    path_policy_hash = calculate_path_policy_fingerprint(
-        config.path_policy,
-        config.artist_ids,
-        config.metadata.album_year_resolution,
-        config.artist_names,
-    )
-    uow = InMemoryUnitOfWork()
-    uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=path_policy_hash))
-    uow.tracks.save(
-        _track(
-            OTHER_CONTENT_HASH,
-            "Artist/2026_Album/1-01_Existing.flac",
-            metadata=existing_metadata,
-        )
-    )
-    ports, _, _ = _ports(
-        uow,
-        (_entry(INCOMING_FILE),),
-        {INCOMING_FILE: _snapshot(INCOMING_FILE, METADATA, CONTENT_HASH)},
-        SequenceIdGenerator(plan_ids=deque((PLAN_ID,)), action_ids=deque((ACTION_ID,))),
-        options=PortOptions(config=config),
-    )
-
-    plan = CreateAddPlanUseCase(ports).execute(CreateAddPlanRequest(source_path=INCOMING_ROOT))
-
-    assert plan.actions[0].target_path == "Incoming-Preferred/2026_Album/1-02_Title.flac"
-
-
 def test_add_does_not_require_reconciliation_for_a_duplicate_skip() -> None:
     """A resolved duplicate is not imported and therefore cannot create mixed naming."""
     uow = InMemoryUnitOfWork()
@@ -625,7 +538,6 @@ def test_add_excludes_duplicate_skip_from_reconciliation_disc_context() -> None:
         config.path_policy,
         config.artist_ids,
         config.metadata.album_year_resolution,
-        config.artist_names,
     )
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=path_policy_hash))
@@ -728,7 +640,6 @@ def test_add_does_not_reconcile_names_when_the_template_ignores_artist_fields() 
         config.path_policy,
         config.artist_ids,
         config.metadata.album_year_resolution,
-        config.artist_names,
     )
     uow = InMemoryUnitOfWork()
     uow.libraries.save(_library(LIBRARY_ID, LIBRARY_ROOT, path_policy_hash=path_policy_hash))

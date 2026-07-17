@@ -155,7 +155,6 @@ def _is_path_policy_current(config_snapshot: ConfigSnapshot | None, library: Lib
         config.path_policy,
         config.artist_ids,
         config.metadata.album_year_resolution,
-        config.artist_names,
     )
 
 

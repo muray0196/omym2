@@ -95,8 +95,8 @@ WEB_API_BOOTSTRAP_ROUTE: Final = "/api/bootstrap"  # bundled Web UI Bootstrap JS
 WEB_API_SETTINGS_ROUTE: Final = "/api/settings"  # Settings edit and atomic save JSON API path
 WEB_API_SETTINGS_VALIDATE_ROUTE: Final = "/api/settings/validate"  # Settings candidate validation JSON API path
 WEB_API_SETTINGS_PREVIEW_ROUTE: Final = "/api/settings/preview"  # draft PathPolicy preview JSON API path
-WEB_API_SETTINGS_ARTIST_IDS_ROUTE: Final = (
-    "/api/settings/artist-ids/generate"  # draft-only artist-ID generation JSON API path
+WEB_API_SETTINGS_ARTIST_NAMES_ROUTE: Final = (
+    "/api/settings/artist-names"  # editable original-to-English artist-name mapping JSON API path
 )
 WEB_API_PLANS_ROUTE: Final = "/api/plans"  # read-only Plan browse JSON API path
 WEB_API_PLAN_DETAIL_ROUTE: Final = "/api/plans/{plan_id}"  # Plan detail JSON API path
@@ -232,7 +232,7 @@ MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE: Final = "sticky_positive"  # persist a
 ALLOWED_MUSICBRAINZ_CACHE_POLICIES: Final = frozenset(
     {MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE}
 )  # supported provider-result cache policies
-DEFAULT_MUSICBRAINZ_ENABLED: Final = False  # opt-in automatic MusicBrainz lookup default
+DEFAULT_MUSICBRAINZ_ENABLED: Final = True  # automatic MusicBrainz lookup default
 DEFAULT_MUSICBRAINZ_APPLICATION_NAME: Final = "OMYM2"  # application identity sent to MusicBrainz
 DEFAULT_MUSICBRAINZ_CONTACT: Final = "https://github.com/muray0196/omym2"  # MusicBrainz contact identity
 DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS: Final = 5.0  # MusicBrainz request timeout, seconds, > 0
@@ -241,10 +241,6 @@ DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS: Final = 1.0  # delay between MusicBrainz
 DEFAULT_MUSICBRAINZ_CACHE_POLICY: Final = (
     MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE  # accepted positive provider-result cache behavior
 )
-DEFAULT_FASTTEXT_MODEL_PATH: Final[str | None] = None  # optional fastText model path
-DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE: Final = 0.8  # minimum accepted fastText confidence, 0..1
-FASTTEXT_MINIMUM_CONFIDENCE_MIN: Final = 0.0  # lowest accepted fastText confidence
-FASTTEXT_MINIMUM_CONFIDENCE_MAX: Final = 1.0  # highest accepted fastText confidence
 DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES: Final = 1_048_576  # file hash read chunk size, bytes, >= 1
 LOGGING_LEVEL_DEBUG: Final = "DEBUG"  # diagnostic logging level
 LOGGING_LEVEL_INFO: Final = "INFO"  # informational logging level
@@ -273,17 +269,12 @@ DEFAULT_UNPROCESSED_RESULT_PREVIEW_LIMIT: Final = 100  # default reviewed unproc
 PORTABLE_PATH_CONTROL_CHARACTER_LIMIT: Final = 32  # first non-control Unicode code point allowed in path components
 PORTABLE_PATH_FORBIDDEN_CHARACTERS: Final = frozenset('<>:"/\\|?*')  # Windows-invalid path component chars
 ARTIST_ID_ALLOWED_PATTERN: Final = r"[A-Za-z0-9]+"  # characters kept while normalizing artist ID input
-ARTIST_ID_ENTRY_VALUE_PATTERN: Final = (
-    r"^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*$"  # saved artist ID entry values accepted as sanitizer-stable
+ARTIST_ID_VALUE_PATTERN: Final = (
+    r"^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*$"  # automatic artist-ID fallback values accepted as sanitizer-stable
 )
 ARTIST_ID_SPLIT_PATTERN: Final = r"[\s-]+"  # separators that divide artist names into allocation words
 ARTIST_ID_MULTI_ARTIST_SEPARATOR: Final = ","  # separator between source artist names in metadata text
 ARTIST_ID_VOWELS: Final = frozenset("AEIOU")  # vowels deprioritized after the first character in a word
-FASTTEXT_JAPANESE_LABEL: Final = "__label__ja"  # fastText label that means Japanese text
-ARTIST_NAME_LANGUAGE_CONFIDENCE_MIN: Final = (
-    DEFAULT_FASTTEXT_MINIMUM_CONFIDENCE  # minimum fastText confidence for automatic naming, 0..1
-)
-ARTIST_NAME_LANGUAGE_CONFIDENCE_MAX: Final = FASTTEXT_MINIMUM_CONFIDENCE_MAX  # maximum valid fastText confidence
 ARTIST_NAME_COMPOSITE_SEPARATOR: Final = ","  # unsupported multi-artist separator during initial resolution
 MUSICBRAINZ_API_BASE_URL: Final = "https://musicbrainz.org/ws/2"  # MusicBrainz web service base URL
 MUSICBRAINZ_ARTIST_SEARCH_LIMIT: Final = 5  # artist search result cap per lookup
@@ -320,7 +311,7 @@ SANITIZER_UTF8_ENCODING: Final = "utf-8"  # encoding used for sanitizer byte lim
 PATH_POLICY_ALBUM_ARTIST_PLACEHOLDER: Final = "album_artist"  # template field using album-artist display naming
 PATH_POLICY_ARTIST_PLACEHOLDER: Final = "artist"  # template field using track-artist display naming
 PATH_POLICY_DISC_NUMBER_PLACEHOLDER: Final = "disc"  # template field controlled by disc rendering settings
-PATH_POLICY_ARTIST_ID_PLACEHOLDER: Final = "artist_id"  # template field resolved from editable artist ID config
+PATH_POLICY_ARTIST_ID_PLACEHOLDER: Final = "artist_id"  # template field resolved from automatic artist-ID generation
 PATH_POLICY_YEAR_PLACEHOLDER: Final = "year"  # template field resolved from album-year metadata
 PATH_POLICY_ALLOWED_PLACEHOLDERS: Final[tuple[str, ...]] = (
     PATH_POLICY_ALBUM_ARTIST_PLACEHOLDER,

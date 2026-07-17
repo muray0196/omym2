@@ -41,7 +41,7 @@ from omym2.config import (
     WEB_API_RUN_EVENT_FACETS_ROUTE,
     WEB_API_RUN_EVENT_GROUPS_ROUTE,
     WEB_API_RUN_EVENTS_ROUTE,
-    WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
+    WEB_API_SETTINGS_ARTIST_NAMES_ROUTE,
     WEB_API_SETTINGS_PREVIEW_ROUTE,
     WEB_API_SETTINGS_ROUTE,
     WEB_API_SETTINGS_VALIDATE_ROUTE,
@@ -85,7 +85,7 @@ def test_schema_app_exports_the_production_routes_without_io(tmp_path: Path) -> 
         WEB_API_SETTINGS_ROUTE,
         WEB_API_SETTINGS_VALIDATE_ROUTE,
         WEB_API_SETTINGS_PREVIEW_ROUTE,
-        WEB_API_SETTINGS_ARTIST_IDS_ROUTE,
+        WEB_API_SETTINGS_ARTIST_NAMES_ROUTE,
         WEB_API_LIBRARIES_ROUTE,
         WEB_API_LIBRARY_DETAIL_ROUTE,
         WEB_API_PLANS_ROUTE,
@@ -124,23 +124,20 @@ def test_settings_operations_have_stable_ids_and_declared_typed_errors() -> None
     assert _mapping(settings, "put")["operationId"] == "saveSettings"
     assert _mapping(_mapping(paths, WEB_API_SETTINGS_VALIDATE_ROUTE), "post")["operationId"] == "validateSettings"
     assert _mapping(_mapping(paths, WEB_API_SETTINGS_PREVIEW_ROUTE), "post")["operationId"] == "previewSettingsPath"
-    assert _mapping(_mapping(paths, WEB_API_SETTINGS_ARTIST_IDS_ROUTE), "post")["operationId"] == (
-        "generateArtistIdDraft"
+    assert _mapping(_mapping(paths, WEB_API_SETTINGS_ARTIST_NAMES_ROUTE), "put")["operationId"] == (
+        "saveArtistNameMappings"
     )
     put_responses = _mapping(_mapping(settings, "put"), "responses")
     assert {"200", "403", "409", "422", "500"} <= set(put_responses)
     schemas = _mapping(_mapping(schema, "components"), "schemas")
     assert "SettingsData" in schemas
     assert "SettingsCandidateData" in schemas
-    assert "ArtistIdDraftData" in schemas
-    assert "ArtistNameConfigResource" in schemas
+    assert "ArtistNameMappingsData" in schemas
     app_config_properties = _mapping(_mapping(schemas, "AppConfigResource"), "properties")
     settings_choices_properties = _mapping(_mapping(schemas, "SettingsChoices"), "properties")
     preview_properties = _mapping(_mapping(schemas, "PathPreviewRequest"), "properties")
     assert {
-        "artist_names",
         "musicbrainz",
-        "fasttext",
         "hashing",
         "logging",
         "companions",
@@ -152,7 +149,7 @@ def test_settings_operations_have_stable_ids_and_declared_typed_errors() -> None
         "unprocessed_result_preview_limit_min",
         "unprocessed_result_preview_limit_max",
     } <= set(settings_choices_properties)
-    assert "artist_names" in preview_properties
+    assert "artist_names" not in preview_properties
 
 
 def test_plan_read_operations_have_stable_ids_and_declared_typed_errors() -> None:

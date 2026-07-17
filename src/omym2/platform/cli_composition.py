@@ -1,6 +1,6 @@
 """
 Summary: Builds the CLI CommandDependencies bundle from concrete adapters.
-Why: Wires all 12 CLI commands' ports and factories through one shared RuntimeContext.
+Why: Wires CLI command ports and factories through one shared RuntimeContext.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from omym2.features.organize.usecases.create_organize_plan import CreateOrganize
 from omym2.features.refresh.usecases.create_refresh_plan import CreateRefreshPlanUseCase
 from omym2.features.undo.dto import CreateUndoPlanRequest
 from omym2.features.undo.usecases.create_undo_plan import CreateUndoPlanUseCase
-from omym2.platform.artist_ids_composition import artist_ids_command_ports_for
 from omym2.platform.cli_path_normalization import normalize_cli_path
 from omym2.platform.feature_composition import (
     build_apply_plan_ports,
@@ -77,7 +76,6 @@ def command_dependencies_for_runtime(runtime: RuntimeContext) -> CommandDependen
             uow_factory=lambda: build_uow(runtime),
             apply_plan=lambda plan_id: _apply_plan(runtime, operations, plan_id),
         ),
-        artist_ids=artist_ids_command_ports_for(runtime, operations),
         check=CheckCommandDependencies(check_library=lambda request: _check_library(runtime, operations, request)),
         config=build_settings_ports(runtime),
         history=build_history_ports(runtime),

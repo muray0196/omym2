@@ -1,5 +1,5 @@
 """
-Summary: Tests artist display projection and provider-cache key derivation.
+Summary: Tests artist-name keys, English-name validation, and diagnostics.
 Why: Keeps naming deterministic without changing or sanitizing raw metadata.
 """
 
@@ -17,10 +17,10 @@ from omym2.domain.models.artist_name_resolution import (
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.domain.services.artist_name import (
     ARTIST_NAME_RESOLUTION_CARDINALITY_MESSAGE,
-    ArtistNameProjection,
-    ArtistNameProjector,
     artist_name_diagnostics,
+    contains_non_latin_artist_name_letters,
     derive_artist_name_source_key,
+    is_usable_english_artist_name,
 )
 
 ALBUM_ARTIST = "宇多田ヒカル, 椎名林檎"
@@ -51,43 +51,28 @@ def test_artist_name_source_key_omits_missing_or_blank_text() -> None:
     assert derive_artist_name_source_key("\t \n") is None
 
 
-def test_artist_name_projector_is_identity_without_preferences() -> None:
-    """The default empty preference set preserves current naming behavior."""
-    metadata = TrackMetadata(artist=ARTIST, album_artist=ALBUM_ARTIST)
-
-    assert ArtistNameProjector().project(metadata) == ArtistNameProjection(
-        artist=ARTIST,
-        album_artist=ALBUM_ARTIST,
-    )
+@pytest.mark.parametrize("name", ["Hikaru Utada", "Beyoncé", "175R", "AC/DC"])
+def test_usable_english_artist_name_accepts_latin_text(name: str) -> None:
+    """English mappings may contain punctuation, numbers, and accented Latin letters."""
+    assert is_usable_english_artist_name(name)
 
 
-def test_artist_name_projector_applies_exact_preferences_independently() -> None:
-    """Artist and album-artist source strings are independent exact keys."""
-    metadata = TrackMetadata(artist=ARTIST, album_artist=ALBUM_ARTIST)
-
-    projection = ArtistNameProjector({ARTIST: DISPLAY_ARTIST}).project(metadata)
-
-    assert projection == ArtistNameProjection(artist=DISPLAY_ARTIST, album_artist=ALBUM_ARTIST)
-    assert metadata == TrackMetadata(artist=ARTIST, album_artist=ALBUM_ARTIST)
+@pytest.mark.parametrize("name", ["宇多田ヒカル", "Aimer 宇多田", "!!!"])
+def test_usable_english_artist_name_rejects_non_latin_or_missing_letters(name: str) -> None:
+    """English mappings need at least one letter and cannot mix non-Latin letters."""
+    assert not is_usable_english_artist_name(name)
 
 
-def test_artist_name_projector_treats_multi_artist_text_as_one_opaque_key() -> None:
-    """A full composite preference replaces the composite without splitting it."""
-    display_album_artist = "Hikaru Utada, Sheena Ringo"
-    metadata = TrackMetadata(artist=ARTIST, album_artist=ALBUM_ARTIST)
-
-    projection = ArtistNameProjector({ALBUM_ARTIST: display_album_artist}).project(metadata)
-
-    assert projection == ArtistNameProjection(artist=ARTIST, album_artist=display_album_artist)
+@pytest.mark.parametrize("name", ["宇多田ヒカル", "아이유", "Молчат Дома", "Aimer 宇多田"])
+def test_non_latin_artist_name_letters_detect_provider_eligible_sources(name: str) -> None:
+    """Any alphabetic script outside Latin makes a source eligible for romanization."""
+    assert contains_non_latin_artist_name_letters(name)
 
 
-def test_artist_name_projector_freezes_its_preference_snapshot() -> None:
-    """Later caller mutation cannot change an in-progress naming projection."""
-    preferences = {ARTIST: DISPLAY_ARTIST}
-    projector = ArtistNameProjector(preferences)
-    preferences[ARTIST] = "Changed"
-
-    assert projector.project(TrackMetadata(artist=ARTIST)).artist == DISPLAY_ARTIST
+@pytest.mark.parametrize("name", ["IOSYS", "Beyoncé", "Mötley Crüe", "175R", "!!!"])
+def test_non_latin_artist_name_letters_preserve_latin_or_non_alphabetic_sources(name: str) -> None:
+    """Latin letters, modifiers, digits, and punctuation do not need romanization."""
+    assert not contains_non_latin_artist_name_letters(name)
 
 
 def test_artist_name_diagnostics_pair_flat_results_by_metadata_field() -> None:

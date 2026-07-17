@@ -758,8 +758,7 @@ def _audit_runtime_inventory(
             seen_names,
         )
         entry = cast("dict[str, object]", raw_entry)
-        folded_name = str(entry["name"]).casefold()
-        seen_names.add(folded_name)
+        seen_names.add(str(entry["name"]).casefold())
         license_count += entry_license_count
         mutagen_copying_found = mutagen_copying_found or entry_is_mutagen
     if not mutagen_copying_found:
@@ -848,12 +847,6 @@ def _audit_inventory_distribution(
     folded_name = name.casefold()
     if not name or not version or folded_name in seen_names:
         msg = f"Runtime inventory contains an invalid or duplicate distribution: {name!r}"
-        raise WindowsPackageAuditError(msg)
-    normalized_name = re.sub(r"[-_.]+", "-", folded_name)
-    if any(
-        normalized_name.startswith(prefix) for prefix in config.DESKTOP_WINDOWS_FORBIDDEN_RUNTIME_DISTRIBUTION_PREFIXES
-    ):
-        msg = f"Runtime inventory contains a forbidden artist-naming runtime: {name}=={version}."
         raise WindowsPackageAuditError(msg)
     metadata_path = _inventory_member_path(str(entry.get("metadata_directory", "")), expected_metadata_directory=True)
     metadata_member = support_root / metadata_path / "METADATA"

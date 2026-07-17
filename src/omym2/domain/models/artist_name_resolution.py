@@ -27,11 +27,8 @@ class ArtistNameResolutionIssue(StrEnum):
 
     MISSING_SOURCE = "missing_source"
     COMPOSITE_UNSUPPORTED = "composite_unsupported"
-    NON_LATIN_REQUIRED = "non_latin_required"
     AUTOMATIC_LOOKUP_DISABLED = "automatic_lookup_disabled"
-    DETECTOR_UNAVAILABLE = "detector_unavailable"
-    NOT_JAPANESE = "not_japanese"
-    LOW_LANGUAGE_CONFIDENCE = "low_language_confidence"
+    ROMANIZATION_NOT_REQUIRED = "romanization_not_required"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     NO_CONFIDENT_MATCH = "no_confident_match"
     AMBIGUOUS_MATCH = "ambiguous_match"
@@ -39,7 +36,7 @@ class ArtistNameResolutionIssue(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ArtistNameResolution:
-    """One source value projected through preference, cache, and provider precedence."""
+    """One source value projected through saved-mapping and provider precedence."""
 
     source_name: str | None
     source_key: str | None

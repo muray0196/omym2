@@ -97,8 +97,8 @@ DESKTOP_WINDOWS_FAILURE_LOG_MARKER = "Desktop process failed"  # fatal desktop s
 DESKTOP_WINDOWS_LOG_RELATIVE_PATH = "OMYM2/.data/logs/omym2-desktop.log"  # LOCALAPPDATA-relative desktop log
 DESKTOP_WINDOWS_CONFIG_RELATIVE_PATH = "OMYM2/.config/config.toml"  # LOCALAPPDATA-relative mutable Config file
 DESKTOP_WINDOWS_DATABASE_RELATIVE_PATH = "OMYM2/.data/omym2.sqlite3"  # LOCALAPPDATA-relative mutable SQLite file
-DESKTOP_WINDOWS_SMOKE_CONFIG_MARKER = (  # valid minimal Config used as a persistence marker, TOML text
-    "# OMYM2 packaged-smoke persistence marker\nversion = 2\n"
+DESKTOP_WINDOWS_SMOKE_CONFIG_MARKER = (  # valid local-only Config used as a persistence marker, TOML text
+    "# OMYM2 packaged-smoke persistence marker\nversion = 2\n\n[musicbrainz]\nenabled = false\n"
 )
 DESKTOP_WINDOWS_SMOKE_PRIMARY_ROUTES = (  # production SPA routes exercised through the packaged listener
     "/",
@@ -152,13 +152,9 @@ DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_BASENAMES = (  # forbidden bundled runtime fil
     "snapshot_blob.bin",
     "v8_context_snapshot.bin",
 )
-DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_SUFFIXES = (  # forbidden bundled artist-model file suffixes, lowercase suffixes
-    ".bin",
-    ".ftz",
-)
+DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_SUFFIXES = (".bin", ".ftz")  # forbidden artist language-model suffixes
 DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_FRAGMENTS = (  # forbidden bundled framework path fragments, lowercase text
     "cefpython",
-    "fasttext",
     "node_modules",
     "pyqt5",
     "pyqt6",
@@ -167,9 +163,6 @@ DESKTOP_WINDOWS_FORBIDDEN_ARCHIVE_FRAGMENTS = (  # forbidden bundled framework p
     "qt5",
     "qt6",
     "qtwebengine",
-)
-DESKTOP_WINDOWS_FORBIDDEN_RUNTIME_DISTRIBUTION_PREFIXES = (  # forbidden normalized distribution-name prefixes
-    "fasttext",
 )
 DESKTOP_WINDOWS_FORBIDDEN_WEBVIEW_RESOURCES = (  # prohibited architecture or renderer resource fragments, lowercase text
     "/runtimes/win-arm64/",

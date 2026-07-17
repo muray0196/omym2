@@ -3,7 +3,7 @@ type: Development Guide
 title: Development Harness
 description: Specifies dependency setup, current quality gates, Codex completion validation, checks.sh, Windows desktop CI expectations, suppressions, and runtime boundaries.
 tags: [development, tooling, quality-gates, validation, web, desktop]
-timestamp: 2026-07-16T20:37:30+09:00
+timestamp: 2026-07-17T22:43:57+09:00
 ---
 
 # Development Harness
@@ -67,7 +67,8 @@ uv run basedpyright <py-files> --level error
 
 Ruff auto-fix runs before formatting. Basedpyright reports errors only. Do not
 use verbose, statistics, JSON output, or full-project diagnostics during the edit
-loop.
+loop. The checked-in configuration resolves dependencies from the repository's
+locked `.venv`.
 
 Use this command group after editing the React Web UI:
 
@@ -246,18 +247,16 @@ Each suppression must include a brief justification comment explaining why the w
 ## Runtime Configuration
 
 OMYM2 has no environment-variable override for artist naming, hashing, or
-logging. MusicBrainz enablement, provider bounds, fastText model selection and
-confidence, hash chunk size, and log behavior are persisted application
+logging. MusicBrainz enablement, provider bounds, hash chunk size, and log
+behavior are persisted application
 settings governed by [Config Contract](../contracts/config.md). CLI,
 browser-hosted Web, and desktop composition read that same boundary.
 
-The repository does not install a fastText prediction runtime or distribute a
-language model. Development may point persisted `fasttext.model_path` at a
-local model, but automatic lookup remains disabled until
-`musicbrainz.enabled = true`. A missing optional runtime or unusable model is a
-normal local-only fallback: the source value is preserved, no provider request
-is made, and detector failure is remembered for the process.
+Automatic provider lookup is enabled by default and can be disabled with
+`musicbrainz.enabled = false`. Eligibility uses Unicode script properties:
+Latin-only names stay local, while names containing non-Latin letters may
+contact MusicBrainz.
 
 Apply, Undo, Check, history, inspection, Track browsing, and Settings preview
-never invoke the predictor or provider. Operational settings do not mark a
+never invoke the provider. Operational settings do not mark a
 Library stale, and already-reviewed Plans retain their recorded paths.

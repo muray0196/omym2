@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import cast
 
 import pytest
 
@@ -21,16 +20,13 @@ from omym2.config import (
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
 )
 from omym2.domain.models.app_config import (
-    INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE,
     INVALID_ARTIST_ID_FALLBACK_MESSAGE,
     INVALID_ARTIST_ID_MAX_LENGTH_MESSAGE,
     INVALID_CONFIG_VERSION_MESSAGE,
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     AppConfig,
     ArtistIdConfig,
-    ArtistNameConfig,
     CompanionsConfig,
-    FastTextConfig,
     HashingConfig,
     LoggingConfig,
     MetadataConfig,
@@ -50,11 +46,6 @@ CONFIG_FILE_NAME = "config.toml"
 INCOMING_PATH = "/music/incoming"
 INVALID_MAX_FILENAME_LENGTH = 0
 LIBRARY_PATH = "/music/library"
-ARTIST_NAME = "Jane Doe"
-ARTIST_ID = "JAND"
-PREFERRED_ARTIST_NAME = "Jane D."
-INJECTED_ARTIST_NAME = "Injected"
-INJECTED_ARTIST_ID = "INJECTED"
 FIRST_SAME_SIZE_LIBRARY_PATH = "/music/a"
 SECOND_SAME_SIZE_LIBRARY_PATH = "/music/b"
 DISC_NUMBER_STYLE_D_PREFIXED = "d_prefixed"
@@ -80,8 +71,7 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
     store = TomlConfigStore(config_path)
     config = AppConfig(
         paths=PathsConfig(library=LIBRARY_PATH, incoming=INCOMING_PATH),
-        artist_ids=ArtistIdConfig(entries={ARTIST_NAME: ARTIST_ID}),
-        artist_names=ArtistNameConfig(preferences={ARTIST_NAME: PREFERRED_ARTIST_NAME}),
+        artist_ids=ArtistIdConfig(max_length=10),
         metadata=MetadataConfig(album_year_resolution=ALBUM_YEAR_RESOLUTION_OLDEST),
     )
 
@@ -92,8 +82,7 @@ def test_toml_config_store_saves_and_loads_config(tmp_path: Path) -> None:
     assert f'album_year_resolution = "{ALBUM_YEAR_RESOLUTION_OLDEST}"' in config_path.read_text(
         encoding=CONFIG_FILE_ENCODING
     )
-    assert f'"{ARTIST_NAME}" = "{ARTIST_ID}"' in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
-    assert f'"{ARTIST_NAME}" = "{PREFERRED_ARTIST_NAME}"' in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
+    assert "max_length = 10" in config_path.read_text(encoding=CONFIG_FILE_ENCODING)
 
 
 def test_toml_config_store_round_trips_runtime_controls_and_floats(tmp_path: Path) -> None:
@@ -110,7 +99,6 @@ def test_toml_config_store_round_trips_runtime_controls_and_floats(tmp_path: Pat
             rate_limit_seconds=1.25,
             cache_policy=MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE,
         ),
-        fasttext=FastTextConfig(model_path="models/lid.176.ftz", minimum_confidence=0.65),
         hashing=HashingConfig(read_chunk_size_bytes=4_096),
         logging=LoggingConfig(
             destination="logs/omym2.log",
@@ -126,8 +114,6 @@ def test_toml_config_store_round_trips_runtime_controls_and_floats(tmp_path: Pat
     assert "[musicbrainz]" in config_text
     assert "timeout_seconds = 2.5" in config_text
     assert "rate_limit_seconds = 1.25" in config_text
-    assert "[fasttext]" in config_text
-    assert "minimum_confidence = 0.65" in config_text
     assert "[hashing]" in config_text
     assert "[logging]" in config_text
     assert store.load() == config
@@ -195,43 +181,6 @@ def test_toml_config_store_load_caches_parsed_config(tmp_path: Path, monkeypatch
 
     assert parse_calls == 1
     assert second_config is first_config
-
-
-def test_toml_config_store_cached_artist_id_entries_are_immutable(tmp_path: Path) -> None:
-    """Cached loads cannot be poisoned by unsaved artist ID entry mutations."""
-    config_path = tmp_path / CONFIG_FILE_NAME
-    store = TomlConfigStore(config_path)
-    _save_current(store, AppConfig(artist_ids=ArtistIdConfig(entries={ARTIST_NAME: ARTIST_ID})))
-
-    first_config = store.load()
-    assert first_config.artist_ids.entries is not None
-    with pytest.raises(TypeError):
-        cast("dict[str, str]", first_config.artist_ids.entries)[INJECTED_ARTIST_NAME] = INJECTED_ARTIST_ID
-
-    second_config = store.load()
-
-    assert second_config is first_config
-    assert second_config.artist_ids.entries == {ARTIST_NAME: ARTIST_ID}
-
-
-def test_toml_config_store_cached_artist_name_preferences_are_immutable(tmp_path: Path) -> None:
-    """Cached loads cannot be poisoned by unsaved artist display-name mutations."""
-    config_path = tmp_path / CONFIG_FILE_NAME
-    store = TomlConfigStore(config_path)
-    _save_current(
-        store,
-        AppConfig(artist_names=ArtistNameConfig(preferences={ARTIST_NAME: PREFERRED_ARTIST_NAME})),
-    )
-
-    first_config = store.load()
-    assert first_config.artist_names.preferences is not None
-    with pytest.raises(TypeError):
-        cast("dict[str, str]", first_config.artist_names.preferences)[INJECTED_ARTIST_NAME] = ARTIST_NAME
-
-    second_config = store.load()
-
-    assert second_config is first_config
-    assert second_config.artist_names.preferences == {ARTIST_NAME: PREFERRED_ARTIST_NAME}
 
 
 def test_toml_config_store_load_reparses_after_external_rewrite(tmp_path: Path) -> None:
@@ -350,38 +299,27 @@ def test_toml_config_store_validation_fails_invalid_artist_id_fallback_id(tmp_pa
         _ = TomlConfigStore(config_path).load()
 
 
-def test_toml_config_store_validation_fails_invalid_artist_id_entry_value(tmp_path: Path) -> None:
-    """Adapter validation reports non-sanitizer-stable artist ID entry values."""
+def test_toml_config_store_rejects_removed_artist_names_section(tmp_path: Path) -> None:
+    """The removed TOML preference store is rejected instead of silently ignored."""
     config_path = tmp_path / CONFIG_FILE_NAME
     _ = config_path.write_text(
-        "\n".join(
-            (
-                "version = 2",
-                "",
-                "[artist_ids.entries]",
-                f'"{ARTIST_NAME}" = "../escape"',
-            )
-        ),
+        'version = 2\n\n[artist_names.preferences]\n"Jane Doe" = "Jane D."\n',
         encoding=CONFIG_FILE_ENCODING,
     )
 
-    with pytest.raises(ConfigStoreValidationError, match=INVALID_ARTIST_ID_ENTRY_VALUE_MESSAGE):
+    with pytest.raises(ConfigStoreValidationError, match="Unknown config key: artist_names"):
         _ = TomlConfigStore(config_path).load()
 
 
-@pytest.mark.parametrize("invalid_value", ['""', '"   "', "42"])
-def test_toml_config_store_validation_fails_invalid_artist_name_preference(
-    tmp_path: Path,
-    invalid_value: str,
-) -> None:
-    """Artist display-name preferences require nonblank string values."""
+def test_toml_config_store_rejects_removed_artist_id_entries(tmp_path: Path) -> None:
+    """Per-artist compact IDs are no longer accepted as user config."""
     config_path = tmp_path / CONFIG_FILE_NAME
     _ = config_path.write_text(
-        f'version = 2\n\n[artist_names.preferences]\n"{ARTIST_NAME}" = {invalid_value}\n',
+        'version = 2\n\n[artist_ids.entries]\n"Jane Doe" = "JAND"\n',
         encoding=CONFIG_FILE_ENCODING,
     )
 
-    with pytest.raises(ConfigStoreValidationError, match=r"artist_names\.preferences"):
+    with pytest.raises(ConfigStoreValidationError, match=r"Unknown config key: artist_ids\.entries"):
         _ = TomlConfigStore(config_path).load()
 
 
@@ -437,19 +375,11 @@ def test_toml_config_text_loads_missing_artist_id_defaults() -> None:
     assert config.artist_ids == ArtistIdConfig()
 
 
-def test_toml_config_text_loads_missing_artist_name_defaults() -> None:
-    """Missing artist_names config resolves to an empty preference mapping."""
-    config = load_config_text("version = 2\n")
-
-    assert config.artist_names == ArtistNameConfig()
-
-
 def test_toml_config_text_loads_missing_runtime_section_defaults() -> None:
     """Omitted optional sections receive defaults within the current config schema."""
     config = load_config_text("version = 2\n")
 
     assert config.musicbrainz == MusicBrainzConfig()
-    assert config.fasttext == FastTextConfig()
     assert config.hashing == HashingConfig()
     assert config.logging == LoggingConfig()
     assert config.companions == CompanionsConfig()
@@ -469,8 +399,7 @@ def test_toml_config_text_loads_missing_runtime_section_defaults() -> None:
         ("[musicbrainz]\nrate_limit_seconds = inf", "rate_limit_seconds"),
         ('[musicbrainz]\ncache_policy = "none"', "musicbrainz.cache_policy"),
         ("[musicbrainz]\nunknown = true", "musicbrainz.unknown"),
-        ('[fasttext]\nmodel_path = ""', "fasttext.model_path"),
-        ("[fasttext]\nminimum_confidence = nan", "minimum_confidence"),
+        ("[obsolete]\nenabled = true", "obsolete"),
         ("[hashing]\nread_chunk_size_bytes = false", "hashing.read_chunk_size_bytes"),
         ('[logging]\ndestination = "../outside.log"', "destination"),
         ('[logging]\nlevel = "TRACE"', "logging.level"),

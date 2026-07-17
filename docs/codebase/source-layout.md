@@ -3,7 +3,7 @@ type: Codebase Reference
 title: Source Layout
 description: Defines OMYM2's feature-oriented source layout, including artist naming, Bootstrap, durable Operation, desktop-shell placement, dependency layers, composition, and directory rules.
 tags: [source-layout, architecture, artist-names, operations, desktop, hexagonal-architecture, python]
-timestamp: 2026-07-16T22:15:00+09:00
+timestamp: 2026-07-17T22:43:57+09:00
 ---
 
 # Source Layout
@@ -122,12 +122,9 @@ PathPolicy is a pure domain service.
 * `bootstrap`: project Config validity, unambiguous Library readiness, runtime
   capabilities, and polling policy without making the Web route read storage
   directly
-* `artist_names`: resolve whole artist and album-artist source values in
-  batches through exact preferences, sticky accepted-name persistence,
-  fastText eligibility, and deterministic provider acceptance
-* `artist_ids`: generate and save artist ID path values in config, preserving
-  existing entries unless overwrite is requested and consuming artist-name
-  results through the shared `ArtistNameResolutionReader` port
+* `artist_names`: resolve whole artist and album-artist source values through
+  one editable original-to-Latin mapping, deterministic Unicode-script
+  eligibility, and provider acceptance; it also owns revision-checked mapping edits
 * `organize`: scan the selected Library, create a relocation plan when needed, and register the Library when clean
 * `add`: create an add plan from Incoming / specified source
 * `refresh`: reload metadata and create a relocation plan
@@ -149,12 +146,12 @@ When a usecase needs files from a directory, it uses FileScanner only to discove
 
 `adapters/` implement ports and handle external I/O.
 
-* `adapters/db/sqlite`: SQLite repositories / UnitOfWork, including sticky accepted artist-name provenance
+* `adapters/db/sqlite`: SQLite repositories / UnitOfWork, including editable artist-name mappings and provenance
 * `adapters/fs`: file discovery / snapshot capture / move / path operations /
   hash calculation / native application-root exclusive lock
 * `adapters/metadata`: metadata reading with mutagen
-* `adapters/artist_ids`: fastText language prediction and raw MusicBrainz
-  artist search used by the shared artist-name resolver and artist-ID command
+* `adapters/artist_ids`: raw MusicBrainz artist search used by the shared
+  artist-name resolver
 * `adapters/config`: TOML config store / validator / defaults
 * `adapters/cli`: CLI commands
 * `adapters/desktop`: the retained loopback Uvicorn server and one pywebview
@@ -173,7 +170,6 @@ Adapters may create and restore domain models. They must not contain business ru
 * `runtime_context.py`: `RuntimeContext` (resolved config file, database file, a shared `TomlConfigStore`, and a shared `MutagenMetadataReader`) and `runtime_context_for(...)`, which resolves `default_application_paths()` once per invocation.
 * `feature_composition.py`: `build_*` functions that construct feature `*Ports` dataclasses from concrete adapters (add, apply, check, history, inspect, organize, plans, refresh, settings, tracks, undo), plus `build_uow`; normal Plan ports receive the shared local artist-name resolver.
 * `artist_name_composition.py`: language-predictor and MusicBrainz-provider selection plus shared cache-aware artist-name resolver composition for Plan and naming consumers.
-* `artist_ids_composition.py`: the artist-ids CLI command bundle, composed through the shared artist-name composition boundary, and the local-only Web artist-ID collaborator.
 * `cli_composition.py`: `build_command_dependencies(...)`, which builds the full `CommandDependencies` bundle for one CLI invocation.
 * `cli_path_normalization.py`: `normalize_cli_path(...)`, injected into add, organize, and refresh command dependencies so their handlers do not resolve filesystem paths directly.
 * `cli_entry_point.py`: `main()` / `run_cli(...)`, the process entry point that both the `omym2` console script and `python -m omym2` route through.

@@ -23,7 +23,10 @@ if TYPE_CHECKING:
     from omym2.domain.models.run import Run
     from omym2.domain.models.track import Track
     from omym2.features.add.dto import CreateAddPlanRequest
-    from omym2.features.artist_ids.dto import GenerateArtistIdDraftRequest, GenerateArtistIdDraftResult
+    from omym2.features.artist_names.dto import (
+        ArtistNameMappingsResult,
+        SaveArtistNameMappingsRequest,
+    )
     from omym2.features.bootstrap.dto import BootstrapResult
     from omym2.features.check.dto import (
         CheckIssueFacetsRequest,
@@ -149,11 +152,11 @@ class CheckRouteContext:
 class SettingsRouteContext:
     """Settings edit and draft handlers resolved by the platform composition root."""
 
-    get_settings: Callable[[], SettingsEditResult]
+    get_settings: Callable[[], tuple[SettingsEditResult, ArtistNameMappingsResult]]
     validate_settings: Callable[[ValidateSettingsRequest], SettingsCandidateResult]
     preview_path_policy: Callable[[PathPolicyPreviewRequest], PathPolicyPreviewResult]
     save_settings: Callable[[SaveSettingsRequest], SettingsCandidateResult]
-    generate_artist_id_draft: Callable[[GenerateArtistIdDraftRequest], GenerateArtistIdDraftResult]
+    save_artist_name_mappings: Callable[[SaveArtistNameMappingsRequest], ArtistNameMappingsResult]
 
 
 @dataclass(frozen=True, slots=True)

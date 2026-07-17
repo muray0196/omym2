@@ -36,7 +36,7 @@ from omym2.platform.logging_composition import resolve_log_file
 
 if TYPE_CHECKING:
     from omym2.domain.models.app_config import AppConfig
-    from omym2.features.common_ports import FileSystemPath
+    from omym2.features.common_ports import ArtistNameResolutionReader, FileSystemPath
     from omym2.platform.runtime_context import RuntimeContext
 
 SQLITE_SIDECAR_SUFFIXES = ("-wal", "-shm", "-journal")
@@ -50,6 +50,16 @@ def _file_snapshot_reader(runtime: RuntimeContext, config: AppConfig) -> Filesys
     return FilesystemFileSnapshotReader(
         metadata_reader=runtime.metadata_reader,
         hasher=_file_content_hasher(config),
+    )
+
+
+def _cached_artist_name_resolver(runtime: RuntimeContext) -> ArtistNameResolutionReader:
+    """Build a mapping-only resolver that never starts automatic provider work."""
+    config = runtime.config_store.read_snapshot().config
+    return artist_name_resolver_for(
+        runtime.database_file,
+        runtime.artist_name_runtime.provider_for(config.musicbrainz),
+        automatic_lookup_enabled=False,
     )
 
 
@@ -109,10 +119,8 @@ def build_create_add_plan_ports(runtime: RuntimeContext) -> CreateAddPlanPorts:
         config_store=runtime.config_store,
         artist_name_resolver=artist_name_resolver_for(
             runtime.database_file,
-            runtime.artist_name_runtime.language_predictor_for(config.fasttext),
             runtime.artist_name_runtime.provider_for(config.musicbrainz),
             automatic_lookup_enabled=config.musicbrainz.enabled,
-            minimum_confidence=config.fasttext.minimum_confidence,
         ),
         path_resolver=FilesystemPathResolver(),
         clock=clock,
@@ -190,6 +198,7 @@ def build_inspect_file_ports(runtime: RuntimeContext) -> InspectFilePorts:
             hasher=ConfiguredFileContentHasher(runtime.config_store),
         ),
         config_store=runtime.config_store,
+        artist_name_resolver=_cached_artist_name_resolver(runtime),
     )
 
 
@@ -210,10 +219,8 @@ def build_create_organize_plan_ports(runtime: RuntimeContext) -> CreateOrganizeP
         config_store=runtime.config_store,
         artist_name_resolver=artist_name_resolver_for(
             runtime.database_file,
-            runtime.artist_name_runtime.language_predictor_for(config.fasttext),
             runtime.artist_name_runtime.provider_for(config.musicbrainz),
             automatic_lookup_enabled=config.musicbrainz.enabled,
-            minimum_confidence=config.fasttext.minimum_confidence,
         ),
         path_resolver=FilesystemPathResolver(),
         clock=clock,
@@ -243,10 +250,8 @@ def build_create_refresh_plan_ports(runtime: RuntimeContext) -> CreateRefreshPla
         config_store=runtime.config_store,
         artist_name_resolver=artist_name_resolver_for(
             runtime.database_file,
-            runtime.artist_name_runtime.language_predictor_for(config.fasttext),
             runtime.artist_name_runtime.provider_for(config.musicbrainz),
             automatic_lookup_enabled=config.musicbrainz.enabled,
-            minimum_confidence=config.fasttext.minimum_confidence,
         ),
         path_resolver=FilesystemPathResolver(),
         clock=clock,
@@ -256,7 +261,10 @@ def build_create_refresh_plan_ports(runtime: RuntimeContext) -> CreateRefreshPla
 
 def build_settings_ports(runtime: RuntimeContext) -> SettingsPorts:
     """Build ports for settings usecases."""
-    return SettingsPorts(config_store=runtime.config_store)
+    return SettingsPorts(
+        config_store=runtime.config_store,
+        artist_name_resolver=_cached_artist_name_resolver(runtime),
+    )
 
 
 def build_tracks_ports(runtime: RuntimeContext) -> TracksPorts:

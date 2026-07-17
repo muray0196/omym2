@@ -89,7 +89,7 @@ RETRIED_ATTEMPT_COUNT = 2
 
 
 def test_musicbrainz_lookup_returns_ordered_raw_candidate_facts() -> None:
-    """The adapter parses identity, score, name, and aliases without accepting one."""
+    """The adapter parses identity, score, names, and aliases without accepting one."""
     recorder = _Recorder(
         {
             "artists": [
@@ -97,9 +97,15 @@ def test_musicbrainz_lookup_returns_ordered_raw_candidate_facts() -> None:
                     "id": MUSICBRAINZ_ARTIST_ID.upper(),
                     "score": "100",
                     "name": "米津玄師",
+                    "sort-name": "Yonezu, Kenshi",
                     "aliases": [
                         {"name": "Kenshi Yonezu", "locale": "en", "primary": True},
-                        {"name": "Yonezu Kenshi", "locale": "ja-Latn", "primary": None},
+                        {
+                            "name": "Kenshi Yonezu",
+                            "sort-name": "Yonezu, Kenshi",
+                            "locale": "ja-Latn",
+                            "primary": True,
+                        },
                     ],
                 }
             ]
@@ -117,9 +123,15 @@ def test_musicbrainz_lookup_returns_ordered_raw_candidate_facts() -> None:
                 provider_artist_id=MUSICBRAINZ_ARTIST_ID,
                 score=100,
                 name="米津玄師",
+                sort_name="Yonezu, Kenshi",
                 aliases=(
                     ArtistNameAliasCandidate(name="Kenshi Yonezu", locale="en", primary=True),
-                    ArtistNameAliasCandidate(name="Yonezu Kenshi", locale="ja-Latn"),
+                    ArtistNameAliasCandidate(
+                        name="Kenshi Yonezu",
+                        locale="ja-Latn",
+                        sort_name="Yonezu, Kenshi",
+                        primary=True,
+                    ),
                 ),
             ),
         ),
@@ -180,6 +192,16 @@ def test_musicbrainz_lookup_reports_invalid_json_unavailable() -> None:
         {"unexpected": []},
         {"artists": [{"id": "not-a-uuid", "score": 100, "name": "Artist"}]},
         {"artists": [{"id": MUSICBRAINZ_ARTIST_ID, "score": "not-a-score", "name": "Artist"}]},
+        {
+            "artists": [
+                {
+                    "id": MUSICBRAINZ_ARTIST_ID,
+                    "score": 100,
+                    "name": "Artist",
+                    "aliases": [{"name": "Alias", "sort-name": 123}],
+                }
+            ]
+        },
     ],
 )
 def test_musicbrainz_lookup_reports_schema_failure_unavailable(payload: object) -> None:

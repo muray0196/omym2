@@ -126,7 +126,7 @@ export const planCopy = {
   artistNames: {
     noIssue: "None",
     provenance: {
-      user_preference: "User preference",
+      user_preference: "User-edited mapping",
       accepted_musicbrainz: "Accepted MusicBrainz result",
       new_musicbrainz: "New MusicBrainz result",
       original: "Original metadata",
@@ -134,11 +134,8 @@ export const planCopy = {
     issue: {
       missing_source: "Missing source name",
       composite_unsupported: "Composite name unsupported",
-      non_latin_required: "Source contains Latin text",
-      detector_unavailable: "Language detector unavailable",
       automatic_lookup_disabled: "Automatic lookup disabled",
-      not_japanese: "Not detected as Japanese",
-      low_language_confidence: "Low language confidence",
+      romanization_not_required: "Romanization not required",
       provider_unavailable: "MusicBrainz unavailable",
       no_confident_match: "No confident match",
       ambiguous_match: "Ambiguous match",

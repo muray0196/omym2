@@ -26,7 +26,6 @@ import {
   readyPlanGroupsSecondPage,
 } from "./fixtures/plans";
 import {
-  artistIdDraftEnvelope,
   previewEnvelope,
   reviewedSettingsEnvelope,
   savedSettingsEnvelope,
@@ -50,9 +49,6 @@ export const server = setupServer(
     HttpResponse.json(reviewedSettingsEnvelope),
   ),
   http.post("*/api/settings/preview", () => HttpResponse.json(previewEnvelope)),
-  http.post("*/api/settings/artist-ids/generate", () =>
-    HttpResponse.json(artistIdDraftEnvelope),
-  ),
   http.put("*/api/settings", () => HttpResponse.json(savedSettingsEnvelope)),
   http.get("*/api/plans", ({ request }) => {
     const parameters = new URL(request.url).searchParams;

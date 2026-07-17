@@ -51,7 +51,7 @@ def runtime_context_for(
         config_store=TomlConfigStore(config_file),
         metadata_reader=MutagenMetadataReader(),
         exclusive_operation_lock=FilesystemExclusiveOperationLock(resolved_paths.exclusive_operation_lock_file),
-        artist_name_runtime=ArtistNameRuntime(database_file, application_root),
+        artist_name_runtime=ArtistNameRuntime(database_file),
     )
 
 

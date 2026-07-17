@@ -55,5 +55,5 @@ class SaveSettingsCandidateUseCase:
             changes=changes,
             valid=True,
             validation_issues=(),
-            preview=default_settings_preview(saved.config),
+            preview=default_settings_preview(saved.config, self.ports.artist_name_resolver),
         )

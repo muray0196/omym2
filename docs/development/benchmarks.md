@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Pipeline Performance Benchmark
-description: Defines the reproducible end-to-end pipeline benchmark, its dataset, release measurement record, naming-runtime qualification, and trust-stat comparison procedure.
-tags: [development, performance, benchmark, pipeline, fasttext, musicbrainz, hashing]
-timestamp: 2026-07-16T03:48:55+09:00
+description: Defines the reproducible end-to-end pipeline benchmark, its dataset, release measurement record, provider-cache qualification, and trust-stat comparison procedure.
+tags: [development, performance, benchmark, pipeline, musicbrainz, hashing]
+timestamp: 2026-07-17T22:43:57+09:00
 ---
 
 # Pipeline Performance Benchmark
@@ -73,24 +73,19 @@ it is an end-to-end comparison metric, not a claim about raw SHA-256 speed.
 Compare memory and throughput only across records with the same dataset and
 measurement environment.
 
-The supported distribution currently includes neither a fastText runtime nor a
-model, so its naming-runtime fields are recorded as `not distributed` rather
-than replaced with synthetic timings. If a future runtime/model candidate is
-qualified, add a separate persisted-settings run that records:
+Release evidence includes a separate persisted-settings run that records:
 
-* model identity, artifact hash, license, runtime version, Python version, and
-  Windows architecture;
-* cold time and peak working set through the first eligible prediction;
-* warm same-process prediction time after the shared model has loaded;
-* unique eligible source-name count, accepted-cache hit count, and provider
-  request count; and
+* Python version and Windows architecture;
+* unique non-Latin source-name count, accepted-cache hit count, and provider
+  request count;
+* cold time and peak working set through the first eligible provider lookup; and
 * a second-run sticky-cache result, which must make no provider request for an
   already accepted source.
 
 Provider counts use deterministic fixtures or a controlled test endpoint, never
 the live MusicBrainz service. The request count must not exceed the unique
-eligible cache misses, and disabled, low-confidence, ambiguous, timeout, and
-offline cases remain part of the normal automated test gates. The packaging
+eligible cache misses, and disabled, ambiguous, timeout, and offline cases
+remain part of the normal automated test gates. The packaging
 qualification decision and required Windows smoke evidence are authoritative in
 [Desktop Packaging](desktop-packaging.md#artist-naming-distribution-boundary).
 

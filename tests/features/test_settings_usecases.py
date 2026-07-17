@@ -16,6 +16,7 @@ from omym2.features.common_ports import (
 )
 from omym2.features.settings.ports import SettingsPorts
 from omym2.features.settings.usecases.load_settings import LoadSettingsUseCase
+from tests.fakes.runtime import MappingArtistNameResolver
 
 EXPECTED_ERROR = "expected config validation error"
 LIBRARY_PATH = "/music/library"
@@ -27,7 +28,12 @@ def test_load_settings_exposes_config_and_raw_revision() -> None:
     """Load exposes the valid Config and its opaque raw-storage identity."""
     config = AppConfig(paths=PathsConfig(library=LIBRARY_PATH))
 
-    loaded = LoadSettingsUseCase(SettingsPorts(config_store=FakeConfigStore(config=config))).execute()
+    loaded = LoadSettingsUseCase(
+        SettingsPorts(
+            config_store=FakeConfigStore(config=config),
+            artist_name_resolver=MappingArtistNameResolver(),
+        )
+    ).execute()
 
     assert loaded.state is ConfigSnapshotState.VALID
     assert loaded.config == config
@@ -42,7 +48,8 @@ def test_load_settings_returns_invalid_recovery_state_with_revision() -> None:
             config_store=FakeConfigStore(
                 state=ConfigSnapshotState.INVALID,
                 errors=(EXPECTED_ERROR,),
-            )
+            ),
+            artist_name_resolver=MappingArtistNameResolver(),
         )
     ).execute()
 

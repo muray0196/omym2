@@ -12,12 +12,14 @@ import {
   type ChangeEvent,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { useBeforeUnload, useBlocker } from "react-router-dom";
 
 import type {
   ApiError,
   AppConfigResource,
+  ArtistNameMappingEntry,
+  ArtistNameMappingsData,
   PathPreview,
   PathPreviewRequest,
   SettingsCandidateData,
@@ -31,10 +33,10 @@ import { Dialog } from "../../ui/primitives/dialog";
 import { LiveRegion } from "../../ui/primitives/live-region";
 import { PageHeader } from "../../ui/primitives/page-header";
 import {
-  generateArtistIds,
   hasSettingsErrorCode,
   isCsrfInvalidSettingsError,
   previewSettingsDraft,
+  saveEnglishArtistNames,
   saveSettingsDraft,
   settingsQueryKey,
   SettingsApiError,
@@ -57,18 +59,9 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
   const bootstrap = useContext(BootstrapContext);
   const queryClient = useQueryClient();
   const form = useForm<AppConfigResource>({ defaultValues: initial.config });
-  const {
-    control,
-    formState,
-    getValues,
-    handleSubmit,
-    register,
-    reset,
-    setValue,
-  } = form;
+  const { control, formState, handleSubmit, register, reset } = form;
   const draft = useWatch({ control });
   const previewArtistIds = useWatch({ control, name: "artist_ids" });
-  const previewArtistNames = useWatch({ control, name: "artist_names" });
   const previewPathPolicy = useWatch({ control, name: "path_policy" });
   const draftFingerprint = stableFingerprint(draft);
   const [baseRevision, setBaseRevision] = useState(initial.config_revision);
@@ -78,29 +71,47 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
   );
   const [previewSample, setPreviewSample] =
     useState<PreviewSample>(defaultPreviewSample);
-  const [artistNames, setArtistNames] = useState("");
-  const [overwriteArtistIds, setOverwriteArtistIds] = useState(false);
+  const [englishArtistNames, setEnglishArtistNames] = useState<
+    Record<string, string>
+  >(() => artistNameMappingEntries(initial.artist_name_mappings));
+  const [artistNameMappingDetails, setArtistNameMappingDetails] = useState(
+    initial.artist_name_mappings.entries,
+  );
+  const [artistNameMappingsRevision, setArtistNameMappingsRevision] = useState(
+    initial.artist_name_mappings.revision,
+  );
+  const [
+    savedArtistNameMappingsFingerprint,
+    setSavedArtistNameMappingsFingerprint,
+  ] = useState(() =>
+    stableFingerprint(artistNameMappingEntries(initial.artist_name_mappings)),
+  );
   const [actionError, setActionError] = useState<unknown>(null);
   const [savedRevision, setSavedRevision] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [persistedValidation, setPersistedValidation] = useState(
+    initial.validation,
+  );
   const saveButtonRef = useRef<HTMLButtonElement>(null);
   const stayButtonRef = useRef<HTMLButtonElement>(null);
   const reviewRegionRef = useRef<HTMLElement>(null);
   const errorRegionRef = useRef<HTMLDivElement>(null);
   const savedNotificationRef = useRef<HTMLDivElement>(null);
-  const blocker = useBlocker(formState.isDirty);
+  const artistNameMappingsFingerprint = stableFingerprint(englishArtistNames);
+  const artistNameMappingsDirty =
+    artistNameMappingsFingerprint !== savedArtistNameMappingsFingerprint;
+  const blocker = useBlocker(formState.isDirty || artistNameMappingsDirty);
   const reviewIsCurrent =
     review !== null && reviewedFingerprint === draftFingerprint;
   const canSave = bootstrap?.runtime_capabilities.can_change_settings ?? false;
   const previewRequest = useMemo(
     () => ({
       artist_ids: previewArtistIds,
-      artist_names: previewArtistNames,
       file_extension: previewSample.file_extension,
       metadata: previewSample.metadata,
       path_policy: previewPathPolicy,
     }),
-    [previewArtistIds, previewArtistNames, previewPathPolicy, previewSample],
+    [previewArtistIds, previewPathPolicy, previewSample],
   );
   const debouncedPreviewRequest = useDebouncedValue(
     previewRequest,
@@ -133,12 +144,12 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
   useBeforeUnload(
     useCallback(
       (event) => {
-        if (formState.isDirty) {
+        if (formState.isDirty || artistNameMappingsDirty) {
           event.preventDefault();
           event.returnValue = "";
         }
       },
-      [formState.isDirty],
+      [artistNameMappingsDirty, formState.isDirty],
     ),
   );
 
@@ -146,8 +157,33 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
     mutationFn: validateSettingsDraft,
     retry: false,
   });
-  const artistIdMutation = useMutation({
-    mutationFn: generateArtistIds,
+  const artistNameMappingsMutation = useMutation({
+    mutationFn: async (request: {
+      entries: Record<string, string>;
+      expected_revision: string;
+    }) => {
+      const csrfToken = bootstrap?.csrf_token;
+      if (csrfToken === undefined) {
+        throw new SettingsCsrfRefreshError();
+      }
+      try {
+        return await saveEnglishArtistNames(request, csrfToken);
+      } catch (error) {
+        if (!isCsrfInvalidSettingsError(error)) {
+          throw error;
+        }
+      }
+
+      const refreshed = await queryClient.fetchQuery({
+        ...bootstrapQuery,
+        staleTime: 0,
+      });
+      const refreshedToken = refreshed.data?.csrf_token;
+      if (refreshedToken === undefined) {
+        throw new SettingsCsrfRefreshError();
+      }
+      return saveEnglishArtistNames(request, refreshedToken);
+    },
     retry: false,
   });
   const saveMutation = useMutation({
@@ -200,32 +236,26 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
     }
   }
 
-  async function handleArtistIdGeneration() {
+  async function handleSaveArtistNameMappings() {
     setActionError(null);
-    const names = artistNames
-      .split("\n")
-      .map((name) => name.trim())
-      .filter((name) => name.length > 0);
     try {
-      const result = await artistIdMutation.mutateAsync({
-        artist_ids: getValues("artist_ids"),
-        artist_names: names,
-        overwrite: overwriteArtistIds,
+      const result = await artistNameMappingsMutation.mutateAsync({
+        entries: englishArtistNames,
+        expected_revision: artistNameMappingsRevision,
       });
-      const entries = { ...getValues("artist_ids.entries") };
-      for (const generated of result.entries) {
-        entries[generated.source_artist] = generated.artist_id;
-      }
-      setValue("artist_ids.entries", entries, {
-        shouldDirty: true,
-        shouldTouch: true,
-      });
-      setAnnouncement(
-        `${result.entries.length} artist ID ${result.entries.length === 1 ? "entry was" : "entries were"} merged into the draft.`,
-      );
+      applyArtistNameMappings(result);
+      setAnnouncement(settingsCopy.artistNameMappingsSaved);
     } catch (error) {
       presentActionError(error);
     }
+  }
+
+  function applyArtistNameMappings(result: ArtistNameMappingsData) {
+    const entries = artistNameMappingEntries(result);
+    setEnglishArtistNames(entries);
+    setArtistNameMappingDetails(result.entries);
+    setArtistNameMappingsRevision(result.revision);
+    setSavedArtistNameMappingsFingerprint(stableFingerprint(entries));
   }
 
   async function handleSave(config: AppConfigResource) {
@@ -241,6 +271,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
       const savedFingerprint = stableFingerprint(result.config);
       setReviewedFingerprint(savedFingerprint);
       setSavedRevision(result.config_revision);
+      setPersistedValidation({ errors: [], valid: true });
       reset(result.config);
       setAnnouncement(settingsCopy.saved);
       savedNotificationRef.current?.focus();
@@ -297,10 +328,10 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
         title={settingsCopy.title}
       />
 
-      {!initial.validation.valid ? (
+      {!persistedValidation.valid ? (
         <ValidationPanel
           body={settingsCopy.recoveryBody}
-          diagnostics={initial.validation.errors}
+          diagnostics={persistedValidation.errors}
           title={settingsCopy.recoveryTitle}
           variant="warning"
         />
@@ -418,24 +449,32 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
 
         <SettingsSection
           description={settingsCopy.artistDisplayNamesHelp}
-          id="settings-artist-name-preferences"
+          id="settings-artist-name-mappings"
           title={settingsCopy.artistDisplayNamesTitle}
         >
-          <Controller
-            control={control}
-            name="artist_names.preferences"
-            render={({ field }) => (
-              <ArtistNamePreferences
-                preferences={field.value}
-                onChange={field.onChange}
-              />
-            )}
+          <ArtistNameMappings
+            entries={englishArtistNames}
+            mappingDetails={artistNameMappingDetails}
+            onChange={setEnglishArtistNames}
           />
+          <Button
+            disabled={
+              !canSave ||
+              !artistNameMappingsDirty ||
+              artistNameMappingsMutation.isPending
+            }
+            onClick={() => void handleSaveArtistNameMappings()}
+            variant="secondary"
+          >
+            {artistNameMappingsMutation.isPending
+              ? settingsCopy.savingArtistNameMappings
+              : settingsCopy.saveArtistNameMappings}
+          </Button>
         </SettingsSection>
 
         <SettingsSection
           description={settingsCopy.artistIdsHelp}
-          id="settings-artist-id-entries"
+          id="settings-artist-ids"
           title={settingsCopy.artistIdsTitle}
         >
           <div className={styles.fieldGrid}>
@@ -461,58 +500,6 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
                 {...register("artist_ids.fallback_id")}
               />
             </label>
-          </div>
-
-          <Controller
-            control={control}
-            name="artist_ids.entries"
-            render={({ field }) => (
-              <ArtistIdEntries
-                entries={field.value}
-                onChange={field.onChange}
-              />
-            )}
-          />
-
-          <div className={styles.generator}>
-            <label className={styles.field} htmlFor="settings-artist-names">
-              {settingsCopy.artistNames}
-              <textarea
-                aria-describedby="settings-artist-names-help"
-                id="settings-artist-names"
-                onChange={(event) => setArtistNames(event.currentTarget.value)}
-                rows={4}
-                value={artistNames}
-              />
-            </label>
-            <p className={styles.help} id="settings-artist-names-help">
-              {settingsCopy.artistNamesHelp}
-            </p>
-            <label
-              className={styles.checkbox}
-              htmlFor="settings-overwrite-artists"
-            >
-              <input
-                checked={overwriteArtistIds}
-                id="settings-overwrite-artists"
-                onChange={(event) =>
-                  setOverwriteArtistIds(event.currentTarget.checked)
-                }
-                type="checkbox"
-              />
-              <span>{settingsCopy.overwrite}</span>
-            </label>
-            <Button
-              disabled={
-                artistIdMutation.isPending || artistNames.trim().length === 0
-              }
-              onClick={() => void handleArtistIdGeneration()}
-              variant="secondary"
-            >
-              {artistIdMutation.isPending
-                ? settingsCopy.generating
-                : settingsCopy.generate}
-            </Button>
           </div>
         </SettingsSection>
 
@@ -651,45 +638,6 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
               options={initial.choices.musicbrainz_cache_policies}
               register={register("musicbrainz.cache_policy")}
             />
-          </div>
-        </SettingsSection>
-
-        <SettingsSection
-          description={settingsCopy.fasttextHelp}
-          title={settingsCopy.fasttextTitle}
-        >
-          <div className={styles.fieldGrid}>
-            <div className={styles.field}>
-              <label htmlFor="settings-fasttext-model">
-                {settingsCopy.fasttextModelPath}
-              </label>
-              <input
-                aria-describedby="settings-fasttext-model-help"
-                id="settings-fasttext-model"
-                {...register("fasttext.model_path", {
-                  setValueAs: nullableString,
-                })}
-              />
-              <span className={styles.help} id="settings-fasttext-model-help">
-                {settingsCopy.fasttextModelPathHelp}
-              </span>
-            </div>
-            <label
-              className={styles.field}
-              htmlFor="settings-fasttext-confidence"
-            >
-              {settingsCopy.fasttextMinimumConfidence}
-              <input
-                id="settings-fasttext-confidence"
-                max="1"
-                min="0"
-                step="0.01"
-                type="number"
-                {...register("fasttext.minimum_confidence", {
-                  setValueAs: requiredNumber,
-                })}
-              />
-            </label>
           </div>
         </SettingsSection>
 
@@ -1088,49 +1036,30 @@ function BooleanField({
   );
 }
 
-function ArtistIdEntries({
+function ArtistNameMappings({
   entries,
+  mappingDetails,
   onChange,
 }: {
   entries: Record<string, string>;
+  mappingDetails: ArtistNameMappingEntry[];
   onChange: (entries: Record<string, string>) => void;
 }) {
   return (
     <StringMappingEntries
-      addLabel={settingsCopy.addEntry}
-      entries={entries}
-      entriesTitle={settingsCopy.entriesTitle}
-      idPrefix="settings-artist-id"
-      manualSourceLabel={settingsCopy.manualSource}
-      manualValueLabel={settingsCopy.manualId}
-      monospaceValue
-      noEntriesLabel={settingsCopy.noEntries}
-      onChange={onChange}
-      sourceLabel={settingsCopy.sourceArtist}
-      valueLabel={settingsCopy.artistId}
-    />
-  );
-}
-
-function ArtistNamePreferences({
-  preferences,
-  onChange,
-}: {
-  preferences: Record<string, string>;
-  onChange: (preferences: Record<string, string>) => void;
-}) {
-  return (
-    <StringMappingEntries
       addLabel={settingsCopy.addDisplayName}
-      entries={preferences}
+      entries={entries}
       entriesTitle={settingsCopy.displayNameEntriesTitle}
       idPrefix="settings-artist-name"
       manualSourceLabel={settingsCopy.manualDisplayNameSource}
       manualValueLabel={settingsCopy.manualDisplayName}
       noEntriesLabel={settingsCopy.noDisplayNameEntries}
       onChange={onChange}
+      entryDetail={(source) =>
+        artistNameMappingSourceLabel(source, entries[source], mappingDetails)
+      }
       requireValue
-      sourceLabel={settingsCopy.sourceArtist}
+      sourceLabel={settingsCopy.originalArtistName}
       valueLabel={settingsCopy.displayName}
     />
   );
@@ -1139,6 +1068,7 @@ function ArtistNamePreferences({
 function StringMappingEntries({
   addLabel,
   entries,
+  entryDetail,
   entriesTitle,
   idPrefix,
   manualSourceLabel,
@@ -1152,6 +1082,7 @@ function StringMappingEntries({
 }: {
   addLabel: string;
   entries: Record<string, string>;
+  entryDetail?: (source: string) => string;
   entriesTitle: string;
   idPrefix: string;
   manualSourceLabel: string;
@@ -1188,37 +1119,48 @@ function StringMappingEntries({
       {sortedEntries.length === 0 ? <p>{noEntriesLabel}</p> : null}
       {sortedEntries.length > 0 ? (
         <ul className={styles.entryList}>
-          {sortedEntries.map(([source, value]) => (
-            <li className={styles.entry} key={source}>
-              <div>
-                <span className={styles.entryLabel}>{sourceLabel}</span>
-                <code>{source}</code>
-              </div>
-              <label className={styles.field}>
-                {valueLabel}
-                <input
-                  className={monospaceValue ? styles.monoInput : undefined}
-                  onChange={(event) =>
-                    onChange({
-                      ...entries,
-                      [source]: event.currentTarget.value,
-                    })
-                  }
-                  value={value}
-                />
-              </label>
-              <Button
-                onClick={() => {
-                  const nextEntries = { ...entries };
-                  delete nextEntries[source];
-                  onChange(nextEntries);
-                }}
-                variant="quiet"
-              >
-                {settingsCopy.removeEntry}
-              </Button>
-            </li>
-          ))}
+          {sortedEntries.map(([source, value]) => {
+            const detail = entryDetail?.(source);
+            return (
+              <li className={styles.entry} key={source}>
+                <div>
+                  <span className={styles.entryLabel}>{sourceLabel}</span>
+                  <code>{source}</code>
+                  {detail === undefined ? null : (
+                    <>
+                      <span className={styles.entryLabel}>
+                        {settingsCopy.artistNameSource}
+                      </span>
+                      <span className={styles.entryMetadata}>{detail}</span>
+                    </>
+                  )}
+                </div>
+                <label className={styles.field}>
+                  {valueLabel}
+                  <input
+                    className={monospaceValue ? styles.monoInput : undefined}
+                    onChange={(event) =>
+                      onChange({
+                        ...entries,
+                        [source]: event.currentTarget.value,
+                      })
+                    }
+                    value={value}
+                  />
+                </label>
+                <Button
+                  onClick={() => {
+                    const nextEntries = { ...entries };
+                    delete nextEntries[source];
+                    onChange(nextEntries);
+                  }}
+                  variant="quiet"
+                >
+                  {settingsCopy.removeEntry}
+                </Button>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       <div className={styles.entryComposer}>
@@ -1283,11 +1225,45 @@ function createPreviewRequest(
 ): PathPreviewRequest {
   return {
     artist_ids: config.artist_ids,
-    artist_names: config.artist_names,
     file_extension: sample.file_extension,
     metadata: sample.metadata,
     path_policy: config.path_policy,
   };
+}
+
+function artistNameMappingEntries(
+  result: ArtistNameMappingsData,
+): Record<string, string> {
+  return Object.fromEntries(
+    result.entries.map((entry) => [entry.source_name, entry.english_name]),
+  );
+}
+
+function artistNameMappingSourceLabel(
+  sourceName: string,
+  currentName: string | undefined,
+  mappings: ArtistNameMappingEntry[],
+): string {
+  const mapping = mappings.find((entry) => entry.source_name === sourceName);
+  if (mapping === undefined) {
+    return settingsCopy.artistNameSourceUserEntered;
+  }
+  if (mapping.source === "user" || mapping.english_name !== currentName) {
+    return settingsCopy.artistNameSourceUserEdited;
+  }
+  const locale = mapping.selected_locale;
+  switch (mapping.selected_name_kind) {
+    case "alias_sort_name":
+      return `${settingsCopy.artistNameSourceMusicBrainz} · ${locale ?? settingsCopy.artistNameSourceUnknownLocale} ${settingsCopy.artistNameSourceAliasSortName}`;
+    case "alias":
+      return `${settingsCopy.artistNameSourceMusicBrainz} · ${locale ?? settingsCopy.artistNameSourceUnknownLocale} ${settingsCopy.artistNameSourceAliasName}`;
+    case "sort_name":
+      return `${settingsCopy.artistNameSourceMusicBrainz} · ${settingsCopy.artistNameSourceArtistSortName}`;
+    case "name":
+      return `${settingsCopy.artistNameSourceMusicBrainz} · ${settingsCopy.artistNameSourceArtistName}`;
+    case null:
+      return settingsCopy.artistNameSourceMusicBrainz;
+  }
 }
 
 function useDebouncedValue<Value>(value: Value, delayMs: number): Value {
@@ -1351,7 +1327,10 @@ function ActionError({
   error: unknown;
   onLoadLatest: () => Promise<void>;
 }) {
-  if (hasSettingsErrorCode(error, "config_changed")) {
+  if (
+    hasSettingsErrorCode(error, "config_changed") ||
+    hasSettingsErrorCode(error, "artist_name_mappings_changed")
+  ) {
     return (
       <ValidationPanel
         body={settingsCopy.conflictBody}
@@ -1622,10 +1601,8 @@ function errorFieldTarget(field: string | undefined): string | null {
     ["path_policy.disc_number_style", "settings-disc-style"],
     ["path_policy.disc_number_condition", "settings-disc-condition"],
     ["path_policy.sanitize", "settings-sanitize"],
-    ["artist_ids.entries", "settings-artist-id-entries"],
     ["artist_ids.max_length", "settings-artist-max-length"],
     ["artist_ids.fallback_id", "settings-artist-fallback"],
-    ["artist_names.preferences", "settings-artist-name-preferences"],
     ["metadata.prefer_album_artist", "settings-prefer-album-artist"],
     ["metadata.require_title", "settings-require-title"],
     ["metadata.require_artist", "settings-require-artist"],
@@ -1641,8 +1618,6 @@ function errorFieldTarget(field: string | undefined): string | null {
     ["musicbrainz.retry_limit", "settings-musicbrainz-retry-limit"],
     ["musicbrainz.rate_limit_seconds", "settings-musicbrainz-rate-limit"],
     ["musicbrainz.cache_policy", "settings-musicbrainz-cache-policy"],
-    ["fasttext.model_path", "settings-fasttext-model"],
-    ["fasttext.minimum_confidence", "settings-fasttext-confidence"],
     ["hashing.read_chunk_size_bytes", "settings-hashing-chunk-size"],
     ["logging.destination", "settings-logging-destination"],
     ["logging.level", "settings-logging-level"],

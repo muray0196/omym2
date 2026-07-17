@@ -3,7 +3,7 @@ type: Product Overview
 title: Product
 description: Defines OMYM2 as a Plan-centered local music application with persisted controls and reviewed audio, companion, and opt-in unprocessed-file workflows across CLI, Web, and Windows desktop surfaces.
 tags: [product, overview, cli, web-ui, artist-names, musicbrainz, companions, unprocessed, desktop, windows, operations-console]
-timestamp: 2026-07-16T04:51:16+09:00
+timestamp: 2026-07-17T22:43:57+09:00
 ---
 
 # Product
@@ -43,9 +43,10 @@ This is a product-level summary. Execution rules are authoritative in [execution
 * Daily use imports new files with `add` after one Library has been registered.
 * Unregistered or unorganized Libraries are accepted through `organize --library PATH` before `add`.
 * Tag editing is outside OMYM2; relocation after external tag correction is handled by `refresh`.
-* Automatic MusicBrainz naming is a persisted opt-in. Without enablement and a
-  usable user-supplied fastText model, Plan creation stays local and preserves
-  original names except for explicit preferences and accepted cached results.
+* Automatic MusicBrainz naming is enabled by default for uncached Japanese and
+  Chinese artist names. Korean names are currently left unchanged unless a
+  mapping is added manually. Users can disable new provider work while
+  continuing to reuse saved romanized-name mappings locally.
 * When companion processing is enabled, Add, Organize, and Refresh create
   actions for newly discovered unmanaged `.lrc`, `.jpg`, and `.png` files, and
   Check reports unmanaged companion candidates. Disabling it stops those new
@@ -125,15 +126,15 @@ The roles of the Web UI are:
 * Setting optional Library path shortcuts
 * Setting the Incoming path
 * Editing the path policy
-* Editing exact full artist display-name preferences used for planned paths
-* Configuring optional MusicBrainz naming, the fastText model and confidence,
-  request bounds, and accepted-result cache policy
+* Reviewing and correcting romanized artist-name mappings populated by MusicBrainz
+* Configuring optional MusicBrainz naming, request bounds, and accepted-result
+  cache policy
 * Configuring hashing throughput and bounded application logging; logging
   changes clearly require a restart
 * Enabling companion lyrics and artwork in newly created Plans
 * Enabling unprocessed-file collection for newly created Add Plans, choosing
   its one-component destination directory, and setting the result preview cap
-* Generating and editing artist ID path values
+* Configuring general automatic artist-ID length and fallback behavior
 * Setting required metadata fields
 * Setting behavior for duplicates
 * Setting behavior for conflicts
@@ -229,10 +230,11 @@ The SPA is bundled in the Python wheel and sdist and runs without Node.js in
 production. It is served on loopback by `omym2 settings`. Presentation is
 dark-only.
 
-Automatic MusicBrainz naming is disabled by default. The fastText runtime and
-language model are not bundled; users who opt in supply a compatible model.
-Provider or model unavailability falls back to local naming and never prevents
-reviewing or applying recorded local work.
+Automatic MusicBrainz naming is enabled by default. OMYM2 deterministically
+limits new lookups to source names containing non-Latin letters; Latin-only
+names, including diacritics, remain unchanged. Provider unavailability falls
+back to local naming and never prevents reviewing or applying recorded local
+work.
 
 The Windows desktop ZIP is a PyInstaller 6.21.0 `onedir` application built from
 the audited wheel. It carries its frozen Python runtime and the same audited SPA
