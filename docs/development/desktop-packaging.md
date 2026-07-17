@@ -3,7 +3,7 @@ type: Development Guide
 title: Windows Desktop Packaging
 description: Windows x64 desktop build, audit, native smoke commands and evidence, CI boundary, and release gates.
 tags: [development, desktop, windows, packaging, pyinstaller, musicbrainz, smoke-test]
-timestamp: 2026-07-18T12:00:00+09:00
+timestamp: 2026-07-18T03:18:00+09:00
 ---
 
 # Windows Desktop Packaging
@@ -64,7 +64,7 @@ The run writes `<archive-stem>-smoke.json` beside the ZIP: candidate ZIP and exa
 
 ## CI Boundary
 
-The hosted `windows-2025` CI job downloads the short-lived audited wheel, first runs the native filesystem and runtime boundary suite (rooted observation/mutation, scanner containment, concrete companion and unprocessed adapter E2E, real multiprocess lock behavior, desktop runtime tests; retained-HANDLE mechanics: [Path Identity And Storage Contract](../contracts/path-identity-storage.md#retained-observation-and-mutation-boundary)), then builds the ZIP, runs the native package smoke, and retains the package-audit JSON, native-smoke JSON, and SHA-256 sidecar. The ZIP exists only long enough to build, audit, and smoke; CI does not upload or publish it.
+Hosted `windows-2025` CI uses two independent jobs. The runtime-boundary job starts immediately and runs rooted observation/mutation, scanner containment, concrete companion and unprocessed adapter E2E, real multiprocess lock behavior, and desktop runtime tests (retained-HANDLE mechanics: [Path Identity And Storage Contract](../contracts/path-identity-storage.md#retained-observation-and-mutation-boundary)). The package-smoke job waits for the Linux package-evidence artifact, downloads that exact short-lived audited wheel, builds the ZIP, runs native package smoke, and retains the package-audit JSON, native-smoke JSON, and SHA-256 sidecar. The ZIP exists only long enough to build, audit, and smoke; CI does not upload or publish it.
 
 This Windows Server 2025 x64 run is the native development-build and smoke proxy, not Windows 11 release evidence. Release validation is a separate run of the same packaged smoke (including UI Automation) on the supported workstation target with JSON evidence retained; the smoke record includes the observed Windows edition, build, installation type, product type, and machine architecture so Server CI cannot be relabeled. Failure to create any required evidence file fails either run.
 

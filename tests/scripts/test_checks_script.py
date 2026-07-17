@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts import config
 from scripts.config import CHECKS_FAILURE_DIAGNOSTIC_MAX_BYTES
 
 CHECKS_SCRIPT = Path(__file__).parents[2] / "scripts/checks.sh"
@@ -114,6 +115,57 @@ def test_completion_routes_deleted_files_to_their_gate_group(tmp_path: Path) -> 
     commands = command_log.read_text(encoding="utf-8")
     assert "npm:run api:check" in commands
     assert "uv:run pytest -q" not in commands
+
+
+def test_ci_only_modes_skip_gate_groups_owned_by_parallel_jobs(tmp_path: Path) -> None:
+    """CI-only modes retain their evidence while avoiding aggregate gate duplication."""
+    repository, command_log, environment = _repository(tmp_path)
+    wheel = repository / "build/evidence/omym2.whl"
+    _write(wheel, "wheel")
+
+    e2e_result = subprocess.run(  # noqa: S603 -- Fixed script runs with controlled fake tools.
+        (str(repository / "scripts/checks.sh"), "e2e-ci"),
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+    assert e2e_result.returncode == SUCCESS_EXIT_CODE, e2e_result.stderr
+    e2e_commands = command_log.read_text(encoding="utf-8")
+    assert e2e_commands.count("npm run test:e2e") == config.CI_E2E_PROFILE_COUNT
+    assert "npm:run api:check" not in e2e_commands
+    assert "npm:run test:unit" not in e2e_commands
+    assert "npm:run build" in e2e_commands
+    assert "uv:run python scripts/web/sync_web_static.py" in e2e_commands
+
+    command_log.unlink()
+    performance_result = subprocess.run(  # noqa: S603 -- Fixed script runs with controlled fake tools.
+        (str(repository / "scripts/checks.sh"), "performance-ci", str(wheel)),
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+    assert performance_result.returncode == SUCCESS_EXIT_CODE, performance_result.stderr
+    performance_commands = command_log.read_text(encoding="utf-8")
+    assert f"uv:run python scripts/web/build_web_evidence.py --performance-wheel {wheel}" in performance_commands
+    assert "--run-performance" not in performance_commands
+
+
+def test_ci_workflow_reuses_expensive_gate_outputs() -> None:
+    """CI topology keeps full evidence while removing redundant aggregate work."""
+    workflow = (Path(__file__).parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "api-client:" in workflow
+    assert "scripts/checks.sh e2e-ci" in workflow
+    assert "scripts/checks.sh performance-ci" in workflow
+    assert "windows-runtime-boundaries:" in workflow
+    assert "needs: [scope, package-evidence]" in workflow
+    assert "python scripts/ci_scope.py" in workflow
 
 
 def test_successful_mode_discards_gate_output_and_reports_only_pass(tmp_path: Path) -> None:

@@ -21,8 +21,64 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
+  scope:
+    name: CI Scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.classify.outputs.scope }}
+
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: classify
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "$BASE_SHA^{commit}"; then
+            scope="full"
+          else
+            scope="$(git diff --name-only --diff-filter=ACDMR "$BASE_SHA" HEAD -- | python scripts/ci_scope.py)"
+          fi
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+
+  docs-quality:
+    name: Documentation Quality
+    needs: scope
+    if: needs.scope.outputs.scope == 'docs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install Python dependencies
+        run: uv sync --locked --dev
+
+      - name: Run documentation quality gate
+        run: scripts/checks.sh docs
+
   python-quality:
     name: Python Quality
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -52,6 +108,8 @@ jobs:
 
   api-client:
     name: API Schema And Client Drift
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -92,6 +150,8 @@ jobs:
 
   frontend-quality:
     name: Frontend Quality
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -132,6 +192,8 @@ jobs:
 
   browser-e2e:
     name: Chromium Keyboard And Axe E2E
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
 
@@ -169,7 +231,7 @@ jobs:
         run: npm exec -- playwright install --with-deps chromium
 
       - name: Run browser E2E
-        run: scripts/checks.sh e2e
+        run: scripts/checks.sh e2e-ci
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
@@ -182,6 +244,8 @@ jobs:
 
   package-evidence:
     name: Linux Package Evidence
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
 
@@ -225,11 +289,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  windows-package-smoke:
-    name: Windows Desktop Package And Native Smoke
-    needs: package-evidence
+  windows-runtime-boundaries:
+    name: Windows Runtime Boundaries
+    needs: scope
+    if: needs.scope.outputs.scope == 'full'
     runs-on: windows-2025
-    timeout-minutes: 45
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -269,6 +334,31 @@ jobs:
           tests/adapters/fs/test_read_adapters.py
           -q
           -k "file_scanner or file_stat_reader"
+
+  windows-package-smoke:
+    name: Windows Desktop Package And Native Smoke
+    needs: [scope, package-evidence]
+    if: needs.scope.outputs.scope == 'full'
+    runs-on: windows-2025
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          version: "0.11.23"
+
+      - name: Install locked build dependencies
+        run: uv sync --locked --dev
 
       - name: Download audited package evidence
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
@@ -311,6 +401,8 @@ jobs:
 
   performance-budget:
     name: Installed Package Performance Budgets
+    needs: [scope, package-evidence]
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -349,8 +441,21 @@ jobs:
         working-directory: web
         run: npm exec -- playwright install --with-deps chromium
 
+      - name: Download audited package evidence
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: web-package-evidence-${{ github.sha }}
+          path: build/web-package-evidence
+
       - name: Enforce installed-package performance budgets
-        run: scripts/checks.sh performance
+        shell: bash
+        run: |
+          wheel="$(find build/web-package-evidence -maxdepth 1 -name '*.whl' -type f -print -quit)"
+          if [[ -z "$wheel" ]]; then
+            echo "Audited wheel was not downloaded." >&2
+            exit 1
+          fi
+          scripts/checks.sh performance-ci "$wheel"
 
       - name: Upload performance measurement
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
