@@ -134,7 +134,7 @@ def test_ci_only_modes_skip_gate_groups_owned_by_parallel_jobs(tmp_path: Path) -
 
     assert e2e_result.returncode == SUCCESS_EXIT_CODE, e2e_result.stderr
     e2e_commands = command_log.read_text(encoding="utf-8")
-    assert e2e_commands.count("npm:run test:e2e") == config.CI_E2E_PROFILE_COUNT
+    assert e2e_commands.count("npm run test:e2e") == config.CI_E2E_PROFILE_COUNT
     assert "npm:run api:check" not in e2e_commands
     assert "npm:run build" not in e2e_commands
 
@@ -150,18 +150,13 @@ def test_ci_only_modes_skip_gate_groups_owned_by_parallel_jobs(tmp_path: Path) -
 
     assert performance_result.returncode == SUCCESS_EXIT_CODE, performance_result.stderr
     performance_commands = command_log.read_text(encoding="utf-8")
-    assert (
-        f"uv:run python scripts/web/build_web_evidence.py --performance-wheel {wheel}"
-        in performance_commands
-    )
+    assert f"uv:run python scripts/web/build_web_evidence.py --performance-wheel {wheel}" in performance_commands
     assert "--run-performance" not in performance_commands
 
 
 def test_ci_workflow_reuses_expensive_gate_outputs() -> None:
     """CI topology keeps full evidence while removing redundant aggregate work."""
-    workflow = (Path(__file__).parents[2] / ".github/workflows/ci.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (Path(__file__).parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "api-client:" in workflow
     assert "scripts/checks.sh e2e-ci" in workflow
