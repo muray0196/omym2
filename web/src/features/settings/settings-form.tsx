@@ -315,7 +315,7 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
         scheduleBootstrapRefresh();
       } catch (error: unknown) {
         pendingCandidateRef.current = null;
-        setFailedFingerprint(latestCandidateRef.current.fingerprint);
+        setFailedFingerprint(candidate.fingerprint);
         setActionError(error);
         setAnnouncement(actionErrorAnnouncement(error));
         if (hasSettingsErrorCode(error, "config_changed")) {

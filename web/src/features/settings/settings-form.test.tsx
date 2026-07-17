@@ -547,6 +547,66 @@ describe("Settings route", () => {
     }
   });
 
+  it("saves a newer draft after an in-flight candidate fails validation", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const requests: SettingsCandidateRequest[] = [];
+      let releaseFirstSave: () => void = () => undefined;
+      const firstSaveHeld = new Promise<void>((resolve) => {
+        releaseFirstSave = resolve;
+      });
+      server.use(
+        http.put("*/api/settings", async ({ request }) => {
+          const candidate = (await request.json()) as SettingsCandidateRequest;
+          requests.push(candidate);
+          if (requests.length === 1) {
+            await firstSaveHeld;
+            return HttpResponse.json(
+              {
+                data: null,
+                errors: [
+                  {
+                    code: "validation_failed",
+                    field: "body.config.path_policy.template",
+                    message:
+                      "The path template must contain a title placeholder.",
+                    retryable: false,
+                  },
+                ],
+              } satisfies ApiFailureEnvelope,
+              { status: 422 },
+            );
+          }
+          return HttpResponse.json(
+            savedEnvelopeFor(candidate, "settings-revision-two"),
+          );
+        }),
+      );
+      renderSettings();
+
+      const template = await screen.findByLabelText("Path template");
+      fireEvent.change(template, { target: { value: "{artist}" } });
+      await advanceAutosave();
+      await waitFor(() => expect(requests).toHaveLength(1));
+
+      fireEvent.change(template, {
+        target: { value: "{artist}/{title}" },
+      });
+      await advanceAutosave();
+      expect(requests).toHaveLength(1);
+
+      act(() => releaseFirstSave());
+      await waitFor(() => expect(requests).toHaveLength(2));
+      await waitFor(() => expect(autosaveStatus()).toHaveTextContent("Saved"));
+      expect(requests[1]?.config.path_policy.template).toBe("{artist}/{title}");
+      expect(requests[1]?.expected_config_revision).toBe(
+        "settings-revision-one",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("retains an invalid draft, links diagnostics, and does not resubmit it unchanged", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
