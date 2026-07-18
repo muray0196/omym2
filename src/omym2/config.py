@@ -178,7 +178,6 @@ PLAN_ACTION_SORT_ORDER_STEP: Final = 1  # increment between adjacent PlanAction 
 FILE_EVENT_SEQUENCE_START: Final = 1  # first durable mutation event sequence number in a Run
 FILE_EVENT_SEQUENCE_STEP: Final = 1  # increment between adjacent durable mutation events
 
-ALLOWED_COMMAND_MODES: Final = frozenset({"plan_first"})  # supported command default_mode values
 ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES: Final = frozenset({"skip"})  # duplicate content decisions
 ALLOWED_COLLISION_MISSING_METADATA_POLICIES: Final = frozenset({"block"})  # missing metadata decisions
 ALLOWED_COLLISION_TARGET_EXISTS_POLICIES: Final = frozenset({"conflict"})  # target collision decisions
@@ -205,7 +204,6 @@ ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS: Final = frozenset(
     {PATH_POLICY_DISC_NUMBER_CONDITION_ALWAYS, PATH_POLICY_DISC_NUMBER_CONDITION_MULTIPLE_DISCS}
 )  # supported {disc} rendering condition values
 CONFIG_VERSION: Final = 2  # supported clean-slate user config schema version
-DEFAULT_COMMAND_MODE: Final = "plan_first"  # initial plan creation mode for mutating commands
 DEFAULT_ADD_AUTO_APPLY: Final = False  # add command auto-apply default
 DEFAULT_ORGANIZE_AUTO_APPLY: Final = False  # organize command auto-apply default
 DEFAULT_REFRESH_AUTO_APPLY: Final = False  # refresh command auto-apply default
@@ -228,19 +226,12 @@ DEFAULT_COLLISION_ON_DUPLICATE_HASH: Final = "skip"  # duplicate content policy 
 DEFAULT_COLLISION_ON_MISSING_METADATA: Final = "block"  # missing metadata policy name
 DEFAULT_ARTIST_ID_MAX_LENGTH: Final = 8  # maximum generated artist ID length, characters
 DEFAULT_ARTIST_ID_FALLBACK: Final = "NOART"  # artist ID used when source text has no usable characters
-MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE: Final = "sticky_positive"  # persist accepted positive provider results
-ALLOWED_MUSICBRAINZ_CACHE_POLICIES: Final = frozenset(
-    {MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE}
-)  # supported provider-result cache policies
 DEFAULT_MUSICBRAINZ_ENABLED: Final = True  # automatic MusicBrainz lookup default
 DEFAULT_MUSICBRAINZ_APPLICATION_NAME: Final = "OMYM2"  # application identity sent to MusicBrainz
 DEFAULT_MUSICBRAINZ_CONTACT: Final = "https://github.com/muray0196/omym2"  # MusicBrainz contact identity
 DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS: Final = 5.0  # MusicBrainz request timeout, seconds, > 0
 DEFAULT_MUSICBRAINZ_RETRY_LIMIT: Final = 1  # retries after the initial MusicBrainz request, attempts, >= 0
 DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS: Final = 1.0  # delay between MusicBrainz requests, seconds, >= 1
-DEFAULT_MUSICBRAINZ_CACHE_POLICY: Final = (
-    MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE  # accepted positive provider-result cache behavior
-)
 DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES: Final = 1_048_576  # file hash read chunk size, bytes, >= 1
 LOGGING_LEVEL_DEBUG: Final = "DEBUG"  # diagnostic logging level
 LOGGING_LEVEL_INFO: Final = "INFO"  # informational logging level

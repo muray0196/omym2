@@ -38,7 +38,6 @@ export const settingsCopy = {
   artistNameSource: "Name source",
   artistNameSourceAliasName: "alias name",
   artistNameSourceAliasSortName: "alias sort-name",
-  artistNameSourceArtistName: "artist name",
   artistNameSourceArtistSortName: "artist sort-name",
   artistNameSourceMusicBrainz: "MusicBrainz",
   artistNameSourceUnknownLocale: "unknown-locale",
@@ -76,7 +75,6 @@ export const settingsCopy = {
   musicbrainzTimeout: "Request timeout (seconds)",
   musicbrainzRetryLimit: "Retry limit",
   musicbrainzRateLimit: "Rate limit (seconds)",
-  musicbrainzCachePolicy: "Accepted-result cache policy",
   hashingTitle: "Hashing",
   hashingHelp:
     "Adjust how much file data is read at a time. This affects hashing performance, not content-hash identity.",

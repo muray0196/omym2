@@ -3,7 +3,7 @@ type: Contract
 title: DB Schema Contract
 description: SQLite tables, constraints, indexes, migrations, JSON and timestamp policy for all persisted state.
 tags: [database, sqlite, schema, migrations, artist-names, musicbrainz, companions, unprocessed, provenance]
-timestamp: 2026-07-18T12:00:00+09:00
+timestamp: 2026-07-18T15:00:00+09:00
 ---
 
 # DB Schema Contract
@@ -42,9 +42,9 @@ Last confirmed managed state of one lyrics or artwork file; separate from `track
 
 The one editable mapping from original artist text to an English artist name. MusicBrainz populates positive rows automatically; users add, edit, or delete the same rows through Settings. Global feature data — no `library_id`.
 
-Fields: `source_key` (non-empty derived lookup key, primary key), `source_name` (non-empty original metadata text), `resolved_name` (non-empty English display name), `provider` (`musicbrainz` | `user`, last writer), `provider_artist_id` (canonical MusicBrainz UUID for automatic rows, null for user rows), `selected_name_kind` (`alias` | `alias_sort_name` | `name` | `sort_name` for automatic rows, null for user rows), `selected_locale` (nullable; permitted only for alias/alias-sort-name selections), `accepted_at` (UTC timestamp of acceptance or latest user edit).
+Fields: `source_key` (non-empty derived lookup key, primary key), `source_name` (non-empty original metadata text), `resolved_name` (non-empty English display name), `provider` (`musicbrainz` | `user`, last writer), `provider_artist_id` (canonical MusicBrainz UUID for automatic rows, null for user rows), `selected_name_kind` (`alias` | `alias_sort_name` | `sort_name` for automatic rows, null for user rows), `selected_locale` (nullable; permitted only for alias/alias-sort-name selections), `accepted_at` (UTC timestamp of acceptance or latest user edit).
 
-`selected_name_kind` records the exact MusicBrainz field used: `alias` = alias object's `name`; `alias_sort_name` = alias object's `sort-name`; `name` = artist object's `name`; `sort_name` = artist object's `sort-name`. Alias selections retain their MusicBrainz locale (e.g., `ja-Latn`) so Settings can distinguish a Japanese Latin alias from artist-level fallbacks.
+`selected_name_kind` records the exact MusicBrainz field used: `alias` = alias object's `name`; `alias_sort_name` = alias object's `sort-name`; `sort_name` = artist object's `sort-name`. Alias selections retain their MusicBrainz locale (e.g., `ja-Latn`) so Settings can distinguish a Japanese Latin alias from artist-level fallbacks. Selection never uses the artist object's own `name`: an artist-level Latin fallback is only ever accepted as `sort_name`, so the CHECK constraint does not carry a `name` value (`202607180001_drop_unused_artist_name_kind.sql` removed it after confirming no selection path ever produced it).
 
 The naming feature derives every lookup/insertion key via the pure [ArtistNameSourceKey](../DOMAIN.md#artistnamesourcekey) contract before repository access; the repository compares keys exactly. Missing or whitespace-only source text produces no key and must not reach the repository. Automatic insertion is sticky: `insert_if_absent` does nothing and returns false when `source_key` exists, so Plan creation never overwrites an accepted row because MusicBrainz later returns different data. Revision-checked Settings saves may upsert user rows or delete mappings; an edited automatic row becomes a `user` row and clears provider-specific fields. `provider_artist_id` is not unique (multiple source keys may map to one provider artist).
 
@@ -117,7 +117,7 @@ Findings of one check run. Fields: `issue_seq`, `check_run_id`, `library_id`, `i
 
 ## Migrations
 
-The pre-release clean-slate cutover on 2026-07-16 starts history at `202607160001_baseline.sql`. Forward migrations: `202607170001_editable_artist_name_mappings.sql` (user-supplied mappings, nullable provider provenance), `202607170002_artist_sort_name_mapping.sql` (adds `sort_name` to the automatic-selection catalog), `202607170003_artist_alias_sort_name_provenance.sql` (separates an alias object's `sort-name` from its `name`); each preserves existing rows.
+The pre-release clean-slate cutover on 2026-07-16 starts history at `202607160001_baseline.sql`. Forward migrations: `202607170001_editable_artist_name_mappings.sql` (user-supplied mappings, nullable provider provenance), `202607170002_artist_sort_name_mapping.sql` (adds `sort_name` to the automatic-selection catalog), `202607170003_artist_alias_sort_name_provenance.sql` (separates an alias object's `sort-name` from its `name`), `202607180001_drop_unused_artist_name_kind.sql` (removes the `name` selection kind from the CHECK constraint after confirming no selection path ever produces it); each preserves existing rows.
 
 The runner rejects an existing database with application tables lacking migration metadata, application tables with no applied migration, or applied migration names that are not an exact prefix of the packaged history; the error instructs deleting the SQLite file and restarting. It never adopts or rewrites unsupported pre-release state.
 

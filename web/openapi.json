@@ -1600,14 +1600,9 @@
           "auto_apply": {
             "title": "Auto Apply",
             "type": "boolean"
-          },
-          "default_mode": {
-            "title": "Default Mode",
-            "type": "string"
           }
         },
         "required": [
-          "default_mode",
           "auto_apply"
         ],
         "title": "CommandConfigResource",
@@ -2177,14 +2172,10 @@
       },
       "MusicBrainzConfigResource": {
         "additionalProperties": false,
-        "description": "Persisted MusicBrainz enablement, identity, request, and cache controls.",
+        "description": "Persisted MusicBrainz enablement, identity, and request controls.",
         "properties": {
           "application_name": {
             "title": "Application Name",
-            "type": "string"
-          },
-          "cache_policy": {
-            "title": "Cache Policy",
             "type": "string"
           },
           "contact": {
@@ -2214,8 +2205,7 @@
           "contact",
           "timeout_seconds",
           "retry_limit",
-          "rate_limit_seconds",
-          "cache_policy"
+          "rate_limit_seconds"
         ],
         "title": "MusicBrainzConfigResource",
         "type": "object"
@@ -3647,7 +3637,6 @@
         "enum": [
           "alias",
           "alias_sort_name",
-          "name",
           "sort_name"
         ],
         "title": "SelectedArtistNameKind",
@@ -3760,13 +3749,6 @@
             "title": "Album Year Resolutions",
             "type": "array"
           },
-          "command_modes": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Command Modes",
-            "type": "array"
-          },
           "disc_number_conditions": {
             "items": {
               "type": "string"
@@ -3802,13 +3784,6 @@
             "title": "Missing Metadata Policies",
             "type": "array"
           },
-          "musicbrainz_cache_policies": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Musicbrainz Cache Policies",
-            "type": "array"
-          },
           "path_placeholders": {
             "items": {
               "type": "string"
@@ -3833,14 +3808,12 @@
           }
         },
         "required": [
-          "command_modes",
           "disc_number_styles",
           "disc_number_conditions",
           "album_year_resolutions",
           "target_exists_policies",
           "duplicate_hash_policies",
           "missing_metadata_policies",
-          "musicbrainz_cache_policies",
           "logging_levels",
           "unprocessed_result_preview_limit_min",
           "unprocessed_result_preview_limit_max",

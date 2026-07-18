@@ -144,7 +144,6 @@ def test_settings_operations_have_stable_ids_and_declared_typed_errors() -> None
         "unprocessed",
     } <= set(app_config_properties)
     assert {
-        "musicbrainz_cache_policies",
         "logging_levels",
         "unprocessed_result_preview_limit_min",
         "unprocessed_result_preview_limit_max",
