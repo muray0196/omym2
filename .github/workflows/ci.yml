@@ -358,7 +358,7 @@ jobs:
           version: "0.11.23"
 
       - name: Install locked build dependencies
-        run: uv sync --locked --dev
+        run: uv sync --locked --no-default-groups
 
       - name: Download audited package evidence
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
@@ -378,11 +378,11 @@ jobs:
         run: |
           $wheel = Get-ChildItem build/web-package-evidence -Filter *.whl -File | Select-Object -First 1
           if ($null -eq $wheel) { throw "Audited wheel was not downloaded." }
-          uv run python scripts/desktop/build_windows.py --wheel $wheel.FullName --output-directory build/desktop
+          uv run --no-sync python scripts/desktop/build_windows.py --wheel $wheel.FullName --output-directory build/desktop
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $archive = Get-ChildItem build/desktop -Filter OMYM2-*-windows-x86_64.zip -File | Select-Object -First 1
           if ($null -eq $archive) { throw "Desktop archive was not produced." }
-          uv run python scripts/desktop/smoke_windows_package.py --archive $archive.FullName --wheel $wheel.FullName
+          uv run --no-sync python scripts/desktop/smoke_windows_package.py --archive $archive.FullName --wheel $wheel.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $smoke = Get-ChildItem build/desktop -Filter OMYM2-*-windows-x86_64-smoke.json -File | Select-Object -First 1
           if ($null -eq $smoke) { throw "Desktop native-smoke evidence was not produced." }
