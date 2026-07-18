@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from itertools import batched
 from typing import TYPE_CHECKING
 
 from omym2.config import (
@@ -27,11 +28,26 @@ from omym2.config import (
     SANITIZER_UNSAFE_PATTERN,
     SANITIZER_UTF8_ENCODING,
 )
+from omym2.domain.models.plan_action import PlanActionReason
+from omym2.domain.services.album_disc import infer_album_disc_totals
+from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
+from omym2.domain.services.artist_name import (
+    ARTIST_NAME_FIELD_COUNT,
+    artist_name_diagnostics,
+    artist_name_projections,
+    artist_name_sources,
+)
 from omym2.shared.paths import normalize_library_relative_path
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
     from omym2.domain.models.app_config import AppConfig, ArtistIdConfig, PathPolicyConfig
+    from omym2.domain.models.artist_name_resolution import ArtistNameDiagnostics, ArtistNameResolution
+    from omym2.domain.models.file_snapshot import FileSnapshot
     from omym2.domain.models.track_metadata import TrackMetadata
+    from omym2.domain.services.album_disc import AlbumDiscTotals
+    from omym2.domain.services.album_year import AlbumYearGroup
     from omym2.domain.services.artist_name import ArtistNameProjection
 
 from omym2.domain.models.app_config import ArtistIdConfig
@@ -230,6 +246,80 @@ class PathPolicy:
             cached_component = sanitize_path_component(value, max_length)
             self._path_component_cache[cache_key] = cached_component
         return cached_component
+
+
+def has_missing_required_metadata(snapshot: FileSnapshot, config: AppConfig) -> bool:
+    """Return whether a captured snapshot fails one of the configured required-metadata gates."""
+    metadata = snapshot.metadata
+    if config.metadata.require_title and _missing_text(metadata.title):
+        return True
+    # Artist identity can come from either track artist or album artist, so
+    # either value satisfies the required artist gate.
+    if config.metadata.require_artist and _missing_text(metadata.artist) and _missing_text(metadata.album_artist):
+        return True
+    return config.metadata.require_album and _missing_text(metadata.album)
+
+
+def _missing_text(value: str | None) -> bool:
+    return value is None or value.strip() == ""
+
+
+def path_generation_failure_reason(exc: ValueError) -> PlanActionReason:
+    """Classify a canonical_path ValueError into its PlanAction block reason."""
+    if str(exc) == MISSING_TITLE_MESSAGE:
+        return PlanActionReason.MISSING_REQUIRED_METADATA
+    return PlanActionReason.INVALID_PATH
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalPathBatchResolution:
+    """Per-candidate artist projections plus shared album-year/disc-total context for one canonical-path batch."""
+
+    projections: tuple[ArtistNameProjection, ...]
+    diagnostics: tuple[ArtistNameDiagnostics, ...]
+    resolution_pairs: tuple[tuple[ArtistNameResolution, ...], ...]
+    resolved_years: dict[AlbumYearGroup, int | None]
+    album_disc_totals: AlbumDiscTotals
+
+
+def resolve_canonical_path_batch(
+    resolve_many: Callable[[Sequence[str | None]], Sequence[ArtistNameResolution]],
+    candidate_metadata: Sequence[TrackMetadata],
+    album_context_metadata: Sequence[TrackMetadata],
+    config: PathPolicyConfig,
+    album_year_resolution: str,
+) -> CanonicalPathBatchResolution:
+    """Resolve artist names and shared album-year/disc-total context for one canonical-path batch.
+
+    `candidate_metadata` drives per-candidate artist resolution, projections,
+    diagnostics, and resolution pairs. `album_context_metadata` drives the
+    shared resolved album years and disc totals; it equals `candidate_metadata`
+    for a caller with no separate existing-Library context (organize), or a
+    broader batch for a caller that also folds unrelated existing Library
+    metadata into year/disc-total grouping (add, refresh).
+    """
+    resolutions = tuple(resolve_many(artist_name_sources(candidate_metadata)))
+    projections = artist_name_projections(
+        candidate_metadata, tuple(resolution.resolved_name for resolution in resolutions)
+    )
+    diagnostics = artist_name_diagnostics(candidate_metadata, resolutions)
+    resolution_pairs = tuple(batched(resolutions, ARTIST_NAME_FIELD_COUNT, strict=True))
+    resolved_years = resolve_album_years(album_context_metadata, config, album_year_resolution)
+    resolved_metadata_batch = tuple(
+        metadata_with_resolved_album_year(metadata, config, resolved_years) for metadata in album_context_metadata
+    )
+    album_disc_totals = infer_album_disc_totals(
+        resolved_metadata_batch,
+        unknown_artist=config.unknown_artist,
+        unknown_album=config.unknown_album,
+    )
+    return CanonicalPathBatchResolution(
+        projections=projections,
+        diagnostics=diagnostics,
+        resolution_pairs=resolution_pairs,
+        resolved_years=resolved_years,
+        album_disc_totals=album_disc_totals,
+    )
 
 
 def sanitize_string(

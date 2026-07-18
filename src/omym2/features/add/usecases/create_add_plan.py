@@ -19,7 +19,7 @@ from omym2.config import (
 )
 from omym2.domain.models.companion_asset import CompanionAssetKind, CompanionAssetStatus
 from omym2.domain.models.library import Library, LibraryStatus
-from omym2.domain.models.operation import Operation, OperationKind, OperationStatus, PlanCreatedResult
+from omym2.domain.models.operation import OperationKind, PlanCreatedResult
 from omym2.domain.models.plan import Plan, PlanStatus, PlanType
 from omym2.domain.models.plan_action import (
     ActionStatus,
@@ -29,22 +29,17 @@ from omym2.domain.models.plan_action import (
     PlanActionReason,
 )
 from omym2.domain.models.track import TrackStatus
-from omym2.domain.services.album_disc import infer_album_disc_totals
-from omym2.domain.services.album_year import metadata_with_resolved_album_year, resolve_album_years
-from omym2.domain.services.artist_name import (
-    artist_name_diagnostics,
-    artist_name_projections,
-    artist_name_sources,
-)
+from omym2.domain.services.album_year import metadata_with_resolved_album_year
 from omym2.domain.services.artist_name_reconciliation import artist_name_reconciliation_required
 from omym2.domain.services.collision_policy import CollisionDecisionKind, CollisionPolicy, OccupiedPaths
 from omym2.domain.services.companion_association import (
-    CompanionAssociation,
     CompanionAssociationResult,
     CompanionAudioCandidate,
-    CompanionIssue,
-    CompanionIssueCode,
     associate_companions,
+    companion_action_type,
+    companion_dependency_sources,
+    companion_issue_reason,
+    companion_kind,
 )
 from omym2.domain.services.companion_recovery import (
     CompanionRecoveryEvidence,
@@ -59,7 +54,13 @@ from omym2.domain.services.config_fingerprint import (
     calculate_path_policy_fingerprint,
     is_path_policy_stale,
 )
-from omym2.domain.services.path_policy import MISSING_TITLE_MESSAGE, PathPolicy
+from omym2.domain.services.path_policy import (
+    PathPolicy,
+    has_missing_required_metadata,
+    path_generation_failure_reason,
+    resolve_canonical_path_batch,
+)
+from omym2.domain.services.running_operation import running_operation
 from omym2.features.common_ports import (
     FileObservationChangedError,
     FileObservationInvalidPathError,
@@ -80,7 +81,7 @@ if TYPE_CHECKING:
     from omym2.features.add.dto import CreateAddPlanRequest
     from omym2.features.add.ports import CreateAddPlanPorts
     from omym2.features.common_ports import FileSystemPath, SourceInventoryEntry, UnitOfWork
-    from omym2.shared.ids import CompanionAssetId, LibraryId, OperationId, PlanId, TrackId
+    from omym2.shared.ids import CompanionAssetId, LibraryId, PlanId, TrackId
 
 AMBIGUOUS_REGISTERED_LIBRARY_MESSAGE = (
     "Multiple registered Libraries exist. Library selection is not supported for add yet."
@@ -100,7 +101,6 @@ SUMMARY_SKIP_ACTIONS_KEY = "skip_actions"
 SUMMARY_UNPROCESSED_ACTIONS_KEY = "unprocessed_actions"
 SUMMARY_UNPROCESSED_PREVIEW_LIMIT_KEY = "unprocessed_preview_limit"
 RUNNING_OPERATION_REQUIRED_MESSAGE = "Add completion requires its corresponding running Operation."
-CLAIMED_COMPANION_DECISION_MISSING_MESSAGE = "Claimed companion must have an association or issue."
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,7 +123,12 @@ class CreateAddPlanUseCase:
         timestamp = self.ports.clock.now()
 
         with self.ports.uow as uow:
-            _ = _running_operation(uow, request.operation_id)
+            _ = running_operation(
+                uow.operations.lookup,
+                request.operation_id,
+                OperationKind.ADD_PLAN,
+                required_message=RUNNING_OPERATION_REQUIRED_MESSAGE,
+            )
             library = _select_registered_library(uow, path_policy_hash, request.library_id)
             library_tracks = tuple(uow.tracks.list_by_library(library.library_id))
             companion_assets = tuple(uow.companion_assets.list_by_library(library.library_id))
@@ -264,7 +269,12 @@ class CreateAddPlanUseCase:
         )
 
         with self.ports.uow as uow:
-            operation = _running_operation(uow, request.operation_id)
+            operation = running_operation(
+                uow.operations.lookup,
+                request.operation_id,
+                OperationKind.ADD_PLAN,
+                required_message=RUNNING_OPERATION_REQUIRED_MESSAGE,
+            )
             uow.plans.save(plan)
             for action in actions:
                 uow.plan_actions.save(action)
@@ -367,26 +377,18 @@ class CreateAddPlanUseCase:
             if candidate.snapshot is not None and candidate.reason is None
         )
         metadata_batch = active_library_metadata + candidate_metadata
-        resolutions = self.ports.artist_name_resolver.resolve_many(artist_name_sources(candidate_metadata))
-        projections = iter(
-            artist_name_projections(candidate_metadata, tuple(resolution.resolved_name for resolution in resolutions))
-        )
-        diagnostics = iter(artist_name_diagnostics(candidate_metadata, resolutions))
-        resolution_pairs = iter(tuple(zip(resolutions[::2], resolutions[1::2], strict=True)))
-        resolved_years = resolve_album_years(
+        batch_resolution = resolve_canonical_path_batch(
+            self.ports.artist_name_resolver.resolve_many,
+            candidate_metadata,
             metadata_batch,
             config.path_policy,
             config.metadata.album_year_resolution,
         )
-        resolved_metadata_batch = tuple(
-            metadata_with_resolved_album_year(metadata, config.path_policy, resolved_years)
-            for metadata in metadata_batch
-        )
-        album_disc_totals = infer_album_disc_totals(
-            resolved_metadata_batch,
-            unknown_artist=config.path_policy.unknown_artist,
-            unknown_album=config.path_policy.unknown_album,
-        )
+        projections = iter(batch_resolution.projections)
+        diagnostics = iter(batch_resolution.diagnostics)
+        resolution_pairs = iter(batch_resolution.resolution_pairs)
+        resolved_years = batch_resolution.resolved_years
+        album_disc_totals = batch_resolution.album_disc_totals
         judged_candidates: list[_AddCandidate] = []
 
         for candidate in candidates:
@@ -414,7 +416,7 @@ class CreateAddPlanUseCase:
                 judged_candidates.append(
                     replace(
                         candidate,
-                        reason=_path_generation_failure_reason(exc),
+                        reason=path_generation_failure_reason(exc),
                         target_path=None,
                         artist_name_diagnostics=artist_diagnostics,
                         artist_name_resolutions=artist_name_resolutions,
@@ -474,7 +476,7 @@ class CreateAddPlanUseCase:
         if _source_changed(entry, snapshot):
             return _blocked_candidate(source_path, PlanActionReason.SOURCE_CHANGED, snapshot=snapshot)
 
-        if _has_missing_required_metadata(snapshot, config):
+        if has_missing_required_metadata(snapshot, config):
             return _blocked_candidate(source_path, PlanActionReason.MISSING_REQUIRED_METADATA, snapshot=snapshot)
 
         return _AddCandidate(
@@ -506,14 +508,14 @@ class CreateAddPlanUseCase:
             snapshot, observation_reason = self._capture_content_snapshot(entry, source_root)
             companion_candidates.append(
                 _AddCompanionCandidate(
-                    kind=_companion_kind(association, issue),
+                    kind=companion_kind(association, issue),
                     source_relative_path=relative_source_path,
                     source_path=entry.path,
                     target_path=None if association is None else association.target_path,
                     owner_audio_source_path=(None if association is None else association.owner_audio_source_path),
-                    dependency_audio_source_paths=_companion_dependency_sources(association, issue),
+                    dependency_audio_source_paths=companion_dependency_sources(association, issue),
                     snapshot=snapshot,
-                    reason=observation_reason or _companion_issue_reason(issue),
+                    reason=observation_reason or companion_issue_reason(issue),
                 )
             )
 
@@ -644,7 +646,7 @@ class CreateAddPlanUseCase:
                 plan_id=plan_id,
                 library_id=library.library_id,
                 track_id=companion.owner_track_id,
-                action_type=_companion_action_type(companion.kind),
+                action_type=companion_action_type(companion.kind),
                 source_path=companion.source_path,
                 target_path=companion.target_path,
                 content_hash_at_plan=(None if companion.snapshot is None else companion.snapshot.content_hash),
@@ -803,19 +805,6 @@ def _source_root(request: CreateAddPlanRequest, config: AppConfig) -> str:
     if config.paths.incoming is not None:
         return _normalize_external_source_path(config.paths.incoming)
     raise AddSourceSelectionError(NO_INCOMING_SOURCE_MESSAGE)
-
-
-def _running_operation(uow: UnitOfWork, operation_id: OperationId | None) -> Operation | None:
-    if operation_id is None:
-        return None
-    retained = uow.operations.lookup(operation_id)
-    if (
-        not isinstance(retained, Operation)
-        or retained.kind is not OperationKind.ADD_PLAN
-        or retained.status is not OperationStatus.RUNNING
-    ):
-        raise RuntimeError(RUNNING_OPERATION_REQUIRED_MESSAGE)
-    return retained
 
 
 def _normalize_external_source_path(raw_path: FileSystemPath) -> str:
@@ -1056,45 +1045,6 @@ def _with_companion_owner_blocks(
     return tuple(judged)
 
 
-def _companion_kind(
-    association: CompanionAssociation | None,
-    issue: CompanionIssue | None,
-) -> CompanionAssetKind:
-    if association is not None:
-        return association.kind
-    if issue is not None:
-        return issue.kind
-    raise AssertionError(CLAIMED_COMPANION_DECISION_MISSING_MESSAGE)
-
-
-def _companion_dependency_sources(
-    association: CompanionAssociation | None,
-    issue: CompanionIssue | None,
-) -> tuple[str, ...]:
-    if association is not None:
-        return association.dependency_audio_source_paths
-    if issue is not None:
-        return issue.dependency_audio_source_paths
-    return ()
-
-
-def _companion_issue_reason(issue: CompanionIssue | None) -> PlanActionReason | None:
-    if issue is None:
-        return None
-    if issue.code in {
-        CompanionIssueCode.OWNER_AMBIGUOUS,
-        CompanionIssueCode.TARGET_PARENT_MISMATCH,
-    }:
-        return PlanActionReason.COMPANION_ASSOCIATION_AMBIGUOUS
-    return PlanActionReason.COMPANION_OWNER_BLOCKED
-
-
-def _companion_action_type(kind: CompanionAssetKind) -> ActionType:
-    if kind is CompanionAssetKind.LYRICS:
-        return ActionType.MOVE_LYRICS
-    return ActionType.MOVE_ARTWORK
-
-
 def _action_status(candidate: _AddCandidate) -> ActionStatus:
     if candidate.action_type == ActionType.SKIP or candidate.reason is None:
         return ActionStatus.PLANNED
@@ -1147,23 +1097,3 @@ def _plan(  # noqa: PLR0913  # Plan identity and both filesystem roots are disti
 
 def _source_changed(entry: FileScanEntry, snapshot: FileSnapshot) -> bool:
     return entry.size != snapshot.size or entry.mtime != snapshot.mtime
-
-
-def _has_missing_required_metadata(snapshot: FileSnapshot, config: AppConfig) -> bool:
-    metadata = snapshot.metadata
-    if config.metadata.require_title and _missing_text(metadata.title):
-        return True
-    # Artist identity can come from either track artist or album artist.
-    if config.metadata.require_artist and _missing_text(metadata.artist) and _missing_text(metadata.album_artist):
-        return True
-    return config.metadata.require_album and _missing_text(metadata.album)
-
-
-def _missing_text(value: str | None) -> bool:
-    return value is None or value.strip() == ""
-
-
-def _path_generation_failure_reason(exc: ValueError) -> PlanActionReason:
-    if str(exc) == MISSING_TITLE_MESSAGE:
-        return PlanActionReason.MISSING_REQUIRED_METADATA
-    return PlanActionReason.INVALID_PATH
