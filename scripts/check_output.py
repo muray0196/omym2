@@ -7,6 +7,7 @@ Why: Keeps successful checks silent and failed checks progressively inspectable.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 import tempfile
@@ -24,8 +25,9 @@ if TYPE_CHECKING:
 COMMAND_NOT_FOUND_EXIT_CODE: Final = 127
 COMMAND_START_FAILURE_EXIT_CODE: Final = 126
 OUTPUT_ENCODING: Final = "utf-8"
-OUTPUT_LOG_PREFIX: Final = "omym2-check-"
+DEFAULT_LOG_DIRECTORY_NAME: Final = "omym2-check-logs"
 OUTPUT_LOG_SUFFIX: Final = ".log"
+LABEL_SLUG_PATTERN: Final = re.compile(r"[^a-z0-9]+")
 
 
 class ParsedArgs(argparse.Namespace):
@@ -34,13 +36,20 @@ class ParsedArgs(argparse.Namespace):
     def __init__(self) -> None:
         super().__init__()
         self.label: str = ""
+        self.log_directory: Path | None = None
         self.command: list[str] = []
 
 
 def _parse_args(argv: Sequence[str] | None) -> ParsedArgs:
-    """Parse a human-readable label and the command after `--`."""
+    """Parse a label, an optional log directory, and the command after `--`."""
     parser = argparse.ArgumentParser(description="Run one check with bounded failure output.")
     _ = parser.add_argument("--label", required=True, help="short gate name used in failure diagnostics")
+    _ = parser.add_argument(
+        "--log-directory",
+        type=Path,
+        default=None,
+        help="directory holding one overwritten log per gate (default: system temporary directory)",
+    )
     _ = parser.add_argument("command", nargs=argparse.REMAINDER, help="command to run")
     args = parser.parse_args(argv, namespace=ParsedArgs())
     if args.command[:1] == ["--"]:
@@ -48,6 +57,13 @@ def _parse_args(argv: Sequence[str] | None) -> ParsedArgs:
     if not args.command:
         parser.error("a command is required after --")
     return args
+
+
+def _log_path(label: str, log_directory: Path | None) -> Path:
+    """Return the stable per-gate log path, overwritten on each run."""
+    directory = log_directory if log_directory is not None else Path(tempfile.gettempdir()) / DEFAULT_LOG_DIRECTORY_NAME
+    slug = LABEL_SLUG_PATTERN.sub("-", label.lower()).strip("-") or "check"
+    return directory / f"{slug}{OUTPUT_LOG_SUFFIX}"
 
 
 def _diagnostic_tail(path: Path) -> tuple[str, bool]:
@@ -73,10 +89,11 @@ def _report_failure(*, label: str, return_code: int, output_path: Path) -> None:
     print(f"checks.sh: full output retained at {output_path}", file=sys.stderr)
 
 
-def run_check(*, label: str, command: Sequence[str]) -> int:
-    """Run one command, deleting successful output and bounding failed output."""
-    with tempfile.NamedTemporaryFile(prefix=OUTPUT_LOG_PREFIX, suffix=OUTPUT_LOG_SUFFIX, delete=False) as output:
-        output_path = Path(output.name)
+def run_check(*, label: str, command: Sequence[str], log_directory: Path | None) -> int:
+    """Run one command, keeping successful output silent and bounding failed output."""
+    output_path = _log_path(label, log_directory)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("wb") as output:
         try:
             result = subprocess.run(  # noqa: S603 -- checks.sh supplies reviewed quality-gate argv.
                 command,
@@ -94,7 +111,6 @@ def run_check(*, label: str, command: Sequence[str]) -> int:
             return_code = result.returncode
 
     if return_code == 0:
-        output_path.unlink(missing_ok=True)
         return 0
 
     _report_failure(label=label, return_code=return_code, output_path=output_path)
@@ -104,7 +120,7 @@ def run_check(*, label: str, command: Sequence[str]) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the requested check command."""
     args = _parse_args(argv)
-    return run_check(label=args.label, command=args.command)
+    return run_check(label=args.label, command=args.command, log_directory=args.log_directory)
 
 
 if __name__ == "__main__":

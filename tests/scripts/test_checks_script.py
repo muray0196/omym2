@@ -168,8 +168,8 @@ def test_ci_workflow_reuses_expensive_gate_outputs() -> None:
     assert "python scripts/ci_scope.py" in workflow
 
 
-def test_successful_mode_discards_gate_output_and_reports_only_pass(tmp_path: Path) -> None:
-    """Successful tools cannot flood the caller's context."""
+def test_successful_mode_reports_only_pass_and_retains_silent_log(tmp_path: Path) -> None:
+    """Successful tools cannot flood the caller's context, yet their log stays inspectable."""
     repository, _command_log, environment = _repository(tmp_path)
     environment["OMYM2_CHECK_FAKE_OUTPUT"] = "unneeded successful diagnostics"
 
@@ -185,6 +185,8 @@ def test_successful_mode_discards_gate_output_and_reports_only_pass(tmp_path: Pa
     assert result.returncode == SUCCESS_EXIT_CODE
     assert result.stdout == ""
     assert result.stderr == "checks.sh: mode 'docs' passed.\n"
+    retained_log = repository / ".git/omym2-check-logs/docs-bundle.log"
+    assert retained_log.read_text(encoding="utf-8") == "unneeded successful diagnostics\n"
 
 
 def test_failed_mode_reports_bounded_tail_and_retains_full_output(tmp_path: Path) -> None:
@@ -217,8 +219,8 @@ def test_failed_mode_reports_bounded_tail_and_retains_full_output(tmp_path: Path
     log_prefix = "checks.sh: full output retained at "
     log_line = next(line for line in result.stderr.splitlines() if line.startswith(log_prefix))
     output_path = Path(log_line.removeprefix(log_prefix))
+    assert output_path == (repository / ".git/omym2-check-logs/docs-bundle.log").resolve()
     assert output_path.read_text(encoding="utf-8") == f"{payload}\n"
-    output_path.unlink()
 
 
 def _repository(tmp_path: Path, *, configure_origin: bool = True) -> tuple[Path, Path, dict[str, str]]:

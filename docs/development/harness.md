@@ -88,7 +88,7 @@ scripts/checks.sh <changed|completion|py|api|web|e2e|e2e-ci|package|performance|
 scripts/checks.sh test <pytest-target>
 ```
 
-The mode is required; there is no default. The wrapper does not install dependencies. Each command writes combined output to a private temporary log: success deletes the log and prints one pass line; failure stops at the first failed gate, prints a bounded tail, and retains the complete log at the reported path. Use the bounded tail first, then a larger tail or targeted range, and read the whole log or rerun with full output only as the final step. For pytest keep the progression: aggregate one-line traceback → focused short traceback → focused long traceback with full capture.
+The mode is required; there is no default. The wrapper does not install dependencies. Each command writes combined output to a stable per-gate log under the repository Git directory (`omym2-check-logs/<gate>.log`), overwritten on each run: success prints one pass line and keeps its log silently (inspect it on demand for warnings); failure stops at the first failed gate, prints a bounded tail, and reports the retained log path. Use the bounded tail first, then a larger tail or targeted range, and read the whole log or rerun with full output only as the final step. For pytest keep the progression: aggregate short traceback of the first failure → focused short traceback with full capture → focused long traceback with `-s`. First-pass disclosure is a tail, so every gate command must use flags that place its primary diagnostics at the end of its output.
 
 * `changed`: edit-loop checks on Python files changed vs `HEAD`
 * `completion`: path-aware Codex completion checks; excludes E2E, package, performance, cross-platform

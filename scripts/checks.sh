@@ -12,6 +12,7 @@ set -euo pipefail
 
 repository_root="$(git rev-parse --show-toplevel)"
 check_output_script="$repository_root/scripts/check_output.py"
+check_log_directory="$(git rev-parse --absolute-git-dir)/omym2-check-logs"
 cd "$repository_root"
 
 usage() {
@@ -21,7 +22,7 @@ usage() {
 run_check() {
     local label="$1"
     shift
-    python3 "$check_output_script" --label "$label" -- "$@"
+    python3 "$check_output_script" --label "$label" --log-directory "$check_log_directory" -- "$@"
 }
 
 if [[ $# -eq 0 ]]; then
@@ -54,7 +55,7 @@ run_py() {
     run_check "Python lint" uv run ruff check . --output-format=concise
     run_check "Python format" uv run ruff format . --check -q
     run_check "Python types" uv run basedpyright
-    run_check "Python tests" uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
+    run_check "Python tests" uv run pytest -q --maxfail=1 --tb=short --show-capture=stdout
 }
 
 run_api() (
