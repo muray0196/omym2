@@ -10,9 +10,8 @@ import type {
   OperationRef,
   OperationResource,
   OperationResultResource,
-  OperationStatus as OperationStatusValue,
 } from "../../api/generated";
-import { Icon } from "../../ui/icon";
+import { CatalogBadge } from "../../ui/primitives/catalog-badge";
 import { useLiveAnnouncement } from "../../ui/primitives/live-announcement-context";
 import { LiveRegion } from "../../ui/primitives/live-region";
 import { ApiDiagnostic } from "./api-diagnostic";
@@ -82,13 +81,12 @@ export function OperationStatus({
       {announce === null ? <LiveRegion>{announcement}</LiveRegion> : null}
       <div className={styles.heading}>
         <h2 id="operation-status-title">{operationCopy.status}</h2>
-        <span
-          className={`${styles.status} ${operationToneClass(status)}`}
-          data-status={status}
-        >
-          <Icon name={operationStatusIcon(status)} />
-          {operationStatusLabel(status)}
-        </span>
+        <CatalogBadge
+          icon={operationStatusIcon(status)}
+          label={operationStatusLabel(status)}
+          rawValue={status}
+          tone={operationStatusTone(status)}
+        />
       </div>
       <div data-operation-kind={initialOperation.kind}>
         <OperationCatalogEvidence presentation={kindPresentation} />
@@ -158,12 +156,11 @@ function OperationCatalogEvidence({
 }) {
   return (
     <div className={styles.catalogEvidence}>
-      <span
-        className={`${styles.status} ${catalogToneClass(presentation.tone)}`}
-      >
-        <Icon name={presentation.icon} />
-        {presentation.label}
-      </span>
+      <CatalogBadge
+        icon={presentation.icon}
+        label={presentation.label}
+        tone={presentation.tone}
+      />
       <p className={styles.catalogMeaning}>{presentation.meaning}</p>
     </div>
   );
@@ -206,33 +203,6 @@ function isTerminalStatus(status: OperationResource["status"]) {
   return (
     status === "succeeded" || status === "failed" || status === "interrupted"
   );
-}
-
-function operationToneClass(status: OperationStatusValue) {
-  const tone = operationStatusTone(status);
-  switch (tone) {
-    case "info":
-      return styles.toneInfo;
-    case "success":
-      return styles.toneSuccess;
-    case "warning":
-      return styles.toneWarning;
-    case "danger":
-      return styles.toneDanger;
-  }
-}
-
-function catalogToneClass(tone: OperationCatalogPresentation["tone"]) {
-  switch (tone) {
-    case "info":
-      return styles.toneInfo;
-    case "success":
-      return styles.toneSuccess;
-    case "warning":
-      return styles.toneWarning;
-    case "danger":
-      return styles.toneDanger;
-  }
 }
 
 function announcementFor(

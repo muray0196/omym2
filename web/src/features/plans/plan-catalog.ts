@@ -10,16 +10,14 @@ import type {
   PlanStatus,
   PlanType,
 } from "../../api/generated";
-import { catalogValueOrThrow } from "../../ui/catalog";
+import {
+  catalogValueOrThrow,
+  type CatalogPresentation,
+} from "../../ui/catalog";
 import type { IconName } from "../../ui/icon";
 
 export type PlanTone = "info" | "success" | "warning" | "danger" | "neutral";
-export type PlanCatalogPresentation = {
-  icon: IconName;
-  label: string;
-  meaning: string;
-  tone: PlanTone;
-};
+type PlanCatalogPresentation = CatalogPresentation<PlanTone>;
 
 const PLAN_STATUS_PRESENTATIONS = {
   ready: {

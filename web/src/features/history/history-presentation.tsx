@@ -15,14 +15,12 @@ import {
   runStatusIcon,
   runStatusLabel,
   runStatusTone,
-  type EvidenceTone,
 } from "./history-catalog";
-import { Icon, type IconName } from "../../ui/icon";
-import styles from "../inspection/inspection.module.css";
+import { CatalogBadge } from "../../ui/primitives/catalog-badge";
 
 export function RunStatusBadge({ value }: { value: RunStatus }) {
   return (
-    <EvidenceBadge
+    <CatalogBadge
       icon={runStatusIcon(value)}
       label={runStatusLabel(value)}
       tone={runStatusTone(value)}
@@ -32,7 +30,7 @@ export function RunStatusBadge({ value }: { value: RunStatus }) {
 
 export function EventStatusBadge({ value }: { value: FileEventStatus }) {
   return (
-    <EvidenceBadge
+    <CatalogBadge
       label={eventStatusLabel(value)}
       icon={eventStatusIcon(value)}
       tone={eventStatusTone(value)}
@@ -43,40 +41,10 @@ export function EventStatusBadge({ value }: { value: FileEventStatus }) {
 export function EventTypeValue({ value }: { value: FileEventType }) {
   const presentation = eventTypePresentation(value);
   return (
-    <EvidenceBadge
+    <CatalogBadge
       icon={presentation.icon}
       label={presentation.label}
       tone={presentation.tone}
     />
   );
-}
-
-function EvidenceBadge({
-  icon,
-  label,
-  tone,
-}: {
-  icon: IconName;
-  label: string;
-  tone: EvidenceTone;
-}) {
-  return (
-    <span className={`${styles.badge} ${toneClass(tone)}`}>
-      <Icon name={icon} />
-      {label}
-    </span>
-  );
-}
-
-function toneClass(tone: EvidenceTone) {
-  switch (tone) {
-    case "success":
-      return styles.success;
-    case "warning":
-      return styles.warningTone;
-    case "danger":
-      return styles.danger;
-    case "info":
-      return styles.info;
-  }
 }

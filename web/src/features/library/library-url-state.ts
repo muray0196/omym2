@@ -6,6 +6,11 @@ import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { TrackGrouping, TrackStatus } from "../../api/generated";
+import {
+  optionalValue,
+  selectedValue,
+  setOptionalParameter,
+} from "../../ui/search-params";
 import { trackStatusLabel } from "./library-catalog";
 
 const TRACK_STATUSES = [
@@ -213,27 +218,4 @@ function readLibraryBrowseFilters(
     view:
       selectedValue(searchParams.get("view"), LIBRARY_VIEWS) ?? DEFAULT_VIEW,
   };
-}
-
-function selectedValue<Value extends string>(
-  rawValue: string | null,
-  options: readonly Value[],
-): Value | undefined {
-  return options.find((option) => option === rawValue);
-}
-
-function optionalValue(rawValue: string | null) {
-  return rawValue === null || rawValue.length === 0 ? undefined : rawValue;
-}
-
-function setOptionalParameter(
-  searchParams: URLSearchParams,
-  name: string,
-  value: string | undefined,
-) {
-  if (value === undefined || value.length === 0) {
-    searchParams.delete(name);
-    return;
-  }
-  searchParams.set(name, value);
 }

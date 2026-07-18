@@ -22,6 +22,8 @@ import {
   type PlanTone,
 } from "./plan-catalog";
 import { Icon, type IconName } from "../../ui/icon";
+import { CatalogBadge } from "../../ui/primitives/catalog-badge";
+import { toneClassName } from "../../ui/primitives/tone";
 import styles from "./plan-inspection.module.css";
 
 export function PlanStatusBadge({ value }: { value: PlanStatus }) {
@@ -29,7 +31,7 @@ export function PlanStatusBadge({ value }: { value: PlanStatus }) {
   const tone = planStatusTone(value);
 
   return (
-    <StatusBadge
+    <CatalogBadge
       icon={planStatusIcon(value)}
       label={label}
       rawValue={value}
@@ -43,7 +45,7 @@ export function ActionStatusBadge({ value }: { value: ActionStatus }) {
   const tone = actionStatusTone(value);
 
   return (
-    <StatusBadge
+    <CatalogBadge
       icon={actionStatusIcon(value)}
       label={label}
       rawValue={value}
@@ -78,41 +80,4 @@ function CatalogValue({
       {presentation.label}
     </span>
   );
-}
-
-function StatusBadge({
-  icon,
-  label,
-  rawValue,
-  tone,
-}: {
-  icon: IconName;
-  label: string;
-  rawValue: string;
-  tone: PlanTone;
-}) {
-  return (
-    <span
-      className={`${styles.statusBadge} ${toneClassName(tone)}`}
-      data-status={rawValue}
-    >
-      <Icon name={icon} />
-      {label}
-    </span>
-  );
-}
-
-function toneClassName(tone: PlanTone) {
-  switch (tone) {
-    case "info":
-      return styles.toneInfo;
-    case "success":
-      return styles.toneSuccess;
-    case "warning":
-      return styles.toneWarning;
-    case "danger":
-      return styles.toneDanger;
-    case "neutral":
-      return styles.toneNeutral;
-  }
 }

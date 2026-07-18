@@ -2,20 +2,16 @@
  * Summary: Presents structured planning and Check mutation failures.
  * Why: Keeps server remediation visible without automatic retries or commands.
  */
-import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
+import { useFocusOnChange } from "../../ui/primitives/focus-on-change";
 import { OperationApiError } from "../operations/operation-start";
 import { remediationRouteForSpa } from "../operations/operation-routes";
 import { planningCopy } from "./planning-copy";
 import styles from "./planning.module.css";
 
 export function PlanningMutationError({ error }: { error: Error }) {
-  const summaryRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    summaryRef.current?.focus();
-  }, [error]);
+  const summaryRef = useFocusOnChange<HTMLDivElement>(error);
 
   if (!(error instanceof OperationApiError)) {
     return (

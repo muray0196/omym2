@@ -7,16 +7,14 @@ import type {
   FileEventType,
   RunStatus,
 } from "../../api/generated";
+import {
+  catalogValueOrThrow,
+  type CatalogPresentation,
+} from "../../ui/catalog";
 import type { IconName } from "../../ui/icon";
-import { catalogValueOrThrow } from "../../ui/catalog";
 
 export type EvidenceTone = "info" | "success" | "warning" | "danger";
-export type HistoryCatalogPresentation = {
-  icon: IconName;
-  label: string;
-  meaning: string;
-  tone: EvidenceTone;
-};
+type HistoryCatalogPresentation = CatalogPresentation<EvidenceTone>;
 
 const RUN_STATUS_PRESENTATIONS = {
   running: {

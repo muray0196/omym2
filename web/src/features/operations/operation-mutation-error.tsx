@@ -2,8 +2,7 @@
  * Summary: Presents and focuses execution-control mutation failures.
  * Why: Makes typed backend recovery guidance immediately discoverable after Apply, Cancel, or Undo starts fail.
  */
-import { useEffect, useRef } from "react";
-
+import { useFocusOnChange } from "../../ui/primitives/focus-on-change";
 import { ApiDiagnostic } from "./api-diagnostic";
 import { ApiMutationError } from "./operation-start";
 import styles from "./operation.module.css";
@@ -15,11 +14,7 @@ export function OperationMutationError({
   error: Error;
   title: string;
 }) {
-  const summaryRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    summaryRef.current?.focus();
-  }, [error]);
+  const summaryRef = useFocusOnChange<HTMLDivElement>(error);
 
   return (
     <div
