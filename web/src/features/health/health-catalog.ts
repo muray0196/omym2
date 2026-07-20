@@ -3,16 +3,13 @@
  * Why: Gives every coordinated generated enum value an exhaustive presentation.
  */
 import type { CheckIssueGrouping, CheckIssueType } from "../../api/generated";
-import { catalogValueOrThrow } from "../../ui/catalog";
-import type { IconName } from "../../ui/icon";
+import {
+  catalogValueOrThrow,
+  type CatalogPresentation,
+} from "../../ui/catalog";
 
 export type HealthTone = "warning" | "danger";
-export type HealthCatalogPresentation = {
-  icon: IconName;
-  label: string;
-  meaning: string;
-  tone: HealthTone;
-};
+type HealthCatalogPresentation = CatalogPresentation<HealthTone>;
 
 const ISSUE_PRESENTATIONS = {
   db_file_missing: {

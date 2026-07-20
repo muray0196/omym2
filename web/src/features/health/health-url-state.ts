@@ -6,6 +6,7 @@ import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { CheckIssueGrouping, CheckIssueType } from "../../api/generated";
+import { selectedValue, setOptionalParameter } from "../../ui/search-params";
 
 const ISSUE_TYPES = [
   "db_file_missing",
@@ -68,15 +69,15 @@ export function useHealthFilters() {
     (changes: Partial<HealthFilters>) => {
       const next = { ...filters, ...changes };
       const updated = new URLSearchParams(parameters);
-      setOptional(updated, "query", next.query);
-      setOptional(updated, "issue_type", next.issueType);
-      setOptional(updated, "library_id", next.libraryId);
-      setOptional(
+      setOptionalParameter(updated, "query", next.query);
+      setOptionalParameter(updated, "issue_type", next.issueType);
+      setOptionalParameter(updated, "library_id", next.libraryId);
+      setOptionalParameter(
         updated,
         "group_by",
         next.groupBy === DEFAULT_GROUPING ? undefined : next.groupBy,
       );
-      setOptional(updated, "group_key", next.groupKey);
+      setOptionalParameter(updated, "group_key", next.groupKey);
       setParameters(updated, { replace: true });
     },
     [filters, parameters, setParameters],
@@ -108,20 +109,4 @@ export function useHealthFilters() {
     resetFilters,
     updateFilters,
   };
-}
-
-function selectedValue<Value extends string>(
-  raw: string | null,
-  values: readonly Value[],
-): Value | undefined {
-  return values.find((value) => value === raw);
-}
-
-function setOptional(
-  parameters: URLSearchParams,
-  name: string,
-  value: string | undefined,
-) {
-  if (value === undefined || value.length === 0) parameters.delete(name);
-  else parameters.set(name, value);
 }

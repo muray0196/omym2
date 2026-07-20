@@ -12,9 +12,7 @@ from omym2.config import (
     ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES,
     ALLOWED_COLLISION_MISSING_METADATA_POLICIES,
     ALLOWED_COLLISION_TARGET_EXISTS_POLICIES,
-    ALLOWED_COMMAND_MODES,
     ALLOWED_LOGGING_LEVELS,
-    ALLOWED_MUSICBRAINZ_CACHE_POLICIES,
     ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     PATH_POLICY_ALLOWED_PLACEHOLDERS,
@@ -48,14 +46,12 @@ UNSUPPORTED_CHOICE_MESSAGE = "Value is not one of the backend-supported choices.
 def settings_choices() -> SettingsChoicesResult:
     """Return deterministic backend-owned values for editable controls."""
     return SettingsChoicesResult(
-        command_modes=tuple(sorted(ALLOWED_COMMAND_MODES)),
         disc_number_styles=tuple(sorted(ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES)),
         disc_number_conditions=tuple(sorted(ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS)),
         album_year_resolutions=tuple(sorted(ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS)),
         target_exists_policies=tuple(sorted(ALLOWED_COLLISION_TARGET_EXISTS_POLICIES)),
         duplicate_hash_policies=tuple(sorted(ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES)),
         missing_metadata_policies=tuple(sorted(ALLOWED_COLLISION_MISSING_METADATA_POLICIES)),
-        musicbrainz_cache_policies=tuple(sorted(ALLOWED_MUSICBRAINZ_CACHE_POLICIES)),
         logging_levels=tuple(sorted(ALLOWED_LOGGING_LEVELS)),
         unprocessed_result_preview_limit_min=UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
         unprocessed_result_preview_limit_max=UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
@@ -68,9 +64,6 @@ def validate_settings_config(config: AppConfig) -> tuple[SettingsValidationIssue
     issues: list[SettingsValidationIssue] = []
     _validate_optional_path(config.paths.library, "paths.library", issues)
     _validate_optional_path(config.paths.incoming, "paths.incoming", issues)
-    _validate_choice(config.add.default_mode, ALLOWED_COMMAND_MODES, "add.default_mode", issues)
-    _validate_choice(config.organize.default_mode, ALLOWED_COMMAND_MODES, "organize.default_mode", issues)
-    _validate_choice(config.refresh.default_mode, ALLOWED_COMMAND_MODES, "refresh.default_mode", issues)
     if config.path_policy.template.strip() == "":
         issues.append(
             SettingsValidationIssue(
@@ -114,12 +107,6 @@ def validate_settings_config(config: AppConfig) -> tuple[SettingsValidationIssue
         "collision.on_missing_metadata",
         issues,
     )
-    _validate_choice(
-        config.musicbrainz.cache_policy,
-        ALLOWED_MUSICBRAINZ_CACHE_POLICIES,
-        "musicbrainz.cache_policy",
-        issues,
-    )
     _validate_choice(config.logging.level, ALLOWED_LOGGING_LEVELS, "logging.level", issues)
     return tuple(issues)
 
@@ -130,11 +117,8 @@ def settings_field_changes(before: AppConfig, after: AppConfig) -> tuple[Setting
         ("version", before.version, after.version),
         ("paths.library", before.paths.library, after.paths.library),
         ("paths.incoming", before.paths.incoming, after.paths.incoming),
-        ("add.default_mode", before.add.default_mode, after.add.default_mode),
         ("add.auto_apply", before.add.auto_apply, after.add.auto_apply),
-        ("organize.default_mode", before.organize.default_mode, after.organize.default_mode),
         ("organize.auto_apply", before.organize.auto_apply, after.organize.auto_apply),
-        ("refresh.default_mode", before.refresh.default_mode, after.refresh.default_mode),
         ("refresh.auto_apply", before.refresh.auto_apply, after.refresh.auto_apply),
         ("path_policy.template", before.path_policy.template, after.path_policy.template),
         ("path_policy.unknown_artist", before.path_policy.unknown_artist, after.path_policy.unknown_artist),
@@ -203,7 +187,6 @@ def settings_field_changes(before: AppConfig, after: AppConfig) -> tuple[Setting
             before.musicbrainz.rate_limit_seconds,
             after.musicbrainz.rate_limit_seconds,
         ),
-        ("musicbrainz.cache_policy", before.musicbrainz.cache_policy, after.musicbrainz.cache_policy),
         (
             "hashing.read_chunk_size_bytes",
             before.hashing.read_chunk_size_bytes,

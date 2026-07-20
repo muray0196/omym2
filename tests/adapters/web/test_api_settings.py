@@ -36,7 +36,7 @@ from omym2.domain.models.accepted_artist_name import (
 )
 from omym2.domain.models.app_config import (
     AppConfig,
-    CommandConfig,
+    CollisionConfig,
     CompanionsConfig,
     HashingConfig,
     LoggingConfig,
@@ -66,7 +66,7 @@ SAVED_CONFIG_REVISION = "v1:web-settings-saved"
 STALE_CONFIG_REVISION = "v1:web-settings-stale"
 CSRF_TOKEN = "settings-csrf-token"  # noqa: S105  # Deterministic non-secret test token.
 PERSISTED_CONFIG_ERROR = "Persisted Config is invalid."
-UNSUPPORTED_COMMAND_MODE = "unsafe"
+UNSUPPORTED_COLLISION_POLICY = "unsafe"
 LIBRARY_PATH = "/music/library"
 SOURCE_ARTIST = "Existing Artist"
 SOURCE_ARTIST_ID = "EXST"
@@ -94,8 +94,6 @@ def test_get_settings_returns_invalid_recovery_data_choices_and_preview(tmp_path
     assert validation["valid"] is False
     assert _first_error(validation)["code"] == "config_invalid"
     assert _first_error(validation)["field"] == "config"
-    assert _object(data, "choices")["command_modes"] == ["plan_first"]
-    assert _object(data, "choices")["musicbrainz_cache_policies"] == ["sticky_positive"]
     assert _object(data, "choices")["logging_levels"] == ["CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING"]
     assert _object(data, "choices")["unprocessed_result_preview_limit_min"] == (UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN)
     assert _object(data, "choices")["unprocessed_result_preview_limit_max"] == (UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX)
@@ -151,7 +149,7 @@ def test_validate_settings_returns_field_changes_and_typed_invalid_result(tmp_pa
     client = _client(tmp_path, store)
     candidate = AppConfig(
         paths=PathsConfig(library=LIBRARY_PATH),
-        add=CommandConfig(default_mode=UNSUPPORTED_COMMAND_MODE),
+        collision=CollisionConfig(on_target_exists=UNSUPPORTED_COLLISION_POLICY),
     )
 
     response = client.post(WEB_API_SETTINGS_VALIDATE_ROUTE, json=_candidate_body(candidate, CONFIG_REVISION))
@@ -160,8 +158,11 @@ def test_validate_settings_returns_field_changes_and_typed_invalid_result(tmp_pa
     data = _data(response)
     validation = _object(data, "validation")
     assert validation["valid"] is False
-    assert _first_error(validation)["field"] == "add.default_mode"
-    assert [change["field"] for change in _list(data, "changes")] == ["paths.library", "add.default_mode"]
+    assert _first_error(validation)["field"] == "collision.on_target_exists"
+    assert [change["field"] for change in _list(data, "changes")] == [
+        "paths.library",
+        "collision.on_target_exists",
+    ]
     assert store.save_count == 0
 
 
@@ -238,7 +239,7 @@ def test_save_settings_returns_new_revision_and_rejects_invalid_or_stale_candida
     invalid = client.put(
         WEB_API_SETTINGS_ROUTE,
         json=_candidate_body(
-            AppConfig(add=CommandConfig(default_mode=UNSUPPORTED_COMMAND_MODE)),
+            AppConfig(collision=CollisionConfig(on_target_exists=UNSUPPORTED_COLLISION_POLICY)),
             SAVED_CONFIG_REVISION,
         ),
         headers={WEB_CSRF_HEADER_NAME: CSRF_TOKEN},
@@ -255,7 +256,7 @@ def test_save_settings_returns_new_revision_and_rejects_invalid_or_stale_candida
         "paths.library",
     ]
     assert invalid.status_code == HTTP_UNPROCESSABLE_CONTENT_STATUS
-    assert _first_error(_response_object(invalid))["field"] == "add.default_mode"
+    assert _first_error(_response_object(invalid))["field"] == "collision.on_target_exists"
     assert stale.status_code == HTTP_CONFLICT_STATUS
     assert _first_error(_response_object(stale))["code"] == "config_changed"
     assert store.save_count == 1

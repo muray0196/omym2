@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 
 import type { LibraryStatus, TrackStatus } from "../../api/generated";
-import { Icon, type IconName } from "../../ui/icon";
+import { CatalogBadge } from "../../ui/primitives/catalog-badge";
 import {
   libraryStatusIcon,
   libraryStatusLabel,
@@ -13,13 +13,12 @@ import {
   trackStatusIcon,
   trackStatusLabel,
   trackStatusTone,
-  type LibraryTone,
 } from "./library-catalog";
 import styles from "./library-inspection.module.css";
 
 export function LibraryStatusBadge({ value }: { value: LibraryStatus }) {
   return (
-    <StatusBadge
+    <CatalogBadge
       icon={libraryStatusIcon(value)}
       label={libraryStatusLabel(value)}
       rawValue={value}
@@ -30,41 +29,13 @@ export function LibraryStatusBadge({ value }: { value: LibraryStatus }) {
 
 export function TrackStatusBadge({ value }: { value: TrackStatus }) {
   return (
-    <StatusBadge
+    <CatalogBadge
       icon={trackStatusIcon(value)}
       label={trackStatusLabel(value)}
       rawValue={value}
       tone={trackStatusTone(value)}
     />
   );
-}
-
-function StatusBadge({
-  icon,
-  label,
-  rawValue,
-  tone,
-}: {
-  icon: IconName;
-  label: string;
-  rawValue: string;
-  tone: LibraryTone;
-}) {
-  return (
-    <span
-      className={`${styles.statusBadge} ${toneClass(tone)}`}
-      data-status={rawValue}
-    >
-      <Icon name={icon} />
-      {label}
-    </span>
-  );
-}
-
-function toneClass(tone: LibraryTone) {
-  if (tone === "success") return styles.toneSuccess;
-  if (tone === "warning") return styles.toneWarning;
-  return styles.toneNeutral;
 }
 
 export function DefinitionItem({

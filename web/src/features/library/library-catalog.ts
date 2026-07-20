@@ -3,17 +3,14 @@
  * Why: Keeps every coordinated generated enum value exhaustively presented.
  */
 import type { LibraryStatus, TrackStatus } from "../../api/generated";
-import { catalogValueOrThrow } from "../../ui/catalog";
+import {
+  catalogValueOrThrow,
+  type CatalogPresentation,
+} from "../../ui/catalog";
 import type { IconName } from "../../ui/icon";
 
 export type LibraryTone = "success" | "warning" | "neutral";
-export type TrackTone = LibraryTone;
-export type LibraryCatalogPresentation = {
-  icon: IconName;
-  label: string;
-  meaning: string;
-  tone: LibraryTone;
-};
+type LibraryCatalogPresentation = CatalogPresentation<LibraryTone>;
 
 const LIBRARY_STATUS_PRESENTATIONS = {
   registered: {
@@ -90,7 +87,7 @@ export function libraryStatusPresentation(
   );
 }
 
-export function trackStatusTone(value: string): TrackTone {
+export function trackStatusTone(value: string): LibraryTone {
   return trackStatusPresentation(value).tone;
 }
 

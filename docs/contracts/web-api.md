@@ -3,7 +3,7 @@ type: Contract
 title: Web API Contract
 description: Authoritative local HTTP API contract - envelope, error catalog, CSRF, idempotency, browsing shapes, and every /api endpoint.
 tags: [web-api, openapi, artist-names, companions, unprocessed, operations, concurrency, pagination]
-timestamp: 2026-07-18T12:00:00+09:00
+timestamp: 2026-07-18T15:00:00+09:00
 ---
 
 # Web API Contract
@@ -222,7 +222,7 @@ type SettingsData = {
       source_name: string
       english_name: string
       source: string // currently "musicbrainz" or "user"
-      selected_name_kind: "alias" | "alias_sort_name" | "name" | "sort_name" | null
+      selected_name_kind: "alias" | "alias_sort_name" | "sort_name" | null
       selected_locale: string | null
     }>
     revision: string
@@ -230,7 +230,7 @@ type SettingsData = {
 }
 ```
 
-For MusicBrainz rows, `selected_name_kind` identifies the exact selected field (alias `name`, alias `sort-name`, artist `name`, artist `sort-name`); alias-derived rows also expose their locale (e.g. `ja-Latn`). User rows have null selection fields.
+For MusicBrainz rows, `selected_name_kind` identifies the exact selected field (alias `name`, alias `sort-name`, artist `sort-name`); alias-derived rows also expose their locale (e.g. `ja-Latn`). User rows have null selection fields.
 
 Invalid persisted TOML is represented by `validation.valid = false` with resource-local errors while the top-level envelope stays a normal success; `config` contains the backend-provided recovery draft. The raw invalid text is never returned.
 

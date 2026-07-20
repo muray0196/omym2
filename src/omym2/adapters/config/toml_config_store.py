@@ -20,11 +20,9 @@ from omym2.adapters.config.config_validator import (
     APPLICATION_NAME_KEY,
     ARTIST_IDS_SECTION,
     AUTO_APPLY_KEY,
-    CACHE_POLICY_KEY,
     COLLISION_SECTION,
     COMPANIONS_SECTION,
     CONTACT_KEY,
-    DEFAULT_MODE_KEY,
     DESTINATION_KEY,
     DIRECTORY_KEY,
     DISC_NUMBER_CONDITION_KEY,
@@ -311,26 +309,17 @@ def dump_config_toml(config: AppConfig) -> str:
     _append_section(
         lines,
         ADD_SECTION,
-        (
-            (DEFAULT_MODE_KEY, config.add.default_mode),
-            (AUTO_APPLY_KEY, config.add.auto_apply),
-        ),
+        ((AUTO_APPLY_KEY, config.add.auto_apply),),
     )
     _append_section(
         lines,
         ORGANIZE_SECTION,
-        (
-            (DEFAULT_MODE_KEY, config.organize.default_mode),
-            (AUTO_APPLY_KEY, config.organize.auto_apply),
-        ),
+        ((AUTO_APPLY_KEY, config.organize.auto_apply),),
     )
     _append_section(
         lines,
         REFRESH_SECTION,
-        (
-            (DEFAULT_MODE_KEY, config.refresh.default_mode),
-            (AUTO_APPLY_KEY, config.refresh.auto_apply),
-        ),
+        ((AUTO_APPLY_KEY, config.refresh.auto_apply),),
     )
     _append_section(
         lines,
@@ -383,7 +372,6 @@ def dump_config_toml(config: AppConfig) -> str:
             (TIMEOUT_SECONDS_KEY, config.musicbrainz.timeout_seconds),
             (RETRY_LIMIT_KEY, config.musicbrainz.retry_limit),
             (RATE_LIMIT_SECONDS_KEY, config.musicbrainz.rate_limit_seconds),
-            (CACHE_POLICY_KEY, config.musicbrainz.cache_policy),
         ),
     )
     _append_section(

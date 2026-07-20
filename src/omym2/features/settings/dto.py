@@ -62,14 +62,12 @@ class PathPolicyPreviewResult:
 class SettingsChoicesResult:
     """Backend-owned closed values presented by Settings controls."""
 
-    command_modes: tuple[str, ...]
     disc_number_styles: tuple[str, ...]
     disc_number_conditions: tuple[str, ...]
     album_year_resolutions: tuple[str, ...]
     target_exists_policies: tuple[str, ...]
     duplicate_hash_policies: tuple[str, ...]
     missing_metadata_policies: tuple[str, ...]
-    musicbrainz_cache_policies: tuple[str, ...]
     logging_levels: tuple[str, ...]
     unprocessed_result_preview_limit_min: int
     unprocessed_result_preview_limit_max: int

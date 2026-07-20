@@ -11,7 +11,7 @@ import type {
 } from "../../api/generated";
 
 export const settingsConfig = {
-  add: { auto_apply: false, default_mode: "plan_first" },
+  add: { auto_apply: false },
   artist_ids: {
     fallback_id: "NOART",
     max_length: 8,
@@ -42,14 +42,13 @@ export const settingsConfig = {
   },
   musicbrainz: {
     application_name: "OMYM2",
-    cache_policy: "sticky_positive",
     contact: "https://github.com/muray0196/omym2",
     enabled: true,
     rate_limit_seconds: 1,
     retry_limit: 1,
     timeout_seconds: 5,
   },
-  organize: { auto_apply: false, default_mode: "plan_first" },
+  organize: { auto_apply: false },
   path_policy: {
     disc_number_condition: "always",
     disc_number_style: "plain",
@@ -63,7 +62,7 @@ export const settingsConfig = {
     incoming: "/music/incoming",
     library: "/music/library",
   },
-  refresh: { auto_apply: false, default_mode: "plan_first" },
+  refresh: { auto_apply: false },
   unprocessed: {
     directory: "Unprocessed",
     enabled: false,
@@ -76,13 +75,11 @@ export const settingsEnvelope = {
   data: {
     choices: {
       album_year_resolutions: ["latest", "oldest", "most_frequent"],
-      command_modes: ["plan_first"],
       disc_number_conditions: ["always", "multiple_discs"],
       disc_number_styles: ["plain", "d_prefixed"],
       duplicate_hash_policies: ["skip"],
       logging_levels: ["CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING"],
       missing_metadata_policies: ["block"],
-      musicbrainz_cache_policies: ["sticky_positive"],
       path_placeholders: [
         "{album_artist}",
         "{album}",

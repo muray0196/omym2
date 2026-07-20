@@ -274,33 +274,6 @@
   justify-content: flex-start;
 }
 
-.statusBadge {
-  align-items: center;
-  background: color-mix(in srgb, currentcolor 10%, transparent);
-  border: 1px solid color-mix(in srgb, currentcolor 28%, transparent);
-  border-radius: var(--radius-6);
-  display: inline-flex;
-  font-size: 12px;
-  font-weight: 600;
-  gap: 6px;
-  letter-spacing: 0.01em;
-  padding: 2px var(--space-8);
-  white-space: nowrap;
-}
-
-.statusBadge::before {
-  background: currentcolor;
-  border-radius: 50%;
-  content: "";
-  flex-shrink: 0;
-  height: 6px;
-  width: 6px;
-}
-
-.statusBadge svg {
-  display: none;
-}
-
 .catalogValue {
   align-items: center;
   display: inline-flex;
@@ -312,26 +285,6 @@
   flex-shrink: 0;
   height: 14px;
   width: 14px;
-}
-
-.toneInfo {
-  color: var(--color-blue);
-}
-
-.toneSuccess {
-  color: var(--color-green);
-}
-
-.toneWarning {
-  color: var(--color-yellow);
-}
-
-.toneDanger {
-  color: var(--color-red);
-}
-
-.toneNeutral {
-  color: var(--color-mute);
 }
 
 .section {

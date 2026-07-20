@@ -27,17 +27,12 @@ import {
 import { InspectionErrorState } from "../../features/inspection/inspection-error-state";
 import styles from "../../features/inspection/inspection.module.css";
 import { useCursorPage } from "../../ui/cursor-page";
+import { formatTimestamp, numberFormatter } from "../../ui/format";
 import { Button } from "../../ui/primitives/button";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
 import { PageHeader } from "../../ui/primitives/page-header";
 import { VisuallyHidden } from "../../ui/primitives/visually-hidden";
 import toolbarStyles from "../../ui/primitives/toolbar.module.css";
-
-const numberFormatter = new Intl.NumberFormat("en-US");
-const timestampFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 export function Component() {
   const { clearGroup, filters, hasActiveFilters, resetFilters, updateFilters } =
@@ -206,13 +201,13 @@ export function Component() {
       <section className={styles.section}>
         <h2>{healthCopy.groups}</h2>
         {groupsQuery.isPending ? (
-          <p role="status">Loading finding groups…</p>
+          <p role="status">{healthCopy.loadingGroups}</p>
         ) : null}
         {groupsQuery.isError ? (
           <InspectionErrorState
             error={groupsQuery.error}
             onRetry={() => void groupsQuery.refetch()}
-            title="Finding groups could not be loaded"
+            title={healthCopy.loadError}
           />
         ) : null}
         {groups.length > 0 ? (
@@ -370,9 +365,4 @@ export function Component() {
       </section>
     </article>
   );
-}
-
-function formatTimestamp(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? value : timestampFormatter.format(date);
 }

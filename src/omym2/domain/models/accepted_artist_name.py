@@ -33,7 +33,6 @@ class SelectedArtistNameKind(StrEnum):
 
     ALIAS = "alias"
     ALIAS_SORT_NAME = "alias_sort_name"
-    NAME = "name"
     SORT_NAME = "sort_name"
 
 
