@@ -9,6 +9,39 @@ Read `ARCHITECTURE.md` before any task that touches `src/`, `web/`, or
 `tests/`. Keep its non-negotiable rules active throughout the task. Docs-only,
 issue-only, or purely read-only tasks may skip it.
 
+## Implementation Conventions
+
+### Compatibility
+
+OMYM2 is unreleased. Do not preserve backward compatibility unless the current
+task explicitly requires it.
+
+### Constants and Config
+
+Centralize operationally tunable application production values in
+`src/omym2/config.py`. Keep standalone repository-script tunables in
+`scripts/config.py`. Define tunables in this form:
+
+```python
+UPPER_SNAKE_NAME = literal_default  # description, units, valid range
+```
+
+Do not move test inputs, expected values, protocol constants, or domain
+constants into either `config.py` merely to avoid literals.
+
+### File Headers
+
+Add a brief, language-appropriate header comment to each code file with this
+content:
+
+```text
+Summary: <one-line description of the file's purpose>
+Why: <one-line business, architectural, or bug-related reason the file exists>
+```
+
+Do not add headers to generated files, vendored files, migrations, empty
+package-marker files, or file formats that do not support comments.
+
 ## Large Initiative Plans
 
 Keep the root `ROADMAP.md` tracked. Populate it only for large, multi-session work
@@ -48,17 +81,6 @@ Inspect large source and test files by symbol or line range. Do not read lockfil
 generated clients, OpenAPI output, bundled static assets, or other generated
 artifacts in full; use the owning generator, drift check, hashes, or a focused
 diff instead.
-
-For Linear execution, fetch the issue description and current workpad once for
-orientation. Re-fetch full history only when external changes are plausible or
-the current state is missing. Keep one compact workpad by replacing stale status
-instead of appending a transcript; retain only current objective, material
-decisions, validation, blockers, and handoff state. Never copy full tool output,
-diffs, or the issue description into the workpad.
-
-Apply the same delta rule to pull requests. Retain stable PR metadata locally
-and refresh only mutable checks, mergeability, and unresolved review threads;
-do not re-fetch the full body, diff, or comment history at every milestone.
 
 Across long runs, report milestone deltas only. Do not repeat unchanged plans,
 commands, prior diagnostics, or earlier status summaries in later turns.
