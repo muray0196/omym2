@@ -74,7 +74,6 @@ BASELINE_MIGRATION_NAME = "202607160001_baseline.sql"
 EDITABLE_ARTIST_NAMES_MIGRATION_NAME = "202607170001_editable_artist_name_mappings.sql"
 ARTIST_SORT_NAME_MIGRATION_NAME = "202607170002_artist_sort_name_mapping.sql"
 ARTIST_ALIAS_SORT_NAME_MIGRATION_NAME = "202607170003_artist_alias_sort_name_provenance.sql"
-ARTIST_NAME_KIND_NO_NAME_MIGRATION_NAME = "202607180001_drop_unused_artist_name_kind.sql"
 CHECK_ISSUE_COUNT = 1
 CHECK_RUN_ID = CheckRunId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345684"))
 COMPANION_ASSET_ID = CompanionAssetId(UUID("018f6a4f-3c2d-7b8a-9abc-def012345689"))
@@ -182,7 +181,6 @@ def test_packaged_migrations_keep_artist_name_rebuilds_after_baseline() -> None:
         EDITABLE_ARTIST_NAMES_MIGRATION_NAME,
         ARTIST_SORT_NAME_MIGRATION_NAME,
         ARTIST_ALIAS_SORT_NAME_MIGRATION_NAME,
-        ARTIST_NAME_KIND_NO_NAME_MIGRATION_NAME,
     )
     assert "ALTER TABLE" not in migrations[0].sql.upper()
 
@@ -199,7 +197,6 @@ def test_sqlite_baseline_creates_exact_table_set(tmp_path: Path) -> None:
         EDITABLE_ARTIST_NAMES_MIGRATION_NAME,
         ARTIST_SORT_NAME_MIGRATION_NAME,
         ARTIST_ALIAS_SORT_NAME_MIGRATION_NAME,
-        ARTIST_NAME_KIND_NO_NAME_MIGRATION_NAME,
     }
 
 
@@ -307,27 +304,18 @@ def test_alias_sort_name_migration_preserves_rows_and_round_trips_new_provenance
         assert uow.accepted_artist_names.list_all() == (alias_sort_name, accepted_name)
 
 
-def test_drop_unused_artist_name_kind_migration_preserves_rows_and_rejects_name_kind(
+@pytest.mark.parametrize("selected_name_kind", ["alias", "name"])
+def test_baseline_artist_name_provenance_survives_forward_migrations(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    selected_name_kind: str,
 ) -> None:
-    """The forward rebuild preserves prior rows and tightens the selection-kind CHECK."""
+    """Values produced by the baseline resolver remain readable with their original provenance."""
     database_file = default_application_paths(tmp_path).database_file
     migrations = migration_runner.load_packaged_migrations()
-    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations[:4])
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations[:1])
     migrate_database(database_file)
-    accepted_name = _accepted_artist_name()
-    with SQLiteUnitOfWork(database_file) as uow:
-        assert uow.accepted_artist_names.insert_if_absent(accepted_name)
-        uow.commit()
-
-    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations)
-    migrate_database(database_file)
-
-    with SQLiteUnitOfWork(database_file) as uow:
-        assert uow.accepted_artist_names.list_all() == (accepted_name,)
-
-    with sqlite3.connect(database_file) as connection, pytest.raises(sqlite3.IntegrityError):
+    with sqlite3.connect(database_file) as connection:
         _ = connection.execute(
             """
             INSERT INTO accepted_artist_names (
@@ -337,14 +325,26 @@ def test_drop_unused_artist_name_kind_migration_preserves_rows_and_rejects_name_
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                "坂本龍一",
-                "坂本龍一",
-                "Sakamoto Ryuichi",
+                ACCEPTED_ARTIST_SOURCE_KEY,
+                ACCEPTED_ARTIST_SOURCE_NAME,
+                ACCEPTED_ARTIST_RESOLVED_NAME,
                 ArtistNameProvider.MUSICBRAINZ.value,
                 MUSICBRAINZ_ARTIST_ID,
-                "name",
+                selected_name_kind,
                 None,
                 BASE_TIME.isoformat(),
+            ),
+        )
+
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations)
+    migrate_database(database_file)
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.list_all() == (
+            replace(
+                _accepted_artist_name(),
+                selected_name_kind=SelectedArtistNameKind(selected_name_kind),
+                selected_locale=None,
             ),
         )
 
@@ -648,8 +648,9 @@ def test_sqlite_artist_name_mappings_support_user_edit_list_and_delete(tmp_path:
         ("user", "alias", "en"),
         ("musicbrainz", "unsupported", None),
         ("musicbrainz", "sort_name", "en"),
+        ("musicbrainz", "name", "en"),
     ],
-    ids=["provider", "user-provenance", "selection-kind", "sort-name-locale"],
+    ids=["provider", "user-provenance", "selection-kind", "sort-name-locale", "non-alias-locale"],
 )
 def test_sqlite_accepted_artist_name_schema_rejects_invalid_provenance(
     tmp_path: Path,

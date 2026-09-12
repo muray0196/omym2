@@ -3637,6 +3637,7 @@
         "enum": [
           "alias",
           "alias_sort_name",
+          "name",
           "sort_name"
         ],
         "title": "SelectedArtistNameKind",

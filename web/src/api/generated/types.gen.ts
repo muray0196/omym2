@@ -1876,7 +1876,7 @@ export type SaveArtistNameMappingsRequestResource = {
  *
  * MusicBrainz field that supplied the accepted artist name.
  */
-export type SelectedArtistNameKind = 'alias' | 'alias_sort_name' | 'sort_name';
+export type SelectedArtistNameKind = 'alias' | 'alias_sort_name' | 'name' | 'sort_name';
 
 /**
  * SettingsCandidateData

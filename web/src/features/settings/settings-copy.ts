@@ -38,6 +38,7 @@ export const settingsCopy = {
   artistNameSource: "Name source",
   artistNameSourceAliasName: "alias name",
   artistNameSourceAliasSortName: "alias sort-name",
+  artistNameSourceArtistName: "artist name",
   artistNameSourceArtistSortName: "artist sort-name",
   artistNameSourceMusicBrainz: "MusicBrainz",
   artistNameSourceUnknownLocale: "unknown-locale",

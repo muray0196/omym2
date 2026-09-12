@@ -1253,6 +1253,8 @@ function artistNameMappingSourceLabel(
       return `${settingsCopy.artistNameSourceMusicBrainz} · ${locale ?? settingsCopy.artistNameSourceUnknownLocale} ${settingsCopy.artistNameSourceAliasName}`;
     case "sort_name":
       return `${settingsCopy.artistNameSourceMusicBrainz} · ${settingsCopy.artistNameSourceArtistSortName}`;
+    case "name":
+      return `${settingsCopy.artistNameSourceMusicBrainz} · ${settingsCopy.artistNameSourceArtistName}`;
     case null:
       return settingsCopy.artistNameSourceMusicBrainz;
   }

@@ -391,7 +391,15 @@ def test_save_artist_name_mappings_is_revision_checked_and_csrf_protected(tmp_pa
     assert store.save_count == 0
 
 
-def test_get_settings_exposes_musicbrainz_name_selection_provenance(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("selected_name_kind", "selected_locale"),
+    [(SelectedArtistNameKind.ALIAS_SORT_NAME, "ja-Latn"), (SelectedArtistNameKind.NAME, None)],
+)
+def test_get_settings_exposes_musicbrainz_name_selection_provenance(
+    tmp_path: Path,
+    selected_name_kind: SelectedArtistNameKind,
+    selected_locale: str | None,
+) -> None:
     """Settings identifies the exact MusicBrainz field and locale used for a mapping."""
     store = FakeConfigStore()
     mapping = AcceptedArtistName(
@@ -400,8 +408,8 @@ def test_get_settings_exposes_musicbrainz_name_selection_provenance(tmp_path: Pa
         resolved_name="Utada Hikaru",
         provider=ArtistNameProvider.MUSICBRAINZ,
         provider_artist_id="db2f4f3a-f0c2-4c96-bea3-636f4b44f57b",
-        selected_name_kind=SelectedArtistNameKind.ALIAS_SORT_NAME,
-        selected_locale="ja-Latn",
+        selected_name_kind=selected_name_kind,
+        selected_locale=selected_locale,
         accepted_at=datetime(2026, 7, 17, 12, tzinfo=UTC),
     )
     client = _client(tmp_path, store, accepted_artist_names=(mapping,))
@@ -413,8 +421,8 @@ def test_get_settings_exposes_musicbrainz_name_selection_provenance(tmp_path: Pa
             "source_name": JAPANESE_ARTIST,
             "english_name": "Utada Hikaru",
             "source": "musicbrainz",
-            "selected_name_kind": "alias_sort_name",
-            "selected_locale": "ja-Latn",
+            "selected_name_kind": selected_name_kind.value,
+            "selected_locale": selected_locale,
         }
     ]
 
