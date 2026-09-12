@@ -3,7 +3,7 @@
 # Why: Gives agents a single reliable entry point instead of re-deriving command groups.
 #
 # Usage:
-#   scripts/checks.sh <changed|completion|py|api|web|e2e|package|performance|all|docs|arch>
+#   scripts/checks.sh <changed|completion|py|api|web|e2e|e2e-ci|package|performance|performance-ci|all|docs|arch>
 #   scripts/checks.sh test <pytest-target>
 #
 # See docs/development/harness.md for canonical mode descriptions and gate policy.
@@ -12,16 +12,17 @@ set -euo pipefail
 
 repository_root="$(git rev-parse --show-toplevel)"
 check_output_script="$repository_root/scripts/check_output.py"
+check_log_directory="$(git rev-parse --absolute-git-dir)/omym2-check-logs"
 cd "$repository_root"
 
 usage() {
-    echo "usage: scripts/checks.sh <changed|completion|py|api|web|e2e|package|performance|all|docs|arch> | scripts/checks.sh test <pytest-target>" >&2
+    echo "usage: scripts/checks.sh <changed|completion|py|api|web|e2e|e2e-ci|package|performance|performance-ci|all|docs|arch> | scripts/checks.sh test <pytest-target>" >&2
 }
 
 run_check() {
     local label="$1"
     shift
-    python3 "$check_output_script" --label "$label" -- "$@"
+    python3 "$check_output_script" --label "$label" --log-directory "$check_log_directory" -- "$@"
 }
 
 if [[ $# -eq 0 ]]; then
@@ -54,7 +55,7 @@ run_py() {
     run_check "Python lint" uv run ruff check . --output-format=concise
     run_check "Python format" uv run ruff format . --check -q
     run_check "Python types" uv run basedpyright
-    run_check "Python tests" uv run pytest -q --maxfail=1 --tb=line --show-capture=stdout
+    run_check "Python tests" uv run pytest -q --maxfail=1 --tb=short --show-capture=stdout
 }
 
 run_api() (
@@ -96,12 +97,26 @@ run_e2e() {
     run_e2e_only
 }
 
+run_e2e_ci() {
+    (
+    cd web
+    run_check "frontend build for browser tests" npm run build
+    )
+    run_check "Web static synchronization for browser tests" uv run python scripts/web/sync_web_static.py
+    run_e2e_only
+}
+
 run_package() {
     run_check "package evidence" uv run python scripts/web/build_web_evidence.py
 }
 
 run_performance() {
     run_check "package performance" uv run python scripts/web/build_web_evidence.py --run-performance
+}
+
+run_performance_ci() {
+    local wheel="$1"
+    run_check "package performance" uv run python scripts/web/build_web_evidence.py --performance-wheel "$wheel"
 }
 
 run_docs() {
@@ -186,11 +201,18 @@ web)
 e2e)
     run_e2e
     ;;
+e2e-ci)
+    run_e2e_ci
+    ;;
 package)
     run_package
     ;;
 performance)
     run_performance
+    ;;
+performance-ci)
+    wheel="${2:?usage: scripts/checks.sh performance-ci <wheel>}"
+    run_performance_ci "$wheel"
     ;;
 all)
     run_web

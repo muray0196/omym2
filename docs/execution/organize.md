@@ -1,146 +1,57 @@
 ---
 type: Execution Spec
 title: Organize Execution
-description: Defines Organize registration and reconciliation for audio and associated companions, reviewed dependencies, clean DB-only registration, and trust-stat rules.
+description: Organize registration and reconciliation for audio and companions, clean DB-only registration, and trust-stat rules.
 tags: [organize, library-registration, plan-creation, artist-names, companions, path-policy]
-timestamp: 2026-07-17T03:34:29+09:00
+timestamp: 2026-07-18T12:00:00+09:00
 ---
 
 # Organize Execution
 
-This document is authoritative for `organize --library PATH`, first Library
-registration, existing Library rescan, companion registration/planning,
-unregistered path refusal, clean registration without a mutation Plan, and
-registration after successful Apply.
-
-Common execution rules are in [model.md](model.md). Path identity rules are in [../contracts/path-identity-storage.md](../contracts/path-identity-storage.md).
+Authoritative for `organize --library PATH`: first registration, existing-Library rescan, companion registration/planning, unregistered-path refusal, clean registration without a mutation Plan, and registration after successful Apply. Common rules: [model.md](model.md); path identity: [../contracts/path-identity-storage.md](../contracts/path-identity-storage.md).
 
 ## Library Registration Behavior
 
-Library identity is defined in [../DOMAIN.md](../DOMAIN.md#library).
+Library identity: [../DOMAIN.md](../DOMAIN.md#library). Registration is per Library, tied to `library_id` and `path_policy_hash` (or equivalent PathPolicy identity) — not defined by whether `tracks` has rows. Representative fields: `library_id`, `root_path`, `path_policy_hash`, `registered_at`, `status` ([allowed values](../contracts/status-reason-catalog.md#library-status)).
 
-Registration is per Library and is tied to:
-
-* `library_id`
-* `path_policy_hash` or an equivalent identity for the current PathPolicy
-
-Registration is not defined by whether the `tracks` table has rows.
-
-Minimum representative registration fields:
-
-* `library_id`
-* `root_path`
-* `path_policy_hash`
-* `registered_at`
-* `status`
-
-Allowed status values are in [../contracts/status-reason-catalog.md](../contracts/status-reason-catalog.md#library-status).
-
-Changing PathPolicy invalidates prior registration for that Library. After a PathPolicy change, `add` refuses to create a plan until the Library is registered again under the new PathPolicy. The expected remedy is `omym2 organize --library PATH`.
-
-`organize` is the only supported path for an unregistered or unorganized Library to become usable by `add`.
-
-`organize --library PATH` is the primary user-facing operation for registering and reconciling a Library.
-
-Relink rules are defined in [../contracts/path-identity-storage.md](../contracts/path-identity-storage.md#identity-rules).
+Changing PathPolicy invalidates prior registration; `add` then refuses to create a plan until the Library is re-registered via `omym2 organize --library PATH`. `organize` is the only supported path for an unregistered or unorganized Library to become usable by `add`, and `organize --library PATH` is the primary registration/reconciliation operation. Relink rules: [../contracts/path-identity-storage.md](../contracts/path-identity-storage.md#identity-rules).
 
 ## Organize Behavior
 
-`organize --library PATH` scans the specified Library read-only and computes canonical paths under the current PathPolicy.
+`organize --library PATH` scans the Library read-only and computes canonical paths under the current PathPolicy. For every otherwise valid snapshot, it batches raw artist and album-artist values through the shared `ArtistNameResolutionReader` before canonical path generation, letting it reconcile paths after a mapping change without rewriting stored Track metadata. Library selection and Track reads finish before resolver work; result persistence begins only after resolver work completes. When a resolved candidate becomes a PlanAction, Organize records its aligned resolution diagnostics on that action; already-correct files create no action or standalone diagnostic row, and candidates blocked before resolution record no pair.
 
-For every otherwise valid snapshot, organize batches raw artist and
-album-artist values through the shared `ArtistNameResolutionReader` before
-canonical path generation. This lets organize reconcile paths after either an
-original-to-English mapping changes without rewriting stored Track metadata.
-Library selection and Track reads finish before resolver work;
-result persistence begins only after resolver work has completed.
+The scan always covers the whole Library and only plans misplaced (current path differs from canonical target) or blocked files; correctly placed files never become actions.
 
-When a resolved candidate becomes a PlanAction, Organize records its aligned
-artist and album-artist resolution diagnostics on that action. Already-correct
-files create no action or standalone diagnostic row, and candidates blocked
-before resolution record no pair.
-
-The scan always covers the whole Library and only ever plans misplaced (current path differs from the canonical target path) or blocked files; already-correctly-placed files never become Plan actions.
-
-In the MVP, `organize --library PATH` supports these identity cases:
+MVP identity cases:
 
 | Case | Policy |
 | --- | --- |
 | `PATH` matches an existing `libraries.root_path` | Rescan and organize the existing Library. |
 | No Library exists yet | Create the first Library row and organize it. |
-| `PATH` is unregistered while another Library already exists | Stop with a clear message. The path may be a moved Library or a second Library, and both are out of MVP scope. |
+| `PATH` is unregistered while another Library exists | Stop with a clear message (moved Library vs. second Library is out of MVP scope). |
 
-The MVP must not silently duplicate a Library when an unregistered path may represent an existing Library.
+The MVP must not silently duplicate a Library when an unregistered path may represent an existing one. Plain `omym2 organize` is allowed only when exactly one known Library can be selected unambiguously; otherwise it fails and asks for `--library PATH`.
 
-Plain `omym2 organize` is allowed only when exactly one known Library can be selected unambiguously. Otherwise it fails with a clear message and asks for `omym2 organize --library PATH`.
+If files must move or blocking actions need review, `organize` creates an organize Plan; it never moves files directly except through `--apply` orchestration. If no moves and no blocking issues exist, it registers the Library without a mutation Plan (DB-only Library/Track/CompanionAsset updates are not file mutations). If the organize Plan applies successfully and no blocking Library-state issues remain, the Library becomes registered (DB-only, no FileEvent). If blocked actions remain, the Library must not become registered.
 
-If files need to move or blocking actions must be reviewed, `organize` creates an organize Plan. `organize` does not move files directly except through `--apply` orchestration.
-
-If no moves are needed and no blocking issues exist, `organize` can register
-the Library without creating a mutation Plan because DB-only Library, Track,
-and CompanionAsset updates are not file mutations.
-
-If the organize Plan is applied successfully and no blocking Library-state issues remain, the Library becomes registered. Updating Library state after apply is a DB-only state change and does not create a FileEvent.
-
-If blocked actions remain, the Library must not become registered.
-
-Blocking issues include:
-
-* missing required metadata
-* canonical path conflicts
-* companion association, ownership, observation, or target conflicts
-* invalid paths
-* missing source files
-* other problems preventing safe acceptance
+Blocking issues: missing required metadata; canonical path conflicts; companion association, ownership, observation, or target conflicts; invalid paths; missing source files; other problems preventing safe acceptance.
 
 ## Companion Reconciliation
 
-When `companions.enabled` is true, Organize classifies the Library inventory
-with the shared [Companion Association](../DOMAIN.md#companion-association)
-policy after calculating audio targets. Companion files use rooted content-only
-snapshots and never enter music metadata or stat-trust processing.
+When `companions.enabled` is true, Organize classifies the Library inventory with the shared [Companion Association](../DOMAIN.md#companion-association) policy after calculating audio targets. Companion files use rooted content-only snapshots and never enter music metadata or stat-trust processing.
 
-An already canonical companion is persisted directly as an active
-CompanionAsset only after its owning Track has been established in the same
-transaction. This is a DB-only registration and creates neither a PlanAction
-nor FileEvent. A misplaced companion instead becomes one reviewed
-`move_lyrics` or `move_artwork` action after the relevant audio actions,
-with a stable asset ID, semantic owner, and every durable dependency.
-
-Existing matching CompanionAsset identity and `first_seen_at` are preserved.
-Active companion paths participate in collision judgment. A blocked companion
-keeps the Organize Plan reviewable but leaves the Library `blocked`; the
-Library cannot become registered until no blocking audio or companion action
-remains.
-
-When companion processing is disabled, Organize creates no new companion state
-or actions and leaves existing managed assets unchanged.
+An already canonical companion is persisted directly as an active CompanionAsset only after its owning Track has been established in the same transaction — DB-only registration, no PlanAction or FileEvent. A misplaced companion becomes one reviewed `move_lyrics`/`move_artwork` action after the relevant audio actions, with a stable asset ID, semantic owner, and every durable dependency. Existing matching CompanionAsset identity and `first_seen_at` are preserved. Active companion paths participate in collision judgment. A blocked companion keeps the Plan reviewable but leaves the Library `blocked`; registration requires no blocking audio or companion action remaining. With companion processing disabled, Organize creates no new companion state or actions and leaves existing managed assets unchanged.
 
 ### Failed Companion Recovery
 
-Organize may create a companion-only recovery action when a definitive failed
-companion source is Library-relative, still exists safely below the current
-Library root, and retains valid succeeded owner-audio provenance plus an active
-same-Library owner Track. It reuses the recorded companion identity and owner
-Track without manufacturing an already-completed audio action or dependency.
-Pending or otherwise ambiguous outcomes remain manual-review-only and are not
-replanned.
+Organize may create a companion-only recovery action when a definitive failed companion source is Library-relative, still exists safely below the current Library root, and retains valid succeeded owner-audio provenance plus an active same-Library owner Track. It reuses the recorded companion identity and owner Track without manufacturing an already-completed audio action or dependency. Pending or ambiguous outcomes remain manual-review-only and are not replanned.
 
 ## Trust-Stat Optimization
 
-`omym2 organize --trust-stat` is an explicit CLI-only performance opt-in. The Web organize route always uses full snapshot capture.
+`omym2 organize --trust-stat` is an explicit CLI-only performance opt-in; the Web organize route always uses full snapshot capture.
 
-One scanned source is eligible only when all of these conditions hold:
+A scanned source is eligible only when all hold: exactly one active Track in the Library has that `current_path`; the Track logical path and scanner observation path match the evaluated source; both persisted Track `size` and `mtime` are non-null; and current size and mtime exactly equal that baseline. Eligible sources may reconstruct the FileSnapshot from the scanner stat plus the Track's last verified hashes and metadata. Every null, ambiguous, path-mismatching, or changed baseline falls back to a complete snapshot (fresh stat, metadata read, content hash); full captures do not reuse the earlier scan observation when establishing the persisted baseline.
 
-* exactly one active Track in the Library has that `current_path`
-* the Track logical path and the scanner observation path match the source being evaluated
-* both persisted Track `size` and `mtime` values are non-null
-* current size and modification time exactly equal that persisted baseline
+An accepted eligible source updates that same unique active Track identity; removed Tracks sharing the path stay removed. Accepted candidates persist snapshot size/mtime — backfilling null baselines only after full verification, while an eligible trusted candidate preserves its already verified baseline.
 
-For an eligible source, organize may reconstruct the FileSnapshot from the scanner stat plus the Track's last verified hashes and metadata. Every null, ambiguous, path-mismatching, or changed baseline falls back to a complete snapshot that performs a fresh stat, metadata read, and content hash. Full captures do not reuse the earlier scan observation when establishing the persisted baseline.
-
-When an eligible source is accepted, organize updates that same unique active Track identity. Removed Track records that share the source path remain removed.
-
-Accepted organize candidates persist their snapshot size and modification time. This backfills existing null baselines only after full verification; an eligible trusted candidate preserves its already verified baseline.
-
-The opt-in can miss a content or metadata edit that preserves both size and modification time. Users who need full integrity verification omit the flag. If `--apply` is also selected, apply still performs its mandatory full source-hash precondition before any Track update or Library-managed file mutation.
+The opt-in can miss a content or metadata edit that preserves both size and mtime; omit the flag for full integrity verification. With `--apply`, apply still performs its mandatory full source-hash precondition before any Track update or mutation.

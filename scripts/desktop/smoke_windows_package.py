@@ -551,6 +551,7 @@ def smoke_windows_package(
         extraction_b = workspace / "application-build-b"
         database_file = local_app_data / config.DESKTOP_WINDOWS_DATABASE_RELATIVE_PATH
         local_app_data.mkdir(parents=True)
+        config_file = _write_valid_smoke_config(local_app_data)
         library_root.mkdir()
         _write_tagged_smoke_flac(source_file)
         _require_long_unicode_paths(local_app_data, library_root, incoming_root)
@@ -585,7 +586,6 @@ def smoke_windows_package(
             raise WindowsPackageSmokeError(msg)
         database_sha256_before_replacement = _file_sha256(database_file)
         database_size_bytes_before_replacement = database_file.stat().st_size
-        config_file = _write_valid_smoke_config(local_app_data)
         _delete_application_copy_and_require_state(
             extraction_a,
             config_file,
@@ -1875,6 +1875,13 @@ def _write_valid_smoke_config(local_app_data: Path) -> Path:
 
 
 def _packaged_environment(local_app_data: Path) -> dict[str, str]:
+    config_file = local_app_data / config.DESKTOP_WINDOWS_CONFIG_RELATIVE_PATH
+    if (
+        not config_file.is_file()
+        or config_file.read_text(encoding="utf-8") != config.DESKTOP_WINDOWS_SMOKE_CONFIG_MARKER
+    ):
+        msg = "Packaged smoke launch requires its exact isolated disabled-lookup Config."
+        raise WindowsPackageSmokeError(msg)
     environment = os.environ.copy()
     for name in ("PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV"):
         _ = environment.pop(name, None)

@@ -1,21 +1,4 @@
 approval_policy = "on-request"
-default_permissions = "omym2"
-
-[permissions.omym2]
-extends = ":workspace"
-
-[permissions.omym2.workspace_roots]
-"/win/codex-bridge" = true
-
-[permissions.omym2.filesystem]
-":root" = "deny"
-":minimal" = "read"
-
-[permissions.omym2.network]
-enabled = false
-
-[sandbox_workspace_write]
-network_access = true
 
 [agents]
 max_threads = 8

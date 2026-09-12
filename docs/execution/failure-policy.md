@@ -1,9 +1,9 @@
 ---
 type: Execution Spec
 title: Failure Policy
-description: Catalogs cross-cutting audio, companion, and unprocessed planning, source, collision, protected-path, Undo-content, interruption, and Library-root failures.
+description: Cross-cutting failure case catalog mapping each planning, apply, undo, and interruption failure to its policy.
 tags: [failure-policy, blocked-vs-failed, conflicts, companions, unprocessed, error-handling]
-timestamp: 2026-07-16T04:51:16+09:00
+timestamp: 2026-07-18T12:00:00+09:00
 ---
 
 # Failure Policy

@@ -33,6 +33,7 @@ from scripts.desktop.smoke_windows_package import (
     _delete_application_copy_and_require_state,  # pyright: ignore[reportPrivateUsage] -- verifies upgrade cleanup.
     _loaded_webview_backend,  # pyright: ignore[reportPrivateUsage] -- verifies exact log ordering.
     _optional_artifact_input,  # pyright: ignore[reportPrivateUsage] -- validates optional CLI pairing.
+    _packaged_environment,  # pyright: ignore[reportPrivateUsage] -- verifies isolated launch configuration.
     _require_long_unicode_paths,  # pyright: ignore[reportPrivateUsage] -- verifies native path inputs.
     _require_mutable_state_outside_bundle,  # pyright: ignore[reportPrivateUsage] -- verifies state isolation.
     _require_tree_unchanged,  # pyright: ignore[reportPrivateUsage] -- protects the dedicated launch cwd.
@@ -46,6 +47,7 @@ from scripts.desktop.smoke_windows_package import (
     _verify_persisted_plan_and_create_through_native_ui,  # pyright: ignore[reportPrivateUsage] -- checks evidence.
     _wait_for_ready_url,  # pyright: ignore[reportPrivateUsage] -- verifies fatal startup detection.
     _write_tagged_smoke_flac,  # pyright: ignore[reportPrivateUsage] -- verifies the packaged planning fixture.
+    _write_valid_smoke_config,  # pyright: ignore[reportPrivateUsage] -- seeds the launch-owned Config fixture.
 )
 
 if TYPE_CHECKING:
@@ -382,6 +384,28 @@ def test_native_smoke_rejects_mutable_database_inside_replaceable_bundle(tmp_pat
 
     with pytest.raises(WindowsPackageSmokeError, match="mutable OMYM2 state"):
         _require_mutable_state_outside_bundle(tmp_path)
+
+
+def test_packaged_environment_requires_exact_disabled_lookup_config(tmp_path: Path) -> None:
+    """Every packaged launch is bound to the smoke-owned disabled-lookup Config."""
+    local_app_data = tmp_path / "local-app-data"
+    local_app_data.mkdir()
+
+    with pytest.raises(WindowsPackageSmokeError, match="exact isolated disabled-lookup Config"):
+        _ = _packaged_environment(local_app_data)
+
+    config_file = _write_valid_smoke_config(local_app_data)
+    environment = _packaged_environment(local_app_data)
+
+    assert environment["LOCALAPPDATA"] == str(local_app_data)
+    assert tomllib.loads(config_file.read_text(encoding="utf-8"))["musicbrainz"]["enabled"] is False
+
+    _ = config_file.write_text(
+        config.DESKTOP_WINDOWS_SMOKE_CONFIG_MARKER.replace("enabled = false", "enabled = true"),
+        encoding="utf-8",
+    )
+    with pytest.raises(WindowsPackageSmokeError, match="exact isolated disabled-lookup Config"):
+        _ = _packaged_environment(local_app_data)
 
 
 def test_native_smoke_deletes_each_application_copy_without_deleting_state(tmp_path: Path) -> None:

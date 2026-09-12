@@ -1,111 +1,41 @@
 ---
 type: Execution Spec
 title: Refresh Execution
-description: Defines Refresh target re-evaluation for Tracks and associated companions, relocation dependencies, stable identities, metadata-only actions, and trust-stat rules.
+description: Refresh re-evaluation after tag correction, relocation and metadata-only actions, companion movement, and trust-stat rules.
 tags: [refresh, metadata, artist-names, companions, plan-creation, track-id]
-timestamp: 2026-07-16T03:44:47+09:00
+timestamp: 2026-07-18T12:00:00+09:00
 ---
 
 # Refresh Execution
 
-This document is authoritative for Refresh after external tag correction,
-file/directory/all targets, metadata reload, canonical relocation, associated
-companion movement, metadata-only action selection, and stable Track and
-CompanionAsset identity.
-
-Common execution rules are in [model.md](model.md). Apply rules are in [apply.md](apply.md).
+Authoritative for Refresh after external tag correction: file/directory/all targets, metadata reload, canonical relocation, associated companion movement, metadata-only action selection, and stable Track/CompanionAsset identity. Common rules: [model.md](model.md); apply rules: [apply.md](apply.md).
 
 ## Refresh Behavior
 
-`refresh` is an operation for re-evaluation and relocation after tag correction.
-
-Targets can be file / directory / all.
-
-```bash
-omym2 refresh <file>
-omym2 refresh <dir>
-omym2 refresh --all
-```
-
-Expected flow:
-
-```text
-Correct tags with an external tag editor
-  ↓
-omym2 refresh <file>
-  ↓
-reload metadata
-  ↓
-recalculate canonical path
-  ↓
-create plan if needed
-  ↓
-apply
-  ↓
-update DB
-```
+`refresh` re-evaluates and relocates after tag correction. Targets: `<file>`, `<dir>`, or `--all`. Flow: reload metadata → recalculate canonical path → create plan if needed → (apply) → update DB.
 
 For each selected Track without a review-time issue, plan creation chooses one outcome:
 
-* If the recalculated canonical path differs from the Track's current path, refresh plans a `move` action.
-* If the canonical path is unchanged but the content hash or metadata hash differs from the managed Track, refresh plans a `refresh_metadata` action that reingests Track metadata and hashes without moving the file. Applying it updates the Track in place without creating a FileEvent, as described in [apply.md](apply.md).
-* If neither the path nor the hashes changed, refresh plans no action for that Track.
+* Recalculated canonical path differs from current path → plan a `move` action.
+* Canonical path unchanged but content or metadata hash differs from the managed Track → plan a `refresh_metadata` action (reingests metadata and hashes without moving; applying updates the Track in place without a FileEvent, per [apply.md](apply.md)).
+* Neither changed → no action.
 
-Before that choice, refresh sends the selected snapshots' raw artist and
-album-artist values through the shared `ArtistNameResolutionReader` and passes
-the aligned projections to PathPolicy. Existing Track metadata remains the
-album-context input and is not rewritten. Track selection finishes in a short
-read transaction; snapshot capture and name resolution occur before the final
-Plan persistence transaction.
+Before that choice, refresh sends the selected snapshots' raw artist and album-artist values through the shared `ArtistNameResolutionReader` and passes the aligned projections to PathPolicy; existing Track metadata remains the album-context input and is not rewritten. Track selection finishes in a short read transaction; snapshot capture and name resolution occur before the final Plan persistence transaction. Every action whose candidate reached resolution records the aligned source, resolved value, provenance, and issue; candidates blocked before resolution record no pair.
 
-Every Refresh action whose candidate reached resolution records the aligned
-artist and album-artist source, resolved value, provenance, and issue. A
-candidate blocked before resolution has no diagnostic pair. Both move and
-`refresh_metadata` actions retain this plan-time review evidence.
+An executable Refresh action cannot introduce a resolved artist name while leaving another active Track at an obsolete canonical artist path: a partial Refresh that would do so is refused and requires Organize to reconcile the whole Library. Selected candidates with no action or a blocked action still count as unreconciled; a full Refresh proceeds when every affected Track has an executable action or is already at its resolved target. A newly accepted provider result may already be committed to the resolver cache before this refusal, but no Refresh Plan or PlanAction is persisted; Organize then consumes the sticky result.
 
-An executable Refresh action cannot introduce a resolved artist name while
-leaving another active Track at an obsolete canonical artist path. A partial
-Refresh that would do so is refused and requires Organize to reconcile the
-whole Library. Selected candidates with no action or a blocked action still
-count as unreconciled; a full Refresh can proceed when every affected Track has
-an executable action or is already at its resolved target. A newly accepted
-provider result may already be committed to the resolver cache before this
-refusal, but no Refresh Plan or PlanAction is persisted; Organize then consumes
-the sticky result.
-
-`refresh` does not move files directly. As a rule, it creates a Plan.
-
-Stable `track_id` allows refresh to treat tag changes and canonical path changes as changes to the same managed Track, not as removal of one Track and creation of another.
-
-Only when `--apply` is specified is the created plan applied within the same command.
+`refresh` never moves files directly — it creates a Plan, applied within the same command only with `--apply`. Stable `track_id` makes tag and canonical-path changes updates to the same managed Track, never removal-plus-creation.
 
 ## Companion Relocation
 
-When `companions.enabled` is true and a selected audio Track is relocating,
-Refresh applies the shared
-[Companion Association](../DOMAIN.md#companion-association) policy across the
-Library inventory and active managed companions. A discovered or already
-managed lyrics/artwork file that must follow the relocation becomes a
-content-only `move_lyrics` or `move_artwork` action.
+When `companions.enabled` is true and a selected audio Track relocates, Refresh applies the shared [Companion Association](../DOMAIN.md#companion-association) policy across the Library inventory and active managed companions. A discovered or managed lyrics/artwork file that must follow becomes a content-only `move_lyrics`/`move_artwork` action, following all relevant audio actions through durable dependencies and recording its semantic owner separately. An existing asset keeps `companion_asset_id`; a newly discovered one preallocates an ID without creating managed state during planning. Active audio and companion paths, batch targets, and live filesystem entries all participate in no-overwrite collision judgment.
 
-The companion action follows all relevant audio actions through durable
-dependencies and records its semantic owner separately. An existing asset
-keeps `companion_asset_id`; a newly discovered one preallocates an ID but
-does not create managed state during planning. Active audio and companion paths,
-batch targets, and live filesystem entries all participate in no-overwrite
-collision judgment.
-
-A `refresh_metadata` action with no audio relocation does not move
-companions. Companion processing also leaves previously managed state
-unchanged when disabled. Companion snapshots never use the Track
-`--trust-stat` shortcut and carry no metadata hash.
+A `refresh_metadata` action with no audio relocation does not move companions. Disabled companion processing leaves previously managed state unchanged. Companion snapshots never use the Track `--trust-stat` shortcut and carry no metadata hash.
 
 ## Trust-Stat Optimization
 
-`omym2 refresh ... --trust-stat` is an explicit CLI-only performance opt-in. The Web refresh route always uses full snapshot capture.
+`refresh ... --trust-stat` is an explicit CLI-only performance opt-in; the Web refresh route always uses full snapshot capture.
 
-A selected Track is eligible only when it is active, its `current_path` is unique among active Tracks in the Library, the single-file stat observation identifies the resolved source path, both persisted `size` and `mtime` are non-null, and both values exactly match the current observation. Refresh may then reconstruct the snapshot from the stat observation plus that Track's last verified hashes and metadata.
+A selected Track is eligible only when it is active, its `current_path` is unique among active Tracks in the Library, the single-file stat observation identifies the resolved source path, both persisted `size` and `mtime` are non-null, and both exactly match the current observation. Refresh may then reconstruct the snapshot from the stat observation plus the Track's last verified hashes and metadata. Missing sources retain the existing `source_missing` PlanAction behavior; every null, ambiguous, path-mismatching, or changed baseline receives a complete fresh snapshot. The opt-in can miss an edit that preserves both size and mtime; omit it when full re-ingestion is required.
 
-Missing sources retain the existing `source_missing` PlanAction behavior. Every null, ambiguous, path-mismatching, or changed baseline receives a complete fresh snapshot with metadata and content hashing. The opt-in can miss an edit that preserves both size and modification time; omit it when full re-ingestion is required.
-
-Refresh Plan creation never writes Tracks, including when it performed a full capture and created no action. It therefore does not ad-hoc backfill existing null baselines. Organize can backfill them, and applying a move or `refresh_metadata` action persists the mandatory full apply snapshot as the new baseline. `refresh --apply --trust-stat` affects only Plan creation; apply itself never trusts stat data.
+Refresh Plan creation never writes Tracks — including after a full capture with no action — so it never ad-hoc backfills null baselines. Organize can backfill them, and applying a move or `refresh_metadata` action persists the mandatory full apply snapshot as the new baseline. `refresh --apply --trust-stat` affects only Plan creation; apply itself never trusts stat data.

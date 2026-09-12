@@ -68,6 +68,7 @@ class ParsedArgs(argparse.Namespace):
     def __init__(self, output_directory: Path) -> None:
         super().__init__()
         self.output_directory: Path = output_directory
+        self.performance_wheel: Path | None = None
         self.run_performance: bool = False
 
 
@@ -114,6 +115,21 @@ def build_web_evidence(output_directory: Path, *, run_performance: bool) -> None
             performance_environment = environment.copy()
             performance_environment[CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE] = os.environ.get("PATH", "")
             _run_performance(wheel, root, environment=performance_environment)
+
+
+def run_web_performance(wheel: Path) -> None:
+    """Measure one previously audited wheel without rebuilding package evidence."""
+    wheel = wheel.resolve()
+    if not wheel.is_file():
+        msg = f"Performance wheel does not exist: {wheel}"
+        raise EvidenceBuildError(msg)
+    root = _project_root()
+    with tempfile.TemporaryDirectory(prefix="omym2-no-node-") as temporary_directory:
+        no_node_directory = Path(temporary_directory) / NO_NODE_DIRECTORY_NAME
+        _write_no_node_shims(no_node_directory)
+        environment = _node_poisoned_environment(no_node_directory)
+        environment[CHILD_PATH_OVERRIDE_ENVIRONMENT_VARIABLE] = os.environ.get("PATH", "")
+        _run_performance(wheel, root, environment=environment)
 
 
 def _smoke_wheel(wheel: Path, root: Path, *, environment: dict[str, str]) -> None:
@@ -256,7 +272,9 @@ def _parse_args(argv: Sequence[str] | None) -> ParsedArgs:
     root = _project_root()
     parser = argparse.ArgumentParser(description=__doc__)
     _ = parser.add_argument("--output-directory", type=Path, default=root / DEFAULT_EVIDENCE_RELATIVE_PATH)
-    _ = parser.add_argument("--run-performance", action="store_true")
+    performance_mode = parser.add_mutually_exclusive_group()
+    _ = performance_mode.add_argument("--run-performance", action="store_true")
+    _ = performance_mode.add_argument("--performance-wheel", type=Path)
     return parser.parse_args(argv, namespace=ParsedArgs(root / DEFAULT_EVIDENCE_RELATIVE_PATH))
 
 
@@ -264,11 +282,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Build package evidence and report a concise result."""
     args = _parse_args(argv)
     try:
-        build_web_evidence(args.output_directory, run_performance=args.run_performance)
+        if args.performance_wheel is not None:
+            run_web_performance(args.performance_wheel)
+        else:
+            build_web_evidence(args.output_directory, run_performance=args.run_performance)
     except (EvidenceBuildError, PackageAuditError, StaticAuditError, StaticSyncError) as exc:
         print(f"Web evidence build failed: {exc}", file=sys.stderr)
         return 1
-    print(f"Web evidence build passed: {args.output_directory}")
+    if args.performance_wheel is not None:
+        print(f"Web performance passed: {args.performance_wheel}")
+    else:
+        print(f"Web evidence build passed: {args.output_directory}")
     return 0
 
 
