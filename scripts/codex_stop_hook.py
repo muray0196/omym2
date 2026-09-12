@@ -258,8 +258,9 @@ def _hash_untracked_file(
 
 
 def _repository_fingerprint(repository_root: Path) -> str:
-    """Build a stable fingerprint from HEAD and each working-tree state category."""
+    """Fingerprint the comparison base, HEAD, and each working-tree state category."""
     head = _git(("rev-parse", "--verify", "HEAD"), cwd=repository_root).stdout.strip()
+    merge_base = _origin_merge_base(repository_root)
     tracked = _git(("diff", "--binary", "--no-ext-diff", "--no-textconv"), cwd=repository_root).stdout
     staged = _git(
         ("diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv"),
@@ -268,6 +269,7 @@ def _repository_fingerprint(repository_root: Path) -> str:
     untracked = _untracked_paths(repository_root)
     hasher = hashlib.new(FINGERPRINT_ALGORITHM)
     _update_fingerprint(hasher, b"head", head)
+    _update_fingerprint(hasher, b"merge-base", (merge_base or "").encode(COMMAND_ENCODING))
     _update_fingerprint(hasher, b"tracked", tracked)
     _update_fingerprint(hasher, b"staged", staged)
     for relative_path in untracked:
@@ -276,8 +278,13 @@ def _repository_fingerprint(repository_root: Path) -> str:
 
 
 def _state_path(repository_root: Path) -> Path:
-    """Return the repository-local ephemeral state path under .git/."""
-    git_directory = repository_root / ".git"
+    """Return ephemeral state in this worktree's Git directory, including linked worktrees."""
+    result = _git(("rev-parse", "--absolute-git-dir"), cwd=repository_root)
+    git_directory_text = _decode_output(result.stdout).strip()
+    if not git_directory_text:
+        msg = "git rev-parse --absolute-git-dir returned an empty path"
+        raise HookError(msg)
+    git_directory = Path(git_directory_text)
     if not git_directory.is_dir():
         msg = f"repository Git directory is unavailable: {git_directory}"
         raise HookError(msg)

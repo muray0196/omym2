@@ -5,7 +5,7 @@ description: Add or update OMYM2 tests. Use when writing tests for a change, dec
 
 # Write Tests
 
-Test policy is authoritative in `docs/development/testing.md`. This skill is the operational shortcut.
+Test policy is authoritative in [docs/development/testing.md](../../../docs/development/testing.md). This skill is the operational shortcut.
 
 ## Placement
 
@@ -28,25 +28,25 @@ Frontend unit/component tests live beside their feature or under
 
 ## Fixture rules
 
-- Fixture Policy in `docs/development/testing.md` is authoritative (in-memory
+- Fixture Policy in [docs/development/testing.md](../../../docs/development/testing.md) is authoritative (in-memory
   repositories for usecase tests, minimal read-only filesystem fixtures except
   for apply/undo); it also requires fixed `Clock` and `IdGenerator` ports so
   time and IDs stay deterministic.
 - Test-stack tooling (pytest/pytest-mock, Vitest/React Testing
   Library/`user-event`/MSW, Playwright Chromium/axe) is pinned by the
-  Python and frontend lockfiles; see `docs/development/testing.md` for the
+  Python and frontend lockfiles; see [docs/development/testing.md](../../../docs/development/testing.md) for the
   full stack.
 - When a canonical fixture is relevant, locate and read only its matching
-  subsection in `docs/development/testing.md`.
+  subsection in [docs/development/testing.md](../../../docs/development/testing.md).
 - For tests under `tests/adapters/fs/` or any test simulating filesystem
   races (rename/replace/symlink swaps), read the `Windows Filesystem
-  Semantics` section of `docs/development/testing.md` first; POSIX-only
+  Semantics` section of [docs/development/testing.md](../../../docs/development/testing.md) first; POSIX-only
   assumptions there fail on the native Windows CI job.
 
 ## What must be tested (by contract touched)
 
 Only for a contract change, locate `Contract Change Test Requirements` in
-`docs/development/testing.md` and read the row for the changed contract. Routine
+[docs/development/testing.md](../../../docs/development/testing.md) and read the row for the changed contract. Routine
 regression tests follow the nearest existing test and do not require loading the
 full testing document.
 
@@ -57,8 +57,12 @@ full testing document.
 
 ## Done means
 
-- The check mode `validate` selects for inspecting one failing test passes, then the check mode it selects for the edit-loop situation passes.
+- Run affected Python tests with `validate`'s focused test mode; use frontend
+  unit/component or browser checks for Web tests. Apply the relevant edit-loop
+  checks to changed code; the completion gate owns the broader pass.
 
 ## Stop and report when
 
-- This skill's placement, fixture, or coverage rules conflict with what you find in the existing test suite.
+- An unresolved contract decision prevents determining the expected behavior.
+  Existing tests may predate the current policy; follow the authoritative rule
+  for changed tests without reorganizing unrelated coverage.

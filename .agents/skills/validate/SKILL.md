@@ -5,6 +5,17 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 
 # Validate
 
+## Select the scope
+
+Use the smallest check that answers the current question, then one completion
+pass. Read-only reviews and issue drafting do not require implementation gates.
+Do not claim that a configured hook has passed before receiving its result.
+
+`changed` auto-fixes and formats all Python files dirty against `HEAD`, including
+untracked files. If the checkout already contains unrelated edits, use the
+explicit file commands in [Edit-Loop Commands](../../../docs/development/harness.md#edit-loop-commands)
+with only this task's files instead.
+
 ## Mode table
 
 | Situation | Command |
@@ -21,14 +32,16 @@ description: Run OMYM2 quality gates and triage failures. Use when validating ch
 | Installed-package performance record | `scripts/checks.sh performance` |
 | Docs bundle conformance | `scripts/checks.sh docs` |
 | Architecture boundary / naming rules | `scripts/checks.sh arch` |
-| Inspect one failing test | `scripts/checks.sh test <pytest-node-id>` |
+| Run an affected test file or inspect one failing test | `scripts/checks.sh test <pytest-path-or-node-id>` |
 | Deep-debug one failing test | `uv run pytest <pytest-node-id> -q --tb=long -s --show-capture=all` |
 
-`scripts/checks.sh` wraps the authoritative commands in `docs/development/harness.md`. If the script is missing or itself broken, run those commands directly.
+`scripts/checks.sh` wraps the authoritative commands in
+[the harness](../../../docs/development/harness.md). If the script is missing or
+itself broken, run the relevant commands directly.
 
 The wrapper discards successful gate output and reports one pass line. A failed
 gate reports only a bounded tail and retains the complete combined output at the
-printed temporary path. Use progressive diagnostics:
+printed path under the worktree's Git directory. Use progressive diagnostics:
 
 1. Act on the bounded failure first.
 2. Reproduce only the first failure with the smallest mode; for pytest, use the
@@ -41,7 +54,8 @@ printed temporary path. Use progressive diagnostics:
 The wrapper requires an explicit mode and assumes dependencies are already
 installed. Run `uv sync --locked --dev` after checkout or Python dependency
 changes. Install frontend dependencies in `web/`. Do not reinstall dependencies
-during ordinary edit loops or validation reruns.
+during ordinary edit loops or validation reruns. Frontend setup uses
+`cd web && npm ci`.
 
 Do not run `scripts/checks.sh completion` immediately before a normal Codex handoff.
 The `Stop` hook cannot reuse a manual success, so doing both repeats the complete
@@ -50,7 +64,14 @@ a hook failure needs direct diagnosis, or an environment-only repair must be
 verified. Environment-only repairs do not change the repository fingerprint, so
 verify them manually before attempting completion again. Run `scripts/checks.sh
 all` only when the user explicitly requests the full aggregate gate or when
-diagnosing CI-equivalent behavior.
+diagnosing CI-equivalent behavior. Run E2E for changed browser interactions or
+accessibility, and package/performance checks when their behavior or budgets
+change; completion deliberately excludes those groups.
+
+The hook's unchanged-failure loop guard permits a handoff after reporting the
+failure. That is not a passing gate: report the unresolved failure and any
+unrun checks. Cache state is per worktree; environment-only changes do not
+invalidate a prior result.
 
 ## Triage table
 
@@ -60,7 +81,7 @@ Fix the first failing gate before looking at later ones.
 | --- | --- | --- |
 | `uv` / `npm` / command not found | environment | Install per README; do not edit product code |
 | `npm ci` fails | lockfile out of sync | Report it; do not hand-edit `package-lock.json` |
-| `ModuleNotFoundError` for a dependency | env not synced | `uv sync` (Python) or `cd web && npm ci` (frontend) |
+| `ModuleNotFoundError` for a dependency | env not synced | `uv sync --locked --dev` (Python) or `cd web && npm ci` (frontend) |
 | generated API check fails | Pydantic/OpenAPI or client drift | Run `cd web && npm run api:generate`, review, and commit the coordinated schema/client change |
 | static audit fails | stale or unsafe ignored output | Re-run `npm run build`, then `scripts/web/sync_web_static.py`; do not hand-edit `static_dist/` |
 | package smoke imports `src/` | wrong interpreter or `PYTHONPATH` | Use the clean-install virtual-environment Python outside the checkout and clear `PYTHONPATH` |
@@ -77,17 +98,6 @@ Fix the first failing gate before looking at later ones.
 - Suppressions are last resort and need a justification comment on the same line:
   `# pyright: ignore[rule]  # why` or `# noqa: RULE  # why`.
 - Do not run project-wide diagnostics during the edit loop; use `changed` mode.
-
-## Procedure
-
-1. Pick the command from the mode table above that matches your situation.
-2. Run it.
-3. If it fails, follow the progressive diagnostic flow above, find the first
-   failure in the triage table, and take its next action.
-4. Apply a suppression only as a last resort, per the suppression rules above, with a justification comment on the same line.
-5. Re-run the same focused command until it passes.
-6. Attempt completion and let the repo `Stop` hook run the path-aware completion gate. If the hook is unavailable or bypassed, run `scripts/checks.sh completion` manually instead.
-7. After a hook failure, reproduce only the first failure with the smallest applicable mode. A repository edit changes the fingerprint and causes the hook to validate again; after an environment-only repair, run the completion gate manually because the fingerprint is unchanged.
 
 ## Done means
 

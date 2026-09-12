@@ -33,6 +33,31 @@ DOCS_COMMAND = "uv:run pytest tests/docs -q"
             ("npm:", "uv:run pytest -q"),
         ),
         (
+            "ROADMAP.md",
+            ("uv:run pytest tests/docs -q",),
+            ("npm:", "uv:run pytest -q"),
+        ),
+        (
+            ".agents/skills/example/SKILL.md",
+            ("uv:run pytest tests/docs -q",),
+            ("npm:", "uv:run pytest -q"),
+        ),
+        (
+            ".agents/skills/example/scripts/check.sh",
+            ("uv:run ruff check .", "uv:run pytest -q"),
+            ("npm:", "uv:run pytest tests/docs -q"),
+        ),
+        (
+            ".codex/hooks.json",
+            ("uv:run ruff check .", "uv:run pytest -q"),
+            ("npm:", "uv:run pytest tests/docs -q"),
+        ),
+        (
+            "unknown/guide.md",
+            ("uv:run ruff check .", "uv:run pytest -q"),
+            ("npm:", "uv:run pytest tests/docs -q"),
+        ),
+        (
             "src/omym2/domain/example.py",
             ("uv:run ruff check .", "uv:run pytest -q"),
             ("npm:", "uv:run pytest tests/docs -q"),

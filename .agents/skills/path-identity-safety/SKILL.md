@@ -5,7 +5,7 @@ description: Safety checklist for changes touching stored paths, PathPolicy, Lib
 
 # Path / Identity Safety
 
-Authoritative docs: `docs/contracts/path-identity-storage.md`, `docs/contracts/db-schema.md`, `docs/DOMAIN.md`, `docs/STORAGE.md`.
+Authoritative docs: [docs/contracts/path-identity-storage.md](../../../docs/contracts/path-identity-storage.md), [docs/contracts/db-schema.md](../../../docs/contracts/db-schema.md), [docs/DOMAIN.md](../../../docs/DOMAIN.md), [docs/STORAGE.md](../../../docs/STORAGE.md).
 
 ## Non-negotiable invariants
 
@@ -26,13 +26,13 @@ Authoritative docs: `docs/contracts/path-identity-storage.md`, `docs/contracts/d
    | `target_path` (PlanAction) | Library-root-relative |
    | `root_path` (Library) | mutable absolute runtime root, NOT identity |
 
-   If a field is not in this table, find its class in `docs/contracts/path-identity-storage.md` before continuing.
+   If a field is not in this table, find its class in [docs/contracts/path-identity-storage.md](../../../docs/contracts/path-identity-storage.md) before continuing.
 2. For each field, verify the invariant that matches its class still holds after your change.
 3. Check the identity rules: does anything key on a path where it should key on `library_id` / `track_id`?
 
 ## Done means
 
-- Tests are added per `docs/development/testing.md`'s Contract Change Test Requirements
+- Tests are added per [docs/development/testing.md](../../../docs/development/testing.md)'s Contract Change Test Requirements
   table, Path identity contract row. Anchor: `tests/shared/test_paths.py`
   and mirror locations.
 

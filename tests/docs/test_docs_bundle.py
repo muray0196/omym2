@@ -1,6 +1,6 @@
 """
-Summary: Enforces documentation bundle conformance for docs/.
-Why: Keeps generated documentation frontmatter, indexes, and links from drifting out of sync.
+Summary: Enforces documentation conformance and agent guidance discovery and links.
+Why: Keeps documentation and the agent navigation surface from drifting out of sync.
 """
 
 from __future__ import annotations
@@ -72,10 +72,27 @@ def test_index_completeness_and_consistency() -> None:
 def test_links_resolve() -> None:
     """Every relative markdown link resolves to an existing file or directory, with valid anchors."""
     failures: list[str] = []
-    for path in _all_markdown_files():
+    for path in [*_all_markdown_files(), *_agent_guidance_files()]:
         failures.extend(_link_failures(path))
 
     assert not failures, "Broken links:\n" + "\n".join(failures)
+
+
+def test_agent_skills_have_discoverable_metadata() -> None:
+    """Repository skills have unique matching names and nonempty trigger descriptions."""
+    skills = sorted((_project_root() / ".agents/skills").glob("*/SKILL.md"))
+    assert skills, "No repository skills found."
+    names: set[str] = set()
+    for path in skills:
+        fields = _read_frontmatter_fields(path)
+        assert fields is not None, f"{path}: missing or malformed frontmatter"
+        name = fields.get("name")
+        assert isinstance(name, str), path
+        assert re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name), path
+        assert name == path.parent.name, f"{path}: skill name must match its directory"
+        assert name not in names, f"{path}: duplicate skill name {name}"
+        assert _is_nonempty_string(fields.get("description")), f"{path}: missing trigger description"
+        names.add(name)
 
 
 def test_no_retired_docs_links() -> None:
@@ -313,7 +330,7 @@ def _index_entries_by_target(index_path: Path) -> dict[str, tuple[str, str]]:
 
 
 def _link_failures(path: Path) -> list[str]:
-    relative = _relative_to_docs(path)
+    relative = str(path.resolve().relative_to(_project_root()))
     text = path.read_text(encoding="utf-8")
     failures: list[str] = []
     for raw_target in _markdown_link_targets(text):
@@ -496,6 +513,11 @@ def _timestamp_freshness_failures(path: Path) -> list[str]:
 
 def _all_markdown_files() -> list[Path]:
     return sorted(_docs_root().rglob(MARKDOWN_FILE_PATTERN))
+
+
+def _agent_guidance_files() -> list[Path]:
+    root = _project_root()
+    return [*sorted(root.glob(MARKDOWN_FILE_PATTERN)), *sorted((root / ".agents").rglob(MARKDOWN_FILE_PATTERN))]
 
 
 def _all_docs_directories() -> list[Path]:

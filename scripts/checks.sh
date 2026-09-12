@@ -162,11 +162,15 @@ run_completion() {
         *.py | *.pyi | src/* | tests/* | scripts/* | .codex/* | pyproject.toml | uv.lock | .python-version)
             needs_python=true
             ;;
-        docs/* | .agents/* | AGENTS.md | ARCHITECTURE.md | README.md)
+        docs/*.md | .agents/*.md)
             needs_docs=true
             ;;
         *)
-            needs_python=true
+            if [[ "$file" == *.md && "$file" != */* ]]; then
+                needs_docs=true
+            else
+                needs_python=true
+            fi
             ;;
         esac
     done

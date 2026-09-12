@@ -1,9 +1,9 @@
 ---
 type: Development Guide
 title: Development Harness
-description: Quality commands, validation gates, checks.sh modes, Codex completion hook, suppressions, and runtime configuration boundaries.
+description: Quality commands, agent guidance checks, worktree-aware Codex completion, conservative CI routing, and runtime configuration boundaries.
 tags: [development, tooling, quality-gates, validation, web, desktop]
-timestamp: 2026-07-18T03:18:00+09:00
+timestamp: 2026-09-12T12:00:00+09:00
 ---
 
 # Development Harness
@@ -28,6 +28,10 @@ The React/Vite frontend under `web/` is the only frontend source, dependency, te
 ## Edit-Loop Commands
 
 Check only Python files changed in the current task; avoid project-wide diagnostics unless the change crosses many modules or the failure cannot be understood from changed-file checks.
+
+`scripts/checks.sh changed` selects every dirty Python file against `HEAD`,
+including untracked files, and applies Ruff fixes and formatting. When unrelated
+edits already exist, use the explicit commands below with only the task's files.
 
 After editing Python files (`<py-files>` = changed files):
 
@@ -58,7 +62,9 @@ The sync performs a complete destination replacement; the audit hashes both tree
 
 ## Final Quality Gates
 
-The aggregate completion gate is `scripts/checks.sh all`. All gates must pass:
+The full aggregate gate is `scripts/checks.sh all`, used for an explicit full
+validation request or CI-equivalent diagnosis. Ordinary agent completion uses
+the path-aware gate below. The aggregate covers:
 
 * OpenAPI generation and the committed TypeScript client have zero drift.
 * Frontend formatting (Prettier), linting (ESLint), and strict typechecking report no change/issue/error.
@@ -69,8 +75,6 @@ The aggregate completion gate is `scripts/checks.sh all`. All gates must pass:
 * `npm run test:performance` enforces the installed-package interactive-shell and initial JavaScript-size budgets.
 * Ruff linting and formatting report no error/change; `basedpyright` reports no error or warning; all tests pass.
 
-If the Python project skeleton or tool configuration does not exist yet, report the commands as not runnable instead of inventing replacements.
-
 ## Codex Completion Backstop
 
 The repo-local `.codex/hooks.json` registers one `Stop` hook delegating to path-aware `scripts/checks.sh completion` when repository work is present; the hook does not redefine gate commands or install dependencies.
@@ -78,6 +82,17 @@ The repo-local `.codex/hooks.json` registers one `Stop` hook delegating to path-
 During Codex implementation, run the smallest checks covering the changed area, then let the `Stop` hook own one completion run — do not run `scripts/checks.sh completion` manually immediately before a normal handoff (the hook cannot consume that result and would repeat the checks). Run completion manually only when the hook is unavailable or bypassed, a hook failure needs direct diagnosis, or an environment-only repair must be verified. Repository edits change the hook fingerprint and re-trigger validation; environment-only repairs do not and require one manual completion run.
 
 Completion mode selects checks from paths changed relative to the merge base with `origin/main` (staged, unstaged, untracked): docs-only → docs checks; frontend → Web checks; Python/backend/tooling → Python gates; Web-adapter → both; unknown paths conservatively run Python gates; missing `origin/main` runs all groups. E2E, package, performance, and cross-platform checks remain in the full aggregate gate and hosted CI. This division applies to Codex sessions only; it does not replace independent CI or developer validation.
+
+The hook resolves its state directory with `git rev-parse --absolute-git-dir`,
+so linked worktrees validate and cache independently. The fingerprint includes
+the comparison merge base, `HEAD`, staged/unstaged changes, and untracked content.
+Changing the comparison base invalidates cached gate selection. Ignored build
+outputs and installed dependencies are outside the fingerprint.
+
+A repeated Stop after an unchanged failure is allowed to finish to avoid an
+infinite continuation loop. This does not establish validation success: the
+agent must report the unresolved failure. A configured hook is a backstop, not
+evidence that checks ran; use the manual fallback when the session cannot run it.
 
 ## Wrapper Script
 
@@ -101,13 +116,13 @@ The mode is required; there is no default. The wrapper does not install dependen
 * `performance`: `package` plus the installed-package frontend performance budget gate and measurement record
 * `performance-ci <wheel>`: CI-only performance measurement of the audited wheel downloaded from package evidence; local callers use `performance`
 * `all`: `web` + `py` + E2E + package/performance — the final local gate
-* `docs`: docs bundle conformance tests
+* `docs`: docs bundle conformance, root/agent Markdown navigation links, and skill discovery metadata
 * `arch`: architecture tests
 * `test <pytest-target>`: focused failure inspection
 
 The command groups in this document remain authoritative; the script must stay in sync.
 
-Hosted CI first classifies changed paths. Changes limited to `docs/`, `.agents/`, `.codex/`, or root Markdown run only documentation conformance; empty, product, workflow, tooling, or unknown path sets conservatively run the full suite. Full CI keeps independently diagnosable Python, frontend, Playwright, Linux package, Windows runtime-boundary, Windows desktop package/native-smoke, and installed-package performance jobs. The fast API/client job remains independently diagnosable, the Frontend job owns the complete Web gates, and Playwright uses the CI-only E2E mode without repeating either group. Linux package evidence is built once, uploaded, then reused by both Windows packaging and the CI-only performance measurement. Windows runtime tests start independently while packaged smoke waits for the audited wheel. Linux measurement uses pinned `ubuntu-24.04`; both Windows jobs use `windows-2025` (authoritative commands: [Windows Desktop Packaging](desktop-packaging.md)). The hosted Windows Server 2025 x64 job is a native development build/smoke proxy, not Windows 11 release evidence.
+Hosted CI first classifies changed paths. Changes limited to Markdown under `docs/`, `.agents/`, or the repository root run documentation conformance, including agent navigation and skill metadata checks. Executable skill helpers, `.codex/` configuration (including hook registration), and empty, product, workflow, tooling, or unknown path sets conservatively run the full suite. Full CI keeps independently diagnosable Python, frontend, Playwright, Linux package, Windows runtime-boundary, Windows desktop package/native-smoke, and installed-package performance jobs. The fast API/client job remains independently diagnosable, the Frontend job owns the complete Web gates, and Playwright uses the CI-only E2E mode without repeating either group. Linux package evidence is built once, uploaded, then reused by both Windows packaging and the CI-only performance measurement. Windows runtime tests start independently while packaged smoke waits for the audited wheel. Linux measurement uses pinned `ubuntu-24.04`; both Windows jobs use `windows-2025` (authoritative commands: [Windows Desktop Packaging](desktop-packaging.md)). The hosted Windows Server 2025 x64 job is a native development build/smoke proxy, not Windows 11 release evidence.
 
 CI runs `git diff --exit-code` after tracked generators as a clean-checkout guard against validation tools mutating tracked files — intentionally CI-only, since a local worktree normally contains intended changes. Ignored `static_dist/` is protected instead by its explicit byte-for-byte audit.
 

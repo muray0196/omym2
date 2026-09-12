@@ -192,6 +192,38 @@ def test_same_successful_fingerprint_skips_duplicate_validation(tmp_path: Path) 
     assert _marker_runs(marker) == 1
 
 
+def test_linked_worktree_keeps_validation_state_separate(tmp_path: Path) -> None:
+    """A linked worktree can validate without borrowing another checkout's cached result."""
+    repository, marker = _repository(tmp_path)
+    linked = tmp_path / "linked worktree"
+    _git(repository, "worktree", "add", "-b", "linked", str(linked))
+    _write(repository / "tracked.txt", "same dirty content\n")
+    _write(linked / "tracked.txt", "same dirty content\n")
+
+    primary_result = _run_hook(repository, marker=marker)
+    linked_result = _run_hook(linked, marker=marker)
+    linked_repeat = _run_hook(linked, marker=marker)
+
+    assert primary_result.returncode == SUCCESS_EXIT_CODE, primary_result.stderr
+    assert linked_result.returncode == SUCCESS_EXIT_CODE, linked_result.stderr
+    assert linked_repeat.returncode == SUCCESS_EXIT_CODE, linked_repeat.stderr
+    assert _marker_runs(marker) == EXPECTED_REVALIDATION_RUNS
+
+
+def test_changed_comparison_base_invalidates_successful_validation(tmp_path: Path) -> None:
+    """Losing origin/main requires the conservative gate even when local files are unchanged."""
+    repository, marker = _repository(tmp_path)
+    _write(repository / "tracked.txt", "stable local change\n")
+    first = _run_hook(repository, marker=marker)
+    _git(repository, "update-ref", "-d", "refs/remotes/origin/main")
+
+    second = _run_hook(repository, marker=marker)
+
+    assert first.returncode == SUCCESS_EXIT_CODE, first.stderr
+    assert second.returncode == SUCCESS_EXIT_CODE, second.stderr
+    assert _marker_runs(marker) == EXPECTED_REVALIDATION_RUNS
+
+
 def test_same_failed_fingerprint_does_not_create_stop_loop(tmp_path: Path) -> None:
     """The retry Stop after one unchanged failure reports it without blocking forever."""
     repository, marker = _repository(tmp_path)

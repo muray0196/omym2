@@ -11,8 +11,8 @@ CODEX_STOP_HOOK_GATE_TIMEOUT_SECONDS = (
 CODEX_STOP_HOOK_DIAGNOSTIC_MAX_CHARACTERS = 8_000  # maximum returned gate diagnostics, characters, >= 1
 CODEX_STOP_HOOK_FINGERPRINT_CHUNK_BYTES = 1_048_576  # untracked-file hashing chunk, bytes, >= 1
 CHECKS_FAILURE_DIAGNOSTIC_MAX_BYTES = 4_000  # maximum initial failed-gate output tail, bytes, >= 1
-CI_FAST_PATH_PREFIXES = (".agents/", ".codex/", "docs/")  # CI docs-only directory prefixes, repo-relative
-CI_FAST_PATH_ROOT_SUFFIXES = (".md",)  # CI docs-only root-file suffixes, lowercase suffixes
+CI_FAST_PATH_PREFIXES = (".agents/", "docs/")  # directories eligible for Markdown-only CI, repo-relative
+CI_FAST_PATH_SUFFIXES = (".md",)  # CI docs-only file suffixes, lowercase; also allowed at repo root
 CI_E2E_PROFILE_COUNT = 2  # registered and first-run Playwright profiles executed by CI, profiles, exactly 2
 CI_SCOPE_DOCS = "docs"  # CI scope for documentation and agent-surface-only changes, exact output
 CI_SCOPE_FULL = "full"  # conservative CI scope for product, tooling, workflow, or unknown changes, exact output
