@@ -741,10 +741,6 @@ export type CommandConfigResource = {
      * Auto Apply
      */
     auto_apply: boolean;
-    /**
-     * Default Mode
-     */
-    default_mode: string;
 };
 
 /**
@@ -1081,17 +1077,13 @@ export type MetadataConfigResource = {
 /**
  * MusicBrainzConfigResource
  *
- * Persisted MusicBrainz enablement, identity, request, and cache controls.
+ * Persisted MusicBrainz enablement, identity, and request controls.
  */
 export type MusicBrainzConfigResource = {
     /**
      * Application Name
      */
     application_name: string;
-    /**
-     * Cache Policy
-     */
-    cache_policy: string;
     /**
      * Contact
      */
@@ -1949,10 +1941,6 @@ export type SettingsChoices = {
      */
     autosave_delay_ms: number;
     /**
-     * Command Modes
-     */
-    command_modes: Array<string>;
-    /**
      * Disc Number Conditions
      */
     disc_number_conditions: Array<string>;
@@ -1972,10 +1960,6 @@ export type SettingsChoices = {
      * Missing Metadata Policies
      */
     missing_metadata_policies: Array<string>;
-    /**
-     * Musicbrainz Cache Policies
-     */
-    musicbrainz_cache_policies: Array<string>;
     /**
      * Path Placeholders
      */

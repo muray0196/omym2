@@ -17,6 +17,7 @@ import type {
   ArtistNameResolutionProvenance,
 } from "../../api/generated";
 import { useCursorPage } from "../../ui/cursor-page";
+import { formatTimestamp } from "../../ui/format";
 import { Button } from "../../ui/primitives/button";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
 import { PageHeader } from "../../ui/primitives/page-header";
@@ -60,11 +61,6 @@ import {
   usePlanActionFilters,
 } from "./plan-url-state";
 import styles from "./plan-inspection.module.css";
-
-const timestampFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 type FacetValues =
   | PlanActionFacets["facets"]["status"]
@@ -765,11 +761,4 @@ function NotFoundState() {
 
 function isPlanNotFound(error: Error) {
   return inspectionErrorHasCode(error, "plan_not_found");
-}
-
-function formatTimestamp(value: string) {
-  const timestamp = new Date(value);
-  return Number.isNaN(timestamp.valueOf())
-    ? value
-    : timestampFormatter.format(timestamp);
 }

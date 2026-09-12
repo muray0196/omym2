@@ -76,7 +76,6 @@ export const settingsCopy = {
   musicbrainzTimeout: "Request timeout (seconds)",
   musicbrainzRetryLimit: "Retry limit",
   musicbrainzRateLimit: "Rate limit (seconds)",
-  musicbrainzCachePolicy: "Accepted-result cache policy",
   hashingTitle: "Hashing",
   hashingHelp:
     "Adjust how much file data is read at a time. This affects hashing performance, not content-hash identity.",

@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Web API Contract
-description: Authoritative local HTTP API contract — envelopes, CSRF, idempotency, browsing, Settings autosave, and every /api endpoint.
+description: Authoritative local HTTP API contract — envelopes, CSRF, idempotency, browsing, Settings autosave and provenance, and every /api endpoint.
 tags: [web-api, openapi, artist-names, companions, unprocessed, operations, concurrency, pagination]
-timestamp: 2026-09-12T15:13:08+09:00
+timestamp: 2026-09-12T15:18:26+09:00
 ---
 
 # Web API Contract

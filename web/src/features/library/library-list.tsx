@@ -9,6 +9,7 @@ import { Link, useLocation } from "react-router-dom";
 import { bootstrapQuery } from "../bootstrap/bootstrap-query";
 import { useCursorPage, type CursorPageNavigation } from "../../ui/cursor-page";
 import { sharedCopy } from "../../ui/copy";
+import { numberFormatter } from "../../ui/format";
 import { Button } from "../../ui/primitives/button";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
 import { PageHeader } from "../../ui/primitives/page-header";
@@ -30,8 +31,6 @@ import {
   trackStatusOptions,
   useLibraryBrowseFilters,
 } from "./library-url-state";
-
-const numberFormatter = new Intl.NumberFormat("en-US");
 
 export function LibraryList() {
   const location = useLocation();

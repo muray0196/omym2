@@ -2,21 +2,16 @@
  * Summary: Presents CheckIssue catalog values with explicit text, tone, and icons.
  * Why: Keeps persisted findings understandable without relying on color alone.
  */
-import { Icon } from "../../ui/icon";
-import { issueTypePresentation, type HealthTone } from "./health-catalog";
-import styles from "../inspection/inspection.module.css";
+import { CatalogBadge } from "../../ui/primitives/catalog-badge";
+import { issueTypePresentation } from "./health-catalog";
 
 export function IssueTypeValue({ value }: { value: string }) {
   const presentation = issueTypePresentation(value);
   return (
-    <span className={`${styles.badge} ${toneClass(presentation.tone)}`}>
-      <Icon name={presentation.icon} />
-      {presentation.label}
-    </span>
+    <CatalogBadge
+      icon={presentation.icon}
+      label={presentation.label}
+      tone={presentation.tone}
+    />
   );
-}
-
-function toneClass(tone: HealthTone) {
-  if (tone === "warning") return styles.warningTone;
-  return styles.danger;
 }

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from omym2.features.common_ports import Clock, UnitOfWork
 
 
-class ArtistNameProvider(Protocol):
+class ArtistNameLookup(Protocol):
     """Search an external artist catalog without accepting a match."""
 
     def search_artists(self, source_name: str) -> ArtistNameSearchResult:
@@ -26,6 +26,6 @@ class ResolveArtistNamesPorts:
     """Collaborators used by the shared artist-name resolution usecase."""
 
     uow: UnitOfWork
-    artist_name_provider: ArtistNameProvider
+    artist_name_provider: ArtistNameLookup
     clock: Clock
     automatic_lookup_enabled: bool = True

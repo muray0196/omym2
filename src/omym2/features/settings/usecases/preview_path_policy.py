@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from omym2.domain.services.album_disc import infer_album_disc_totals
-from omym2.domain.services.artist_name import artist_name_projections, artist_name_sources
+from omym2.domain.services.artist_name import resolve_single_artist_name_projection
 from omym2.domain.services.path_policy import PathPolicy
 from omym2.features.settings.dto import PathPolicyPreviewResult
 
@@ -31,11 +31,7 @@ class PreviewPathPolicyUseCase:
             unknown_artist=request.path_policy.unknown_artist,
             unknown_album=request.path_policy.unknown_album,
         )
-        resolutions = self.artist_name_resolver.resolve_many(artist_name_sources((request.metadata,)))
-        artist_names = artist_name_projections(
-            (request.metadata,),
-            tuple(resolution.resolved_name for resolution in resolutions),
-        )[0]
+        artist_names = resolve_single_artist_name_projection(self.artist_name_resolver.resolve_many, request.metadata)
         try:
             preview_path = PathPolicy.from_path_policy_config(request.path_policy, request.artist_ids).canonical_path(
                 request.metadata,

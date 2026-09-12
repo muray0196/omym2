@@ -13,6 +13,7 @@ import type {
   PlanStatus,
   PlanType,
 } from "../../api/generated";
+import { selectedValue, setOptionalParameter } from "../../ui/search-params";
 import {
   actionGroupingLabel,
   actionStatusLabel,
@@ -258,25 +259,6 @@ function readPlanActionFilters(
     reason: selectedValue(searchParams.get("reason"), ACTION_REASONS),
     status: selectedValue(searchParams.get("action_status"), ACTION_STATUSES),
   };
-}
-
-function selectedValue<Value extends string>(
-  rawValue: string | null,
-  options: readonly Value[],
-): Value | undefined {
-  return options.find((option) => option === rawValue);
-}
-
-function setOptionalParameter(
-  searchParams: URLSearchParams,
-  name: string,
-  value: string | undefined,
-) {
-  if (value === undefined || value.length === 0) {
-    searchParams.delete(name);
-    return;
-  }
-  searchParams.set(name, value);
 }
 
 function deleteParameters(

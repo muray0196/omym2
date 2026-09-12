@@ -3,7 +3,7 @@ type: Contract
 title: Config Contract
 description: Complete TOML schema, defaults, validation, revision-safe save and Web autosave protocols, path policy, and runtime controls.
 tags: [config, toml, concurrency, atomic-save, path-policy, artist-names, musicbrainz, logging, companions, unprocessed]
-timestamp: 2026-09-12T15:13:08+09:00
+timestamp: 2026-09-12T15:18:26+09:00
 ---
 
 # Config Contract
@@ -58,11 +58,8 @@ Complete schema; every table has a fixed key set.
 | `version` | integer `2` exactly | Required; omission is invalid. |
 | `paths.library` | non-empty string path | unset (`null` in `AppConfig`) |
 | `paths.incoming` | non-empty string path | unset (`null` in `AppConfig`) |
-| `add.default_mode` | `"plan_first"` | `"plan_first"` |
 | `add.auto_apply` | boolean | `false` |
-| `organize.default_mode` | `"plan_first"` | `"plan_first"` |
 | `organize.auto_apply` | boolean | `false` |
-| `refresh.default_mode` | `"plan_first"` | `"plan_first"` |
 | `refresh.auto_apply` | boolean | `false` |
 | `path_policy.template` | non-empty valid path-stem template | `{album_artist}/{year}_{album}/{disc}-{track}_{title}` |
 | `path_policy.unknown_artist` | non-empty string | `"Unknown Artist"` |
@@ -79,7 +76,6 @@ Complete schema; every table has a fixed key set.
 | `musicbrainz.timeout_seconds` | finite number greater than `0` | `5.0` |
 | `musicbrainz.retry_limit` | non-negative integer | `1` |
 | `musicbrainz.rate_limit_seconds` | finite number at least `1.0` | `1.0` |
-| `musicbrainz.cache_policy` | `"sticky_positive"` | `"sticky_positive"` |
 | `hashing.read_chunk_size_bytes` | positive integer | `1048576` |
 | `logging.destination` | normalized application-root-relative logical path | unset (the application-data log default) |
 | `logging.level` | `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`, or `"CRITICAL"` | `"INFO"` |
@@ -102,7 +98,7 @@ Every named section is optional; a missing section or key uses the default, with
 
 ## Versioning And Reset
 
-Only config version `2` is supported; missing, non-integer, or unsupported versions are validation errors. No version-based migration exists: the 2026-07-16 pre-release clean-slate cutover made older Config files unsupported — delete `.config/config.toml` and recreate Settings. The former `[artist_names.preferences]` table is removed (artist-name mappings live in SQLite); a Config still containing it is rejected as unknown, as are other removed/renamed/unknown keys. Any future version cutover and reset policy belongs in this contract — no implicit adapter migration or separate migration document.
+Only config version `2` is supported; missing, non-integer, or unsupported versions are validation errors. No version-based migration exists: the 2026-07-16 pre-release clean-slate cutover made older Config files unsupported — delete `.config/config.toml` and recreate Settings. The former `[artist_names.preferences]` table is removed (artist-name mappings live in SQLite); a Config still containing it is rejected as unknown, as are other removed/renamed/unknown keys — including the retired `add.default_mode`, `organize.default_mode`, `refresh.default_mode`, and `musicbrainz.cache_policy` keys (each had exactly one allowed value and no branch ever read it; the single supported behavior is hardcoded). Any future version cutover and reset policy belongs in this contract — no implicit adapter migration or separate migration document.
 
 ## PathPolicyConfig
 
@@ -135,7 +131,7 @@ No hash-based suffixes: if the final target path already exists, the PlanAction 
 
 `musicbrainz.enabled` controls new automatic provider work (default enabled). Saved mappings remain available when disabled; an eligible uncached source records `automatic_lookup_disabled` with no network call.
 
-Application identity and contact form the MusicBrainz User-Agent. One initial request plus at most `retry_limit` retries, each with `timeout_seconds`. `rate_limit_seconds` cannot go below the provider minimum of 1 s; SQLite coordinates cadence across processes and restarts without holding a transaction while sleeping. The only cache policy is `sticky_positive`: automatic results persist insert-if-absent; misses and failures never become negative cache entries. Users may edit or delete positive mappings through Settings.
+Application identity and contact form the MusicBrainz User-Agent. One initial request plus at most `retry_limit` retries, each with `timeout_seconds`. `rate_limit_seconds` cannot go below the provider minimum of 1 s; SQLite coordinates cadence across processes and restarts without holding a transaction while sleeping. Cache behavior is hardcoded sticky-positive (not a configurable key): automatic results persist insert-if-absent; misses and failures never become negative cache entries. Users may edit or delete positive mappings through Settings.
 
 Eligibility is deterministic: Latin-only sources (including diacritics) remain unchanged; any alphabetic character outside the Unicode Latin script permits provider lookup. Changing provider, timeout, retry, or cadence controls changes the Plan-audit `config_hash` but not the Library path-policy fingerprint. Apply never reloads these controls or rewrites a reviewed target.
 

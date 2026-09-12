@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 import pytest
 
 from omym2.config import (
-    DEFAULT_COMMAND_MODE,
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
 )
@@ -18,12 +17,10 @@ from omym2.domain.models.app_config import (
     AppConfig,
     ArtistIdConfig,
     CollisionConfig,
-    CommandConfig,
     CompanionsConfig,
     HashingConfig,
     LoggingConfig,
     MusicBrainzConfig,
-    OrganizeConfig,
     PathPolicyConfig,
     PathsConfig,
     UnprocessedConfig,
@@ -70,8 +67,6 @@ def test_get_settings_edit_preserves_invalid_recovery_revision_and_backend_choic
     assert result.config == AppConfig()
     assert result.config_revision == CONFIG_REVISION
     assert [(issue.field, issue.message) for issue in result.validation_issues] == [("config", PERSISTED_CONFIG_ERROR)]
-    assert result.choices.command_modes == (DEFAULT_COMMAND_MODE,)
-    assert result.choices.musicbrainz_cache_policies == ("sticky_positive",)
     assert result.choices.logging_levels == ("CRITICAL", "DEBUG", "ERROR", "INFO", "WARNING")
     assert result.choices.unprocessed_result_preview_limit_min == UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN
     assert result.choices.unprocessed_result_preview_limit_max == UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX
@@ -81,22 +76,16 @@ def test_get_settings_edit_preserves_invalid_recovery_revision_and_backend_choic
 
 def test_validate_settings_candidate_reports_every_unchecked_closed_choice_in_field_order() -> None:
     """Feature validation covers closed values and non-empty strings outside nested domain checks."""
-    musicbrainz = MusicBrainzConfig()
-    object.__setattr__(musicbrainz, "cache_policy", UNSUPPORTED_CHOICE)
     logging = LoggingConfig()
     object.__setattr__(logging, "level", UNSUPPORTED_CHOICE)
     candidate = AppConfig(
         paths=PathsConfig(library=" "),
-        add=CommandConfig(default_mode=UNSUPPORTED_CHOICE),
-        organize=OrganizeConfig(default_mode=UNSUPPORTED_CHOICE),
-        refresh=CommandConfig(default_mode=UNSUPPORTED_CHOICE),
         path_policy=PathPolicyConfig(template=" "),
         collision=CollisionConfig(
             on_target_exists=UNSUPPORTED_CHOICE,
             on_duplicate_hash=UNSUPPORTED_CHOICE,
             on_missing_metadata=UNSUPPORTED_CHOICE,
         ),
-        musicbrainz=musicbrainz,
         logging=logging,
     )
 
@@ -107,14 +96,10 @@ def test_validate_settings_candidate_reports_every_unchecked_closed_choice_in_fi
     assert not result.valid
     assert [issue.field for issue in result.validation_issues] == [
         "paths.library",
-        "add.default_mode",
-        "organize.default_mode",
-        "refresh.default_mode",
         "path_policy.template",
         "collision.on_target_exists",
         "collision.on_duplicate_hash",
         "collision.on_missing_metadata",
-        "musicbrainz.cache_policy",
         "logging.level",
     ]
 
@@ -149,7 +134,6 @@ def test_settings_field_changes_include_every_runtime_control_in_schema_order() 
         retry_limit=2,
         rate_limit_seconds=1.5,
     )
-    object.__setattr__(musicbrainz, "cache_policy", "future_policy")
     after = AppConfig(
         musicbrainz=musicbrainz,
         hashing=HashingConfig(read_chunk_size_bytes=2_048),
@@ -176,7 +160,6 @@ def test_settings_field_changes_include_every_runtime_control_in_schema_order() 
         ("musicbrainz.timeout_seconds", 2.5),
         ("musicbrainz.retry_limit", 2),
         ("musicbrainz.rate_limit_seconds", 1.5),
-        ("musicbrainz.cache_policy", "future_policy"),
         ("hashing.read_chunk_size_bytes", 2_048),
         ("logging.destination", "logs/test.log"),
         ("logging.level", "DEBUG"),
@@ -193,7 +176,7 @@ def test_save_settings_candidate_checks_revision_then_validation_before_writing(
     """Stale and invalid candidates never reach ConfigStore.save."""
     store = FakeConfigStore()
     usecase = SaveSettingsCandidateUseCase(_settings_ports(store))
-    invalid = AppConfig(add=CommandConfig(default_mode=UNSUPPORTED_CHOICE))
+    invalid = AppConfig(collision=CollisionConfig(on_target_exists=UNSUPPORTED_CHOICE))
 
     with pytest.raises(ConfigRevisionMismatchError):
         _ = usecase.execute(SaveSettingsRequest(invalid, STALE_CONFIG_REVISION))

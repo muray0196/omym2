@@ -79,7 +79,11 @@ def test_user_artist_name_mapping_rejects_provider_provenance() -> None:
 
 @pytest.mark.parametrize(
     ("selected_name_kind", "selected_locale"),
-    [(SelectedArtistNameKind.NAME, "en"), (SelectedArtistNameKind.ALIAS, " ")],
+    [
+        (SelectedArtistNameKind.NAME, "en"),
+        (SelectedArtistNameKind.SORT_NAME, "en"),
+        (SelectedArtistNameKind.ALIAS, " "),
+    ],
 )
 def test_accepted_artist_name_rejects_invalid_locale_provenance(
     selected_name_kind: SelectedArtistNameKind,

@@ -17,7 +17,7 @@ from omym2.domain.models.artist_name_resolution import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from omym2.domain.models.track_metadata import TrackMetadata
 
@@ -86,3 +86,12 @@ def artist_name_diagnostics(
         )
         for artist, album_artist in batched(resolutions, ARTIST_NAME_FIELD_COUNT, strict=True)
     )
+
+
+def resolve_single_artist_name_projection(
+    resolve_many: Callable[[Sequence[str | None]], Sequence[ArtistNameResolution]],
+    metadata: TrackMetadata,
+) -> ArtistNameProjection:
+    """Resolve and project artist names for exactly one TrackMetadata value."""
+    resolutions = resolve_many(artist_name_sources((metadata,)))
+    return artist_name_projections((metadata,), tuple(resolution.resolved_name for resolution in resolutions))[0]
