@@ -285,6 +285,7 @@ class AppConfigResource(ApiModel):
 class SettingsChoices(ApiModel):
     """Backend-owned closed choices used by Settings controls."""
 
+    autosave_delay_ms: int
     disc_number_styles: tuple[str, ...]
     disc_number_conditions: tuple[str, ...]
     album_year_resolutions: tuple[str, ...]

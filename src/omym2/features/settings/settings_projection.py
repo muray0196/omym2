@@ -27,6 +27,7 @@ from omym2.config import (
     PATH_POLICY_PREVIEW_YEAR,
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
+    WEB_SETTINGS_AUTOSAVE_DELAY_MS,
 )
 from omym2.domain.models.track_metadata import TrackMetadata
 from omym2.features.settings.dto import (
@@ -46,6 +47,7 @@ UNSUPPORTED_CHOICE_MESSAGE = "Value is not one of the backend-supported choices.
 def settings_choices() -> SettingsChoicesResult:
     """Return deterministic backend-owned values for editable controls."""
     return SettingsChoicesResult(
+        autosave_delay_ms=WEB_SETTINGS_AUTOSAVE_DELAY_MS,
         disc_number_styles=tuple(sorted(ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES)),
         disc_number_conditions=tuple(sorted(ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS)),
         album_year_resolutions=tuple(sorted(ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS)),

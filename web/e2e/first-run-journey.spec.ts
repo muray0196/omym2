@@ -192,6 +192,12 @@ async function recoverSettings(
 ) {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeFocused();
+  const persisted = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PUT" &&
+      new URL(response.url()).pathname === "/api/settings" &&
+      response.status() === 200,
+  );
   await page
     .getByRole("textbox", { name: "Library path" })
     .fill(paths.libraryRoot);
@@ -201,10 +207,12 @@ async function recoverSettings(
   await page
     .getByRole("textbox", { name: "Path template" })
     .fill(PATH_POLICY_TEMPLATE);
-  await page.getByRole("button", { name: "Save Settings" }).click();
+  await persisted;
   await expect(
-    page.getByRole("heading", { name: "Settings saved." }),
-  ).toBeVisible();
+    page.getByRole("status").filter({
+      has: page.getByRole("heading", { name: "Automatic save" }),
+    }),
+  ).toContainText("Saved");
 }
 
 async function createOrganizePlan(page: Page, libraryRoot: string) {

@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Config Contract
-description: Complete TOML schema, defaults, validation, atomic-save protocol, path policy, and runtime control semantics.
+description: Complete TOML schema, defaults, validation, revision-safe save and Web autosave protocols, path policy, and runtime controls.
 tags: [config, toml, concurrency, atomic-save, path-policy, artist-names, musicbrainz, logging, companions, unprocessed]
-timestamp: 2026-07-18T15:00:00+09:00
+timestamp: 2026-09-12T15:18:26+09:00
 ---
 
 # Config Contract
@@ -13,6 +13,11 @@ Authoritative for the application config contract: the complete persisted TOML s
 ## Responsibilities
 
 Editable settings live in TOML, not SQLite. Domain and usecases never read TOML directly; loading, validation, saving, and default creation are adapter concerns, with usecases receiving `AppConfig` or narrower objects through ports. Missing config is not an error; config is created lazily when a command needs persisted settings. Config files stay under the application root (excluding user-selected Library and Incoming paths).
+
+`WEB_SETTINGS_AUTOSAVE_DELAY_MS` is a centralized Web interaction tunable, not
+a TOML key or `AppConfig` field. Its default is 600 milliseconds. The Settings
+resource exposes it through generated `SettingsChoices` so the frontend does
+not duplicate the delay.
 
 ## Raw Storage Revision And Atomic Save
 

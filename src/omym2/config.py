@@ -88,6 +88,7 @@ DESKTOP_FAILURE_EXIT_CODE = 1  # fatal desktop startup or runtime exit code
 DESKTOP_ERROR_DIALOG_FLAGS = 0x10  # Windows MessageBox error-icon flags, MB_ICONERROR
 WEB_CSRF_TOKEN_BYTES: Final = 32  # random bytes used for local Web UI save-token generation
 WEB_CSRF_HEADER_NAME: Final = "X-OMYM2-CSRF-Token"  # header required for state-changing Web API saves
+WEB_SETTINGS_AUTOSAVE_DELAY_MS: Final = 600  # trailing Settings autosave idle delay, milliseconds
 WEB_ROOT_ROUTE: Final = "/"  # local Web UI root path
 WEB_SETTINGS_ROUTE: Final = "/settings"  # local Web UI settings SPA path
 WEB_API_PREFIX: Final = "/api"  # local Web UI JSON API path prefix

@@ -7,7 +7,6 @@ import {
   previewSettingsPath,
   saveSettings,
   saveArtistNameMappings,
-  validateSettings,
   type ApiFailureEnvelope,
   type ArtistNameMappingsData,
   type PathPreview,
@@ -53,26 +52,6 @@ export async function readSettings(): Promise<SettingsData> {
   }
   if (response.data.data === null) {
     throw new SettingsUnexpectedDataError("Settings");
-  }
-  return response.data.data;
-}
-
-export async function validateSettingsDraft(
-  request: SettingsCandidateRequest,
-): Promise<SettingsCandidateData> {
-  const response = await validateSettings({
-    baseUrl: globalThis.location.origin,
-    body: request,
-  });
-  if (response.error !== undefined) {
-    throwSettingsResponseError(
-      "Settings validation",
-      response.error,
-      response.response,
-    );
-  }
-  if (response.data.data === null) {
-    throw new SettingsUnexpectedDataError("Settings validation");
   }
   return response.data.data;
 }

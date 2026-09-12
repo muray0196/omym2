@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: Web API Contract
-description: Authoritative local HTTP API contract — envelopes, error catalog, CSRF, idempotency, Settings provenance, and every /api endpoint.
+description: Authoritative local HTTP API contract — envelopes, CSRF, idempotency, browsing, Settings autosave and provenance, and every /api endpoint.
 tags: [web-api, openapi, artist-names, companions, unprocessed, operations, concurrency, pagination]
-timestamp: 2026-09-12T15:13:08+09:00
+timestamp: 2026-09-12T15:18:26+09:00
 ---
 
 # Web API Contract
@@ -230,6 +230,10 @@ type SettingsData = {
 }
 ```
 
+`choices.autosave_delay_ms` is the backend-owned trailing idle delay for Web
+Settings persistence. It is a runtime interaction value and is not persisted
+in TOML.
+
 For MusicBrainz rows, `selected_name_kind` identifies the exact selected field (alias `name`, alias `sort-name`, artist `name`, artist `sort-name`); alias-derived rows also expose their locale (e.g. `ja-Latn`). User rows have null selection fields.
 
 Invalid persisted TOML is represented by `validation.valid = false` with resource-local errors while the top-level envelope stays a normal success; `config` contains the backend-provided recovery draft. The raw invalid text is never returned.
@@ -245,6 +249,15 @@ Accepts a self-contained PathPolicy/Artist-ID draft, sample Track metadata, and 
 ### `PUT /api/settings`
 
 Request: `config` and `expected_config_revision`. The usecase acquires the shared exclusive-operation lock, re-reads the raw revision, and atomically replaces the Config only on revision match. Success: `200` with saved Config, new `config_revision`, change list, validation result, and preview. Mismatch: `409 config_changed`, no write. Invalid candidate Config: `422 validation_failed`. A client may intentionally replace invalid persisted TOML when it supplies the revision it read. Config I/O failure: `500 config_io_failed`.
+
+The bundled Settings client sends this endpoint after the generated autosave
+delay and treats its response as the canonical validation-and-save result. The
+normal persistence path does not call `POST /api/settings/validate` immediately
+before the same PUT. At most one PUT is in flight; the client coalesces later
+edits, updates its Settings query cache from successful responses, and advances
+the next request to the returned revision without replacing a newer local
+draft. Only `csrf_invalid` permits one identical automatic resend after a
+Bootstrap token refresh.
 
 ### `PUT /api/settings/artist-names`
 

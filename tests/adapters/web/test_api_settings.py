@@ -28,6 +28,7 @@ from omym2.config import (
     WEB_API_SETTINGS_ROUTE,
     WEB_API_SETTINGS_VALIDATE_ROUTE,
     WEB_CSRF_HEADER_NAME,
+    WEB_SETTINGS_AUTOSAVE_DELAY_MS,
 )
 from omym2.domain.models.accepted_artist_name import (
     AcceptedArtistName,
@@ -90,6 +91,7 @@ def test_get_settings_returns_invalid_recovery_data_choices_and_preview(tmp_path
     assert response.status_code == HTTP_OK_STATUS
     data = _data(response)
     assert data["config_revision"] == CONFIG_REVISION
+    assert _object(data, "choices")["autosave_delay_ms"] == WEB_SETTINGS_AUTOSAVE_DELAY_MS
     validation = _object(data, "validation")
     assert validation["valid"] is False
     assert _first_error(validation)["code"] == "config_invalid"

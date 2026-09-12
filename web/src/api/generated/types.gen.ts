@@ -1937,6 +1937,10 @@ export type SettingsChoices = {
      */
     album_year_resolutions: Array<string>;
     /**
+     * Autosave Delay Ms
+     */
+    autosave_delay_ms: number;
+    /**
      * Disc Number Conditions
      */
     disc_number_conditions: Array<string>;
