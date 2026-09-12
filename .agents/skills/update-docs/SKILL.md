@@ -29,5 +29,6 @@ description: Edit anything under docs/ safely. Use for adding, changing, moving,
 
 ## Stop and report when
 
-- Two docs claim authority over the same rule (name both; propose one home).
-- A requested edit contradicts `ARCHITECTURE.md` or a contract doc.
+- Competing authoritative rules require a product or architecture decision
+  that the request does not resolve. Otherwise consolidate duplicate guidance
+  in its documented home and update the affected links within the task.

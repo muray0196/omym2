@@ -5,6 +5,9 @@ description: Create Linear issues from user requests without starting local exec
 
 # Linear Create Issue
 
+For a draft-only request, return the issue text in the conversation. Create or
+update a Linear issue only when the user requests that external action.
+
 ## Local boundary
 
 Issue creation authorizes the Linear mutation and read-only context gathering only. Do not edit the worktree, install dependencies, run implementation checks, create branches or commits, change the issue to an active execution status, or create a workpad unless the user explicitly requests local execution.
@@ -36,6 +39,8 @@ Omit sections that would be empty. Keep the issue specific enough that a later a
 
 ## Linear Handling
 
-Use the available Linear tools or app. Search for near-duplicates before creating an issue. If Linear is unavailable, report the blocker; do not create a local substitute.
+Use the available Linear tools or app. Search for near-duplicates before creating
+an issue. If creation is requested but Linear is unavailable, provide the drafted
+text and state that it has not been created; do not create a local substitute.
 
 Create or update the issue using the compact structure above, including links or attached-context references when useful.

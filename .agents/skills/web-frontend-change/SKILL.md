@@ -20,9 +20,10 @@ cache and routes only the sections needed for the current change.
   must not hand-copy an API schema or infer capabilities from status values.
 - Every state-changing request sends `X-OMYM2-CSRF-Token`; every durable
   Operation start also sends a client-generated `Idempotency-Key`.
-- Packages explicitly required by the accepted Web frontend and test contracts
-  must be pinned in the lockfile. Stop for approval before adding any package
-  outside that accepted stack.
+- Prefer the accepted Web frontend and test dependencies. Add a package only
+  when required for the requested behavior; document its purpose and update the
+  manifest, lockfile, and affected stack contract together. Respect any explicit
+  dependency constraints in the request.
 - Apply and Undo must use the atomic claim, shared lock, Plan, Run, and
   FileEvent contracts.
 
@@ -32,10 +33,10 @@ Locate headings first and read only the matching section:
 
 | Change | Read |
 | --- | --- |
-| Source layout, routes, interaction, keyboard, build, serving, packaging, or performance | Matching section of `docs/codebase/web-frontend.md` |
-| Request/response shape, envelope, CSRF, browsing, idempotency, or one endpoint | Cross-cutting rule plus the affected endpoint section in `docs/contracts/web-api.md` |
-| Persisted or presented status/reason | The affected entity section plus Cross-Cutting Rules in `docs/contracts/status-reason-catalog.md` |
-| Unit, browser, accessibility, or fixture behavior | Matching test/fixture section in `docs/development/testing.md` |
+| Source layout, routes, interaction, keyboard, build, serving, packaging, or performance | Matching section of [docs/codebase/web-frontend.md](../../../docs/codebase/web-frontend.md) |
+| Request/response shape, envelope, CSRF, browsing, idempotency, or one endpoint | Cross-cutting rule plus the affected endpoint section in [docs/contracts/web-api.md](../../../docs/contracts/web-api.md) |
+| Persisted or presented status/reason | The affected entity section plus Cross-Cutting Rules in [docs/contracts/status-reason-catalog.md](../../../docs/contracts/status-reason-catalog.md) |
+| Unit, browser, accessibility, or fixture behavior | Matching test/fixture section in [docs/development/testing.md](../../../docs/development/testing.md) |
 
 For an explicit external design/accessibility audit request, fetch and apply
 `https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md`.
@@ -57,21 +58,23 @@ drift, or focused diffs.
    Routes never read TOML, SQLite, or the filesystem directly.
 4. Run the current edit-loop modes selected by `validate`; frontend commands,
    npm cache, and CI working directories all use `web/`.
-5. Build and audit the Vite export, completely replace the ignored local
-   `static_dist/`, and run the relevant unit/component, Playwright, packaging,
-   and generated-client drift gates.
+5. Let `validate` select the completion gates. Run Playwright for changed browser
+   interactions or accessibility, and packaging gates for changed packaging or
+   installed-asset behavior. Do not repeat build/audit groups immediately before
+   the Stop hook runs them.
 
 ## Done means
 
 - Generated OpenAPI source has no drift.
 - Frontend format, lint, strict typecheck, unit/component, production build, and
   applicable Playwright keyboard/axe gates pass.
-- The export/package audit passes and ignored `static_dist/` matches the built
-  source.
+- The static export audit passes and ignored `static_dist/` matches the built
+  source. The package audit is required when packaging behavior changes.
 
 ## Stop and report when
 
-- A package outside the accepted stack appears necessary.
+- A required dependency conflicts with an explicit user constraint or an
+  unresolved architecture decision.
 - A UI operation would bypass a feature usecase, capability revalidation,
   exclusive lock, Plan, Run, or FileEvent rule.
 - CSP requires an inline-script exception or a broad remote/style allowance.

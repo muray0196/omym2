@@ -16,7 +16,12 @@ from scripts.ci_scope import classify_paths
     [
         ((), config.CI_SCOPE_FULL),
         (("docs/development/harness.md",), config.CI_SCOPE_DOCS),
-        ((".agents/skills/validate/SKILL.md", ".codex/hooks.json"), config.CI_SCOPE_DOCS),
+        ((".agents/skills/validate/SKILL.md",), config.CI_SCOPE_DOCS),
+        ((".codex/hooks.json",), config.CI_SCOPE_FULL),
+        ((".codex/config.toml",), config.CI_SCOPE_FULL),
+        ((".agents/skills/example/scripts/check.py",), config.CI_SCOPE_FULL),
+        ((".agents/skills/example/scripts/check.sh",), config.CI_SCOPE_FULL),
+        (("docs/check.py",), config.CI_SCOPE_FULL),
         (("README.md", "ARCHITECTURE.md"), config.CI_SCOPE_DOCS),
         (("docs/PRODUCT.md", "src/omym2/config.py"), config.CI_SCOPE_FULL),
         ((".github/workflows/ci.yml",), config.CI_SCOPE_FULL),

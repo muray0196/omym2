@@ -1,11 +1,11 @@
 ---
 name: architecture-boundaries
-description: Decide whether a new module, package, or import between layers is allowed in OMYM2. Use before adding files or imports, and when reviewing structural changes for dependency direction and naming.
+description: Check production module placement and imports between OMYM2 layers. Use for structural changes and architecture reviews; skip standalone scripts, docs, and test-only file additions.
 ---
 
 # Architecture Boundaries
 
-Authoritative sources: `docs/codebase/dependency-boundaries.md`, `docs/codebase/source-layout.md`, `docs/codebase/naming.md`. This skill is the fast decision path.
+Authoritative sources: [docs/codebase/dependency-boundaries.md](../../../docs/codebase/dependency-boundaries.md), [docs/codebase/source-layout.md](../../../docs/codebase/source-layout.md), [docs/codebase/naming.md](../../../docs/codebase/naming.md). This skill is the fast decision path.
 
 ## Import decision table
 
@@ -21,7 +21,7 @@ Row = the file you are editing; column = what it wants to import.
 
 Domain no-I/O, cross-feature import, and CLI/Web direct-filesystem rules are
 the Non-Negotiable Rules in `ARCHITECTURE.md`, detailed in
-`docs/codebase/dependency-boundaries.md`.
+[docs/codebase/dependency-boundaries.md](../../../docs/codebase/dependency-boundaries.md).
 
 Additional hard rules not on the table above:
 
@@ -45,25 +45,29 @@ Additional hard rules not on the table above:
 Adapters must not decide business rules (conflicts/duplicates, canonical
 paths, metadata validity, PlanAction/Run/FileEvent status); authoritative in
 `ARCHITECTURE.md`'s Non-Negotiable Rules and the Business Rule Placement
-section of `docs/codebase/dependency-boundaries.md`.
+section of [docs/codebase/dependency-boundaries.md](../../../docs/codebase/dependency-boundaries.md).
 
 ## New file checklist
 
-- [ ] Placement matches `docs/codebase/source-layout.md`.
+- [ ] Placement matches [docs/codebase/source-layout.md](../../../docs/codebase/source-layout.md).
 - [ ] `domain/` names are nouns; usecase names are `{verb}_{object}.py`.
 
 ## Procedure
 
 1. Consult the import decision table above for the layer you are editing and the layer you want to import.
 2. For adapter code, check against Business rule placement above; move any domain-meaning decision into a domain service or usecase.
-3. Work through the New file checklist above before adding any file.
-4. Verify: run the check mode `validate` selects for architecture boundary / naming rules.
+3. Work through the New file checklist before adding a production module.
+4. Use `validate` to select checks. Run `arch` for a focused boundary check when
+   needed; the Python completion gate already includes architecture tests.
 
 ## Done means
 
-The check mode `validate` selects for architecture boundary / naming rules passes. Architecture tests in `tests/architecture/` enforce the highest-risk rules; passing them is necessary but not sufficient — the tables above still apply.
+Architecture tests pass, either through the focused `arch` mode or the Python
+completion gate. They enforce the highest-risk rules; review the tables above
+as well, since tests do not prove every placement decision correct.
 
 ## Stop and report when
 
 - The requested change only works by crossing a NO cell above.
-- You are about to add a new top-level package under `src/omym2/` (needs explicit human approval).
+- A new top-level package under `src/omym2/` would change the documented layers
+  without authorization for that architectural change.

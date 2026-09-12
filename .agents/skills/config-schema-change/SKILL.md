@@ -1,11 +1,11 @@
 ---
 name: config-schema-change
-description: Safety checklist for changes to the persisted TOML application-config contract — the AppConfig dataclass shape, TOML keys, defaults, allowed values or enums, validation rules, and config serialization such as the TOML store and web settings serializers or choices lists. Use before designing or reviewing any change to settings save or load paths. Do not use it for code that merely reads an existing config value inside a feature, and do not use it for runtime environment-variable configuration, which is docs/development/harness.md's domain.
+description: Check persisted AppConfig/TOML schema and settings save/load changes. Excludes reading existing values, runtime environment variables, and repository tool configuration.
 ---
 
 # Config Schema Change
 
-Authoritative doc: `docs/contracts/config.md`. Test policy: `docs/development/testing.md`'s
+Authoritative doc: [docs/contracts/config.md](../../../docs/contracts/config.md). Test policy: [docs/development/testing.md](../../../docs/development/testing.md)'s
 Contract Change Test Requirements table, "Config contract" row.
 
 ## Non-negotiable invariants
@@ -22,14 +22,14 @@ Contract Change Test Requirements table, "Config contract" row.
    key or version bump. Do not add a compatibility layer.
 3. Verify allowed values and enums against the constants in
    `src/omym2/config.py` (e.g. `ALLOWED_LOGGING_LEVELS`) rather than assuming
-   `docs/contracts/config.md` is exhaustive; when the doc lags the source,
+   [docs/contracts/config.md](../../../docs/contracts/config.md) is exhaustive; when the doc lags the source,
    update the doc in the same change (open `update-docs`).
 4. Web and CLI saves acquire the shared exclusive lock, recheck the expected
    revision, and use the Config adapter's atomic replace. Never add
    last-write-wins or update SQLite Library status as part of the Config file
    write; effective staleness is derived from fingerprints.
 
-## Every changed or added key touches these surfaces
+## Surfaces to inspect for a changed or added key
 
 | Surface | File |
 | --- | --- |
@@ -38,7 +38,7 @@ Contract Change Test Requirements table, "Config contract" row.
 | TOML writer | `src/omym2/adapters/config/toml_config_store.py` |
 | Web settings boundary | Pydantic schemas under `src/omym2/adapters/web/schemas/` and routes under `src/omym2/adapters/web/routes/`; routes call Settings usecases and never import TOML validators or serializers |
 | Raw revision read/CAS DTO and ConfigStore port | `src/omym2/features/common_ports.py`, `src/omym2/features/settings/` |
-| Contract doc | `docs/contracts/config.md` (open `update-docs`) |
+| Contract doc | [docs/contracts/config.md](../../../docs/contracts/config.md) (open `update-docs`) |
 | Plan/Library staleness fingerprint, only if the field can change generated paths | `src/omym2/domain/services/config_fingerprint.py` |
 
 `config_fingerprint.py` is not summarized anywhere in `docs/`; treat it as
@@ -56,7 +56,8 @@ Libraries would not detect the settings change as stale.
 
 ## Procedure
 
-1. Edit every surface in the table above in the same change.
+1. Inspect the surfaces in the table and edit those affected by the change.
+   Shared serializers or ports may already support the new value without edits.
    If the change touches save/load concurrency rather than the TOML schema,
    edit only the raw-revision/CAS surfaces and do not invent a TOML key.
 2. Define and test the existing-file behavior from invariant 2 for the
@@ -70,11 +71,11 @@ Libraries would not detect the settings change as stale.
 ## Done means
 
 - Tests cover load, save, validation, defaults, and existing-file rejection or
-  defaulting behavior per `docs/development/testing.md`'s Contract Change Test
+  defaulting behavior per [docs/development/testing.md](../../../docs/development/testing.md)'s Contract Change Test
   Requirements table. Anchors: `tests/adapters/config/test_toml_config_store.py`,
   `tests/domain/test_app_config.py`, and `tests/adapters/web/test_api_settings.py`
   for the route-level Pydantic contract.
-- `docs/contracts/config.md` reflects the new shape in the same change.
+- [docs/contracts/config.md](../../../docs/contracts/config.md) reflects the new shape in the same change.
 
 ## Stop and report when
 

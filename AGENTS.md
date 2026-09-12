@@ -1,13 +1,40 @@
 # OMYM2 Agent Instructions
 
-Use this routing before choosing task-specific docs. `ARCHITECTURE.md` is the
-always-read safety cache; focused docs own the detailed, task-specific contract.
+Use this file for task routing and repository-wide conventions. Focused skills
+carry operational checks; linked docs own the detailed contracts.
 
 ## Required Reading
 
-Read `ARCHITECTURE.md` before any task that touches `src/`, `web/`, or
-`tests/`. Keep its non-negotiable rules active throughout the task. Docs-only,
-issue-only, or purely read-only tasks may skip it.
+Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing `src/`, `web/`, or
+`tests/`. Read it for architecture reviews too; other read-only, docs-only, and
+issue-only tasks may skip it.
+
+## Task Routing
+
+Open only the skills matching the behavior being changed or reviewed. Mentioning
+a domain entity or reading an existing config value does not by itself change
+that contract. Read each skill once; follow its conditional doc links.
+
+| Task or changed boundary | Skill |
+| --- | --- |
+| Execution state, apply/undo/refresh, or Library music file mutations | [plan-apply-safety](.agents/skills/plan-apply-safety/SKILL.md) |
+| Stored paths, PathPolicy, Library/Track identity, registration or relink | [path-identity-safety](.agents/skills/path-identity-safety/SKILL.md) |
+| SQLite schema, migrations, or repository persistence | [db-schema-change](.agents/skills/db-schema-change/SKILL.md) |
+| Persisted AppConfig/TOML schema or settings save/load protocol | [config-schema-change](.agents/skills/config-schema-change/SKILL.md) |
+| Production module placement, package structure, or imports between layers | [architecture-boundaries](.agents/skills/architecture-boundaries/SKILL.md) |
+| React/Vite frontend, Web adapters, generated API or static packaging | [web-frontend-change](.agents/skills/web-frontend-change/SKILL.md) |
+| Add or change tests | [write-tests](.agents/skills/write-tests/SKILL.md) |
+| Change docs or behavior described there | [update-docs](.agents/skills/update-docs/SKILL.md) |
+| Select or diagnose quality checks | [validate](.agents/skills/validate/SKILL.md) |
+| Draft or create a Linear issue without implementing it | [linear-create-issue](.agents/skills/linear-create-issue/SKILL.md) |
+
+## Scope and Decisions
+
+Inspect the working tree before editing; preserve unrelated changes. Complete
+authorized work, including supporting contract docs and tests. Skill guidance
+does not override the user's explicit scope or require renewed approval for a
+decision already authorized. When a real conflict remains unresolved, state the
+exact rule and the missing decision; continue independent work where possible.
 
 ## Implementation Conventions
 
@@ -31,8 +58,8 @@ constants into either `config.py` merely to avoid literals.
 
 ### File Headers
 
-Add a brief, language-appropriate header comment to each code file with this
-content:
+New code files need a brief, language-appropriate header comment. Keep existing
+headers accurate when editing a file; do not sweep unrelated files to add them:
 
 ```text
 Summary: <one-line description of the file's purpose>
@@ -44,33 +71,17 @@ package-marker files, or file formats that do not support comments.
 
 ## Large Initiative Plans
 
-Keep the root `ROADMAP.md` tracked. Populate it only for large, multi-session work
-with cross-cutting changes, material uncertainty, or ordered rollout/verification—not
-ordinary focused changes. If it contains a roadmap, read it before scoped work;
-keep it current and clear it when no longer needed rather than deleting it.
-Record only the outcome, material decisions or risks, ordering constraints, and
-validation or rollback requirements. Do not list routine steps, progress logs,
-or completed checklists, or duplicate authoritative docs; move durable
-conclusions to their authoritative docs.
-
-## Read As Needed
-
-For an implementation task, start with
-`.agents/skills/implement-change/SKILL.md`; it selects the safety checklist and
-focused documentation for the change. Do not replace those focused checks with
-the Architecture summary.
-
-Use `.agents/skills/validate/SKILL.md` for ordinary implementation and
-validation. Read only the relevant section of `docs/development/harness.md`
-when changing the harness, suppressions, runtime configuration, or a gate detail
-not covered by the skill.
+Keep [ROADMAP.md](ROADMAP.md) tracked. Populate it only for large, multi-session
+work with cross-cutting changes, material uncertainty, or ordered rollout.
+Read an active roadmap before scoped work; keep it current, then clear it.
+Record outcomes, material decisions/risks, ordering, and validation/rollback
+requirements. Omit routine steps and progress logs; durable conclusions belong
+in authoritative docs.
 
 ## Context Discipline
 
-Treat `ARCHITECTURE.md` and matching skills as operational safety caches. Follow
-their conditional documentation routes; do not preload every linked document.
-Locate the relevant heading first, then read only the bounded section needed for
-the task.
+Locate the relevant heading first, then read only the needed section; do not
+preload every linked document.
 
 Start repository searches with paths, filenames, or counts (`rg --files`,
 `rg -l`, or `rg -c`). Scope by directory and glob before requesting matching
@@ -87,8 +98,10 @@ commands, prior diagnostics, or earlier status summaries in later turns.
 
 ## Validation Shortcut
 
-Mode selection is owned by `.agents/skills/validate/SKILL.md`. Gate
-definitions live in `docs/development/harness.md`. During Codex implementation,
+Mode selection is owned by the `validate` skill. Gate
+definitions live in [docs/development/harness.md](docs/development/harness.md).
+Read the relevant harness section only when changing it or resolving a gate
+detail the skill does not cover. During implementation,
 run the focused checks selected by the skill. When the repo-local `Stop` hook is
 available, let it own the path-aware completion gate instead of repeating those
 checks manually before handoff. Full aggregate validation remains a CI or
@@ -96,11 +109,9 @@ explicit-request concern.
 
 ## Knowledge Navigation
 
-Use the docs router below for task-specific reading.
-When you edit a doc, update its frontmatter `description` and `timestamp`; do not edit
-`index.md` files by hand. Regenerate indexes with
-`uv run python scripts/generate_docs_indexes.py --write`. CI enforces
-conformance via the docs bundle test under `tests/docs/`.
+Use the router below for task-specific reading and `update-docs` for frontmatter
+and generated indexes. Keep navigation links as relative Markdown links;
+`tests/docs/` checks both the docs bundle and agent guidance.
 
 ## Docs Router
 

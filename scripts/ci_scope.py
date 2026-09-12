@@ -32,10 +32,10 @@ def classify_paths(paths: Iterable[str]) -> str:
 
 def _is_fast_path(path: str) -> bool:
     normalized = PurePosixPath(path).as_posix()
-    if any(normalized.startswith(prefix) for prefix in config.CI_FAST_PATH_PREFIXES):
-        return True
     candidate = PurePosixPath(normalized)
-    return len(candidate.parts) == 1 and candidate.suffix.lower() in config.CI_FAST_PATH_ROOT_SUFFIXES
+    if candidate.suffix.lower() not in config.CI_FAST_PATH_SUFFIXES:
+        return False
+    return len(candidate.parts) == 1 or any(normalized.startswith(prefix) for prefix in config.CI_FAST_PATH_PREFIXES)
 
 
 def main() -> int:
