@@ -51,7 +51,7 @@ const libraryUnregisteredError = {
   },
 } as const;
 
-export const missingConfigBootstrap = {
+export const unregisteredBootstrap = {
   data: {
     ...normalBootstrap.data,
     active_library: null,
@@ -74,8 +74,6 @@ export const missingConfigBootstrap = {
   },
   errors: [],
 } satisfies ApiEnvelopeBootstrapData;
-
-export const unregisteredBootstrap = missingConfigBootstrap;
 
 const configInvalidError = {
   code: "config_invalid",

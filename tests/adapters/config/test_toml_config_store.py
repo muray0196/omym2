@@ -15,7 +15,6 @@ from omym2.adapters.config.toml_config_store import TomlConfigStore, dump_config
 from omym2.config import (
     ALBUM_YEAR_RESOLUTION_OLDEST,
     CONFIG_FILE_ENCODING,
-    MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE,
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MAX,
     UNPROCESSED_RESULT_PREVIEW_LIMIT_MIN,
 )
@@ -97,7 +96,6 @@ def test_toml_config_store_round_trips_runtime_controls_and_floats(tmp_path: Pat
             timeout_seconds=2.5,
             retry_limit=3,
             rate_limit_seconds=1.25,
-            cache_policy=MUSICBRAINZ_CACHE_POLICY_STICKY_POSITIVE,
         ),
         hashing=HashingConfig(read_chunk_size_bytes=4_096),
         logging=LoggingConfig(
@@ -323,6 +321,37 @@ def test_toml_config_store_rejects_removed_artist_id_entries(tmp_path: Path) -> 
         _ = TomlConfigStore(config_path).load()
 
 
+@pytest.mark.parametrize(
+    "section",
+    ["add", "organize", "refresh"],
+)
+def test_toml_config_store_validation_fails_removed_command_default_mode_key(
+    tmp_path: Path,
+    section: str,
+) -> None:
+    """A config file still containing the removed command default_mode key is rejected."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        f'version = 2\n\n[{section}]\ndefault_mode = "plan_first"\n',
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError, match=rf"Unknown config key: {section}\.default_mode\."):
+        _ = TomlConfigStore(config_path).load()
+
+
+def test_toml_config_store_validation_fails_removed_musicbrainz_cache_policy_key(tmp_path: Path) -> None:
+    """A config file still containing the removed musicbrainz.cache_policy key is rejected."""
+    config_path = tmp_path / CONFIG_FILE_NAME
+    _ = config_path.write_text(
+        'version = 2\n\n[musicbrainz]\ncache_policy = "sticky_positive"\n',
+        encoding=CONFIG_FILE_ENCODING,
+    )
+
+    with pytest.raises(ConfigStoreValidationError, match=r"Unknown config key: musicbrainz\.cache_policy\."):
+        _ = TomlConfigStore(config_path).load()
+
+
 def test_toml_config_store_validation_fails_invalid_album_year_resolution(tmp_path: Path) -> None:
     """Adapter validation rejects unknown album-year resolution methods."""
     config_path = tmp_path / CONFIG_FILE_NAME
@@ -397,7 +426,6 @@ def test_toml_config_text_loads_missing_runtime_section_defaults() -> None:
         ("[musicbrainz]\nretry_limit = -1", "retry_limit"),
         ("[musicbrainz]\nrate_limit_seconds = 0.5", "rate_limit_seconds"),
         ("[musicbrainz]\nrate_limit_seconds = inf", "rate_limit_seconds"),
-        ('[musicbrainz]\ncache_policy = "none"', "musicbrainz.cache_policy"),
         ("[musicbrainz]\nunknown = true", "musicbrainz.unknown"),
         ("[obsolete]\nenabled = true", "obsolete"),
         ("[hashing]\nread_chunk_size_bytes = false", "hashing.read_chunk_size_bytes"),

@@ -6,6 +6,7 @@ import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { FileEventStatus, RunStatus } from "../../api/generated";
+import { selectedValue, setOptionalParameter } from "../../ui/search-params";
 
 const RUN_STATUSES = [
   "running",
@@ -47,10 +48,10 @@ export function useHistoryFilters() {
     (changes: Partial<HistoryFilters>) => {
       const next = { ...filters, ...changes };
       const updated = new URLSearchParams(parameters);
-      setOptional(updated, "query", next.query);
-      setOptional(updated, "status", next.status);
-      setOptional(updated, "plan_id", next.planId);
-      setOptional(updated, "library_id", next.libraryId);
+      setOptionalParameter(updated, "query", next.query);
+      setOptionalParameter(updated, "status", next.status);
+      setOptionalParameter(updated, "plan_id", next.planId);
+      setOptionalParameter(updated, "library_id", next.libraryId);
       setParameters(updated, { replace: true });
     },
     [filters, parameters, setParameters],
@@ -85,26 +86,10 @@ export function useEventFilters() {
     (changes: Partial<EventFilters>) => {
       const updated = new URLSearchParams(parameters);
       const status = "status" in changes ? changes.status : filters.status;
-      setOptional(updated, "event_status", status);
+      setOptionalParameter(updated, "event_status", status);
       setParameters(updated, { replace: true });
     },
     [filters.status, parameters, setParameters],
   );
   return { filters, updateFilters };
-}
-
-function selectedValue<Value extends string>(
-  raw: string | null,
-  values: readonly Value[],
-): Value | undefined {
-  return values.find((value) => value === raw);
-}
-
-function setOptional(
-  parameters: URLSearchParams,
-  name: string,
-  value: string | undefined,
-) {
-  if (value === undefined || value.length === 0) parameters.delete(name);
-  else parameters.set(name, value);
 }

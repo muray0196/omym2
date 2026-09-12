@@ -428,7 +428,6 @@ describe("Settings route", () => {
     );
     expect(captured.request?.config.musicbrainz).toEqual({
       application_name: "OMYM2 Web Tests",
-      cache_policy: "sticky_positive",
       contact: "https://github.com/muray0196/omym2",
       enabled: true,
       rate_limit_seconds: 1.25,

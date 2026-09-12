@@ -7,6 +7,7 @@ import { useDeferredValue } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { useCursorPage } from "../../ui/cursor-page";
+import { formatTimestamp, numberFormatter } from "../../ui/format";
 import { Button } from "../../ui/primitives/button";
 import { CursorPageControls } from "../../ui/primitives/cursor-page-controls";
 import { PageHeader } from "../../ui/primitives/page-header";
@@ -22,12 +23,6 @@ import {
   usePlanListFilters,
 } from "./plan-url-state";
 import styles from "./plan-inspection.module.css";
-
-const timestampFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-const numberFormatter = new Intl.NumberFormat("en-US");
 
 export function PlanList() {
   const location = useLocation();
@@ -257,11 +252,4 @@ function sumActionTypeCounts(
     counts.skip +
     counts.refresh_metadata
   );
-}
-
-function formatTimestamp(value: string) {
-  const timestamp = new Date(value);
-  return Number.isNaN(timestamp.valueOf())
-    ? value
-    : timestampFormatter.format(timestamp);
 }

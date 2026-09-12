@@ -281,14 +281,12 @@ def _candidate_data(result: SettingsCandidateResult) -> SettingsCandidateData:
 
 def _settings_choices(choices: SettingsChoicesResult) -> SettingsChoices:
     return SettingsChoices(
-        command_modes=choices.command_modes,
         disc_number_styles=choices.disc_number_styles,
         disc_number_conditions=choices.disc_number_conditions,
         album_year_resolutions=choices.album_year_resolutions,
         target_exists_policies=choices.target_exists_policies,
         duplicate_hash_policies=choices.duplicate_hash_policies,
         missing_metadata_policies=choices.missing_metadata_policies,
-        musicbrainz_cache_policies=choices.musicbrainz_cache_policies,
         logging_levels=choices.logging_levels,
         unprocessed_result_preview_limit_min=choices.unprocessed_result_preview_limit_min,
         unprocessed_result_preview_limit_max=choices.unprocessed_result_preview_limit_max,

@@ -14,7 +14,6 @@ from string import Formatter
 from omym2.config import (
     ALLOWED_ALBUM_YEAR_RESOLUTION_METHODS,
     ALLOWED_LOGGING_LEVELS,
-    ALLOWED_MUSICBRAINZ_CACHE_POLICIES,
     ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     ARTIST_ID_VALUE_PATTERN,
@@ -27,7 +26,6 @@ from omym2.config import (
     DEFAULT_COLLISION_ON_DUPLICATE_HASH,
     DEFAULT_COLLISION_ON_MISSING_METADATA,
     DEFAULT_COLLISION_ON_TARGET_EXISTS,
-    DEFAULT_COMMAND_MODE,
     DEFAULT_COMPANIONS_ENABLED,
     DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES,
     DEFAULT_LOGGING_DESTINATION,
@@ -40,7 +38,6 @@ from omym2.config import (
     DEFAULT_METADATA_REQUIRE_ARTIST,
     DEFAULT_METADATA_REQUIRE_TITLE,
     DEFAULT_MUSICBRAINZ_APPLICATION_NAME,
-    DEFAULT_MUSICBRAINZ_CACHE_POLICY,
     DEFAULT_MUSICBRAINZ_CONTACT,
     DEFAULT_MUSICBRAINZ_ENABLED,
     DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS,
@@ -90,7 +87,6 @@ INVALID_MUSICBRAINZ_CONTACT_MESSAGE = "MusicBrainzConfig contact must not be bla
 INVALID_MUSICBRAINZ_TIMEOUT_MESSAGE = "MusicBrainzConfig timeout_seconds must be finite and positive."
 INVALID_MUSICBRAINZ_RETRY_LIMIT_MESSAGE = "MusicBrainzConfig retry_limit must not be negative."
 INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE = "MusicBrainzConfig rate_limit_seconds must be finite and at least 1.0."
-INVALID_MUSICBRAINZ_CACHE_POLICY_MESSAGE = "MusicBrainzConfig cache_policy is not supported."
 INVALID_HASHING_READ_CHUNK_SIZE_MESSAGE = "HashingConfig read_chunk_size_bytes must be positive."
 INVALID_LOGGING_DESTINATION_MESSAGE = (
     "LoggingConfig destination must be a normalized application-root-relative logical path."
@@ -121,7 +117,6 @@ class PathsConfig:
 class CommandConfig:
     """Default execution behavior for one command family."""
 
-    default_mode: str = DEFAULT_COMMAND_MODE
     auto_apply: bool = False
 
 
@@ -213,10 +208,9 @@ class MusicBrainzConfig:
     timeout_seconds: float = DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS
     retry_limit: int = DEFAULT_MUSICBRAINZ_RETRY_LIMIT
     rate_limit_seconds: float = DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS
-    cache_policy: str = DEFAULT_MUSICBRAINZ_CACHE_POLICY
 
     def __post_init__(self) -> None:
-        """Validate bounded provider identity, request, and cache controls."""
+        """Validate bounded provider identity and request controls."""
         if self.application_name.strip() == "":
             raise ValueError(INVALID_MUSICBRAINZ_APPLICATION_NAME_MESSAGE)
         if self.contact.strip() == "":
@@ -229,8 +223,6 @@ class MusicBrainzConfig:
             self.rate_limit_seconds >= DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS
         ):
             raise ValueError(INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE)
-        if self.cache_policy not in ALLOWED_MUSICBRAINZ_CACHE_POLICIES:
-            raise ValueError(INVALID_MUSICBRAINZ_CACHE_POLICY_MESSAGE)
 
 
 @dataclass(frozen=True, slots=True)

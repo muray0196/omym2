@@ -42,7 +42,6 @@ class PathsConfigResource(ApiModel):
 class CommandConfigResource(ApiModel):
     """Plan-first command defaults retained in Config."""
 
-    default_mode: str
     auto_apply: bool
 
 
@@ -103,7 +102,7 @@ class CollisionConfigResource(ApiModel):
 
 
 class MusicBrainzConfigResource(ApiModel):
-    """Persisted MusicBrainz enablement, identity, request, and cache controls."""
+    """Persisted MusicBrainz enablement, identity, and request controls."""
 
     enabled: bool
     application_name: str
@@ -111,7 +110,6 @@ class MusicBrainzConfigResource(ApiModel):
     timeout_seconds: float
     retry_limit: int
     rate_limit_seconds: float
-    cache_policy: str
 
     def to_domain(self) -> MusicBrainzConfig:
         """Validate and convert the complete MusicBrainz settings draft."""
@@ -122,7 +120,6 @@ class MusicBrainzConfigResource(ApiModel):
             timeout_seconds=self.timeout_seconds,
             retry_limit=self.retry_limit,
             rate_limit_seconds=self.rate_limit_seconds,
-            cache_policy=self.cache_policy,
         )
 
 
@@ -239,7 +236,6 @@ class AppConfigResource(ApiModel):
                 timeout_seconds=config.musicbrainz.timeout_seconds,
                 retry_limit=config.musicbrainz.retry_limit,
                 rate_limit_seconds=config.musicbrainz.rate_limit_seconds,
-                cache_policy=config.musicbrainz.cache_policy,
             ),
             hashing=HashingConfigResource(read_chunk_size_bytes=config.hashing.read_chunk_size_bytes),
             logging=LoggingConfigResource(
@@ -261,15 +257,9 @@ class AppConfigResource(ApiModel):
         return AppConfig(
             version=self.version,
             paths=PathsConfig(library=self.paths.library, incoming=self.paths.incoming),
-            add=CommandConfig(default_mode=self.add.default_mode, auto_apply=self.add.auto_apply),
-            organize=OrganizeConfig(
-                default_mode=self.organize.default_mode,
-                auto_apply=self.organize.auto_apply,
-            ),
-            refresh=CommandConfig(
-                default_mode=self.refresh.default_mode,
-                auto_apply=self.refresh.auto_apply,
-            ),
+            add=CommandConfig(auto_apply=self.add.auto_apply),
+            organize=OrganizeConfig(auto_apply=self.organize.auto_apply),
+            refresh=CommandConfig(auto_apply=self.refresh.auto_apply),
             path_policy=self.path_policy.to_domain(),
             artist_ids=self.artist_ids.to_domain(),
             metadata=MetadataConfig(
@@ -295,14 +285,12 @@ class AppConfigResource(ApiModel):
 class SettingsChoices(ApiModel):
     """Backend-owned closed choices used by Settings controls."""
 
-    command_modes: tuple[str, ...]
     disc_number_styles: tuple[str, ...]
     disc_number_conditions: tuple[str, ...]
     album_year_resolutions: tuple[str, ...]
     target_exists_policies: tuple[str, ...]
     duplicate_hash_policies: tuple[str, ...]
     missing_metadata_policies: tuple[str, ...]
-    musicbrainz_cache_policies: tuple[str, ...]
     logging_levels: tuple[str, ...]
     unprocessed_result_preview_limit_min: int
     unprocessed_result_preview_limit_max: int
@@ -442,4 +430,4 @@ class PathPreviewRequest(ApiModel):
 
 
 def _command_resource(config: CommandConfig) -> CommandConfigResource:
-    return CommandConfigResource(default_mode=config.default_mode, auto_apply=config.auto_apply)
+    return CommandConfigResource(auto_apply=config.auto_apply)

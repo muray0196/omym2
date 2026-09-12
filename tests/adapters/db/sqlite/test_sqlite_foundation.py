@@ -304,6 +304,51 @@ def test_alias_sort_name_migration_preserves_rows_and_round_trips_new_provenance
         assert uow.accepted_artist_names.list_all() == (alias_sort_name, accepted_name)
 
 
+@pytest.mark.parametrize("selected_name_kind", ["alias", "name"])
+def test_baseline_artist_name_provenance_survives_forward_migrations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selected_name_kind: str,
+) -> None:
+    """Values produced by the baseline resolver remain readable with their original provenance."""
+    database_file = default_application_paths(tmp_path).database_file
+    migrations = migration_runner.load_packaged_migrations()
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations[:1])
+    migrate_database(database_file)
+    with sqlite3.connect(database_file) as connection:
+        _ = connection.execute(
+            """
+            INSERT INTO accepted_artist_names (
+                source_key, source_name, resolved_name, provider,
+                provider_artist_id, selected_name_kind, selected_locale, accepted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ACCEPTED_ARTIST_SOURCE_KEY,
+                ACCEPTED_ARTIST_SOURCE_NAME,
+                ACCEPTED_ARTIST_RESOLVED_NAME,
+                ArtistNameProvider.MUSICBRAINZ.value,
+                MUSICBRAINZ_ARTIST_ID,
+                selected_name_kind,
+                None,
+                BASE_TIME.isoformat(),
+            ),
+        )
+
+    monkeypatch.setattr(migration_runner, "load_packaged_migrations", lambda: migrations)
+    migrate_database(database_file)
+
+    with SQLiteUnitOfWork(database_file) as uow:
+        assert uow.accepted_artist_names.list_all() == (
+            replace(
+                _accepted_artist_name(),
+                selected_name_kind=SelectedArtistNameKind(selected_name_kind),
+                selected_locale=None,
+            ),
+        )
+
+
 def test_pre_release_database_requires_explicit_reset(tmp_path: Path) -> None:
     """A database carrying retired migration history is rejected without mutation."""
     database_file = default_application_paths(tmp_path).database_file

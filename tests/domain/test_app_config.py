@@ -17,7 +17,6 @@ from omym2.config import (
     DEFAULT_LOGGING_RETENTION_FILES,
     DEFAULT_LOGGING_ROTATION_MAX_BYTES,
     DEFAULT_MUSICBRAINZ_APPLICATION_NAME,
-    DEFAULT_MUSICBRAINZ_CACHE_POLICY,
     DEFAULT_MUSICBRAINZ_CONTACT,
     DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS,
     DEFAULT_MUSICBRAINZ_RETRY_LIMIT,
@@ -44,7 +43,6 @@ from omym2.domain.models.app_config import (
     INVALID_MAX_FILENAME_LENGTH_MESSAGE,
     INVALID_METADATA_ALBUM_YEAR_RESOLUTION_MESSAGE,
     INVALID_MUSICBRAINZ_APPLICATION_NAME_MESSAGE,
-    INVALID_MUSICBRAINZ_CACHE_POLICY_MESSAGE,
     INVALID_MUSICBRAINZ_CONTACT_MESSAGE,
     INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE,
     INVALID_MUSICBRAINZ_RETRY_LIMIT_MESSAGE,
@@ -97,7 +95,6 @@ def test_config_loads_default() -> None:
         timeout_seconds=DEFAULT_MUSICBRAINZ_TIMEOUT_SECONDS,
         retry_limit=DEFAULT_MUSICBRAINZ_RETRY_LIMIT,
         rate_limit_seconds=DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS,
-        cache_policy=DEFAULT_MUSICBRAINZ_CACHE_POLICY,
     )
     assert config.hashing == HashingConfig(read_chunk_size_bytes=DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES)
     assert config.logging == LoggingConfig(
@@ -126,11 +123,10 @@ def test_config_loads_default() -> None:
         ({"rate_limit_seconds": 0.5}, INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE),
         ({"rate_limit_seconds": float("nan")}, INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE),
         ({"rate_limit_seconds": float("inf")}, INVALID_MUSICBRAINZ_RATE_LIMIT_MESSAGE),
-        ({"cache_policy": "none"}, INVALID_MUSICBRAINZ_CACHE_POLICY_MESSAGE),
     ],
 )
 def test_musicbrainz_config_rejects_invalid_controls(keywords: dict[str, object], message: str) -> None:
-    """MusicBrainz settings enforce identity, bounds, and the closed cache policy."""
+    """MusicBrainz settings enforce identity and bounds."""
     with pytest.raises(ValueError, match=message):
         _ = MusicBrainzConfig(**keywords)  # pyright: ignore[reportArgumentType]  # Parameterized invalid values.
 

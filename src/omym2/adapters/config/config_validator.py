@@ -14,9 +14,7 @@ from omym2.config import (
     ALLOWED_COLLISION_DUPLICATE_HASH_POLICIES,
     ALLOWED_COLLISION_MISSING_METADATA_POLICIES,
     ALLOWED_COLLISION_TARGET_EXISTS_POLICIES,
-    ALLOWED_COMMAND_MODES,
     ALLOWED_LOGGING_LEVELS,
-    ALLOWED_MUSICBRAINZ_CACHE_POLICIES,
     ALLOWED_PATH_POLICY_DISC_NUMBER_CONDITIONS,
     ALLOWED_PATH_POLICY_DISC_NUMBER_STYLES,
     CONFIG_VERSION,
@@ -27,7 +25,6 @@ from omym2.config import (
     DEFAULT_COLLISION_ON_DUPLICATE_HASH,
     DEFAULT_COLLISION_ON_MISSING_METADATA,
     DEFAULT_COLLISION_ON_TARGET_EXISTS,
-    DEFAULT_COMMAND_MODE,
     DEFAULT_COMPANIONS_ENABLED,
     DEFAULT_HASHING_READ_CHUNK_SIZE_BYTES,
     DEFAULT_LOGGING_LEVEL,
@@ -39,7 +36,6 @@ from omym2.config import (
     DEFAULT_METADATA_REQUIRE_ARTIST,
     DEFAULT_METADATA_REQUIRE_TITLE,
     DEFAULT_MUSICBRAINZ_APPLICATION_NAME,
-    DEFAULT_MUSICBRAINZ_CACHE_POLICY,
     DEFAULT_MUSICBRAINZ_CONTACT,
     DEFAULT_MUSICBRAINZ_ENABLED,
     DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS,
@@ -92,11 +88,9 @@ ALBUM_YEAR_RESOLUTION_KEY = "album_year_resolution"
 APPLICATION_NAME_KEY = "application_name"
 ARTIST_IDS_SECTION = "artist_ids"
 AUTO_APPLY_KEY = "auto_apply"
-CACHE_POLICY_KEY = "cache_policy"
 COLLISION_SECTION = "collision"
 COMPANIONS_SECTION = "companions"
 CONTACT_KEY = "contact"
-DEFAULT_MODE_KEY = "default_mode"
 DESTINATION_KEY = "destination"
 DISC_NUMBER_CONDITION_KEY = "disc_number_condition"
 DISC_NUMBER_STYLE_KEY = "disc_number_style"
@@ -157,8 +151,8 @@ ROOT_KEYS = frozenset(
 )
 PATHS_KEYS = frozenset({LIBRARY_KEY, INCOMING_KEY})
 ARTIST_IDS_KEYS = frozenset({MAX_LENGTH_KEY, FALLBACK_ID_KEY})
-COMMAND_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY})
-ORGANIZE_KEYS = frozenset({DEFAULT_MODE_KEY, AUTO_APPLY_KEY})
+COMMAND_KEYS = frozenset({AUTO_APPLY_KEY})
+ORGANIZE_KEYS = frozenset({AUTO_APPLY_KEY})
 PATH_POLICY_KEYS = frozenset(
     {
         TEMPLATE_KEY,
@@ -182,7 +176,6 @@ MUSICBRAINZ_KEYS = frozenset(
         TIMEOUT_SECONDS_KEY,
         RETRY_LIMIT_KEY,
         RATE_LIMIT_SECONDS_KEY,
-        CACHE_POLICY_KEY,
     }
 )
 HASHING_KEYS = frozenset({READ_CHUNK_SIZE_BYTES_KEY})
@@ -306,16 +299,6 @@ def _command_config(
 ) -> CommandConfig:
     _reject_unknown_keys(table, COMMAND_KEYS, section, errors)
     return CommandConfig(
-        default_mode=_choice(
-            table,
-            ChoiceRule(
-                key=DEFAULT_MODE_KEY,
-                section=section,
-                default=DEFAULT_COMMAND_MODE,
-                allowed_values=ALLOWED_COMMAND_MODES,
-            ),
-            errors,
-        ),
         auto_apply=_bool(table, AUTO_APPLY_KEY, section, default=default_auto_apply, errors=errors),
     )
 
@@ -323,16 +306,6 @@ def _command_config(
 def _organize_config(table: ConfigTable, errors: list[str]) -> OrganizeConfig:
     _reject_unknown_keys(table, ORGANIZE_KEYS, ORGANIZE_SECTION, errors)
     return OrganizeConfig(
-        default_mode=_choice(
-            table,
-            ChoiceRule(
-                key=DEFAULT_MODE_KEY,
-                section=ORGANIZE_SECTION,
-                default=DEFAULT_COMMAND_MODE,
-                allowed_values=ALLOWED_COMMAND_MODES,
-            ),
-            errors,
-        ),
         auto_apply=_bool(table, AUTO_APPLY_KEY, ORGANIZE_SECTION, default=DEFAULT_ORGANIZE_AUTO_APPLY, errors=errors),
     )
 
@@ -515,16 +488,6 @@ def _musicbrainz_config(table: ConfigTable, errors: list[str]) -> MusicBrainzCon
             RATE_LIMIT_SECONDS_KEY,
             MUSICBRAINZ_SECTION,
             DEFAULT_MUSICBRAINZ_RATE_LIMIT_SECONDS,
-            errors,
-        ),
-        cache_policy=_choice(
-            table,
-            ChoiceRule(
-                key=CACHE_POLICY_KEY,
-                section=MUSICBRAINZ_SECTION,
-                default=DEFAULT_MUSICBRAINZ_CACHE_POLICY,
-                allowed_values=ALLOWED_MUSICBRAINZ_CACHE_POLICIES,
-            ),
             errors,
         ),
     )

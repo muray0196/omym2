@@ -632,12 +632,6 @@ export function SettingsEditor({ initial, onLoadLatest }: SettingsEditorProps) {
                 })}
               />
             </label>
-            <ChoiceField
-              id="settings-musicbrainz-cache-policy"
-              label={settingsCopy.musicbrainzCachePolicy}
-              options={initial.choices.musicbrainz_cache_policies}
-              register={register("musicbrainz.cache_policy")}
-            />
           </div>
         </SettingsSection>
 
@@ -1617,7 +1611,6 @@ function errorFieldTarget(field: string | undefined): string | null {
     ["musicbrainz.timeout_seconds", "settings-musicbrainz-timeout"],
     ["musicbrainz.retry_limit", "settings-musicbrainz-retry-limit"],
     ["musicbrainz.rate_limit_seconds", "settings-musicbrainz-rate-limit"],
-    ["musicbrainz.cache_policy", "settings-musicbrainz-cache-policy"],
     ["hashing.read_chunk_size_bytes", "settings-hashing-chunk-size"],
     ["logging.destination", "settings-logging-destination"],
     ["logging.level", "settings-logging-level"],

@@ -265,44 +265,6 @@
   justify-items: start;
 }
 
-.statusBadge {
-  align-items: center;
-  background: color-mix(in srgb, currentcolor 10%, transparent);
-  border: 1px solid color-mix(in srgb, currentcolor 28%, transparent);
-  border-radius: var(--radius-6);
-  display: inline-flex;
-  font-size: 12px;
-  font-weight: 600;
-  gap: 6px;
-  letter-spacing: 0.01em;
-  padding: 2px var(--space-8);
-  white-space: nowrap;
-}
-
-.statusBadge::before {
-  background: currentcolor;
-  border-radius: 50%;
-  content: "";
-  height: 6px;
-  width: 6px;
-}
-
-.statusBadge svg {
-  display: none;
-}
-
-.toneSuccess {
-  color: var(--color-green);
-}
-
-.toneWarning {
-  color: var(--color-yellow);
-}
-
-.toneNeutral {
-  color: var(--color-mute);
-}
-
 .definitionList {
   display: grid;
   margin: 0;

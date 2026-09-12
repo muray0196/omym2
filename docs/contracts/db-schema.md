@@ -1,9 +1,9 @@
 ---
 type: Contract
 title: DB Schema Contract
-description: SQLite tables, constraints, indexes, migrations, JSON and timestamp policy for all persisted state.
+description: SQLite tables, constraints, migration history, persisted provenance, and JSON and timestamp policy.
 tags: [database, sqlite, schema, migrations, artist-names, musicbrainz, companions, unprocessed, provenance]
-timestamp: 2026-07-18T12:00:00+09:00
+timestamp: 2026-09-12T15:13:08+09:00
 ---
 
 # DB Schema Contract
@@ -45,6 +45,8 @@ The one editable mapping from original artist text to an English artist name. Mu
 Fields: `source_key` (non-empty derived lookup key, primary key), `source_name` (non-empty original metadata text), `resolved_name` (non-empty English display name), `provider` (`musicbrainz` | `user`, last writer), `provider_artist_id` (canonical MusicBrainz UUID for automatic rows, null for user rows), `selected_name_kind` (`alias` | `alias_sort_name` | `name` | `sort_name` for automatic rows, null for user rows), `selected_locale` (nullable; permitted only for alias/alias-sort-name selections), `accepted_at` (UTC timestamp of acceptance or latest user edit).
 
 `selected_name_kind` records the exact MusicBrainz field used: `alias` = alias object's `name`; `alias_sort_name` = alias object's `sort-name`; `name` = artist object's `name`; `sort_name` = artist object's `sort-name`. Alias selections retain their MusicBrainz locale (e.g., `ja-Latn`) so Settings can distinguish a Japanese Latin alias from artist-level fallbacks.
+
+Current automatic selection does not produce artist-level `name`, but the baseline resolver did. Existing mappings retain that value and their exact provenance; a value is not removable merely because new selections no longer produce it.
 
 The naming feature derives every lookup/insertion key via the pure [ArtistNameSourceKey](../DOMAIN.md#artistnamesourcekey) contract before repository access; the repository compares keys exactly. Missing or whitespace-only source text produces no key and must not reach the repository. Automatic insertion is sticky: `insert_if_absent` does nothing and returns false when `source_key` exists, so Plan creation never overwrites an accepted row because MusicBrainz later returns different data. Revision-checked Settings saves may upsert user rows or delete mappings; an edited automatic row becomes a `user` row and clears provider-specific fields. `provider_artist_id` is not unique (multiple source keys may map to one provider artist).
 

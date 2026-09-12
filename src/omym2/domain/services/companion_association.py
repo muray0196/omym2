@@ -11,12 +11,14 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from omym2.domain.models.companion_asset import CompanionAssetKind
+from omym2.domain.models.plan_action import ActionType, PlanActionReason
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
 LYRICS_EXTENSION = ".lrc"
 ARTWORK_EXTENSIONS = frozenset({".jpg", ".png"})
+CLAIMED_COMPANION_DECISION_MISSING_MESSAGE = "Claimed companion must have an association or issue."
 
 
 class CompanionIssueCode(StrEnum):
@@ -244,3 +246,46 @@ def _issue_decision(
 
 def _source_path(candidate: CompanionAudioCandidate) -> PurePosixPath:
     return PurePosixPath(candidate.source_path)
+
+
+def companion_kind(
+    association: CompanionAssociation | None,
+    issue: CompanionIssue | None,
+) -> CompanionAssetKind:
+    """Return the companion kind recorded by whichever decision claimed it."""
+    if association is not None:
+        return association.kind
+    if issue is not None:
+        return issue.kind
+    raise AssertionError(CLAIMED_COMPANION_DECISION_MISSING_MESSAGE)
+
+
+def companion_dependency_sources(
+    association: CompanionAssociation | None,
+    issue: CompanionIssue | None,
+) -> tuple[str, ...]:
+    """Return the audio sources a claimed companion depends on, if any."""
+    if association is not None:
+        return association.dependency_audio_source_paths
+    if issue is not None:
+        return issue.dependency_audio_source_paths
+    return ()
+
+
+def companion_issue_reason(issue: CompanionIssue | None) -> PlanActionReason | None:
+    """Map one companion association issue to its PlanAction block reason."""
+    if issue is None:
+        return None
+    if issue.code in {
+        CompanionIssueCode.OWNER_AMBIGUOUS,
+        CompanionIssueCode.TARGET_PARENT_MISMATCH,
+    }:
+        return PlanActionReason.COMPANION_ASSOCIATION_AMBIGUOUS
+    return PlanActionReason.COMPANION_OWNER_BLOCKED
+
+
+def companion_action_type(kind: CompanionAssetKind) -> ActionType:
+    """Return the PlanAction type that represents one companion kind."""
+    if kind is CompanionAssetKind.LYRICS:
+        return ActionType.MOVE_LYRICS
+    return ActionType.MOVE_ARTWORK

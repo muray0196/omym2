@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from omym2.domain.models.app_config import MusicBrainzConfig
-    from omym2.features.artist_names.ports import ArtistNameProvider
+    from omym2.features.artist_names.ports import ArtistNameLookup
 
 type _ProviderConfigKey = tuple[str, str, float, int, float]
 
@@ -31,9 +31,9 @@ class ArtistNameRuntime:
 
     database_file: Path
     _provider_key: _ProviderConfigKey | None = field(default=None, init=False)
-    _provider: ArtistNameProvider | None = field(default=None, init=False)
+    _provider: ArtistNameLookup | None = field(default=None, init=False)
 
-    def provider_for(self, config: MusicBrainzConfig) -> ArtistNameProvider:
+    def provider_for(self, config: MusicBrainzConfig) -> ArtistNameLookup:
         """Return one provider whose identity and bounds match persisted settings."""
         key = (
             config.application_name,
@@ -56,7 +56,7 @@ class ArtistNameRuntime:
 
 def artist_name_resolver_for(
     database_file: Path,
-    artist_name_provider: ArtistNameProvider,
+    artist_name_provider: ArtistNameLookup,
     *,
     automatic_lookup_enabled: bool = True,
 ) -> ResolveArtistNamesUseCase:
